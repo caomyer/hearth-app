@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Remove {{ item.institution }}{% endblock %}
+{% block content %}
+  {% set tab = "connections" %}
+  {% include "_settings_nav.html" %}
+
+  <section class="panel mt-6" aria-labelledby="rm-h">
+    <div class="panel-head">
+      <h2 id="rm-h">Remove the connection to {{ item.institution }}?</h2>
+    </div>
+    <div class="panel-body">
+      <p class="muted measure">This ends the connection at Plaid and frees its slot{% if connect.using %}: you would have {{ connect.using.capacity.remaining + 1 }} of {{ connect.using.capacity.limit }} left{% endif %}. Plaid cannot undo it. To connect {{ item.institution }} again you sign in at the bank again, as if for the first time.</p>
+
+      <div class="grid grid-2 mt-6">
+        <div>
+          <p class="label">What is kept</p>
+          <ul class="sm muted mt-2" style="padding-left: 1.2em">
+            <li>Every transaction already brought in{% if item.accounts %}: {% for a in item.accounts %}{{ "{:,}".format(a.coverage.held.transactions) }} for {{ a.kind | lower }}{% if a.mask %} &bull;&bull;&nbsp;{{ a.mask }}{% endif %}{{ ", " if not loop.last }}{% endfor %}{% endif %}. They are kept on this machine, not at Plaid.</li>
+            <li>Everything already in your ledger, and every review decision.</li>
+            <li>Where each account was mapped, for when you connect again.</li>
+          </ul>
+        </div>
+        <div>
+          <p class="label">What stops</p>
+          <ul class="sm muted mt-2" style="padding-left: 1.2em">
+            <li>New transactions and balances from {{ item.institution }}, until you connect it again.</li>
+            <li>This connection's history window. Connecting again asks for two years afresh.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="alert alert-warn mt-6">
+        <svg aria-hidden="true"><use href="#i-warn"/></svg>
+        <div class="alert-body">
+          <p style="color: var(--ink); font-weight: 600">To connect it again, remove first, then connect.</p>
+          <p>That order never needs more connections than you have. The one risk is in between: until you have signed in at {{ item.institution }} again, it is not connected, and a bank with awkward sign-in checks can leave you there for a while. The slot is free and nothing is lost but time.</p>
+        </div>
+      </div>
+
+      {% if not connect.abilities.remove %}
+      <div class="alert alert-priv mt-4" role="note">
+        <svg aria-hidden="true"><use href="#i-lock"/></svg>
+        <div class="alert-body">
+          <p style="color: var(--ink); font-weight: 600">Removing is not switched on for this hearth yet.</p>
+          <p>It is a live call to Plaid that cannot be undone, so it runs only once the household's admin starts Hearth with it approved. Nothing has been sent.</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="panel-foot row between wrap">
+      <a class="btn btn-quiet" href="/settings/connections">Keep it</a>
+      <form method="post" action="/connect/items/{{ item.item_id | urlencode }}/remove">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <button class="btn btn-danger" type="submit"{% if not connect.abilities.remove %} disabled{% endif %}>Remove {{ item.institution }} at Plaid</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

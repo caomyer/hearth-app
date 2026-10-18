@@ -1,0 +1,49 @@
+{# One account's history against the two years asked for. Expects `a` (an AccountView),
+   `item` and `connect`. The bar spans the requested window; the filled part is what came. #}
+{% set cov = a.coverage %}
+{% set window = (connect.today - cov.requested_from).days or 1 %}
+{% set held = cov.held %}
+<div class="row between wrap">
+  <p><span style="font-weight: 500">{{ a.kind }}</span>{% if a.mask %} <span class="faint sm">&bull;&bull;&nbsp;{{ a.mask }}</span>{% endif %}{% if a.name != a.kind %} <span class="faint sm">&middot; {{ a.name }}</span>{% endif %}</p>
+  {% if a.is_investment and not held.transactions %}
+  <span class="tag tag-outline"><svg aria-hidden="true"><use href="#i-info"/></svg>Today's balance only</span>
+  {% elif not cov.complete %}
+  <span class="tag tag-outline"><svg aria-hidden="true"><use href="#i-clock"/></svg>History arriving</span>
+  {% elif cov.is_short %}
+  <span class="tag tag-warn"><svg aria-hidden="true"><use href="#i-warn"/></svg>{% if cov.days %}{{ cov.days }} days only{% else %}No history{% endif %}</span>
+  {% else %}
+  <span class="tag tag-ok"><svg aria-hidden="true"><use href="#i-check"/></svg>{{ connect.days_requested }} days</span>
+  {% endif %}
+</div>
+{% set start = ((held.earliest - cov.requested_from).days / window * 100) if held.earliest else 100 %}
+<div class="cov mt-3" aria-hidden="true">
+  <div class="cov-bar{% if cov.complete and cov.is_short and not (a.is_investment and not held.transactions) %} is-short{% endif %}"><span style="left: {{ '%.1f' | format([[start, 0] | max, 100] | min) }}%"></span></div>
+  <div class="cov-scale"><span>{{ cov.requested_from | month_year }}</span><span>{{ (cov.requested_from.replace(year=cov.requested_from.year + 1)) | month_year }}</span><span>Today</span></div>
+</div>
+{% if a.is_investment and not held.transactions %}
+<p class="sm muted mt-2">A brokerage's buys, sells, dividends and positions come through Plaid's investments data, which Hearth does not bring in yet. This connection asked for it, so it will not need connecting again. Even then, Plaid prices positions for today only, so earlier days can never be valued from it. Statements uploaded as CSV can fill the history.</p>
+{% if a.statements %}<p class="sm muted mt-1">{{ plural(a.statements, "statement file") }} waiting for the import.</p>{% endif %}
+{% with upload_class = "row wrap mt-3", later = false %}{% include "_upload.html" %}{% endwith %}
+{% elif not cov.complete %}
+<p class="sm muted mt-2">{% if held.earliest %}History from {{ held.earliest | year_day }} so far.{% else %}Nothing in yet.{% endif %} Plaid sends the most recent month first and the rest of the two years later. {% if item.next_check_at %}Hearth asks again at {{ item.next_check_at | clock_time }}.{% elif item.following or (item.last_run and item.last_run.outcome.value == "running") %}Hearth is asking now.{% else %}The daily update collects the rest.{% endif %}</p>
+{% elif not cov.is_short %}
+<p class="sm muted mt-2">History from {{ held.earliest | year_day }}. Everything asked for.</p>
+{% elif not a.is_investment %}
+<div class="alert alert-warn mt-3">
+  <svg aria-hidden="true"><use href="#i-warn"/></svg>
+  <div class="alert-body">
+    {% if held.earliest %}
+    <p style="color: var(--ink); font-weight: 600">{{ item.institution }} sent {{ cov.days }} days, from {{ held.earliest | year_day }}.</p>
+    <p>That is what this bank gave when asked for two years, and connecting again will not widen it. If the account is newer than that, nothing is missing. Otherwise, upload statements as CSV to fill {{ cov.requested_from | month_year }} to {{ held.earliest | month_year }}, now or later. Until then, this account's history is marked as starting in {{ held.earliest | month_year }} wherever it appears.</p>
+    {% else %}
+    <p style="color: var(--ink); font-weight: 600">{{ item.institution }} sent no history for this account.</p>
+    <p>Upload statements as CSV to fill it, now or later. Until then, this account has no history in hearth.</p>
+    {% endif %}
+    {% if a.statements %}<p class="sm">{{ plural(a.statements, "statement file") }} waiting for the import.</p>{% endif %}
+    {% include "_upload.html" %}
+  </div>
+</div>
+{% endif %}
+{% if a.is_investment and held.transactions %}
+<p class="xs faint mt-2">Plaid gives an investment account's positions as of today only, with no price history, so its value can be shown from now on but never for earlier days.</p>
+{% endif %}

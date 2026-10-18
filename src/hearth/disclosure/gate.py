@@ -64,6 +64,15 @@ class Gate:
     def may_use_connection(self, holder: MemberId) -> bool:
         return access.may_use_connection(self.viewer, holder)
 
+    def may_use_credentials(self, owner: MemberId | None) -> bool:
+        return access.may_use_credentials(self.viewer, owner)
+
+    def may_manage_household_credentials(self) -> bool:
+        return access.may_manage_household_credentials(self.viewer)
+
+    def may_feed(self, owners: Collection[MemberId]) -> bool:
+        return access.may_feed(self.viewer, owners)
+
 
 def may_administer(member: Member) -> bool:
     """Whether `member` may manage members and passwords; it shows them nobody's money."""

@@ -1,0 +1,9 @@
+{# Upload a statement for one account. Expects `a` and `session`; inside an alert unless
+   `upload_class` says otherwise. #}
+<form class="{{ upload_class | default('alert-actions') }}" method="post" action="/connect/accounts/{{ a.account_id | urlencode }}/statements" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <label class="btn btn-sm" for="csv-{{ a.account_id }}"><svg aria-hidden="true"><use href="#i-upload"/></svg>Upload CSV statements</label>
+  <input class="vh" id="csv-{{ a.account_id }}" type="file" name="statement" accept=".csv,text/csv" required data-submit-on-choose>
+  <noscript><button class="btn btn-sm" type="submit">Send the chosen file</button></noscript>
+  {% if later | default(true) %}<a class="btn btn-sm btn-quiet" href="/connect/map">Do this later</a>{% endif %}
+</form>

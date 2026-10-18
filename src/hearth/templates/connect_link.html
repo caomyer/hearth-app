@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Connect a bank{% endblock %}
+{% block content %}
+{% include "_stepper.html" %}
+
+  <h1>{{ "Sign in to your bank again" if start.item_id else "Connect a bank" }}</h1>
+  <p class="lede">{% if start.item_id %}Your bank asked you to sign in again. This keeps the same connection, so it uses no new slot, and nothing is imported twice.{% else %}Choose your bank and sign in there. Hearth asks it for {{ days }} days of history.{% endif %}</p>
+
+  {% if start.stand_in or start.environment.value == "demo" %}
+  <section class="panel mt-6" aria-labelledby="si-h">
+    <div class="panel-head">
+      <h2 id="si-h">Invented banks</h2>
+      <span class="sm faint">Hearth's demo stand-in for Plaid</span>
+    </div>
+    <div class="panel-body" style="padding-top: var(--s-3)">
+      <p class="sm muted">This hearth is the demo, so instead of Plaid's sign-in window it offers banks that do not exist. Nothing here reaches a real bank.</p>
+      <ul class="list conn-list mt-3" role="list">
+        {% if start.item_id %}
+        <li>
+          <form class="row between wrap grow" method="post" action="/connect/reconnected">
+            <input type="hidden" name="csrf" value="{{ session.csrf }}">
+            <input type="hidden" name="item_id" value="{{ start.item_id }}">
+            <input type="hidden" name="public_token" value="{{ start.stand_in[0][1] }}">
+            <p style="font-weight: 600">Your invented bank asks you to sign in again</p>
+            <button class="btn btn-sm" type="submit">Sign in again</button>
+          </form>
+        </li>
+        {% else %}
+        {% for name, public_token in start.stand_in %}
+        <li>
+          <form class="row between wrap grow" method="post" action="/connect/exchange">
+            <input type="hidden" name="csrf" value="{{ session.csrf }}">
+            <input type="hidden" name="public_token" value="{{ public_token }}">
+            <input type="hidden" name="institution" value="{{ name }}">
+            <p style="font-weight: 600">{{ name }}</p>
+            <button class="btn btn-sm" type="submit">Sign in at {{ name }}</button>
+          </form>
+        </li>
+        {% endfor %}
+        {% endif %}
+      </ul>
+    </div>
+  </section>
+  {% else %}
+  <section class="panel mt-6" aria-labelledby="pl-h" id="plaid-link" data-link-token="{{ start.link_token }}"{% if start.item_id %} data-update="reconnected-form"{% else %} data-success="exchange-form"{% endif %}>
+    <div class="panel-head">
+      <h2 id="pl-h">Opening your bank's sign-in</h2>
+    </div>
+    <div class="panel-body">
+      <p class="muted">A secure window run by Plaid opens over this page. If it does not, check that this browser allows it, then try again.</p>
+      <noscript><p class="sm warn-link mt-2">Plaid's sign-in needs JavaScript.</p></noscript>
+      <form id="exchange-form" method="post" action="/connect/exchange">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="public_token" value="">
+        <input type="hidden" name="institution" value="">
+      </form>
+      <form id="reconnected-form" method="post" action="/connect/reconnected">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="item_id" value="{{ start.item_id or '' }}">
+        <input type="hidden" name="public_token" value="">
+      </form>
+    </div>
+  </section>
+  <script src="{{ link_script }}" defer></script>
+  <script src="/static/connect.js" defer></script>
+  {% endif %}
+
+  <div class="focus-actions">
+    <a class="btn btn-quiet" href="/connect?outcome=link-closed">Cancel</a>
+  </div>
+{% endblock %}

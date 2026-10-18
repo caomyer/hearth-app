@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Connect institutions{% endblock %}
+{% block content %}
+{% include "_stepper.html" %}
+
+  <h1>Connect your banks</h1>
+  <p class="lede">Each connection belongs to you. Nobody else in the household can use it, and admins cannot read through it.</p>
+
+  {% include "_outcome.html" %}
+
+  {% set using = connect.using %}
+  {% if using %}
+  <section class="panel mt-6" aria-labelledby="pa-h">
+    <div class="panel-head">
+      <h2 id="pa-h">{{ "The household's Plaid account" if using.is_household else "Your Plaid account" }}</h2>
+      <span class="sm{% if using.capacity.remaining == 0 %} warn-link{% else %} faint{% endif %}">{{ using.capacity.remaining }} of {{ using.capacity.limit }} connections remaining</span>
+    </div>
+    <div class="panel-body">
+      <div class="meter" role="meter" aria-label="Connections used" aria-valuemin="0" aria-valuemax="{{ using.capacity.limit }}" aria-valuenow="{{ using.capacity.used }}" aria-valuetext="{{ using.capacity.used }} of {{ using.capacity.limit }} used"><span style="width: {{ '%.1f' | format([using.capacity.used / using.capacity.limit * 100, 100] | min) }}%"></span></div>
+      <p class="sm muted mt-3">Each bank you connect is one connection, however many accounts it has. {% if using.capacity.used_elsewhere %}{{ plural(using.capacity.used_elsewhere, "connection is", "connections are") }} in use outside Hearth{% if using.capacity.in_hearth %}, and {{ using.capacity.in_hearth }} here{% endif %}.{% elif using.capacity.in_hearth %}{{ plural(using.capacity.in_hearth, "is", "are") | replace(using.capacity.in_hearth ~ " ", using.capacity.in_hearth ~ " ", 1) }} in use here.{% endif %}</p>
+      {% if using.is_household %}
+      <p class="sm faint mt-1">Registered by {{ using.registered_by }} and shared by everyone who chooses it, so its connections run out for all of them at once. Nobody using it sees whose connections the others are.</p>
+      {% endif %}
+      {% if using.environment.value != "production" %}
+      <p class="sm faint mt-1">{{ "Hearth's demo stand-in: invented banks, nobody's money." if using.environment.value == "demo" else "Plaid's sandbox: test institutions only." }}</p>
+      {% endif %}
+    </div>
+  </section>
+  {% else %}
+  <section class="panel mt-6" aria-labelledby="pa-h">
+    <div class="panel-head">
+      <h2 id="pa-h">Choose how to connect</h2>
+    </div>
+    <div class="panel-body">
+      <p class="muted measure">Hearth connects through Plaid. A free Plaid account allows about ten connections, and a connection is one bank sign-in however many accounts it reaches, so the number of banks is what runs out.</p>
+      {% include "_own_plaid_form.html" %}
+      {% if connect.household %}
+      <form class="mt-6" method="post" action="/connect/household">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="chosen" value="true">
+        <p class="label">Or use the household's Plaid account</p>
+        <p class="sm muted mt-1">Registered by {{ connect.household.registered_by }}: {{ connect.household.capacity.remaining }} of {{ connect.household.capacity.limit }} connections remaining, shared by everyone who chooses it. Your bank data would pass through an account registered to {{ connect.household.registered_by }}.</p>
+        <button class="btn mt-3" type="submit">Use the household's Plaid account</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="alert alert-info mt-6">
+    <svg aria-hidden="true"><use href="#i-clock"/></svg>
+    <div class="alert-body">
+      <p style="color: var(--ink); font-weight: 600">Hearth asks every bank for two years of history: {{ connect.days_requested }} days.</p>
+      <p>This is decided when you connect and cannot be widened later without reconnecting. Two years covers this year and last year in full, which is what taxes and "compared with last year" need.</p>
+    </div>
+  </div>
+
+  <section class="panel mt-6" aria-labelledby="conn-h" id="connected"{% if connect.syncing %} hx-get="/connect" hx-trigger="every 2s" hx-select="#connected" hx-target="#connected" hx-swap="outerHTML"{% endif %}>
+    <div class="panel-head">
+      <h2 id="conn-h">Connected</h2>
+      <span class="sm faint">{% if connect.items %}{{ plural(connect.items | length, "institution") }}, {{ plural(connect.accounts, "account") }}{% else %}Nothing yet{% endif %}</span>
+    </div>
+    <div class="panel-body" style="padding-top: var(--s-3)">
+      {% if connect.items %}
+      <ul class="list conn-list" role="list">
+        {% for item in connect.items %}
+        <li>
+          <div class="grow">
+            <div class="row between wrap">
+              <p><span style="font-weight: 600">{{ item.institution }}</span>{% if item.last_synced_at %} <span class="faint sm">&middot; updated {{ when(item.last_synced_at, today) }}</span>{% endif %}</p>
+              {% if item.needs_login %}<span class="tag tag-warn"><svg aria-hidden="true"><use href="#i-unlink"/></svg>Sign in again</span>{% endif %}
+            </div>
+            {% if item.same_bank_as_another %}
+            <p class="sm warn-link mt-1">You have another connection to {{ item.institution }}. If one is left over from connecting again, remove it under Settings, Connections: it still uses a slot.</p>
+            {% endif %}
+            {% if item.last_run and item.last_run.outcome.value == "failed" %}
+            <p class="sm warn-link mt-1">The last update did not finish. It picks up where it stopped next time.</p>
+            {% endif %}
+            {% for a in item.accounts %}
+            <div class="mt-4">{% include "_coverage.html" %}</div>
+            {% else %}
+            <p class="sm muted mt-2">Its accounts are coming in now.</p>
+            {% endfor %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No banks connected yet.</p>
+      {% endif %}
+
+      {% if using and using.capacity.remaining == 0 %}
+      <div class="alert alert-warn mt-6" role="note">
+        <svg aria-hidden="true"><use href="#i-warn"/></svg>
+        <div class="alert-body">
+          <p style="color: var(--ink); font-weight: 600">No connections left on {{ "the household's" if using.is_household else "your" }} Plaid account.</p>
+          <p>All {{ using.capacity.limit }} are in use, so Hearth will not open Plaid: it would fail part way. Remove a connection you no longer use{% if using.capacity.used_elsewhere %}, here or in your Plaid dashboard{% endif %}, or {% if using.is_household %}register a Plaid account of your own, which brings its own {{ using.capacity.limit }}{% else %}raise the allowance if Plaid has given you more{% endif %}.</p>
+          <div class="alert-actions">
+            <a class="btn btn-sm" href="/settings/connections">See your connections</a>
+          </div>
+        </div>
+      </div>
+      {% elif using and not connect.abilities.link %}
+      <div class="alert alert-priv mt-6" role="note">
+        <svg aria-hidden="true"><use href="#i-lock"/></svg>
+        <div class="alert-body">
+          <p style="color: var(--ink); font-weight: 600">Connecting a bank is not switched on for this hearth yet.</p>
+          <p>It is a live call to Plaid and uses one of the {{ using.capacity.remaining }} connections left, so it runs only once the household's admin starts Hearth with it approved. Nothing has been sent.</p>
+        </div>
+      </div>
+      {% elif using %}
+      <form method="post" action="/connect/link">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <button class="btn mt-6" type="submit"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect {{ "another" if connect.items else "a" }} bank</button>
+      </form>
+      <p class="xs faint mt-2">Uses one of the {{ using.capacity.remaining }} connections left. Opens your bank's own sign-in in a secure window run by the connection provider. Hearth never sees your bank password.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <div class="focus-actions">
+    <span class="sm faint">Step 2 of 4</span>
+    <div class="end">
+      {% if connect.items %}
+      <a class="btn btn-primary btn-lg" href="/connect/map">Continue to mapping<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      {% else %}
+      <a class="btn btn-quiet" href="/you">Do this later</a>
+      {% endif %}
+    </div>
+  </div>
+  <script src="/static/connect.js" defer></script>
+{% endblock %}

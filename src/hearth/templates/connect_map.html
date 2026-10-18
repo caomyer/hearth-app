@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Map accounts{% endblock %}
+{% block content %}
+{% include "_stepper.html" %}
+
+  <h1>Check where each account goes</h1>
+  <p class="lede">Every bank account becomes an account in the household ledger. Confirm each one yourself; nothing is filed under a guess.</p>
+
+  {% include "_outcome.html" %}
+
+  {% if mapping.near %}
+  <div class="alert alert-warn mt-6" id="near">
+    <svg aria-hidden="true"><use href="#i-warn"/></svg>
+    <div class="alert-body">
+      <p style="color: var(--ink); font-weight: 600">{{ "Two targets differ" if mapping.near | length == 1 else plural(mapping.near | length, "pair") ~ " of targets differ" }} by one word.</p>
+      <p>{% for a, b in mapping.near %}<code>{{ a }}</code> and <code>{{ b }}</code>{{ "; " if not loop.last else "." }}{% endfor %} A swap here would go unnoticed because both are real accounts. Check the balances below match the bank before you confirm.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if mapping.rows %}
+  <form class="mt-6" method="post" action="/connect/map" id="map-form">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <div class="maps">
+      {% for row in mapping.rows %}
+      {% set a = row.account %}
+      <fieldset class="panel map{% if row.near %} is-warn{% endif %}">
+        <input type="hidden" name="account" value="{{ a.account_id }}">
+        <legend class="vh">{{ row.institution }} {{ a.kind | lower }}{% if a.mask %} ending {{ a.mask }}{% endif %}</legend>
+        <div class="map-from">
+          <p style="font-weight: 600">{{ row.institution }} &middot; {{ a.kind }}</p>
+          {% if a.mask %}<p class="sm faint">&bull;&bull;&nbsp;{{ a.mask }}</p>{% endif %}
+          {% if a.balance and a.balance.current is not none %}
+          {# Plaid reports what is owed on a card as positive; the ledger shows it as owed. #}
+          <p class="sm faint">Bank balance <span class="amt" style="color: var(--ink)">{{ (-a.balance.current if a.is_credit else a.balance.current) | money }}</span></p>
+          {% endif %}
+        </div>
+        <div class="map-arrow" aria-hidden="true"><svg><use href="#i-arrow"/></svg></div>
+        <div class="map-to">
+          <label class="label" for="t-{{ loop.index }}">Ledger account</label>
+          <select class="select mt-1" id="t-{{ loop.index }}" name="target-{{ a.account_id }}">
+            {% for t in row.targets %}
+            <option value="{{ t.ledger_account }}"{% if t == row.chosen %} selected{% elif t.taken %} disabled{% endif %}>{{ t.ledger_account }}{% if t.taken %} (already receives transactions from another connection){% endif %}</option>
+            {% endfor %}
+          </select>
+          <p class="xs faint mt-1">{% if row.chosen.is_new %}New ledger account{% elif row.chosen.taken %}Already receives transactions from another connection{% else %}Already in your books; its owners stay as they are{% endif %}</p>
+          <div class="map-meta">
+            <label class="label" for="o-{{ loop.index }}">Owner</label>
+            <select class="select" id="o-{{ loop.index }}" name="owners-{{ a.account_id }}">
+              {% for c in row.owner_choices %}
+              <option value="{{ c.key }}"{% if c.key == row.chosen_owners %} selected{% endif %}>{{ c.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <label class="check map-confirm"><input type="checkbox" name="confirm-{{ a.account_id }}" value="1"{% if row.confirmed %} checked{% endif %}><span>{{ "Confirmed" if row.confirmed else "Confirm" }}</span></label>
+      </fieldset>
+      {% endfor %}
+    </div>
+  </form>
+  {% else %}
+  <div class="empty mt-6">
+    <span class="glyph" aria-hidden="true"><svg><use href="#i-link"/></svg></span>
+    <h3>Nothing to map yet</h3>
+    <p>Connect a bank first; its accounts appear here once they arrive.</p>
+  </div>
+  {% endif %}
+
+  <div class="focus-actions">
+    <a class="btn btn-quiet" href="/connect">Back</a>
+    {% if mapping.rows %}
+    <div class="end">
+      <span class="sm muted" id="cnt">{{ mapping.confirmed }} of {{ mapping.rows | length }} confirmed</span>
+      <button class="btn btn-primary btn-lg" type="submit" form="map-form" aria-describedby="cnt">Start the import</button>
+    </div>
+    {% endif %}
+  </div>
+{% endblock %}

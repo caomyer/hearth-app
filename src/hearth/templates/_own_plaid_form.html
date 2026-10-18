@@ -1,0 +1,42 @@
+{# Entering a Plaid account's keys. Expects `connect`, `session` and optionally `household`.
+   The keys are never shown again once saved, so nothing here is ever pre-filled. #}
+{% set for_household = household | default(false) %}
+<form class="mt-4" method="post" action="/connect/credentials" autocomplete="off">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <input type="hidden" name="scope" value="{{ 'household' if for_household else 'own' }}">
+  <input type="hidden" name="back" value="{{ back | default('connect') }}">
+  {% if not for_household %}
+  <p class="label">Use your own Plaid account <span class="tag tag-ok" style="vertical-align: 1px">Recommended</span></p>
+  <p class="sm muted mt-1 measure">Register one free at dashboard.plaid.com, then copy its production keys here. It brings its own allowance of connections, and your bank data never passes through an account registered to someone else.</p>
+  {% endif %}
+  <div class="field mt-4">
+    <label for="{{ 'h' if for_household }}cid">Client ID</label>
+    <input class="input mono-input" id="{{ 'h' if for_household }}cid" name="client_id" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+  </div>
+  <div class="field">
+    <label for="{{ 'h' if for_household }}sec">Secret</label>
+    <input class="input mono-input" id="{{ 'h' if for_household }}sec" name="secret" type="password" autocomplete="new-password" autocapitalize="none" spellcheck="false" required>
+    <p class="hint">Encrypted on this machine with a key kept in the macOS Keychain. Never shown again, never logged.</p>
+  </div>
+  <div class="field">
+    <label for="{{ 'h' if for_household }}env">Environment</label>
+    <select class="select" id="{{ 'h' if for_household }}env" name="environment">
+      {% for env in connect.environments %}
+      <option value="{{ env.value }}">{{ {"production": "Production: your real banks", "sandbox": "Sandbox: Plaid's test banks", "demo": "Demo: Hearth's invented banks"}[env.value] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="row wrap mt-4" style="align-items: flex-start; gap: var(--s-4)">
+    <div class="field" style="flex: 1 1 12em">
+      <label for="{{ 'h' if for_household }}lim">Connections it allows</label>
+      <input class="input" id="{{ 'h' if for_household }}lim" name="item_limit" type="number" min="1" max="1000" value="10" inputmode="numeric" required>
+      <p class="hint">About 10 on Plaid's free tier.</p>
+    </div>
+    <div class="field" style="flex: 1 1 12em; margin-top: 0">
+      <label for="{{ 'h' if for_household }}used">Already used outside Hearth</label>
+      <input class="input" id="{{ 'h' if for_household }}used" name="used_elsewhere" type="number" min="0" max="1000" value="0" inputmode="numeric" required>
+      <p class="hint">Plaid does not tell Hearth, so count them in your Plaid dashboard.</p>
+    </div>
+  </div>
+  <button class="btn btn-primary mt-6" type="submit">Save Plaid account</button>
+</form>

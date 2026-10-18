@@ -1,0 +1,9 @@
+{# The fixed message for what the last step did, if any. #}
+{% if message %}
+<div class="alert {{ 'alert-warn' if is_problem else 'alert-info' }} mt-6" role="status">
+  <svg aria-hidden="true"><use href="#{{ 'i-warn' if is_problem else 'i-check' }}"/></svg>
+  <div class="alert-body">
+    <p style="color: var(--ink); margin: 0">{{ message }}{% if plaid_code %} <span class="sm faint">Plaid said <code>{{ plaid_code }}</code>.</span>{% endif %}</p>
+  </div>
+</div>
+{% endif %}

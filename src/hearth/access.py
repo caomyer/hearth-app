@@ -65,8 +65,49 @@ def may_enter_price(viewer: Member, holders: Collection[Collection[MemberId]]) -
 
 def may_use_connection(viewer: Member, holder: MemberId) -> bool:
     """A connection to an institution is its member's alone, joint accounts included: nobody
-    else sees it, reconnects it, or reads through it. Being an admin grants nothing."""
+    else sees it, reconnects it, or reads through it. Being an admin grants nothing.
+
+    For a ledger account one co-owns, one may see that it is already fed by another
+    connection. The feeding member is never named and neither is the institution. On an
+    account with exactly two owners, a co-owner who knows they did not connect it can infer
+    that the other owner did. That inference is accepted: both members own the account, and
+    hiding the fed state would make the second owner re-link the same bank and spend one of
+    the household's few connections to create the duplicate feed that refusing a second
+    feed exists to prevent."""
     return viewer.id == holder
+
+
+def may_use_credentials(viewer: Member, owner: MemberId | None) -> bool:
+    """Whether ``viewer`` may link through a Plaid account, and see how much of it is left.
+
+    A member's own Plaid account is theirs alone: nobody else links through it, sees its
+    allowance, or is told it exists. Being an admin grants nothing. The one fact others may
+    see is that a ledger account they co-own is already fed by another connection, which
+    names neither member nor institution (``may_use_connection`` says what that lets a
+    co-owner infer). The household's Plaid account (no owner) is open to every member to
+    choose; choosing it means seeing how many of its connections are left, never whose
+    connections use the rest.
+    """
+    return owner is None or viewer.id == owner
+
+
+def may_manage_household_credentials(viewer: Member) -> bool:
+    """Entering or replacing the household's Plaid account is managing institutions: an admin's."""
+    return viewer.is_admin
+
+
+def may_feed(viewer: Member, owners: Collection[MemberId]) -> bool:
+    """Whether ``viewer`` may file a connection's account into an account ``owners`` own.
+
+    Only into an account they own themselves, or a new one they will own. Filing into anyone
+    else's would let one member's connection write another's books, and claiming an account
+    already in the ledger would hand over its whole history. What nobody owns, nobody feeds.
+
+    An account offered is shown as already fed when another connection feeds it, naming
+    neither member nor institution (see ``may_use_connection`` for what a co-owner may infer
+    from that); an account not offered shows nothing.
+    """
+    return viewer.id in owners
 
 
 def may_administer(viewer: Member) -> bool:

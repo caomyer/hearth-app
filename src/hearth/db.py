@@ -1,5 +1,5 @@
 """The app-state database: members, sessions, sharing, the audit log, prices, institution
-tokens and review rulings.
+tokens and credentials, the connections they open, and review rulings.
 
 This database is deliberately separate from the ledger. The ledger is the source of
 truth for the household's money, so no table here ever stores a balance, an amount or
@@ -176,6 +176,86 @@ MIGRATIONS: tuple[str, ...] = (
         member_id INTEGER PRIMARY KEY REFERENCES members (id),
         cadence TEXT NOT NULL CHECK (cadence IN ('off', 'daily', 'weekly', 'monthly')),
         updated_at TEXT NOT NULL
+    ) STRICT;
+    """,
+    """
+    -- Plaid credentials (client id and secret), sealed like tokens. See hearth.vault.
+    CREATE TABLE vault_credential (
+        scope TEXT NOT NULL,
+        name TEXT NOT NULL,
+        key_version INTEGER NOT NULL REFERENCES vault_master_key (version),
+        wrapped_key BLOB NOT NULL,
+        ciphertext BLOB NOT NULL,
+        stored_at TEXT NOT NULL,
+        PRIMARY KEY (scope, name)
+    ) STRICT;
+
+    -- A Plaid account hearth links through: a member's own, or the household's one.
+    -- Its keys are in vault_credential; this is what may be shown about it. See hearth.plaid.
+    CREATE TABLE plaid_credentials (
+        scope TEXT PRIMARY KEY,
+        member_id INTEGER REFERENCES members (id),
+        registered_by INTEGER NOT NULL REFERENCES members (id),
+        environment TEXT NOT NULL CHECK (environment IN ('production', 'sandbox', 'demo')),
+        item_limit INTEGER NOT NULL CHECK (item_limit > 0),
+        used_elsewhere INTEGER NOT NULL CHECK (used_elsewhere >= 0),
+        saved_at TEXT NOT NULL,
+        CHECK ((scope = 'household') = (member_id IS NULL))
+    ) STRICT;
+
+    -- Members without a Plaid account of their own who chose to link through the household's.
+    CREATE TABLE plaid_household_users (
+        member_id INTEGER PRIMARY KEY REFERENCES members (id),
+        chosen_at TEXT NOT NULL
+    ) STRICT;
+
+    -- One login at one institution. A removed Item stays as the record that it existed.
+    CREATE TABLE plaid_items (
+        item_id TEXT PRIMARY KEY,
+        member_id INTEGER NOT NULL REFERENCES members (id),
+        credentials TEXT NOT NULL,
+        institution_id TEXT,
+        institution_name TEXT NOT NULL,
+        days_requested INTEGER NOT NULL,
+        linked_at TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('working', 'login_required', 'removed')),
+        history TEXT,
+        last_synced_at TEXT,
+        problem TEXT,
+        removed_at TEXT,
+        -- When hearth next asks Plaid for history still arriving, and which process will ask
+        -- (``hearth.plaid.owner``); NULL when nothing is waiting.
+        next_check_at TEXT,
+        next_check_by TEXT
+    ) STRICT;
+    CREATE INDEX plaid_items_by_member ON plaid_items (member_id);
+
+    -- Each account an Item reaches, and the ledger account its member confirmed it feeds.
+    CREATE TABLE plaid_accounts (
+        account_id TEXT PRIMARY KEY,
+        item_id TEXT NOT NULL REFERENCES plaid_items (item_id),
+        name TEXT NOT NULL,
+        official_name TEXT,
+        mask TEXT,
+        type TEXT NOT NULL,
+        subtype TEXT,
+        hearth_account TEXT REFERENCES accounts (id),
+        confirmed_at TEXT,
+        confirmed_by INTEGER REFERENCES members (id),
+        CHECK ((hearth_account IS NULL) = (confirmed_at IS NULL))
+    ) STRICT;
+    CREATE INDEX plaid_accounts_by_item ON plaid_accounts (item_id);
+
+    -- Statement files a member uploaded to fill history a bank did not send. The file is in
+    -- the data directory under `stored_as`; the import reads it from there.
+    CREATE TABLE statement_uploads (
+        id INTEGER PRIMARY KEY,
+        member_id INTEGER NOT NULL REFERENCES members (id),
+        account_id TEXT NOT NULL REFERENCES plaid_accounts (account_id),
+        original_name TEXT NOT NULL,
+        stored_as TEXT NOT NULL UNIQUE,
+        size_bytes INTEGER NOT NULL,
+        uploaded_at TEXT NOT NULL
     ) STRICT;
     """,
 )

@@ -12,6 +12,8 @@ The rules, for the package as it is now:
   call into it is made there.
 - Only modules of the ``hearth.disclosure`` package turn the ledger into figures.
 - Pages (``hearth.web``) import no ledger reader and touch none of the books' raw data.
+- Only ``hearth.disclosure`` builds a member's ``Connector``, the one way a page reaches
+  connections, so every connection a page shows went past the gate.
 
 What it cannot catch, so nobody mistakes it for proof: an alias or re-export of an ``access``
 function, a ``getattr`` or ``importlib`` call, or any other dynamic import. It reads import
@@ -36,6 +38,8 @@ LEDGER_READERS = (
     "hearth.valuation.networth",
     "hearth.valuation.holdings",
     "hearth.review.pile",
+    "hearth.plaid.feed",
+    "hearth.plaid.registry",
 )
 """Modules that read household data. Pages get it only through hearth.disclosure."""
 
@@ -111,3 +115,17 @@ def test_pages_touch_none_of_the_books_raw_data() -> None:
         if isinstance(node, ast.Attribute) and node.attr in RAW_BOOKS
     )
     assert reaching == []
+
+
+def test_only_disclosure_builds_a_members_connector() -> None:
+    builders = {
+        name
+        for name, tree in modules()
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (
+            (isinstance(node.func, ast.Name) and node.func.id == "Connector")
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == "Connector")
+        )
+    }
+    assert builders == {"hearth.disclosure"}

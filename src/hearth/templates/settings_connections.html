@@ -2,55 +2,58 @@
 {% block title %}Connections{% endblock %}
 {% block content %}
   {% include "_settings_nav.html" %}
+  {% include "_outcome.html" %}
 
+  {% set using = connect.using %}
   <section class="panel mt-6" aria-labelledby="conn-h">
     <div class="panel-head">
       <h2 id="conn-h">Your connections</h2>
-      <span class="sm faint">Only you can use these</span>
+      <span class="sm faint">{% if using %}{{ using.capacity.remaining }} of {{ using.capacity.limit }} connections remaining{% else %}Only you can use these{% endif %}</span>
     </div>
+    {% if connect.items %}
+    <div class="panel-body table-scroll" style="padding: var(--s-2) 0 var(--s-1)">
+      <table class="table">
+        <caption class="vh">Your connections, with when each last updated</caption>
+        <thead>
+          <tr><th scope="col">Institution</th><th scope="col" class="num">Accounts</th><th scope="col">Connected</th><th scope="col">Last successful update</th><th scope="col"><span class="vh">Actions</span></th></tr>
+        </thead>
+        <tbody>
+          {% for item in connect.items %}
+          <tr{% if item.needs_login %} class="is-expired"{% endif %}>
+            <td>
+              <span style="font-weight: 600">{{ item.institution }}</span>
+              {% if item.needs_login %}<br><span class="tag tag-warn mt-1"><svg aria-hidden="true"><use href="#i-unlink"/></svg>Sign in again</span>{% endif %}
+              {% if item.same_bank_as_another %}<br><span class="sm warn-link">Another connection reaches this bank</span>{% endif %}
+            </td>
+            <td class="num tnum">{{ item.accounts | length }}</td>
+            <td class="tnum">{{ item.linked_at.astimezone().date() | year_day }}</td>
+            <td class="tnum">{% if item.last_synced_at %}{{ when(item.last_synced_at, today) }}{% else %}<span class="warn-link">Never</span>{% endif %}</td>
+            <td>
+              <div class="row wrap" style="justify-content: flex-end; gap: var(--s-2)">
+                {% if item.needs_login %}
+                <form method="post" action="/connect/link"><input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="item_id" value="{{ item.item_id }}"><button class="btn btn-sm" type="submit"{% if not connect.abilities.link %} disabled{% endif %}>Sign in again</button></form>
+                {% elif connect.abilities.sync %}
+                <form method="post" action="/connect/items/{{ item.item_id | urlencode }}/sync"><input type="hidden" name="csrf" value="{{ session.csrf }}"><button class="btn btn-sm btn-quiet" type="submit"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Update now</button></form>
+                {% endif %}
+                <a class="btn btn-sm btn-quiet" href="/connect/items/{{ item.item_id | urlencode }}/remove">Remove</a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="panel-body" style="padding-top: var(--s-2)">
+      <p class="sm faint measure">A connection that has not updated in a long while may be left over from connecting a bank again. It still uses one of your connections until it is removed. Removing keeps every transaction already brought in.</p>
+    {% else %}
     <div class="panel-body">
-      {% if connections %}
-      <ul class="list" role="list">
-        {% for c in connections | sort(attribute="state") %}
-        {% if c.state == "expired" %}
-        <li class="conn is-expired">
-          <div class="grow">
-            <div class="row between wrap">
-              <p><span style="font-weight: 600">{{ c.institution }}</span> <span class="faint sm">&middot; {{ plural(c.ledger_accounts | length, "account") }}</span></p>
-              <span class="tag tag-warn"><svg aria-hidden="true"><use href="#i-unlink"/></svg>Expired</span>
-            </div>
-            <p class="muted mt-2 measure">{{ c.institution }} has stopped sending updates, usually because it asks you to sign in again from time to time. Until you do, its balances and transactions stop{% if c.data_until %} at {{ c.data_until | day }}{% endif %}. Reconnecting keeps your history and never imports anything twice.</p>
-            {% if c.data_until %}
-            {% set stopped = (today - c.data_until).days %}
-            {% set gap = [stopped, 30] | min %}
-            <div class="cov mt-3" aria-hidden="true">
-              <div class="cov-bar cov-gap"><span style="right: {{ '%.1f' | format(gap / 30 * 100) }}%"></span><i style="left: {{ '%.1f' | format(100 - gap / 30 * 100) }}%"></i></div>
-              <div class="cov-scale"><span>Last 30 days</span><span>Data stops {{ c.data_until | day }} &middot; Today</span></div>
-            </div>
-            {% endif %}
-            <p class="sm faint mt-4">Reconnecting opens {{ c.institution }}'s own sign-in. It arrives with bank linking; until then, import the missing statements.</p>
-          </div>
-        </li>
-        {% else %}
-        <li class="conn">
-          <div class="grow">
-            <div class="row between wrap">
-              <p><span style="font-weight: 600">{{ c.institution }}</span> <span class="faint sm">&middot; {{ plural(c.ledger_accounts | length, "account") }}</span></p>
-              <span class="tag tag-ok"><svg aria-hidden="true"><use href="#i-check"/></svg>Working</span>
-            </div>
-            {% if c.data_until %}<p class="sm faint mt-1">Updated {{ c.data_until | day }}</p>{% endif %}
-          </div>
-        </li>
-        {% endif %}
-        {% endfor %}
-      </ul>
-      {% else %}
       <div class="empty">
         <span class="glyph" aria-hidden="true"><svg><use href="#i-link"/></svg></span>
         <h3>No connections yet</h3>
-        <p>Bank linking is on its way. Until it lands, hearth reads the ledger you keep, and every figure says how far its history goes.</p>
+        <p>Connect a bank to bring in two years of its history.</p>
       </div>
       {% endif %}
+      <a class="btn mt-6" href="/connect"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect a bank</a>
     </div>
     {% if expired %}
     <div class="panel-foot">
@@ -58,4 +61,62 @@
     </div>
     {% endif %}
   </section>
+
+  <section class="panel mt-6" aria-labelledby="pa-h">
+    <div class="panel-head">
+      <h2 id="pa-h">Your Plaid account</h2>
+      {% if connect.own %}<span class="sm faint">Saved {{ connect.own.saved_at.astimezone().date() | year_day }}</span>{% endif %}
+    </div>
+    <div class="panel-body">
+      {% if connect.own %}
+      <p class="muted measure">Your connections go through your own Plaid account{% if connect.own.environment.value != "production" %} ({{ connect.own.environment.value }}){% endif %}: {{ connect.own.capacity.remaining }} of {{ connect.own.capacity.limit }} connections remaining{% if connect.own.capacity.used_elsewhere %}, counting {{ connect.own.capacity.used_elsewhere }} in use outside Hearth{% endif %}. Its keys are encrypted on this machine and never shown.</p>
+      <details class="mt-4">
+        <summary class="btn btn-sm">Replace its keys or allowance</summary>
+        {% with back = "settings" %}{% include "_own_plaid_form.html" %}{% endwith %}
+      </details>
+      <form class="mt-4" method="post" action="/connect/credentials/remove">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="back" value="settings">
+        <button class="btn btn-sm" type="submit">Forget this Plaid account</button>
+        <p class="xs faint mt-1">Only once it has no connections: only its own keys can remove them.</p>
+      </form>
+      {% else %}
+      {% with back = "settings" %}{% include "_own_plaid_form.html" %}{% endwith %}
+      {% endif %}
+    </div>
+  </section>
+
+  {% if connect.household or connect.may_manage_household %}
+  <section class="panel mt-6" aria-labelledby="hh-h">
+    <div class="panel-head">
+      <h2 id="hh-h">The household's Plaid account</h2>
+      {% if connect.household %}<span class="sm faint">{{ connect.household.capacity.remaining }} of {{ connect.household.capacity.limit }} connections remaining</span>{% endif %}
+    </div>
+    <div class="panel-body">
+      {% if connect.household %}
+      <p class="muted measure">Registered by {{ connect.household.registered_by }}, for members who would rather not register their own. Everyone who chooses it shares its connections, and sees how many are left, never whose the others are.</p>
+      {% if not connect.own %}
+      <form class="mt-4" method="post" action="/connect/household">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="back" value="settings">
+        <input type="hidden" name="chosen" value="{{ 'false' if connect.chose_household else 'true' }}">
+        <button class="btn btn-sm" type="submit">{{ "Stop using it for new connections" if connect.chose_household else "Use it for my connections" }}</button>
+      </form>
+      {% endif %}
+      {% else %}
+      <p class="muted measure">None yet. A household Plaid account is a fallback for members who would rather not register their own; a member's own account is the default, because it brings its own allowance.</p>
+      {% endif %}
+      {% if connect.may_manage_household %}
+      <details class="mt-4">
+        <summary class="btn btn-sm">{{ "Replace its keys or allowance" if connect.household else "Enter the household's Plaid account" }}</summary>
+        {% with back = "settings", household = true %}{% include "_own_plaid_form.html" %}{% endwith %}
+      </details>
+      {% if connect.household %}
+      <form class="mt-4" method="post" action="/connect/credentials/remove">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}"><input type="hidden" name="back" value="settings"><input type="hidden" name="scope" value="household">
+        <button class="btn btn-sm" type="submit">Forget the household's Plaid account</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
 {% endblock %}

@@ -14,19 +14,35 @@ import calendar
 import random
 import sqlite3
 from collections import Counter
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from hearth import accounts, auth, members, passwords
-from hearth.connections import Connection, KnownConnections, State
+from beancount.core.data import Transaction
+
+from hearth import accounts, auth, books, db, members, passwords
+from hearth.books import Status
+from hearth.config import Settings
+from hearth.disclosure import Disclosure
 from hearth.members import MemberId
+from hearth.plaid.client import Environment
+from hearth.plaid.connector import Mapping
+from hearth.plaid.fake import (
+    DEMO_INSTITUTIONS,
+    FakeAccount,
+    FakeInstitution,
+    FakePlaid,
+    FakeTransaction,
+)
+from hearth.plaid.registry import ItemState, Registry
+from hearth.plaid.setup import PlaidSetup
 from hearth.review.ids import review_id
 from hearth.review.pile import UNRESOLVED
 from hearth.valuation.pricestore import PriceStore
 from hearth.valuation.quotes import Quote
+from hearth.vault.secret import KeyMaterial, Secret
 
 PRICE_SOURCE = "demo"
 FEED_STARTS = date(2026, 6, 8)
@@ -372,30 +388,160 @@ def _days(start: date, end: date) -> Iterator[date]:
         day += timedelta(days=1)
 
 
-def connections(conn: sqlite3.Connection, today: date) -> KnownConnections:
-    """The demo's connections: Avery's card has expired, everything else is working."""
-    avery, blake = _seeded(conn, "avery"), _seeded(conn, "blake")
-    stopped = today - timedelta(days=CARD_EXPIRED_DAYS_AGO)
-    return KnownConnections(
-        {
-            avery.id: [
-                Connection(
-                    avery.id, "Cedar Card", ("Liabilities:Avery:Card",), State.EXPIRED, stopped
+DEMO_BANKS = (
+    (
+        FakeInstitution(
+            "ins_northfield",
+            "Northfield Bank",
+            (
+                FakeAccount(
+                    "chk", "Everyday checking", "2047", "depository", "checking", Decimal(0)
                 ),
-                Connection(
-                    avery.id, "Northfield Bank", ("Assets:Avery:Checking",), State.WORKING, today
-                ),
-            ],
-            blake.id: [
-                Connection(
-                    blake.id,
-                    "Harbor Credit Union",
-                    ("Assets:Blake:Checking",),
-                    State.WORKING,
-                    today,
-                ),
-            ],
-        }
+            ),
+        ),
+        ("Assets:Avery:Checking",),
+    ),
+    (
+        FakeInstitution(
+            "ins_cedar",
+            "Cedar Card",
+            (FakeAccount("card", "Rewards card", "8812", "credit", "credit card", Decimal(0)),),
+        ),
+        ("Liabilities:Avery:Card",),
+    ),
+    (
+        FakeInstitution(
+            "ins_harbor",
+            "Harbor Credit Union",
+            (FakeAccount("chk", "Checking", "3190", "depository", "checking", Decimal(0)),),
+        ),
+        ("Assets:Blake:Checking",),
+    ),
+)
+"""The banks the demo's members are already connected to, each account with the ledger account
+it feeds. The stand-in sends them the history and balance that ledger account already holds."""
+
+
+def _as_the_bank_sends(
+    bank: FakeInstitution, feeds: tuple[str, ...], ledger: Path
+) -> FakeInstitution:
+    """The bank's accounts as Plaid would give them: amounts out of the account positive, and a
+    card's balance as what is owed."""
+    entries = books.load_entries(ledger)
+    accounts_sent = []
+    for account, ledger_account in zip(bank.accounts, feeds, strict=True):
+        sent = []
+        held = Decimal(0)
+        for entry in entries:
+            if not isinstance(entry, Transaction):
+                continue
+            for posting in entry.postings:
+                if posting.account != ledger_account or posting.units is None:
+                    continue
+                number = posting.units.number
+                if number is None:
+                    continue
+                held += number
+                if entry.payee != "Opening balance":
+                    name = entry.payee or entry.narration or ""
+                    sent.append(FakeTransaction(name, -number, entry.date))
+        current = -held if account.type == "credit" else held
+        accounts_sent.append(replace(account, current=current, transactions=tuple(sent)))
+    return replace(bank, accounts=tuple(accounts_sent))
+
+
+class DemoKeys:
+    """The demo's vault keys, in memory: it holds no real secret, and a throwaway household
+    should leave nothing behind in the Keychain. Never used outside the demo."""
+
+    def __init__(self) -> None:
+        self._keys: dict[str, KeyMaterial] = {}
+
+    def get(self, name: str) -> KeyMaterial | None:
+        return self._keys.get(name)
+
+    def put(self, name: str, key: KeyMaterial) -> None:
+        self._keys.setdefault(name, key)
+
+    def delete(self, name: str) -> None:
+        self._keys.pop(name, None)
+
+
+def plaid(today: Callable[[], date], ledger: Path) -> PlaidSetup:
+    """The stand-in for Plaid: the demo's own banks, and the invented ones a member can try."""
+    institutions = [_as_the_bank_sends(bank, feeds, ledger) for bank, feeds in DEMO_BANKS]
+    stand_in = FakePlaid([*institutions, *DEMO_INSTITUTIONS], today=today, accept_any_keys=True)
+    keys = DemoKeys()
+    # The stand-in prepares history the moment it is asked again, so there is nothing to wait for.
+    return PlaidSetup(stand_in=stand_in, keys=lambda: keys, wait=lambda _seconds: None)
+
+
+def connect(settings: Settings, setup: PlaidSetup, *, now: datetime) -> None:
+    """Connect the demo's members through the stand-in, by the same path a member takes.
+
+    Avery and Blake bring Plaid accounts of their own; Avery's card connection has expired so
+    that state can be seen. Casey has none, and can try the whole flow: their own keys, or the
+    household's Plaid account, which Avery entered.
+    """
+    conn = db.connect(settings.database)
+    try:
+        status = Status(books=None, failure=None, recomputing=False)
+        for username, banks in (
+            ("avery", ("ins_northfield", "ins_cedar")),
+            ("blake", ("ins_harbor",)),
+        ):
+            member = _seeded(conn, username)
+            connector = Disclosure.load(conn, member, status).connector(
+                conn,
+                database=settings.database,
+                feed_path=settings.feed_database,
+                data_dir=settings.data_dir,
+                setup=setup,
+                clock=lambda: now,
+                runner=lambda work: work(),
+            )
+            for household in (False, True) if username == "avery" else (False,):
+                connector.save_credentials(
+                    household=household,
+                    client_id=Secret(f"demo-{username}-{'household' if household else 'own'}"),
+                    secret=Secret("demo-secret"),
+                    environment=Environment.DEMO.value,
+                    item_limit="10",
+                    used_elsewhere="3" if household else "0",
+                )
+            for bank in banks:
+                start = connector.start_link()
+                assert setup.stand_in is not None  # noqa: S101 - the demo always has it
+                token = setup.stand_in.public_token(start.link_token, bank)
+                connector.finish_link(Secret(token), "")
+            rows = connector.mapping().rows
+            connector.confirm(
+                [
+                    Mapping(row.account.account_id, feeds, row.chosen_owners, confirm=True)
+                    for row in rows
+                    for feeds in [_feeds(row.account.name, row.account.mask)]
+                ]
+            )
+        avery = _seeded(conn, "avery")
+        cedar = next(i for i in Registry(conn).items_of(avery.id) if i.institution == "Cedar Card")
+        stopped = now - timedelta(days=CARD_EXPIRED_DAYS_AGO)
+        Registry(conn).synced(cedar.item_id, at=stopped, history=None)
+        Registry(conn).set_state(
+            cedar.item_id, ItemState.LOGIN_REQUIRED, problem="ITEM_LOGIN_REQUIRED"
+        )
+        assert setup.stand_in is not None  # noqa: S101 - the demo always has it
+        setup.stand_in.require_login(cedar.item_id)
+    finally:
+        conn.close()
+
+
+def _feeds(name: str, mask: str | None) -> str:
+    """The ledger account a demo bank's account feeds."""
+    return next(
+        ledger
+        for bank, feeds in DEMO_BANKS
+        for account, ledger in zip(bank.accounts, feeds, strict=True)
+        if (account.name, account.mask) == (name, mask)
     )
 
 

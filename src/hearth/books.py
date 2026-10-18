@@ -255,7 +255,7 @@ class Bookkeeper:
         def run() -> None:
             while True:
                 self.recompute()
-                threading.Event().wait(_seconds_until(at, datetime.now()))
+                threading.Event().wait(seconds_until(at, datetime.now()))
 
         threading.Thread(target=run, name="hearth-daily-recompute", daemon=True).start()
 
@@ -263,7 +263,7 @@ class Bookkeeper:
         self._state = Status(self._state.books, failure, recomputing=False)
 
 
-def _seconds_until(at: time, now: datetime) -> float:
+def seconds_until(at: time, now: datetime) -> float:
     next_run = datetime.combine(now.date(), at)
     if next_run <= now:
         next_run += timedelta(days=1)

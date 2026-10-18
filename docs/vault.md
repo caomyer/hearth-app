@@ -14,6 +14,11 @@ In one line: it protects the database file and its backups, and it does not prot
   They are revealed only inside the expression that hands them to the cipher, so even a traceback that prints every frame's local variables shows nothing.
   `tests/vault/test_no_leak.py` triggers every failure and checks exactly that.
 
+## Plaid keys
+
+Each Plaid account's client id and secret are sealed the same way, in `vault_credential`, bound to the set they belong to (`member:<id>` or `household`) and their name, so one member's keys copied onto another's set fail to open.
+Rotation re-encrypts their data keys with the tokens'.
+
 ## The master key
 
 Each database has a random vault id, created on first use and kept in `vault_identity`.
@@ -31,7 +36,7 @@ keyring ignores any keychain other than the default one (keyring issue #623), so
 
 ## Rotation
 
-`TokenVault.rotate()` creates the next master key version, re-encrypts every data key under it in one transaction, retires the old version, and then deletes the old key from the Keychain.
+`TokenVault.rotate()` creates the next master key version, re-encrypts every data key under it, tokens' and Plaid keys' alike, in one transaction, retires the old version, and then deletes the old key from the Keychain.
 Token ciphertexts are untouched, so no institution needs linking again.
 If any row fails to decrypt, the transaction rolls back and every token stays readable under the old key.
 A backup taken before a rotation cannot be decrypted afterwards, which is the point of rotating.

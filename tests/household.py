@@ -234,8 +234,88 @@ def _total(facet: Facet, username: str, key: str) -> Rule:
     return any_of(shared(facet, frozenset({username})), _detail(key))
 
 
+@dataclass(frozen=True)
+class PlaidFixture:
+    """A member's connection to an invented institution, through their own Plaid account."""
+
+    username: str
+    institution: str
+    checking: str
+    checking_mask: str
+    checking_balance: str
+    card: str
+    card_mask: str
+    card_balance: str
+    payee: str
+
+
+PLAID = (
+    PlaidFixture(
+        "avery",
+        "Gryphon Mutual",
+        "Aardvark Everyday",
+        "4417",
+        "3,141.59",
+        "Axolotl Rewards",
+        "6623",
+        "271.82",
+        "Zephyrine Bakery",
+    ),
+    PlaidFixture(
+        "blake",
+        "Hippogriff Savings",
+        "Badger Basic",
+        "5528",
+        "1,618.03",
+        "Basilisk Card",
+        "7734",
+        "141.42",
+        "Quixotic Cobbler",
+    ),
+    PlaidFixture(
+        "casey",
+        "Kraken Federal",
+        "Capybara Current",
+        "6639",
+        "2,718.28",
+        "Chimera Credit",
+        "8845",
+        "173.20",
+        "Wobbly Lanternworks",
+    ),
+)
+"""Each connection is its holder's alone, joint owners and admins included."""
+
+
+def among(owners: frozenset[str]) -> Rule:
+    """Visible to the owners themselves and nobody else, whatever anyone shares."""
+    return lambda viewer, choices: viewer in owners
+
+
+def holder(username: str) -> Rule:
+    return lambda viewer, choices: viewer == username
+
+
+def plaid_secrets() -> Iterator[Secret]:
+    for p in PLAID:
+        rule = holder(p.username)
+        for text, what in (
+            (p.institution, "institution"),
+            (p.checking, "checking name"),
+            (f"&nbsp;{p.checking_mask}", "checking mask"),
+            (p.checking_balance, "checking bank balance"),
+            (p.card, "card name"),
+            (f"&nbsp;{p.card_mask}", "card mask"),
+            (p.card_balance, "card bank balance"),
+        ):
+            yield secret(text, f"{p.username}'s connection: {what}", rule)
+        # What Plaid sent is kept for the import; no page shows a fetched transaction.
+        yield secret(p.payee, f"{p.username}'s fetched payee", never)
+
+
 def secrets(account_ids: Mapping[str, str]) -> Iterator[Secret]:
     """Every private datum in the household, each with the rule that governs it."""
+    yield from plaid_secrets()
     for account in ACCOUNTS:
         exists = any_of(
             shared(Facet.ACCOUNT_BALANCES, account.owners),
@@ -243,7 +323,8 @@ def secrets(account_ids: Mapping[str, str]) -> Iterator[Secret]:
         )
         yield secret(account.name, f"{account.key} name", exists)
         yield secret(account_ids[account.key], f"{account.key} id", exists)
-        yield secret(account.ledger_account, f"{account.key} ledger name", never)
+        # A ledger name is shown only where its owner files a connection into it: mapping.
+        yield secret(account.ledger_account, f"{account.key} ledger name", among(account.owners))
     for key in ("avery_solo", "avery_invest", "casey_checking", "casey_card", "unowned"):
         yield secret(BALANCE[key], f"{key} balance", shared(Facet.ACCOUNT_BALANCES, owners_of(key)))
     # A part with a single account has a net worth equal to that account's balance.

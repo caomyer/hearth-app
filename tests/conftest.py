@@ -1,22 +1,30 @@
 import sqlite3
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from hearth import accounts, auth, books, db, sessions
+from hearth import accounts, auth, books, db, members, sessions
 from hearth.app import create_app
 from hearth.config import Settings
-from hearth.disclosure import rulings_in
+from hearth.disclosure import Disclosure, rulings_in
 from hearth.members import MemberId
+from hearth.plaid.connector import Connector
+from hearth.plaid.fake import FakeAccount, FakeInstitution, FakePlaid, FakeTransaction
+from hearth.plaid.setup import PlaidSetup
 from hearth.sharing import Facet
 from hearth.valuation.pricestore import PriceStore
 from hearth.valuation.quotes import Quote
+from hearth.vault.secret import Secret
 from hearth.web.deps import SESSION_COOKIE
 from tests import household
+from tests.vault.conftest import MemoryKeyStore
 
 
 class FakeClock:
@@ -34,6 +42,20 @@ def password_of(username: str) -> str:
     return f"{username}-invented-passphrase"
 
 
+class Waits:
+    """Stands in for waiting between checks for history still arriving: records each wait,
+    and runs `then`, if a test sets it, in place of the time passing."""
+
+    def __init__(self) -> None:
+        self.seconds: list[float] = []
+        self.then: Callable[[float], None] | None = None
+
+    def __call__(self, seconds: float) -> None:
+        self.seconds.append(seconds)
+        if self.then is not None:
+            self.then(seconds)
+
+
 @dataclass
 class World:
     """A running hearth over the invented household."""
@@ -45,6 +67,10 @@ class World:
     account_ids: dict[str, str]
     bookkeeper: books.Bookkeeper
     ledger: Path
+    plaid: FakePlaid
+    setup: PlaidSetup
+    item_ids: dict[str, str]
+    waits: Waits
 
     @property
     def bookkeeper_establish(self) -> books.Establish:
@@ -70,6 +96,25 @@ class World:
         token = signer.unsign(client.cookies[SESSION_COOKIE])
         assert token is not None
         return signer.csrf_token(token)
+
+    @contextmanager
+    def connector(self, username: str) -> Iterator[Connector]:
+        """A member's connector, built as a page builds it."""
+        conn = self.connect()
+        try:
+            member = members.find(conn, username)
+            assert member is not None
+            yield Disclosure.load(conn, member, self.bookkeeper.status).connector(
+                conn,
+                database=self.settings.database,
+                feed_path=self.settings.feed_database,
+                data_dir=self.settings.data_dir,
+                setup=self.setup,
+                clock=self.clock,
+                runner=run_now,
+            )
+        finally:
+            conn.close()
 
     def recompute(self) -> None:
         """Recompute the books now, as the morning schedule or "Recompute now" would, and wait
@@ -106,6 +151,53 @@ class SourceNotSetUp:
 
     def quotes(self, symbol: str, start: date, end: date) -> list[Quote]:
         raise AssertionError("an unavailable source is never asked")
+
+
+def run_now(work: object) -> None:
+    """Runs what the app would run in the background, at once, so tests see its result."""
+    assert callable(work)
+    work()
+
+
+def institutions() -> list[FakeInstitution]:
+    """One invented bank per member, with a checking account and a card (tests.household)."""
+    return [
+        FakeInstitution(
+            f"ins_{p.username}",
+            p.institution,
+            (
+                FakeAccount(
+                    "chk",
+                    p.checking,
+                    p.checking_mask,
+                    "depository",
+                    "checking",
+                    Decimal(p.checking_balance.replace(",", "")),
+                    transactions=(
+                        FakeTransaction(p.payee, Decimal("42.00"), household.NOW.date()),
+                    ),
+                ),
+                FakeAccount(
+                    "card",
+                    p.card,
+                    p.card_mask,
+                    "credit",
+                    "credit card",
+                    Decimal(p.card_balance.replace(",", "")),
+                    transactions=(),
+                ),
+            ),
+        )
+        for p in household.PLAID
+    ]
+
+
+def link(world: World, username: str, institution: str) -> str:
+    """Connect `username` to an invented institution through the stand-in, as Link would."""
+    with world.connector(username) as connector:
+        start = connector.start_link()
+        token = world.plaid.public_token(start.link_token, institution)
+        return connector.finish_link(Secret(token), "")
 
 
 @pytest.fixture
@@ -147,5 +239,28 @@ def world(tmp_path: Path, clock: FakeClock) -> World:
     )
     bookkeeper.recompute()
     assert bookkeeper.status.failure is None, bookkeeper.status.failure
-    app = create_app(settings, bookkeeper, clock, price_source=SourceNotSetUp())
-    return World(app, settings, clock, member_ids, account_ids, bookkeeper, ledger)
+    fake = FakePlaid(institutions(), today=lambda: clock().date())
+    keys = MemoryKeyStore()
+    waits = Waits()
+    setup = PlaidSetup(stand_in=fake, keys=lambda: keys, wait=waits)
+    app = create_app(
+        settings, bookkeeper, clock, price_source=SourceNotSetUp(), plaid=setup, runner=run_now
+    )
+    world = World(
+        app, settings, clock, member_ids, account_ids, bookkeeper, ledger, fake, setup, {}, waits
+    )
+    for p in household.PLAID:
+        client_id, secret = f"client-{p.username}", f"secret-{p.username}"
+        fake.register_client(client_id, secret)
+        with world.connector(p.username) as connector:
+            connector.save_credentials(
+                household=False,
+                client_id=Secret(client_id),
+                secret=Secret(secret),
+                environment="demo",
+                item_limit="10",
+                used_elsewhere="4",
+            )
+        world.item_ids[p.username] = link(world, p.username, f"ins_{p.username}")
+    waits.seconds.clear()
+    return world

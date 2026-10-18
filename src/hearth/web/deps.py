@@ -16,6 +16,8 @@ from hearth.connections import Connections
 from hearth.disclosure import Concealed, Disclosure, may_administer
 from hearth.members import Member
 from hearth.months import Month
+from hearth.plaid.connector import Runner
+from hearth.plaid.setup import PlaidSetup
 from hearth.valuation.quotes import PriceSource
 from hearth.web.errors import FormExpired, PasswordChangeRequired, SignInRequired
 
@@ -33,6 +35,8 @@ class Hearth:
     clock: Clock
     price_source: PriceSource
     connections: Connections
+    plaid: PlaidSetup
+    runner: Runner
 
     @property
     def signer(self) -> sessions.CookieSigner:

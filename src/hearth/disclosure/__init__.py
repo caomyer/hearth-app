@@ -51,9 +51,14 @@ from hearth.sharing import Facet, SharingChoices
 from hearth.valuation.networth import Freshness
 
 if TYPE_CHECKING:
-    # hearth.review raises this package's Concealed, so it is imported where it is used.
+    # hearth.review and hearth.plaid raise this package's Concealed, so they are imported where
+    # they are used.
+    from pathlib import Path
+
     from hearth.books import Decide
     from hearth.clock import Clock
+    from hearth.plaid.connector import Connector, Runner
+    from hearth.plaid.setup import PlaidSetup
     from hearth.review.desk import Decision, ReviewDesk
     from hearth.review.pile import PileItem
     from hearth.review.rulings import RulingStore
@@ -285,6 +290,38 @@ class Disclosure:
             rulings=rulings,
             may_review=may_review,
             clock=clock,
+        )
+
+    def connector(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        database: Path,
+        feed_path: Path,
+        data_dir: Path,
+        setup: PlaidSetup,
+        clock: Clock,
+        runner: Runner,
+    ) -> Connector:
+        """The viewer's own connections, and only theirs (see ``access``)."""
+        from beancount.core.data import Open
+
+        from hearth.plaid.connector import Connector
+
+        books = self.books
+        ledger = {e.account for e in books.entries if isinstance(e, Open)} if books else set()
+        return Connector(
+            self._gate,
+            household=self._members,
+            accounts=self._accounts,
+            ledger_accounts=ledger,
+            conn=conn,
+            database=database,
+            feed_path=feed_path,
+            data_dir=data_dir,
+            setup=setup,
+            clock=clock,
+            runner=runner,
         )
 
     def _failed_check(self, failure: Failure) -> Disclosed[FailedCheck] | None:

@@ -1,17 +1,24 @@
 """Each member's connections to their institutions, and whether they are still updating.
 
-Bank linking lands with the Plaid work; until then hearth has no connection to report, and
-`NoConnections` says exactly that. The interface is what the pages are built against, so the
-expired-connection state works the day connections exist. A connection is its member's alone:
-nobody else can see or use it, joint accounts included.
+`RegisteredConnections` reports the Plaid connections hearth holds (``hearth.plaid``); the
+demo and the tests can also describe connections in memory. A connection is its member's
+alone: nobody else can see or use it, joint accounts included. The one exception: for a
+ledger account you co-own, you may see that it is already fed by another connection. The
+feeding member is never named and neither is the institution. On an account with exactly
+two owners, a co-owner who knows they did not connect it can infer that the other owner did.
+That inference is accepted: both members own the account, and hiding the fed state would
+make the second owner re-link the same bank and spend one of the household's few
+connections to create the duplicate feed the refusal exists to prevent.
 """
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Protocol
 
+from hearth import db
 from hearth.members import MemberId
 
 
@@ -39,7 +46,7 @@ class Connections(Protocol):
 
 
 class NoConnections:
-    """Before bank linking exists there are no connections, so nothing has expired."""
+    """No connections at all, so nothing has expired."""
 
     def of(self, member: MemberId) -> Sequence[Connection]:
         return ()
@@ -59,3 +66,43 @@ class KnownConnections:
 
     def all(self) -> Sequence[Connection]:
         return tuple(c for found in self._by_member.values() for c in found)
+
+
+class RegisteredConnections:
+    """The Plaid connections in the app database, read afresh on every question."""
+
+    def __init__(self, database: Path) -> None:
+        self._database = database
+
+    def of(self, member: MemberId) -> Sequence[Connection]:
+        return tuple(c for c in self.all() if c.member == member)
+
+    def all(self) -> Sequence[Connection]:
+        conn = db.connect(self._database)
+        try:
+            feeds: dict[str, list[str]] = {}
+            for row in conn.execute(
+                "SELECT p.item_id, a.ledger_account FROM plaid_accounts p"
+                " JOIN accounts a ON a.id = p.hearth_account ORDER BY a.ledger_account"
+            ):
+                feeds.setdefault(row["item_id"], []).append(row["ledger_account"])
+            rows = conn.execute(
+                "SELECT item_id, member_id, institution_name, state, last_synced_at"
+                " FROM plaid_items WHERE state != 'removed' ORDER BY linked_at, item_id"
+            ).fetchall()
+        finally:
+            conn.close()
+        return tuple(
+            Connection(
+                member=MemberId(row["member_id"]),
+                institution=row["institution_name"],
+                ledger_accounts=tuple(feeds.get(row["item_id"], ())),
+                state=State.EXPIRED if row["state"] == "login_required" else State.WORKING,
+                data_until=(
+                    datetime.fromisoformat(row["last_synced_at"]).astimezone().date()
+                    if row["last_synced_at"]
+                    else None
+                ),
+            )
+            for row in rows
+        )

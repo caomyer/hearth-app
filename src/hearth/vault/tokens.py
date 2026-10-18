@@ -1,9 +1,13 @@
-"""Per-member Plaid access tokens, envelope-encrypted in the app database.
+"""Per-member Plaid access tokens and Plaid credentials, envelope-encrypted in the app database.
 
 Each token is encrypted with AES-256-GCM under its own random data key, and that data key is
 encrypted under the current master key from the Keychain. Both encryptions bind the member and
 the Item as associated data, and the data key's also binds the master key version, so a row
 moved to another member, another Item or another key version fails authentication.
+
+A credential (a Plaid account's client id or secret) is sealed the same way, bound to the
+credential set it belongs to (`scope`, such as ``member:3`` or ``household``) and its name, so
+one member's secret copied onto another member's set fails to open.
 
 Rotating the master key re-encrypts only the data keys: every token's ciphertext stays as it
 is, so rotation never needs an institution to be linked again.
@@ -57,6 +61,11 @@ def _new_key() -> KeyMaterial:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _check_scope(scope: str, name: str) -> None:
+    if not isinstance(scope, str) or not scope or not isinstance(name, str) or not name:
+        raise ValueError("a credential needs a non-empty scope and name")
 
 
 def _check_ids(member_id: MemberId, item_id: str) -> None:
@@ -134,6 +143,47 @@ class TokenVault:
         ).fetchall()
         return [item_id for (item_id,) in rows]
 
+    def put_credential(self, scope: str, name: str, value: Secret) -> None:
+        """Store credential `name` of the set `scope`, replacing any stored before."""
+        _check_scope(scope, name)
+        if not isinstance(value, Secret):
+            raise TypeError("a credential must be passed as a Secret")
+        version, master = self._active_key()
+        data_key = _new_key()
+        ciphertext = _seal(data_key, value, _aad("credential", scope, name))
+        wrapped = _seal(master, data_key, _aad("credential-key", scope, name, version))
+        with transaction(self._db):
+            self._db.execute(
+                "INSERT OR REPLACE INTO vault_credential"
+                " (scope, name, key_version, wrapped_key, ciphertext, stored_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (scope, name, version, wrapped, ciphertext, _now()),
+            )
+
+    def get_credential(self, scope: str, name: str) -> Secret:
+        _check_scope(scope, name)
+        row = self._db.execute(
+            "SELECT key_version, wrapped_key, ciphertext FROM vault_credential"
+            " WHERE scope = ? AND name = ?",
+            (scope, name),
+        ).fetchone()
+        if row is None:
+            raise TokenNotFoundError(f"no credential {name} is stored for {scope}")
+        version, wrapped, ciphertext = row
+        data_key = self._unwrap(wrapped, _aad("credential-key", scope, name, version), version)
+        try:
+            return Secret(_open(data_key, ciphertext, _aad("credential", scope, name)).decode())
+        except InvalidTag, UnicodeDecodeError, ValueError:
+            raise TokenTamperedError(
+                f"the credential {name} stored for {scope} failed authentication"
+            ) from None
+
+    def delete_credentials(self, scope: str) -> None:
+        """Forget every credential of the set `scope`."""
+        _check_scope(scope, "*")
+        with transaction(self._db):
+            self._db.execute("DELETE FROM vault_credential WHERE scope = ?", (scope,))
+
     def rotate(self) -> int:
         """Replace the master key and return the new version. No token is re-linked.
 
@@ -169,6 +219,28 @@ class TokenVault:
                     for member_id, item_id, version, wrapped in rows
                 ],
             )
+            credentials = self._db.execute(
+                "SELECT scope, name, key_version, wrapped_key FROM vault_credential"
+            ).fetchall()
+            self._db.executemany(
+                "UPDATE vault_credential SET wrapped_key = ?, key_version = ?"
+                " WHERE scope = ? AND name = ?",
+                [
+                    (
+                        _seal(
+                            new_key,
+                            self._unwrap(
+                                wrapped, _aad("credential-key", scope, name, version), version
+                            ),
+                            _aad("credential-key", scope, name, new_version),
+                        ),
+                        new_version,
+                        scope,
+                        name,
+                    )
+                    for scope, name, version, wrapped in credentials
+                ],
+            )
             self._db.execute(
                 "UPDATE vault_master_key SET retired_at = ? WHERE version = ?",
                 (_now(), old_version),
@@ -179,20 +251,24 @@ class TokenVault:
     def _data_key(
         self, member_id: MemberId, item_id: str, version: int, wrapped: bytes
     ) -> KeyMaterial:
-        master = self._keys.get(self._key_name(version))
-        if master is None:
-            raise MasterKeyMissingError(
-                f"tokens are encrypted under master key v{version}, which the Keychain does not"
-                " hold; restore it from the machine that created them, or link again"
-            )
         try:
-            return KeyMaterial(
-                _open(master, wrapped, _aad("data-key", member_id, item_id, version))
-            )
-        except InvalidTag, ValueError:
+            return self._unwrap(wrapped, _aad("data-key", member_id, item_id, version), version)
+        except TokenTamperedError:
             raise TokenTamperedError(
                 f"the token stored for member {member_id}, Item {item_id} failed authentication"
             ) from None
+
+    def _unwrap(self, wrapped: bytes, aad: bytes, version: int) -> KeyMaterial:
+        master = self._keys.get(self._key_name(version))
+        if master is None:
+            raise MasterKeyMissingError(
+                f"secrets are encrypted under master key v{version}, which the Keychain does not"
+                " hold; restore it from the machine that created them, or link again"
+            )
+        try:
+            return KeyMaterial(_open(master, wrapped, aad))
+        except InvalidTag, ValueError:
+            raise TokenTamperedError("a stored secret failed authentication") from None
 
     def _active_key(self) -> tuple[int, KeyMaterial]:
         with transaction(self._db):

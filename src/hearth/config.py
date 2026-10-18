@@ -23,6 +23,11 @@ class Settings:
     def database(self) -> Path:
         return self.data_dir / "hearth.sqlite3"
 
+    @property
+    def feed_database(self) -> Path:
+        """What Plaid sent, kept apart from the app database, which holds no money."""
+        return self.data_dir / "feed.sqlite3"
+
     @classmethod
     def in_directory(
         cls, data_dir: Path, *, secure_cookies: bool = False, ledger: Path | None = None

@@ -1,0 +1,11 @@
+{# The onboarding stepper, as design/screens/onboarding-*.html draws it. Expects `step`. #}
+<ol class="stepper" aria-label="Setting up a new member">
+  {% for n, title, who, href in [
+    (1, "Create the member", "by an admin", None),
+    (2, "Connect institutions", "by the member", "/connect"),
+    (3, "Map accounts", "by the member", "/connect/map"),
+    (4, "Import and review", "by the member", "/connect/import"),
+  ] %}
+  <li{% if n < step %} data-state="done"{% elif n == step %} aria-current="step"{% endif %}><span class="n"><span class="t">{{ title }}</span>{% if n < step %}<span class="vh"> (done)</span>{% endif %}</span><span class="who-does">{{ who }}</span></li>
+  {% endfor %}
+</ol>

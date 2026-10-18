@@ -63,7 +63,9 @@ def test_an_expired_connection_is_named_only_to_the_member_who_holds_it(
             ]
         }
     )
-    world.app = create_app(world.settings, world.bookkeeper, world.clock, SourceNotSetUp(), known)
+    world.app = create_app(
+        world.settings, world.bookkeeper, world.clock, SourceNotSetUp(), known, plaid=world.setup
+    )
 
     blake = world.signed_in("blake")
     assert "Institution Zebrafinch stopped updating" in blake.get("/").text
@@ -158,7 +160,9 @@ def test_the_app_serves_the_design_system_unchanged(world: World) -> None:
 
 def test_before_the_first_recompute_pages_show_their_shape_and_no_figures(world: World) -> None:
     waiting = books.Bookkeeper(world.bookkeeper_establish, world.clock)
-    world.app = create_app(world.settings, waiting, world.clock, SourceNotSetUp())
+    world.app = create_app(
+        world.settings, waiting, world.clock, SourceNotSetUp(), plaid=world.setup
+    )
 
     page = world.signed_in("casey").get("/").text
 
@@ -172,7 +176,9 @@ def test_a_first_recompute_that_fails_shows_why_and_never_a_page_of_zeros(world:
     world.ledger.write_text("this is not a ledger\n")
     failing = books.Bookkeeper(world.bookkeeper_establish, world.clock)
     failing.recompute()
-    world.app = create_app(world.settings, failing, world.clock, SourceNotSetUp())
+    world.app = create_app(
+        world.settings, failing, world.clock, SourceNotSetUp(), plaid=world.setup
+    )
 
     page = world.signed_in("casey").get("/").text
 

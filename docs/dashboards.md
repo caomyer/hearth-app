@@ -46,10 +46,9 @@ A fixed category paid more or less than once this month is shown as an ordinary 
 The accounts table lists each source's span ("Statements: Jan 3 to Jun 5"), so a ledger whose history changes source part way through the year shows the seam instead of smoothing it.
 Spending bars for months the books do not fully hold are drawn in outline and labelled "history incomplete".
 
-**Connections are an interface until bank linking lands.**
-`hearth.connections` describes each member's connections and whether they still update.
-Until the Plaid work, `hearth serve` has none, so nothing has expired; the demo describes an expired card so the state can be seen.
-Reconnecting is drawn but says it arrives with bank linking, rather than offering a button that does nothing.
+**Connections come from the Plaid connections hearth holds.**
+`hearth.connections` describes each member's connections and whether they still update, read from `hearth.plaid`'s registry (`docs/connections.md`).
+The demo connects its members through the stand-in for Plaid, with one card that wants its member to sign in again, so the state can be seen.
 
 **Review rows can be decided one at a time.**
 Groups with one suggestion are accepted in one decision, as designed.

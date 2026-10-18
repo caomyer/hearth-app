@@ -13,6 +13,7 @@ from hearth.audit import EventKind
 from hearth.disclosure import Concealed
 from hearth.sharing import DESCRIPTIONS, Facet
 from hearth.web.deps import Acting, App, Conn, SignedIn, Viewing
+from hearth.web.routes import connect
 from hearth.web.routes.pages import chrome
 from hearth.web.templating import render
 
@@ -76,13 +77,23 @@ connections_router = APIRouter(prefix="/settings/connections")
 
 @connections_router.get("")
 def connections_page(
-    request: Request, app: App, conn: Conn, session: SignedIn, view: Viewing
+    request: Request,
+    app: App,
+    conn: Conn,
+    session: SignedIn,
+    view: Viewing,
+    outcome: str | None = None,
+    code: str | None = None,
 ) -> HTMLResponse:
+    message, plaid_code = connect.message_for(outcome, code)
     return render(
         request,
         "settings_connections.html",
         **chrome(app, conn, session, view),
         section="settings",
         tab="connections",
-        connections=view.connections(app.connections),
+        connect=connect.connector(app, conn, view).overview(),
+        message=message,
+        plaid_code=plaid_code,
+        is_problem=connect.is_problem(outcome),
     )

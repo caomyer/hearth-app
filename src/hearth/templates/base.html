@@ -13,8 +13,18 @@
 <body{% block body_class %}{% endblock %}{% if session %} hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'{% endif %}>
 {% include "_sprite.html" %}
 <a class="skip" href="#main">Skip to content</a>
+{% set focused = focus | default(false) %}
+{% if focused %}
+<header class="focus-top">
+  <div class="focus-top-in">
+    <a class="brand" href="/"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</a>
+    <span class="sm muted">{{ session.member.display_name }}</span>
+  </div>
+</header>
+{% else %}
 <div class="app">
-{% if session and not session.member.must_change_password %}
+{% endif %}
+{% if session and not session.member.must_change_password and not focused %}
 {% set nav = [
   ("household", "/", "Household", "i-home"),
   ("you", "/you", "You", "i-user"),
@@ -46,16 +56,18 @@
 </div>
 {% endfor %}
 {% endif %}
-<main id="main" class="{% block main_class %}page{% endblock %}">
+<main id="main" class="{% block main_class %}{{ 'focus-page' if focused else 'page' }}{% endblock %}">
 {% block content %}{% endblock %}
 </main>
-{% if session and not session.member.must_change_password %}
+{% if session and not session.member.must_change_password and not focused %}
 <nav class="tabbar" aria-label="Primary">
   {% for key, href, label, icon in nav %}
   <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#{{ icon }}"/></svg>{% if key == "review" and waiting %}<span class="count" aria-hidden="true">{{ waiting }}</span>{% endif %}{{ label }}{% if key == "review" and waiting %}<span class="vh">, {{ waiting }} to review</span>{% endif %}</a>
   {% endfor %}
 </nav>
 {% endif %}
+{% if not focused %}
 </div>
+{% endif %}
 </body>
 </html>

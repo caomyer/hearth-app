@@ -1,6 +1,6 @@
 # How the backend modules fit together
 
-Four packages sit behind the pages: `valuation`, `reports`, `vault` and `review`.
+Five packages sit behind the pages: `valuation`, `reports`, `vault`, `review` and `plaid`.
 None of them has routes or templates, and none decides who may see what: pages reach them through `hearth.disclosure`, which asks `hearth.access` (`docs/privacy-boundary.md`).
 Each has its own document; this one says which module answers which question.
 
@@ -18,6 +18,8 @@ Each has its own document; this one says which module answers which question.
 | Who owns which account | `reports.ownership` | `Ownership.from_accounts(accounts)` | `accounts`, `account_owners` |
 | A member's Plaid tokens | `vault.tokens` | `TokenVault` | `vault_*` tables, Keychain |
 | What waits for review, and what members ruled | `review.desk`, `review.queue` | `Disclosure.review_desk(...)`, `disclosure.rulings_in(...)` | ledger `!` rows, `review_*` tables |
+| A member's connections, their allowance, coverage and mapping | `plaid.connector` | `Disclosure.connector(...)` | `plaid_*` tables, feed store, vault |
+| What Plaid sent, and every sync | `plaid.feed` | `Feed` | `feed.sqlite3` |
 
 ## What each one owns
 
@@ -25,6 +27,7 @@ Each has its own document; this one says which module answers which question.
   `valuation` and `reports` only read it, as beancount entries loaded with beancount's loader, and always for an explicit date or period.
 - **The app database owns everything else**, created by `hearth.db`'s migrations: who owns which account, market prices with their provenance, encrypted tokens, and review rulings.
   It holds no balance or amount; the one money-named column is `price.price`, a market price.
+- **The feed store owns what Plaid sent**, in `feed.sqlite3`, as a staging store for the import (`docs/connections.md`).
 - **The Keychain owns the vault's master keys**, one set per database.
 
 ## Rules every caller can rely on

@@ -1,6 +1,7 @@
 """Application factory."""
 
 import os
+import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from urllib.parse import quote
@@ -15,8 +16,11 @@ from hearth import db
 from hearth.books import Bookkeeper
 from hearth.clock import Clock, system_clock
 from hearth.config import Settings
-from hearth.connections import Connections, NoConnections
+from hearth.connections import Connections, RegisteredConnections
 from hearth.disclosure import Concealed
+from hearth.plaid import feed
+from hearth.plaid.connector import Runner
+from hearth.plaid.setup import PlaidSetup
 from hearth.valuation.eodhd import EodhdSource
 from hearth.valuation.quotes import PriceSource
 from hearth.valuation.verify import API_KEY_VARIABLE
@@ -43,6 +47,9 @@ _SECURITY_HEADERS = {
     "Cross-Origin-Resource-Policy": "same-origin",
 }
 
+LINK_PAGE = "/connect/link"
+"""The only page allowed to set a content security policy of its own."""
+
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 type CallNext = Callable[[Request], Awaitable[Response]]
@@ -54,16 +61,24 @@ def create_app(
     clock: Clock = system_clock,
     price_source: PriceSource | None = None,
     connections: Connections | None = None,
+    plaid: PlaidSetup | None = None,
+    runner: Runner | None = None,
 ) -> FastAPI:
-    """The web application. The caller decides when `bookkeeper` recomputes."""
+    """The web application. The caller decides when `bookkeeper` recomputes.
+
+    `plaid` approves no live Plaid call unless the caller says otherwise (``hearth.plaid``).
+    """
     db.initialise(settings.database)
+    feed.initialise(settings.feed_database)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
     app.state.hearth = Hearth(
         settings=settings,
         bookkeeper=bookkeeper,
         clock=clock,
         price_source=price_source or EodhdSource(os.environ.get(API_KEY_VARIABLE)),
-        connections=connections or NoConnections(),
+        connections=connections or RegisteredConnections(settings.database),
+        plaid=plaid or PlaidSetup(),
+        runner=runner or _in_background,
     )
 
     app.middleware("http")(_refuse_cross_site_changes)
@@ -76,9 +91,18 @@ def create_app(
     return app
 
 
+def _in_background(work: Callable[[], None]) -> None:
+    threading.Thread(target=work, name="hearth-plaid", daemon=True).start()
+
+
 async def _add_security_headers(request: Request, call_next: CallNext) -> Response:
     response = await call_next(request)
+    # The one page that opens Plaid Link widens its own policy to Plaid's script and frame;
+    # every other page gets the locked-down default.
+    policy = response.headers.get("Content-Security-Policy")
     response.headers.update(_SECURITY_HEADERS)
+    if policy is not None and request.url.path == LINK_PAGE:
+        response.headers["Content-Security-Policy"] = policy
     if not request.url.path.startswith("/static/"):
         # Pages hold private figures; never leave a copy in a cache for the next person.
         response.headers["Cache-Control"] = "no-store"

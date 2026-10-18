@@ -49,9 +49,23 @@ The dashboards and review add five more decisions, each in `hearth.access` and a
 - A failed balance check names an account and amounts, so its detail is shown only to those who may see that account's balance; everyone else reads one sentence that names nothing.
   Beancount's own error messages are never passed on, because they name accounts and amounts.
 - A connection to an institution is its holder's alone, joint accounts included; the household learns only how many accounts are behind, never which or whose.
+  One carve-out: for a ledger account the viewer co-owns, the mapping page shows that it is already fed by another connection, so it is not fed twice.
+  The feeding member is never named and neither is the institution.
+  On an account with exactly two owners, a co-owner who knows they did not connect it can infer that the other owner did.
+  That inference is accepted: both members own the account, and hiding the fed state would make the second owner re-link the same bank and spend one of the household's few connections to create the duplicate feed this refusal exists to prevent.
+  An account the viewer does not co-own is never offered, so nothing about it is shown at all.
 - Only someone who holds a security in an account they own may enter its price by hand, and it is stored as theirs, never as the source's.
 - Only an owner may review an account's rows; sharing transactions shares what is in the books, not the right to decide how it is booked.
 - How much of a total rests on unreviewed rows is shown only for parts the viewer may review or whose transactions they may see; for anyone else the page says their share may include unchecked rows, the same way whether it does or not, so no pile can be counted by subtraction (`docs/review.md`).
+
+Connecting institutions adds three more (`docs/connections.md`):
+
+- A member's own Plaid account is theirs alone: nobody else links through it, sees its allowance, or is told it exists.
+  The one exception is the fed state of a co-owned ledger account above, and what a co-owner may infer from it.
+  The household's Plaid account is open to every member to choose, and choosing it shows how many of its connections are left, never whose the others are.
+- Only an admin enters or replaces the household's Plaid account.
+- A member files a connection's account only into an account they own, or a new one they will own.
+  A ledger account's name is shown only to its owners, on the mapping page.
 
 ## Where it is enforced
 
@@ -77,6 +91,7 @@ There is no JSON API, and `/docs` and `/openapi.json` are disabled.
   It fails if a route exists that it does not know how to attack.
 - `tests/test_concealment.py` requires private and missing things to produce byte-identical responses, covers redirects to and after sign-in, open redirects, sign-in error messages and throttling.
 - `tests/test_tampering.py` attempts to change another member's sharing, to act as an admin, and to forge requests, and checks nothing changed.
+- `tests/plaid/test_connect_pages.py` attacks connections: another member's Item, forged mappings, a full allowance and unapproved calls.
 - `tests/test_disclosure.py` and `tests/test_dashboard_boundary.py` attack what the dashboards add: the default dashboard showing every total, a joint balance recovered by subtraction, failure details, connection names, hand-entered prices, other members' review rows and unpriced floors.
 
 These behavioural suites are the enforcement of the boundary.
@@ -95,4 +110,5 @@ That hands the admin a password that works as the member until they change it, s
 
 ## Institution tokens
 
-Tokens are stored encrypted at rest under a master key held in the macOS Keychain; see `docs/vault.md`.
+Tokens and Plaid keys are stored encrypted at rest under a master key held in the macOS Keychain; see `docs/vault.md`.
+What Plaid sends is kept in the feed store, apart from the app database, and no page shows a fetched transaction (`docs/connections.md`).

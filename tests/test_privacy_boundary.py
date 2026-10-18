@@ -75,6 +75,16 @@ STATE_CHANGING_ROUTES = {
     ("POST", "/review/rows/reject"),
     ("POST", "/review/reminders"),
     ("POST", "/review/undo"),
+    ("POST", "/connect/credentials"),
+    ("POST", "/connect/credentials/remove"),
+    ("POST", "/connect/household"),
+    ("POST", "/connect/link"),
+    ("POST", "/connect/exchange"),
+    ("POST", "/connect/reconnected"),
+    ("POST", "/connect/items/{item_id}/sync"),
+    ("POST", "/connect/items/{item_id}/remove"),
+    ("POST", "/connect/accounts/{account_id}/statements"),
+    ("POST", "/connect/map"),
 }
 
 # All an anonymous visitor may be served; everything else sends them to sign in.
@@ -115,6 +125,12 @@ def path_values(world: World) -> dict[str, list[str]]:
             "blake%2F",
             "..%2Fblake",
             "blake%00",
+        ],
+        "item_id": [
+            *world.item_ids.values(),
+            "nonexistent",
+            "item-demo-000000000000",
+            next(iter(world.item_ids.values())).upper(),
         ],
         "account_id": [
             *ids,

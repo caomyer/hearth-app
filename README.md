@@ -17,7 +17,8 @@ Runs on one machine. Each household member signs in with a username and password
 Early.
 Members, sign-in, sharing and the privacy boundary are in place ([docs/privacy-boundary.md](docs/privacy-boundary.md)), and so are the dashboards over the beancount ledger: the household, each member's own page, other members' shared pages, net worth with positions and price provenance, review, and sharing settings ([docs/dashboards.md](docs/dashboards.md)).
 Every imported transaction is in the books at once, flagged until a member reviews it, and every total says how much rests on unreviewed rows ([docs/review.md](docs/review.md)).
-Institution links come next.
+Members connect their institutions through Plaid, each through a Plaid account of their own by default, and hearth pulls two years of history into a staging store, checked per account for how much each bank actually sent ([docs/connections.md](docs/connections.md)).
+Turning that history into ledger entries is the import's job, and comes next.
 The calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md) and [docs/dashboards.md](docs/dashboards.md); `design/` holds the approved design.
 
 ## Development
@@ -38,6 +39,14 @@ uv run hearth serve
 ```
 
 Hearth only reads the ledger. It recomputes at start-up, every morning at 6:00 and on request, never on page load.
+
+No live Plaid call is made unless approved for this run, operation by operation:
+
+```sh
+uv run hearth serve --approve-plaid read                 # sync existing connections, daily
+uv run hearth serve --approve-plaid link --approve-plaid read --approve-plaid remove
+uv run hearth plaid items                                # every connection; no live call
+```
 
 State lives in `$HEARTH_DATA_DIR`, by default `~/.local/share/hearth`, outside any cloud-synced folder.
 Set `HEARTH_HTTPS=1` when serving behind TLS so the session cookie is marked secure.
