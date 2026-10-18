@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="narrow sign-in">
+  <p class="brand brand-large">Hearth</p>
+  <form class="stack panel" method="post" action="/sign-in">
+    <h1>Sign in</h1>
+    {% if problem %}<p class="problem" role="alert">{{ problem }}</p>{% endif %}
+    <input type="hidden" name="destination" value="{{ destination }}">
+    <label>Username <input name="username" value="{{ username }}" autocomplete="username" autocapitalize="none" spellcheck="false" required{% if not username %} autofocus{% endif %}></label>
+    <label>Password <input type="password" name="password" autocomplete="current-password" required{% if username %} autofocus{% endif %}></label>
+    <button type="submit" class="button">Sign in</button>
+  </form>
+  <p class="note">The household admin creates accounts and resets forgotten passwords.</p>
+</div>
+{% endblock %}

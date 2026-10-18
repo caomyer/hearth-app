@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% set section = "admin" %}
+{% block title %}Members{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Members</h1>
+    <p class="subtitle">Add members and reset forgotten passwords. Being an admin does not show you anyone’s finances.</p>
+  </div>
+</div>
+
+<section class="panel flush">
+  <table class="ledger">
+    <thead>
+      <tr><th scope="col">Name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
+    </thead>
+    <tbody>
+      {% for member in household %}
+      <tr>
+        <td>{{ member.display_name }}</td>
+        <td class="muted">{{ member.username }}</td>
+        <td>{{ "Admin" if member.is_admin else "Member" }}{% if member.must_change_password %} <span class="tag">Awaiting first sign-in</span>{% endif %}</td>
+        <td class="numeric">
+          {% if member.id != session.member.id %}
+          <form method="post" action="/admin/members/{{ member.username }}/reset-password">
+            <input type="hidden" name="csrf" value="{{ session.csrf }}">
+            <button type="submit" class="link-button">Reset password</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Add a member</h2>
+  <form class="stack panel narrow-form" method="post" action="/admin/members">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    {% if problem %}<p class="problem" role="alert">{{ problem }}</p>{% endif %}
+    <label>Name <input name="display_name" maxlength="64" required></label>
+    <label>Username <input name="username" pattern="[a-z][a-z0-9_\-]{1,31}" autocapitalize="none" spellcheck="false" required></label>
+    <label class="check"><input type="checkbox" name="is_admin" value="true"> Admin</label>
+    <p class="hint">They get a one-time password to sign in with, and choose their own straight away.</p>
+    <button type="submit" class="button">Add member</button>
+  </form>
+</section>
+{% endblock %}

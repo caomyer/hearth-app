@@ -1,0 +1,49 @@
+{% macro figure(label, value, signed=false, withheld_note="Not shared with you") %}
+<div class="figure">
+  <div class="figure-label">{{ label }}</div>
+  {% if value is withheld %}
+  <div class="figure-value is-withheld">{{ withheld_note }}</div>
+  {% else %}
+  <div class="figure-value">{{ value | signed_money if signed else value | money }}</div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro month_nav(path, month) %}
+<nav class="month-nav" aria-label="Month">
+  <a href="{{ path }}?month={{ month.previous() }}" aria-label="Previous month">&lsaquo;</a>
+  <span>{{ month.label }}</span>
+  <a href="{{ path }}?month={{ month.following() }}" aria-label="Next month">&rsaquo;</a>
+</nav>
+{% endmacro %}
+
+{% macro not_shared(text) %}
+<p class="not-shared">{{ text }}</p>
+{% endmacro %}
+
+{% macro transactions_table(lines, show_account=true) %}
+<div class="table-scroll">
+<table class="ledger">
+  <thead>
+    <tr>
+      <th scope="col">Date</th>
+      <th scope="col">Payee</th>
+      <th scope="col">Category</th>
+      {% if show_account %}<th scope="col">Account</th>{% endif %}
+      <th scope="col" class="numeric">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for line in lines %}
+    <tr>
+      <td class="nowrap">{{ line.date | day }}</td>
+      <td>{{ line.payee }}{% if line.narration %}<span class="narration">{{ line.narration }}</span>{% endif %}</td>
+      <td class="muted">{{ line.category | category }}</td>
+      {% if show_account %}<td><a href="/accounts/{{ line.account_id }}">{{ line.account_name }}</a></td>{% endif %}
+      <td class="numeric">{{ line.amount | signed_money }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}

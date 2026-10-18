@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% set section = "sharing" %}
+{% block title %}Sharing{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>What I share</h1>
+    <p class="subtitle">Choose what the rest of the household can see of your finances.</p>
+  </div>
+</div>
+
+<section class="panel">
+  <ul class="choices">
+    {% for facet, shared in rows %}
+    {% with description = descriptions[facet] %}
+    {% include "_sharing_row.html" %}
+    {% endwith %}
+    {% endfor %}
+  </ul>
+</section>
+<p class="note">A new member shares their two totals and nothing more until they decide otherwise. Accounts you own jointly are always visible to their other owners, and their detail reaches anyone else only if every owner shares it. Your totals and breakdown cover only the accounts you own alone. Each set of joint owners has its own line on the household page, whose net worth and spending reach anyone else only if every owner shares that total.</p>
+{% endblock %}

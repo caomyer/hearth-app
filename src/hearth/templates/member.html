@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_macros.html" import figure, month_nav, not_shared, transactions_table %}
+{% set summary = view.summary %}
+{% set mine = summary.is_viewer %}
+{% set section = "mine" if mine else "household" %}
+{% set path = "/members/" ~ summary.member.username %}
+{% block title %}{{ summary.member.display_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ "Mine" if mine else summary.member.display_name }}</h1>
+  {{ month_nav(path, view.month) }}
+</div>
+
+<section class="figures">
+  {{ figure("Net worth, excluding joint accounts", summary.net_worth) }}
+  {{ figure("Spending, " ~ view.month.label ~ ", excluding joint accounts", summary.spending) }}
+</section>
+
+<section>
+  <h2>Where the money went, excluding joint accounts</h2>
+  {% if view.breakdown is withheld %}
+  {{ not_shared(summary.member.display_name ~ "’s category breakdown is not shared with you.") }}
+  {% elif view.breakdown %}
+  <table class="ledger">
+    <tbody>
+      {% for line in view.breakdown %}
+      <tr><td>{{ line.category }}</td><td class="numeric">{{ line.amount | money }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No spending in {{ view.month.label }}.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Accounts</h2>
+  {% if view.accounts %}
+  <table class="ledger">
+    <thead>
+      <tr><th scope="col">Account</th><th scope="col">Owners</th><th scope="col" class="numeric">Balance</th></tr>
+    </thead>
+    <tbody>
+      {% for account in view.accounts %}
+      <tr>
+        <td><a href="/accounts/{{ account.id }}?month={{ view.month }}">{{ account.name }}</a></td>
+        <td class="muted">{{ account.owners | map(attribute="display_name") | join(", ") }}</td>
+        <td class="numeric">{% if account.balance is withheld %}<span class="is-withheld">Not shared</span>{% else %}{{ account.balance | money }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif mine %}
+  <p class="empty">No accounts are linked to you yet.</p>
+  {% else %}
+  {{ not_shared(summary.member.display_name ~ "’s account detail is not shared with you.") }}
+  {% endif %}
+</section>
+
+<section>
+  <h2>Transactions, {{ view.month.label }}</h2>
+  {% if not mine %}
+  <p class="note">Only transactions shared with you, and those in accounts you own together, appear here.</p>
+  {% endif %}
+  {% if view.transactions %}
+  {{ transactions_table(view.transactions) }}
+  {% else %}
+  <p class="empty">Nothing to show for {{ view.month.label }}.</p>
+  {% endif %}
+</section>
+{% endblock %}

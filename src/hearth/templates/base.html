@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
+  <title>{% block title %}{% endblock %} - Hearth</title>
+  <link rel="stylesheet" href="/static/hearth.css">
+  <script src="/static/vendor/htmx-2.0.7.min.js" defer></script>
+</head>
+<body{% if session %} hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'{% endif %}>
+{% if session %}
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="brand" href="/">Hearth</a>
+      {% if not session.member.must_change_password %}
+      <nav class="nav" aria-label="Main">
+        {% set links = [
+          ("household", "/", "Household"),
+          ("mine", "/members/" ~ session.member.username, "Mine"),
+          ("sharing", "/settings/sharing", "Sharing"),
+          ("activity", "/activity", "Activity"),
+        ] %}
+        {% if session.member.is_admin %}{% set links = links + [("admin", "/admin/members", "Members")] %}{% endif %}
+        {% for key, href, label in links %}
+        <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+      <form class="sign-out" method="post" action="/sign-out">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <span class="who">{{ session.member.display_name }}</span>
+        <button type="submit" class="link-button">Sign out</button>
+      </form>
+    </div>
+  </header>
+{% endif %}
+  <main class="page">
+{% block content %}{% endblock %}
+  </main>
+</body>
+</html>

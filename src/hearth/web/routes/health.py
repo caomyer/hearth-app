@@ -1,0 +1,11 @@
+"""A liveness check for whatever supervises the process."""
+
+from fastapi import APIRouter
+from fastapi.responses import PlainTextResponse
+
+router = APIRouter()
+
+
+@router.get("/healthz", response_class=PlainTextResponse)
+def healthz() -> str:
+    return "ok"

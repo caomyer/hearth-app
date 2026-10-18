@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_macros.html" import figure, month_nav, not_shared, transactions_table %}
+{% set account = view.account %}
+{% set section = "household" %}
+{% block title %}{{ account.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ account.name }}</h1>
+    <p class="subtitle">Owned by {{ account.owners | map(attribute="display_name") | join(" and ") }}</p>
+  </div>
+  {{ month_nav("/accounts/" ~ account.id, view.month) }}
+</div>
+
+<section class="figures">
+  {{ figure("Balance", account.balance) }}
+</section>
+
+<section>
+  <h2>Transactions, {{ view.month.label }}</h2>
+  {% if view.transactions is withheld %}
+  {{ not_shared("The transactions in this account are not shared with you.") }}
+  {% elif view.transactions %}
+  {{ transactions_table(view.transactions, show_account=false) }}
+  {% else %}
+  <p class="empty">No transactions in {{ view.month.label }}.</p>
+  {% endif %}
+</section>
+{% endblock %}

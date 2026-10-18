@@ -5,10 +5,10 @@
 *.ofx
 *.qbo
 *.pdf
-statements/
-stmt/
-data/
-ledger/
+/statements/
+/stmt/
+/data/
+/ledger/
 
 # Secrets
 .env

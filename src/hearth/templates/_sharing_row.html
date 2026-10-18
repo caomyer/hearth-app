@@ -1,0 +1,14 @@
+<li class="choice" id="share-{{ facet.value }}">
+  <div class="choice-text">
+    <span class="choice-title">{{ description.title }}</span>
+    <span class="choice-explanation">{{ description.explanation }}</span>
+  </div>
+  <form method="post" action="/settings/sharing/{{ facet.value }}" hx-post="/settings/sharing/{{ facet.value }}" hx-target="closest li" hx-swap="outerHTML">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <input type="hidden" name="shared" value="{{ 'false' if shared else 'true' }}">
+    <button type="submit" class="switch" role="switch" aria-checked="{{ 'true' if shared else 'false' }}" aria-label="Share {{ description.title | lower }}">
+      <span class="switch-state">{{ "Shared" if shared else "Private" }}</span>
+      <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+    </button>
+  </form>
+</li>

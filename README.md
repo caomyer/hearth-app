@@ -14,16 +14,32 @@ Runs on one machine. Each household member signs in with a username and password
 
 ## Status
 
-Early. See `design/` for the approved interaction design.
+Early.
+Members, sign-in, sharing choices and the privacy boundary are in place; see [docs/privacy-boundary.md](docs/privacy-boundary.md).
+Reading the beancount ledger, institution links and the dashboards come next; the calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md).
+See `design/` for the approved interaction design.
 
 ## Development
 
 ```sh
 uv sync
-uv run hearth
+uv run hearth demo          # an invented household in a throwaway directory
+uv run pytest
 ```
 
-If this repository lives under a cloud-synced folder such as `~/Documents` with iCloud Drive, put the virtual environment elsewhere:
+To run for real, create the first admin, then serve on this machine only:
+
+```sh
+uv run hearth add-member <username> --name "<name>" --admin
+uv run hearth serve
+```
+
+Until the ledger reader lands (on the branch stacked on this foundation), `hearth serve` shows every figure as zero; that is expected, not a bug.
+
+State lives in `$HEARTH_DATA_DIR`, by default `~/.local/share/hearth`, outside any cloud-synced folder.
+Set `HEARTH_HTTPS=1` when serving behind TLS so the session cookie is marked secure.
+
+If this repository lives under a cloud-synced folder such as `~/Documents` with iCloud Drive, put the virtual environment outside it:
 
 ```sh
 export UV_PROJECT_ENVIRONMENT="$HOME/.venvs/hearth"

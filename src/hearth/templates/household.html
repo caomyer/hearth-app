@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_macros.html" import figure, month_nav %}
+{% set section = "household" %}
+{% block title %}Household{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Household</h1>
+  {{ month_nav("/", household.month) }}
+</div>
+
+<section class="figures">
+  {{ figure("Household net worth", household.net_worth, withheld_note="Not shared with you") }}
+  {{ figure("Spending, " ~ household.month.label, household.spending, withheld_note="Not shared with you") }}
+</section>
+{% if household.net_worth is withheld or household.spending is withheld %}
+<p class="note">A household total appears only when every part of it can be shown to you, so that no one’s figure can be worked out from the rest.</p>
+{% endif %}
+
+<section>
+  <h2>Members</h2>
+  <ul class="member-list">
+    {% for summary in household.members %}
+    <li>
+      <a class="member-card" href="/members/{{ summary.member.username }}?month={{ household.month }}">
+        <span class="member-name">{{ summary.member.display_name }}{% if summary.is_viewer %} <span class="tag">You</span>{% endif %}</span>
+        <span class="member-figures">
+          {% for label, value in [("Net worth, excluding joint accounts", summary.net_worth), ("Spending, excluding joint accounts", summary.spending)] %}
+          <span class="member-figure">
+            <span class="figure-label">{{ label }}</span>
+            {% if value is withheld %}<span class="is-withheld">Not shared with you</span>{% else %}<span>{{ value | money }}</span>{% endif %}
+          </span>
+          {% endfor %}
+        </span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+{% if household.joint %}
+<section>
+  <h2>Joint accounts</h2>
+  <ul class="member-list">
+    {% for line in household.joint %}
+    <li>
+      <div class="member-card">
+        <span class="member-name">{{ line.owners | map(attribute="display_name") | join(" & ") }}, joint</span>
+        <span class="member-figures">
+          {% for label, value in [("Net worth", line.net_worth), ("Spending", line.spending)] %}
+          <span class="member-figure">
+            <span class="figure-label">{{ label }}</span>
+            {% if value is withheld %}<span class="is-withheld">Not shared with you</span>{% else %}<span>{{ value | money }}</span>{% endif %}
+          </span>
+          {% endfor %}
+        </span>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}
