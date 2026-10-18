@@ -1,0 +1,38 @@
+# Financial data NEVER belongs in this repository.
+*.beancount
+*.csv
+*.qfx
+*.ofx
+*.qbo
+*.pdf
+statements/
+stmt/
+data/
+ledger/
+
+# Secrets
+.env
+*.token
+*.key
+secrets/
+plaid_*.json
+*.sqlite
+*.sqlite3
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
