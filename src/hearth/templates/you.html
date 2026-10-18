@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import delta, hero_value, asof, failure_alert, seen_tag, avatar, day_table %}
+{% from "_macros.html" import unreviewed_sub %}
 {% set me = view %}
 {% set books = status.books %}
 {% set shares = me.shares | selectattr(1) | map(attribute=0) | list %}
@@ -95,6 +96,7 @@
             {% if totals.over_typical is not none %}
             <p class="fig-sub">{{ delta(totals.over_typical, ("over" if totals.over_typical > 0 else "under") ~ " typical by the " ~ ordinal_today, rising_is_good=false) }}</p>
             {% endif %}
+            {{ unreviewed_sub(totals.spent_unreviewed, "/review") }}
           </div>
           <div>
             <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p>
@@ -119,6 +121,7 @@
           <li><span class="grow">{{ group.name }}</span><span class="end tnum">{{ group.pending }}</span></li>
           {% endfor %}
         </ul>
+        <p class="sm muted mt-4">{% if reminder.last_reviewed %}Last reviewed {{ when(reminder.last_reviewed, today) }}.{% else %}Not reviewed yet.{% endif %}{% if reminder.due %} <strong>Your {{ reminder.cadence.value }} review is due.</strong>{% endif %}</p>
         <a class="btn btn-primary btn-block mt-6" href="/review">Start reviewing<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
         {% else %}
         <div class="caught-up" style="padding: 0">
@@ -200,8 +203,8 @@
         <p class="muted">No spending yet this month.</p>
         {% endif %}
       </div>
-      {% if cats.unreviewed %}
-      <div class="panel-foot"><span>Includes {{ cats.unreviewed }} unreviewed, at their suggested category.</span></div>
+      {% if cats.unreviewed.leans %}
+      <div class="panel-foot"><span>Includes <span class="tnum">{{ cats.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.</span></div>
       {% endif %}
     </section>
   </div>

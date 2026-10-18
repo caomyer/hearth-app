@@ -141,6 +141,43 @@ MIGRATIONS: tuple[str, ...] = (
     ) STRICT;
     CREATE INDEX review_ruling_rows_by_row ON review_ruling_rows (review_id);
     """,
+    """
+    -- A ruling can now reopen rows, so a decision made at keyboard speed can be taken back.
+    -- SQLite cannot change a CHECK, so both tables are rebuilt, child first, ids kept.
+    CREATE TABLE review_rulings_v2 (
+        id INTEGER PRIMARY KEY,
+        member_id INTEGER NOT NULL REFERENCES members (id),
+        scope TEXT NOT NULL CHECK (scope IN ('row', 'group')),
+        group_name TEXT,
+        action TEXT NOT NULL CHECK (action IN ('accept', 'account', 'reject', 'reopen')),
+        account TEXT,
+        note TEXT,
+        at TEXT NOT NULL,
+        CHECK ((scope = 'group') = (group_name IS NOT NULL)),
+        CHECK ((action = 'account') = (account IS NOT NULL))
+    ) STRICT;
+    CREATE TABLE review_ruling_rows_v2 (
+        ruling_id INTEGER NOT NULL REFERENCES review_rulings_v2 (id),
+        review_id TEXT NOT NULL,
+        account TEXT,
+        PRIMARY KEY (ruling_id, review_id)
+    ) STRICT;
+    INSERT INTO review_rulings_v2 SELECT * FROM review_rulings;
+    INSERT INTO review_ruling_rows_v2 SELECT * FROM review_ruling_rows;
+    DROP TABLE review_ruling_rows;
+    DROP TABLE review_rulings;
+    ALTER TABLE review_rulings_v2 RENAME TO review_rulings;
+    ALTER TABLE review_ruling_rows_v2 RENAME TO review_ruling_rows;
+    CREATE INDEX review_ruling_rows_by_row ON review_ruling_rows (review_id);
+
+    -- How often each member wants to be reminded to review; no row means the default
+    -- in hearth.review.cadence. When they last reviewed is read off their rulings.
+    CREATE TABLE review_cadence (
+        member_id INTEGER PRIMARY KEY REFERENCES members (id),
+        cadence TEXT NOT NULL CHECK (cadence IN ('off', 'daily', 'weekly', 'monthly')),
+        updated_at TEXT NOT NULL
+    ) STRICT;
+    """,
 )
 
 

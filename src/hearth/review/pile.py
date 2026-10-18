@@ -1,9 +1,10 @@
-"""Reading the set-aside pile an import wrote.
+"""Reading the rows an import left for review.
 
-The pile is beancount_nextgen's `pending.beancount`: one `!` entry per set-aside row, whose
-first posting is the bank's and whose second balances it against the proposed account, or
-against `Equity:Review:Unresolved` when nothing could be proposed. Metadata carries the row's
-`review-id`, `review-group`, `model-confidence` and `source`.
+Every imported transaction is in the ledger. One nobody has checked is a `!` entry, as
+beancount_nextgen writes them, whose first posting is the bank's and whose second balances it
+against the proposed account, or against `Equity:Review:Unresolved` when nothing could be
+proposed. Metadata carries the row's `review-id`, `review-group`, `model-confidence` and
+`source`. Together they are the pile: every row a member may review, whether or not anyone has.
 """
 
 from collections.abc import Iterable
@@ -15,12 +16,12 @@ from beancount.core.amount import Amount
 from beancount.core.data import Directive, Transaction
 
 UNRESOLVED = "Equity:Review:Unresolved"
-"""Where a row waits when nothing could be proposed. Never a booking anyone chose."""
+"""Where a row sits when nothing could be proposed. Never an account anyone chose."""
 
 
 @dataclass(frozen=True, slots=True)
 class PileItem:
-    """One set-aside row, as the import proposed it."""
+    """One review row, as the import proposed it."""
 
     review_id: str
     group: str
@@ -41,7 +42,7 @@ def _location(entry: Transaction) -> str:
 
 
 def read_pile(entries: Iterable[Directive]) -> list[PileItem]:
-    """Every set-aside row in `entries`, refusing one that cannot be ruled on durably."""
+    """Every review row in `entries`, refusing one that cannot be ruled on durably."""
     items: list[PileItem] = []
     seen: set[str] = set()
     for entry in entries:

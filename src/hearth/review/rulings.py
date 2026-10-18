@@ -1,4 +1,4 @@
-"""Rulings on set-aside rows, kept for good in the app database.
+"""Rulings on unreviewed rows, kept for good in the app database.
 
 The store is append-only: a ruling is never edited or deleted, and a later ruling supersedes an
 earlier one on the same row by being later. Every ruling names the rows it covers by review id,
@@ -26,11 +26,13 @@ ACCOUNT = re.compile(r"(Assets|Liabilities|Equity|Income|Expenses)(:[A-Z0-9][A-Z
 
 class Action(StrEnum):
     ACCEPT = "accept"
-    """Book the row against the account the import proposed, while it still proposes it."""
+    """The account the import proposed is right, while it still proposes it."""
     ACCOUNT = "account"
-    """Book the row against an account the member names."""
+    """The row belongs against an account the member names."""
     REJECT = "reject"
     """The row is not a transaction; book nothing."""
+    REOPEN = "reopen"
+    """Take a decision back: the rows are unreviewed again, as if nobody had ruled."""
 
 
 class Scope(StrEnum):
@@ -134,3 +136,39 @@ class RulingStore:
                 ),
                 accepted,
             )
+
+    def get(self, ruling_id: int) -> tuple[Ruling, list[str]] | None:
+        """A ruling and the review ids it covers, or `None` when there is no such ruling."""
+        found = self._db.execute(
+            "SELECT id, member_id, scope, group_name, action, account, note, at"
+            " FROM review_rulings WHERE id = ?",
+            (ruling_id,),
+        ).fetchone()
+        if found is None:
+            return None
+        rows = self._db.execute(
+            "SELECT review_id FROM review_ruling_rows WHERE ruling_id = ? ORDER BY review_id",
+            (ruling_id,),
+        )
+        ruling_id, member, scope, group, action, account, note, at = found
+        ruling = Ruling(
+            ruling_id,
+            MemberId(member),
+            Scope(scope),
+            group,
+            Action(action),
+            account,
+            note,
+            datetime.fromisoformat(at),
+        )
+        return ruling, [row["review_id"] for row in rows]
+
+    def latest_by(self, member_id: MemberId) -> datetime | None:
+        """When `member_id` last ruled, or `None` if they never have; taking a
+        decision back is not reviewing."""
+        row = self._db.execute(
+            "SELECT at FROM review_rulings WHERE member_id = ? AND action != ? "
+            "ORDER BY id DESC LIMIT 1",
+            (member_id, Action.REOPEN),
+        ).fetchone()
+        return None if row is None else datetime.fromisoformat(row["at"])

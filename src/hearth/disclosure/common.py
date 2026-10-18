@@ -1,6 +1,6 @@
 """The household as disclosure sees it before any decision, and the view types pages share."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -52,6 +52,46 @@ class PartRef:
     @property
     def hue(self) -> str:
         return "who-joint" if self.is_joint else f"who-{self.owners[0].hue}"
+
+
+@dataclass(frozen=True, slots=True)
+class Unreviewed:
+    """How much of a total rests on rows nobody has checked yet, at their suggested category.
+
+    `amount` and `rows` count only parts whose review state the viewer may know (their own,
+    or parts whose transactions are shared with them). `unknown` names the other parts in the
+    total: theirs may rest on unreviewed rows too, and the page says so the same way whether
+    or not it does, so nobody's pile is ever counted for someone else.
+    """
+
+    amount: Decimal
+    rows: int
+    unknown: tuple[PartRef, ...]
+
+    @property
+    def leans(self) -> bool:
+        """Whether the total is known to rest on unreviewed rows."""
+        return self.amount != 0
+
+
+def unreviewed(
+    gate: Gate,
+    parts: Sequence[Part],
+    ref: Callable[[Part], PartRef],
+    amount: Callable[[Part], Decimal],
+    rows: Callable[[Part], int],
+) -> Unreviewed:
+    """What of a total over `parts` is unreviewed, as far as the viewer may know it.
+
+    The caller has already decided the viewer may see each part's share of the total; this
+    decides, part by part, whether they may also know how much of that share is unreviewed.
+    """
+    known = [part for part in parts if gate.may_see_review_state(part.owners)]
+    return Unreviewed(
+        amount=sum((amount(part) for part in known), Decimal(0)),
+        rows=sum(rows(part) for part in known),
+        unknown=tuple(ref(part) for part in parts if part not in known),
+    )
 
 
 @dataclass(frozen=True, slots=True)

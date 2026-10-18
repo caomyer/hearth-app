@@ -53,8 +53,9 @@ Reconnecting is drawn but says it arrives with bank linking, rather than offerin
 
 **Review rows can be decided one at a time.**
 Groups with one suggestion are accepted in one decision, as designed.
-A group with no suggestion can be settled row by row: book as a category, or "not a transaction".
-The category list offered comes from the viewer's own pile only, so it never names another member's categories.
+A group with no suggestion can be settled row by row: accept or change the category, or exclude it as not a transaction.
+The category list offered comes from the viewer's own rows only, so it never names another member's categories.
+The queue at backfill size, its orders, filters, keyboard and reminders are in `docs/review.md`.
 
 **The household page shows the members' totals, not their account counts.**
 The design shows "3 institutions, 5 accounts" for everyone; a count of someone's accounts is shown only to those who may see that member's balances.

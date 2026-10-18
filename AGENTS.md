@@ -9,6 +9,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - A new route must be added to `ROUTERS` in `src/hearth/web/routes/__init__.py` and taught to `tests/test_privacy_boundary.py`, which fails the build otherwise. Anything private must answer exactly like something missing: raise `Concealed`.
 - Server-rendered only: never add an endpoint that returns data as JSON.
 - Figures come from `hearth.books`: one recompute of the beancount ledger at `HEARTH_LEDGER`, daily and on request, never on page load. `uv run hearth demo` serves an invented household through the same path.
+- Every imported row is in the books; review rulings live in the app database and each recompute lays them over the ledger, which hearth never writes. Unreviewed rows stay `!`, and any new total must say how much rests on them without revealing another member's queue (`docs/review.md`).
 - Pages follow `design/` exactly: the app serves `design/hearth.css` and `design.js` byte for byte (a test checks); additions go in `src/hearth/static/app.css`.
 - `design/` belongs to the design crew; do not edit it from app work.
 

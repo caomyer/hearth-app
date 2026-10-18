@@ -1,20 +1,20 @@
 """The pages that show household data. Each one renders a view from ``Disclosure``.
 
-Every figure page goes through ``_figures``, which renders the books' state instead of the
+Every figure page goes through ``figures_page``, which renders the books' state instead of the
 page while there are no books to show: a skeleton while the first recompute runs, and what
 went wrong if it failed.
 """
 
 import sqlite3
 from collections.abc import Callable
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from hearth import audit
 from hearth.disclosure import Disclosure
-from hearth.review.desk import State
+from hearth.review import cadence
 from hearth.review.rulings import RulingStore
 from hearth.web import presenters
 from hearth.web.deps import Acting, App, Conn, SelectedMonth, Session, SignedIn, Viewing
@@ -26,16 +26,17 @@ router = APIRouter()
 def chrome(
     app: App, conn: sqlite3.Connection, session: Session, view: Disclosure
 ) -> dict[str, Any]:
-    """What every signed-in page shows around its content: the review badge and the
-    viewer's own colour, and why today's figures are missing when they are."""
-    books = view.books
-    waiting = 0
-    if books is not None:
-        desk = view.review_desk(RulingStore(conn), app.clock)
-        waiting = sum(group.pending for group in desk.groups())
+    """What every signed-in page shows around its content: the review badge and the viewer's
+    own reminder and colour, and why today's figures are missing when they are."""
+    desk = view.review_desk(RulingStore(conn), app.clock)
+    waiting = sum(1 for item in desk.items() if item.unreviewed)
+    reminder = cadence.reminder(
+        cadence.load(conn, session.member.id), waiting, desk.last_reviewed(), app.clock()
+    )
     return {
         "session": session,
         "review_count": waiting,
+        "reminder": reminder,
         "viewer_hue": presenters.hue_of(view, session.member),
         "notice": view.notice(),
         "expired": [c for c in view.connections(app.connections) if c.state == "expired"],
@@ -45,7 +46,7 @@ def chrome(
     }
 
 
-def _figures(
+def figures_page(
     request: Request,
     app: App,
     conn: sqlite3.Connection,
@@ -70,7 +71,7 @@ def household(
         household = view.household()
         return {"household": household, **presenters.household_page(household)}
 
-    return _figures(request, app, conn, session, view, "household", "household.html", build)
+    return figures_page(request, app, conn, session, view, "household", "household.html", build)
 
 
 @router.get("/you")
@@ -86,7 +87,7 @@ def you(request: Request, app: App, conn: Conn, session: SignedIn, view: Viewing
             **presenters.person_page(me),
         }
 
-    return _figures(request, app, conn, session, view, "you", "you.html", build)
+    return figures_page(request, app, conn, session, view, "you", "you.html", build)
 
 
 @router.get("/members/{username}")
@@ -100,7 +101,7 @@ def member(
         person = view.person(username)
         return {"view": person, **presenters.person_page(person)}
 
-    return _figures(request, app, conn, session, view, "household", "member.html", build)
+    return figures_page(request, app, conn, session, view, "household", "member.html", build)
 
 
 @router.get("/accounts/{account_id}")
@@ -116,7 +117,7 @@ def account(
     def build() -> dict[str, Any]:
         return {"view": view.account(account_id, month)}
 
-    return _figures(request, app, conn, session, view, "household", "account.html", build)
+    return figures_page(request, app, conn, session, view, "household", "account.html", build)
 
 
 OUTCOMES = {
@@ -143,7 +144,7 @@ def net_worth(
         message = OUTCOMES.get(outcome or "")
         return {"view": worth, "message": message, **presenters.net_worth_page(worth, today)}
 
-    return _figures(request, app, conn, session, view, "net-worth", "net_worth.html", build)
+    return figures_page(request, app, conn, session, view, "net-worth", "net_worth.html", build)
 
 
 @router.post("/net-worth/recompute")
@@ -165,77 +166,3 @@ def activity(
         section="settings",
         lines=lines,
     )
-
-
-REVIEW_OUTCOMES = {
-    "not-an-account": "That row was not booked. Enter a full account name, like"
-    " Expenses:Groceries.",
-}
-"""Fixed messages for what a review action did; the query names one, it never carries text."""
-
-
-@router.get("/review")
-def review(
-    request: Request,
-    app: App,
-    conn: Conn,
-    session: SignedIn,
-    view: Viewing,
-    outcome: str | None = None,
-) -> HTMLResponse:
-    def build() -> dict[str, Any]:
-        books = view.books
-        assert books is not None  # noqa: S101 - _figures calls build only when there are books
-        desk = view.review_desk(RulingStore(conn), app.clock)
-        groups = desk.groups()
-        mine = [item for g in groups for item in g.items]
-        return {
-            "message": REVIEW_OUTCOMES.get(outcome or ""),
-            # Suggest only categories from the viewer's own pile: nobody else's are named.
-            "categories": sorted({i.item.proposed for i in mine if i.item.proposed}),
-            "groups": [g for g in groups if g.pending],
-            "decided": [
-                i for g in groups for i in g.items if i.decision.state is not State.PENDING
-            ],
-        }
-
-    return _figures(request, app, conn, session, view, "review", "review.html", build)
-
-
-@router.post("/review/groups/accept")
-def accept_group(
-    app: App,
-    conn: Conn,
-    session: Acting,
-    view: Viewing,
-    group: Annotated[str, Form()],
-) -> RedirectResponse:
-    books = view.books
-    if books is not None:
-        view.review_desk(RulingStore(conn), app.clock).accept_group(group)
-    return RedirectResponse("/review", status_code=303)
-
-
-@router.post("/review/rows/book")
-def book_row(
-    app: App,
-    conn: Conn,
-    session: Acting,
-    view: Viewing,
-    review_id: Annotated[str, Form()],
-    account: Annotated[str, Form()],
-) -> RedirectResponse:
-    desk = view.review_desk(RulingStore(conn), app.clock)
-    try:
-        desk.set_account(review_id, account.strip())
-    except ValueError:
-        return RedirectResponse("/review?outcome=not-an-account", status_code=303)
-    return RedirectResponse("/review", status_code=303)
-
-
-@router.post("/review/rows/reject")
-def reject_row(
-    app: App, conn: Conn, session: Acting, view: Viewing, review_id: Annotated[str, Form()]
-) -> RedirectResponse:
-    view.review_desk(RulingStore(conn), app.clock).reject(review_id)
-    return RedirectResponse("/review", status_code=303)

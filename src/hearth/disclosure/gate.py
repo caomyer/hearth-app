@@ -48,6 +48,9 @@ class Gate:
         """Compute a figure only once it is known the viewer may see it."""
         return compute() if self.may(facet, owners) else WITHHELD
 
+    def may_see_review_state(self, owners: Collection[MemberId]) -> bool:
+        return access.may_see_review_state(self.viewer, owners, self._choices)
+
     def shared_by(self, member: MemberId) -> frozenset[Facet]:
         """What a member shares with the household, in their own words. Not a decision."""
         return self._choices.get(member, frozenset())

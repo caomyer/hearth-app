@@ -4,11 +4,16 @@ The demo writes a real beancount ledger and real stored prices, so it runs throu
 code a household's own books do: loading, balance checks, valuation, coverage and review. It
 deliberately includes what real books have: history that changes source part way through the
 year, a fund whose price has gone stale, and transactions waiting for review.
+
+With `first_review`, it is the household on the day its first import lands instead: two years
+of history, every row of it unreviewed, grouped by merchant and kind as an import groups them,
+so the review queue can be tried at the size a real backfill has.
 """
 
 import calendar
 import random
 import sqlite3
+from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -29,7 +34,9 @@ FEED_STARTS = date(2026, 6, 8)
 
 HISTORY_DAYS = 430
 SET_ASIDE_DAYS = 7
-"""The last week's transactions wait in the review pile, as the latest import would leave them."""
+"""The last week's transactions wait for review, as the latest import would leave them."""
+FIRST_REVIEW_DAYS = 730
+"""A first import's backfill: two years, none of it reviewed yet."""
 
 CARD_EXPIRED_DAYS_AGO = 5
 """Avery's card connection stopped updating this long ago, so the demo shows that state."""
@@ -89,6 +96,13 @@ SPENDING = (
     ("Liabilities:Avery:Card", "Shopping", ("Bookshop on Main", "Corner Hardware"), 52, 3),
     ("Liabilities:Avery:Card", "Subscriptions", ("Lumen Video", "Stride Fitness"), 15, 2),
     ("Assets:Avery:Checking", "Transport", ("Northside Parking", "City Transit"), 31, 4),
+    ("Liabilities:Avery:Card", "Coffee", ("Bean Street", "Morning Kiln", "Drip House"), 6, 9),
+    ("Liabilities:Avery:Card", "Household", ("Linen Loft", "Lamp Lane", "Hearth Supply"), 35, 3),
+    ("Liabilities:Avery:Card", "Travel", ("Skyway Air", "Harbor Inn", "Rail North"), 160, 1),
+    ("Assets:Avery:Checking", "Gifts", ("Paper Crane Gifts", "Bloom Florist"), 45, 1),
+    ("Assets:Avery:Checking", "Pets", ("Paws Clinic", "Kibble Co"), 38, 2),
+    ("Liabilities:Avery:Card", "Personal", ("Blue Comb Barber", "Fern Pharmacy"), 28, 2),
+    ("Assets:Avery:Checking", "Fitness", ("Summit Climbing", "Tide Pool Swim"), 22, 1),
     ("Assets:Blake:Checking", "Dining", ("Greenleaf Bistro",), 44, 4),
     ("Assets:Blake:Checking", "Health", ("Riverside Clinic",), 95, 1),
     ("Assets:Blake:Checking", "Shopping", ("Paper Lantern Goods",), 60, 2),
@@ -99,7 +113,9 @@ SPENDING = (
 )
 
 
-def seed(conn: sqlite3.Connection, ledger: Path, *, now: datetime) -> dict[str, str]:
+def seed(
+    conn: sqlite3.Connection, ledger: Path, *, now: datetime, first_review: bool = False
+) -> dict[str, str]:
     """Create the demo household and its books, returning each member's password."""
     ids: dict[str, MemberId] = {}
     chosen: dict[str, str] = {}
@@ -123,22 +139,24 @@ def seed(conn: sqlite3.Connection, ledger: Path, *, now: datetime) -> dict[str, 
             owners=[ids[owner] for owner in account.owners],
         )
     today = now.date()
-    prices = _prices(today)
+    history = FIRST_REVIEW_DAYS if first_review else HISTORY_DAYS
+    prices = _prices(today, history)
     store = PriceStore(conn)
     for quote in _quotes(prices, today):
         store.record(quote)
-    ledger.write_text(_ledger(today, prices))
+    review_days = FIRST_REVIEW_DAYS if first_review else SET_ASIDE_DAYS
+    ledger.write_text(_ledger(today, prices, history, review_days))
     return chosen
 
 
-def _prices(today: date) -> dict[str, dict[date, Decimal]]:
+def _prices(today: date, history: int) -> dict[str, dict[date, Decimal]]:
     """A gentle random walk per fund over the demo's history, one close per weekday."""
     rng = random.Random(7)  # noqa: S311 - invented figures, not security
     walks: dict[str, dict[date, Decimal]] = {}
     for fund, start in FUNDS.items():
         price = start
         closes = {}
-        for day in _days(today - timedelta(days=HISTORY_DAYS), today):
+        for day in _days(today - timedelta(days=history), today):
             if day.weekday() < 5:
                 price *= Decimal(1 + rng.gauss(0.0004, 0.009)).quantize(Decimal("0.0001"))
                 closes[day] = price.quantize(Decimal("0.01"))
@@ -159,8 +177,10 @@ def _quotes(prices: dict[str, dict[date, Decimal]], today: date) -> Iterator[Quo
             yield Quote(fund, day, price, "USD", PRICE_SOURCE, f"demo:{fund}", fetched)
 
 
-def _ledger(today: date, prices: dict[str, dict[date, Decimal]]) -> str:
-    start = today - timedelta(days=HISTORY_DAYS)
+def _ledger(
+    today: date, prices: dict[str, dict[date, Decimal]], history: int, review_days: int
+) -> str:
+    start = today - timedelta(days=history)
     out = ['option "title" "An invented household"', 'option "operating_currency" "USD"', ""]
     for fund, name in FUND_NAMES.items():
         out += [f"{start} commodity {fund}", f'  name: "{name}"']
@@ -171,7 +191,7 @@ def _ledger(today: date, prices: dict[str, dict[date, Decimal]]) -> str:
         f"{start} open Income:{name}" for name in ("Salary:Avery", "Salary:Blake", "Wages:Casey")
     ]
     out += [f"{start} open Equity:Opening", f"{start} open {UNRESOLVED}", ""]
-    writer = _Writer(today, prices)
+    writer = _Writer(today, prices, review_days)
     out += writer.opening(start)
     for day in _days(start + timedelta(days=1), today):
         out += writer.day(day)
@@ -181,9 +201,13 @@ def _ledger(today: date, prices: dict[str, dict[date, Decimal]]) -> str:
 class _Writer:
     """Writes the household's transactions day by day, keeping card balances to settle them."""
 
-    def __init__(self, today: date, prices: dict[str, dict[date, Decimal]]) -> None:
+    def __init__(
+        self, today: date, prices: dict[str, dict[date, Decimal]], review_days: int
+    ) -> None:
         self._today = today
         self._prices = prices
+        self._review_days = review_days
+        self._seen: Counter[tuple[str, date, Decimal, str]] = Counter()
         self._rng = random.Random(11)  # noqa: S311 - invented figures, not security
         self._owed: dict[str, Decimal] = {"Liabilities:Avery:Card": Decimal(0)}
         self._owed["Liabilities:Casey:Card"] = Decimal(0)
@@ -225,10 +249,13 @@ class _Writer:
                 ("Assets:Avery:Checking", "1400.00"),
                 ("Assets:Blake:Checking", "1600.00"),
             ):
-                lines += self._entry(
+                lines += self._imported(
                     day,
                     "Transfer to joint checking",
-                    [("Assets:Joint:Checking", f"{amount} USD"), (payer, f"-{amount} USD")],
+                    (payer, Decimal(f"-{amount}")),
+                    "Assets:Joint:Checking",
+                    "Transfers to joint checking",
+                    Decimal("0.97"),
                 )
         if day.day == 5 and day in self._prices["TMIX"]:
             price = self._prices["TMIX"][day]
@@ -248,8 +275,8 @@ class _Writer:
             ("Campus Library", "Wages:Casey", "Assets:Casey:Checking", "720.00", 20),
         ):
             if day.day == on:
-                lines += self._entry(
-                    day, payee, [(account, f"{amount} USD"), (f"Income:{income}", "")]
+                lines += self._imported(
+                    day, payee, (account, Decimal(amount)), f"Income:{income}", "Payroll", None
                 )
         if day.day == 25:
             for card, payer in (
@@ -258,8 +285,8 @@ class _Writer:
             ):
                 owed = self._owed[card]
                 if owed:
-                    lines += self._entry(
-                        day, "Card payment", [(card, f"{owed} USD"), (payer, f"-{owed} USD")]
+                    lines += self._imported(
+                        day, "Card payment", (payer, -owed), card, "Card payments", Decimal("0.99")
                     )
                     self._owed[card] = Decimal(0)
         days_in_month = calendar.monthrange(day.year, day.month)[1]
@@ -278,24 +305,45 @@ class _Writer:
     ) -> list[str]:
         if payer in self._owed:
             self._owed[payer] += amount
-        if (self._today - day).days < SET_ASIDE_DAYS:
-            return self._set_aside(day, payee, category, payer, amount)
-        return self._entry(
-            day, payee, [(f"Expenses:{category}", f"{amount} USD"), (payer, f"-{amount} USD")]
-        )
+        if not self._unreviewed(day):
+            return self._entry(
+                day, payee, [(f"Expenses:{category}", f"{amount} USD"), (payer, f"-{amount} USD")]
+            )
+        draw = self._rng.random()
+        if draw < 0.12:
+            return self._imported(day, payee, (payer, -amount), None, "Unsure", None)
+        confidence = Decimal(str(round(0.35 + 0.64 * self._rng.random(), 3)))
+        group = payee if draw > 0.3 else "Unsure"
+        proposed = f"Expenses:{category}"
+        return self._imported(day, payee, (payer, -amount), proposed, group, confidence)
 
-    def _set_aside(
-        self, day: date, payee: str, category: str, payer: str, amount: Decimal
+    def _unreviewed(self, day: date) -> bool:
+        return (self._today - day).days < self._review_days
+
+    def _imported(
+        self,
+        day: date,
+        payee: str,
+        bank: tuple[str, Decimal],
+        proposed: str | None,
+        group: str,
+        confidence: Decimal | None,
     ) -> list[str]:
-        """A row the import could not book on its own: flagged, with a suggestion to check."""
-        unsure = self._rng.random() < 0.3
-        proposal = UNRESOLVED if unsure else f"Expenses:{category}"
-        meta = {
-            "review-id": review_id(payer, day, -amount, payee),
-            "review-group": "Unsure" if unsure else category,
-        }
+        """One imported row: reviewed if it is older than the review window, otherwise flagged
+        unreviewed against what the import proposed, as beancount_nextgen writes it."""
+        account, amount = bank
+        if not self._unreviewed(day):
+            assert proposed is not None  # noqa: S101 - only spending is ever unproposed
+            return self._entry(day, payee, [(account, f"{amount} USD"), (proposed, "")])
+        content = (account, day, amount, payee)
+        nth = self._seen[content]
+        self._seen[content] += 1
+        meta = {"review-id": review_id(*content, nth), "review-group": group}
+        if confidence is not None:
+            meta["model-confidence"] = str(confidence)
+        balance = proposed or UNRESOLVED
         return self._entry(
-            day, payee, [(payer, f"-{amount} USD"), (proposal, f"{amount} USD")], "!", meta
+            day, payee, [(account, f"{amount} USD"), (balance, f"{-amount} USD")], "!", meta
         )
 
     def _entry(
@@ -309,7 +357,10 @@ class _Writer:
         self._row += 1
         origin = "bank-feed" if day >= FEED_STARTS else "statements"
         lines = [f'{day} {flag} "{payee}" ""', f'  source: "{origin}:{self._row}"']
-        lines += [f'  {key}: "{value}"' for key, value in (meta or {}).items()]
+        lines += [
+            f"  {key}: {value}" if key == "model-confidence" else f'  {key}: "{value}"'
+            for key, value in (meta or {}).items()
+        ]
         lines += [f"  {account}  {amount}".rstrip() for account, amount in postings]
         return [*lines, ""]
 

@@ -40,6 +40,20 @@ def may_review(member: MemberId, owners: Collection[MemberId]) -> bool:
     return member in owners
 
 
+def may_see_review_state(
+    viewer: Member, owners: Collection[MemberId], sharing: SharingChoices
+) -> bool:
+    """Whether ``viewer`` may know which of ``owners``' rows nobody has reviewed yet.
+
+    Their reviewers may, and so may anyone the rows themselves are shared with: a shared
+    transaction is shown as it stands in the books, unreviewed flag and all, so its total's
+    unreviewed part tells them nothing new. Anyone else sees only that a total of theirs may
+    rest on unreviewed rows, said the same way whether it does or not, so another member's
+    pile is never counted, not even by subtracting from a household total.
+    """
+    return may_review(viewer.id, owners) or may_see(viewer, Facet.TRANSACTIONS, owners, sharing)
+
+
 def may_enter_price(viewer: Member, holders: Collection[Collection[MemberId]]) -> bool:
     """Whether ``viewer`` may record a price by hand for a security.
 

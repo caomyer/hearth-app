@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from hearth import accounts, auth, books, db, sessions
 from hearth.app import create_app
 from hearth.config import Settings
+from hearth.disclosure import rulings_in
 from hearth.members import MemberId
 from hearth.sharing import Facet
 from hearth.valuation.pricestore import PriceStore
@@ -48,7 +49,7 @@ class World:
     @property
     def bookkeeper_establish(self) -> books.Establish:
         """How this world's books are recomputed, for a bookkeeper of a test's own."""
-        return books.from_ledger(self.ledger, self.settings.database)
+        return books.from_ledger(self.ledger, self.settings.database, rulings=rulings_in)
 
     def connect(self) -> sqlite3.Connection:
         return db.connect(self.settings.database)
@@ -71,8 +72,9 @@ class World:
         return signer.csrf_token(token)
 
     def recompute(self) -> None:
-        """Recompute the books now, as the morning schedule or "Recompute now" would."""
-        self.bookkeeper.recompute()
+        """Recompute the books now, as the morning schedule or "Recompute now" would, and wait
+        for it, behind any recompute a ruling started in the background."""
+        self.bookkeeper.recompute(wait=True)
 
     def choose(self, username: str, shared: frozenset[Facet]) -> None:
         """Set exactly which facets a member shares."""
@@ -140,7 +142,9 @@ def world(tmp_path: Path, clock: FakeClock) -> World:
             store.record(Quote(symbol, day, price, "USD", "eodhd", "test", clock()))
     finally:
         conn.close()
-    bookkeeper = books.Bookkeeper(books.from_ledger(ledger, settings.database), clock)
+    bookkeeper = books.Bookkeeper(
+        books.from_ledger(ledger, settings.database, rulings=rulings_in), clock
+    )
     bookkeeper.recompute()
     assert bookkeeper.status.failure is None, bookkeeper.status.failure
     app = create_app(settings, bookkeeper, clock, price_source=SourceNotSetUp())

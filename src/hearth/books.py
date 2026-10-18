@@ -6,13 +6,19 @@ because it does not load or a balance assertion disagrees with the postings, est
 nothing: the previous books stay in place, labelled with their age, next to what went wrong.
 A figure a day old is better than a figure that is wrong.
 
+The books are the ledger as its members have reviewed it (``hearth.review.overlay``): every
+imported row is in them, a row nobody has checked still flagged `!` at its proposed account, so
+each figure can say how much of it rests on rows nobody has looked at. A ruling recomputes the
+books, so what a member decides shows in the figures within one recompute.
+
 Nothing here decides who may see what; pages reach the books only through
 ``hearth.disclosure``.
 """
 
 import logging
+import sqlite3
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -26,6 +32,8 @@ from hearth.clock import Clock
 from hearth.months import Month
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.coverage import AccountCoverage, account_coverage
+from hearth.review.decision import Decision
+from hearth.review.overlay import reviewed
 from hearth.review.pile import PileItem, read_pile
 from hearth.valuation.holdings import holdings_at
 from hearth.valuation.networth import NetWorth, PriceLookup, value_holdings
@@ -61,7 +69,8 @@ class Books:
     month_ends: tuple[NetWorth, ...]
     coverage: tuple[AccountCoverage, ...]
     pile: tuple[PileItem, ...]
-    """Rows an import set aside for review: the `!` entries that carry a review id."""
+    """Every review row as the import wrote it, before any ruling: the `!` entries that carry
+    a review id. `entries` hold the same rows as their rulings make them."""
 
     @property
     def month(self) -> Month:
@@ -124,12 +133,21 @@ def load_entries(path: Path) -> tuple[Directive, ...]:
     return tuple(entries)
 
 
-def compute(entries: Sequence[Directive], lookup: PriceLookup, *, now: datetime) -> Books:
-    """Value the household today and at each recent month end, after checking the ledger.
+type Decide = Callable[[Sequence[PileItem]], Mapping[str, Decision]]
+"""Every review row's decision, as the rulings members may make on it decide it."""
+
+
+def compute(
+    ledger: Sequence[Directive], lookup: PriceLookup, *, now: datetime, decide: Decide
+) -> Books:
+    """Lay the rulings over the ledger, check it, and value the household today and at each
+    recent month end.
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
     """
+    pile = tuple(read_pile(e for e in ledger if _set_aside(e)))
+    entries = tuple(reviewed(ledger, decide(pile)))
     for check in check_balance_assertions(entries):
         if not check.agrees:
             raise LedgerError(f"A balance check failed on {check.date:%b} {check.date.day}.", check)
@@ -142,11 +160,11 @@ def compute(entries: Sequence[Directive], lookup: PriceLookup, *, now: datetime)
         computed_at=now,
         as_of=today,
         currency=CURRENCY,
-        entries=tuple(entries),
+        entries=entries,
         today=worth(today),
         month_ends=tuple(worth(day) for day in month_ends(today, HISTORY_MONTHS)),
         coverage=tuple(account_coverage(entries, as_of=today)),
-        pile=tuple(read_pile(e for e in entries if _set_aside(e))),
+        pile=pile,
     )
 
 
@@ -179,36 +197,54 @@ class Bookkeeper:
 
     `establish` does the work and raises `LedgerError` when the ledger cannot be trusted. Its
     result replaces the books only when it succeeds.
+
+    A recompute asked for while one is running is not dropped: the running one goes round once
+    more when it finishes, so a ruling made mid-recompute is in the books that follow it.
     """
 
     def __init__(self, establish: Establish, clock: Clock) -> None:
         self._establish = establish
         self._clock = clock
         self._lock = threading.Lock()
+        self._wanted = threading.Event()
         self._state = Status(books=None, failure=None, recomputing=False)
 
     @property
     def status(self) -> Status:
         return self._state
 
-    def recompute(self) -> None:
-        """Recompute now, in this thread. Returns at once if one is already running."""
-        if not self._lock.acquire(blocking=False):
-            return
-        try:
-            self._state = Status(self._state.books, self._state.failure, recomputing=True)
-            now = self._clock()
+    def recompute(self, *, wait: bool = False) -> None:
+        """Recompute now, in this thread, or once more after the one already running.
+
+        With `wait`, return only once books computed after this call are in place.
+        """
+        self._wanted.set()
+        # Checked again after releasing, so a request made just as the last round ended
+        # is taken up by whichever caller gets the lock next.
+        while self._wanted.is_set() and self._lock.acquire(blocking=wait):
             try:
-                books = self._establish(now)
-            except LedgerError as error:
-                self._fail(Failure(now, error.summary, error.disagreement, error.location))
-            except Exception:
-                _log.exception("recompute failed")
-                self._fail(Failure(now, "The recompute stopped on an unexpected error."))
-            else:
-                self._state = Status(books, None, recomputing=False)
-        finally:
-            self._lock.release()
+                while self._wanted.is_set():
+                    self._wanted.clear()
+                    self._once()
+            finally:
+                self._lock.release()
+        if wait:
+            # Another caller may have taken this request up and still be running it.
+            with self._lock:
+                pass
+
+    def _once(self) -> None:
+        self._state = Status(self._state.books, self._state.failure, recomputing=True)
+        now = self._clock()
+        try:
+            books = self._establish(now)
+        except LedgerError as error:
+            self._fail(Failure(now, error.summary, error.disagreement, error.location))
+        except Exception:
+            _log.exception("recompute failed")
+            self._fail(Failure(now, "The recompute stopped on an unexpected error."))
+        else:
+            self._state = Status(books, None, recomputing=False)
 
     def recompute_in_background(self) -> None:
         threading.Thread(target=self.recompute, name="hearth-recompute", daemon=True).start()
@@ -247,11 +283,19 @@ def stored_prices(store: PriceStore, sources: Sequence[str] = PRICE_SOURCES) -> 
 
 type Establish = Callable[[datetime], Books]
 
+type Rulings = Callable[[sqlite3.Connection], Decide]
+"""How the rulings recorded in a database decide review rows (``hearth.disclosure``)."""
+
 
 def from_ledger(
-    ledger: Path | None, database: Path, *, sources: Sequence[str] = PRICE_SOURCES
+    ledger: Path | None,
+    database: Path,
+    *,
+    rulings: Rulings,
+    sources: Sequence[str] = PRICE_SOURCES,
 ) -> Establish:
-    """The recompute hearth runs: load the ledger file, then value it at stored prices."""
+    """The recompute hearth runs: load the ledger file, lay the rulings over it, then value it
+    at stored prices."""
 
     def establish(now: datetime) -> Books:
         if ledger is None:
@@ -259,7 +303,8 @@ def from_ledger(
         entries = load_entries(ledger)
         conn = db.connect(database)
         try:
-            return compute(entries, stored_prices(PriceStore(conn), sources), now=now)
+            prices = stored_prices(PriceStore(conn), sources)
+            return compute(entries, prices, now=now, decide=rulings(conn))
         finally:
             conn.close()
 

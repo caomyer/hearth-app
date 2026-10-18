@@ -17,7 +17,7 @@ Each has its own document; this one says which module answers which question.
 | How much history each account holds, and from which source | `reports.coverage` | `account_coverage(...)` | ledger |
 | Who owns which account | `reports.ownership` | `Ownership.from_accounts(accounts)` | `accounts`, `account_owners` |
 | A member's Plaid tokens | `vault.tokens` | `TokenVault` | `vault_*` tables, Keychain |
-| What an import set aside, and what members ruled | `review.desk` | `Disclosure.review_desk(...)`, `disclosure.review_decisions(...)` | pile file, `review_*` tables |
+| What waits for review, and what members ruled | `review.desk`, `review.queue` | `Disclosure.review_desk(...)`, `disclosure.rulings_in(...)` | ledger `!` rows, `review_*` tables |
 
 ## What each one owns
 
@@ -36,8 +36,9 @@ Each has its own document; this one says which module answers which question.
   An unpriced holding is worth `None`, never zero; `NetWorth.total` raises while anything is unpriced, and `known_total` is the labelled floor.
   Stale prices carry their age.
   Amounts in another currency, unattributed spending, unassigned accounts and failed balance assertions are listed, never dropped.
-- **Nothing is booked that nobody ruled on.**
-  A group ruling covers only the rows its author saw; there is no auto-accept.
+- **Nothing unreviewed poses as checked.**
+  Every imported row is in the books, flagged `!` until a member rules on it, and every spending and income total says how much rests on such rows.
+  An accept is bound to the proposal its author saw; there is no auto-accept.
 - **No token or key is ever printed**, in any repr, log, exception or traceback.
 
 ## What is not wired yet
@@ -45,4 +46,4 @@ Each has its own document; this one says which module answers which question.
 - `hearth.figures` (foundation) and `hearth.reports` both compute member spending: `figures` over the `Ledger` protocol, which has only an in-memory implementation, and `reports` over beancount entries.
   The beancount-backed `Ledger` should delegate to `reports`, so each figure has one implementation.
 - Prices: no EODHD key exists until the plan is bought, so every fund values as unpriced; the daily refresh schedule and the two-year backfill wait on the key (`docs/valuation.md`).
-- Review: the pile is read from beancount_nextgen's `pending.beancount`; a pile fed by Plaid will need its importer to assign review ids by the same contract (`review.ids`).
+- Review: rulings are laid over the ledger at each recompute and never written back to the ledger file; an importer that writes rows must assign review ids by the same contract (`review.ids`) for rulings to follow them.

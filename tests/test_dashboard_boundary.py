@@ -295,7 +295,7 @@ def test_booking_a_row_as_something_that_is_not_an_account_says_why(world: World
     assert "That row was not booked" not in casey.get("/review").text
 
 
-def test_a_groups_accept_button_counts_only_the_rows_it_would_accept(world: World) -> None:
+def test_a_group_with_a_row_nothing_was_suggested_for_offers_no_accept(world: World) -> None:
     text = world.ledger.read_text()
     for review_id, other in (("casey-row-2", "Expenses:Kites"), ("casey-row-3", "")):
         text += (
@@ -308,8 +308,9 @@ def test_a_groups_accept_button_counts_only_the_rows_it_would_accept(world: Worl
 
     page = world.signed_in("casey").get("/review").text
 
-    assert "Accept 1</button>" in page
-    assert "Accept 2</button>" not in page
+    mixed = page[page.index(">Mixed</h2>") :].split("</section>")[0]
+    assert "data-accept-group" not in mixed
+    assert 'id="r-casey-row-2"' in mixed  # each row is offered on its own instead
 
 
 def test_a_month_with_only_a_fixed_bill_so_far_is_not_an_empty_panel(world: World) -> None:

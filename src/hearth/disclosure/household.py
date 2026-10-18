@@ -12,7 +12,15 @@ from datetime import date
 from decimal import Decimal
 
 from hearth import figures
-from hearth.disclosure.common import Household, PartRef, Worth, is_withheld, stale_positions
+from hearth.disclosure.common import (
+    Household,
+    PartRef,
+    Unreviewed,
+    Worth,
+    is_withheld,
+    stale_positions,
+    unreviewed,
+)
 from hearth.disclosure.gate import Disclosed, Withheld
 from hearth.figures import MonthFlows, Part
 from hearth.months import Month
@@ -74,8 +82,10 @@ class SpendingPanel:
     to_day: int
     spent: Decimal
     spent_without: tuple[PartRef, ...]
+    spent_unreviewed: Unreviewed
     earned: Decimal
     earned_without: tuple[PartRef, ...]
+    earned_unreviewed: Unreviewed
     saved_rate: Decimal | None
     saved_month: Month
     saved_without: tuple[PartRef, ...]
@@ -125,7 +135,8 @@ class CategoryPanel:
     fixed: tuple[FixedRow, ...]
     rows: tuple[CategoryRow, ...]
     totals_only: tuple[Slice, ...]
-    unreviewed: int
+    unreviewed: Unreviewed
+    """What of the categories shown rests on unreviewed rows, at their suggested category."""
 
     @property
     def scale(self) -> Decimal:
@@ -278,8 +289,10 @@ def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> Sp
         to_day=h.books.as_of.day,
         spent=_sum(this_month, spenders, MonthFlows.spent),
         spent_without=spent_without,
+        spent_unreviewed=_unreviewed(h, spenders, this_month, MonthFlows.spent_unreviewed),
         earned=_sum(this_month, earners, MonthFlows.earned),
         earned_without=earned_without,
+        earned_unreviewed=_unreviewed(h, earners, this_month, MonthFlows.earned_unreviewed),
         saved_rate=(earned_last - spent_last) / earned_last if earned_last > 0 else None,
         saved_month=past[-1],
         saved_without=saved_without,
@@ -360,7 +373,22 @@ def category_panel(
         ),
         rows=tuple(rows[:CATEGORY_ROWS]) + _other(rows[CATEGORY_ROWS:]),
         totals_only=tuple(Slice(h.part_ref(p), this_month.spent(p.owners)) for p in totals),
-        unreviewed=sum(this_month.unreviewed.get(p.owners, 0) for p in detailed),
+        unreviewed=_unreviewed(h, [*detailed, *totals], this_month, MonthFlows.spent_unreviewed),
+    )
+
+
+def _unreviewed(
+    h: Household,
+    parts: Sequence[Part],
+    flows: MonthFlows,
+    measure: Callable[[MonthFlows, Owners], Decimal],
+) -> Unreviewed:
+    return unreviewed(
+        h.gate,
+        parts,
+        h.part_ref,
+        lambda part: measure(flows, part.owners),
+        lambda part: flows.unreviewed.get(part.owners, 0),
     )
 
 

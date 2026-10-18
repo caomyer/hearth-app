@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from hearth import figures
 from hearth.accounts import Account
-from hearth.disclosure.common import Household, MemberRef, PartRef, Worth
+from hearth.disclosure.common import Household, MemberRef, PartRef, Unreviewed, Worth, unreviewed
 from hearth.disclosure.gate import Concealed, Disclosed
 from hearth.disclosure.household import CategoryPanel, category_panel
 from hearth.figures import Line, MonthFlows, Part
@@ -63,6 +63,8 @@ class Totals:
     earned: Disclosed[Decimal]
     payments_in: Disclosed[int]
     typical_spent: Decimal | None
+    spent_unreviewed: Disclosed[Unreviewed]
+    earned_unreviewed: Disclosed[Unreviewed]
 
     @property
     def over_typical(self) -> Decimal | None:
@@ -196,7 +198,22 @@ def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
         ),
         payments_in=gate.disclose(Facet.TRANSACTIONS, part.owners, lambda: _payments_in(h, part)),
         typical_spent=typical,
+        spent_unreviewed=gate.disclose(
+            Facet.MONTHLY_SPENDING_TOTAL,
+            part.owners,
+            lambda: _unreviewed(h, part, this_month.spent_unreviewed(part.owners), this_month),
+        ),
+        earned_unreviewed=gate.disclose(
+            Facet.MONTHLY_INCOME_TOTAL,
+            part.owners,
+            lambda: _unreviewed(h, part, this_month.earned_unreviewed(part.owners), this_month),
+        ),
     )
+
+
+def _unreviewed(h: Household, part: Part, amount: Decimal, flows: MonthFlows) -> Unreviewed:
+    rows = flows.unreviewed.get(part.owners, 0)
+    return unreviewed(h.gate, [part], h.part_ref, lambda _: amount, lambda _: rows)
 
 
 def _payments_in(h: Household, part: Part) -> int:

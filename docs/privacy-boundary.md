@@ -44,13 +44,14 @@ Day-by-day spending, and "typical by the 18th", read off when money went out, so
 The same holds for categories: a category's "typical by this date", and the day a fixed bill was paid with its single payment, appear only where the viewer may see the transactions of every part in the panel.
 Anyone who sees only the category facet gets each category's amount for the month so far, with a fixed bill as an ordinary category row.
 
-The dashboards add four more decisions, each in `hearth.access` and asked only through the gate:
+The dashboards and review add five more decisions, each in `hearth.access` and asked only through the gate:
 
 - A failed balance check names an account and amounts, so its detail is shown only to those who may see that account's balance; everyone else reads one sentence that names nothing.
   Beancount's own error messages are never passed on, because they name accounts and amounts.
 - A connection to an institution is its holder's alone, joint accounts included; the household learns only how many accounts are behind, never which or whose.
 - Only someone who holds a security in an account they own may enter its price by hand, and it is stored as theirs, never as the source's.
-- Only an owner may review an account's set-aside rows; sharing transactions shares what has been booked, not the right to decide what gets booked.
+- Only an owner may review an account's rows; sharing transactions shares what is in the books, not the right to decide how it is booked.
+- How much of a total rests on unreviewed rows is shown only for parts the viewer may review or whose transactions they may see; for anyone else the page says their share may include unchecked rows, the same way whether it does or not, so no pile can be counted by subtraction (`docs/review.md`).
 
 ## Where it is enforced
 

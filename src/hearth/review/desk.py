@@ -1,4 +1,4 @@
-"""One member's review desk: their part of the pile, grouped, and the rulings they make on it.
+"""One member's review desk: their unreviewed rows, grouped, and the rulings they make on them.
 
 Who may review a row is not decided here. The desk is handed the household's access policy as
 `may_review(member, owners)` and asks it about every row, for the member at the desk and for
@@ -8,42 +8,41 @@ no longer decides that account's rows. A row on an account nobody owns is review
 A row the member may not review behaves exactly like a row that does not exist: both raise
 `Concealed`, so the desk never reveals what is on anyone else's pile, not even a count.
 
-Precedence, as beancount_nextgen's: a ruling on the row itself wins over a ruling on its group,
-and among rulings of the same kind the later one wins. Accepting a group binds each row to the
-account it proposed then: a row the import had nothing to propose for is not covered, and a row
-whose proposal has changed since goes back to pending until someone looks at it again.
+Every accept is bound to what its author was shown. A page sends back each row it showed with
+the account it proposed then, and the desk accepts a row only while it is still waiting and
+still proposes that account, so a proposal that changed between the page and the click is never
+accepted unseen. Accepting a group records, row by row, the account each row proposed then
+(``hearth.review.decision``): a row whose proposal changes later is unreviewed again, and a row
+the import had nothing to propose for is never covered.
 """
 
 from collections import defaultdict
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from enum import StrEnum
+from datetime import datetime
 
 from hearth.accounts import Account
 from hearth.clock import Clock
 from hearth.disclosure import Concealed
 from hearth.members import MemberId
+from hearth.review.decision import Decision, State, decide
 from hearth.review.pile import PileItem
 from hearth.review.rulings import Action, Ruling, RulingStore, Scope, check_account
 
+__all__ = [
+    "Acceptance",
+    "Decision",
+    "GroupView",
+    "ItemView",
+    "NotOneDecision",
+    "ReviewDesk",
+    "State",
+    "one_decision",
+    "resolve",
+]
+
 type MayReview = Callable[[MemberId, Collection[MemberId]], bool]
 """The access policy's answer to: may this member review rows on an account these own?"""
-
-
-class State(StrEnum):
-    PENDING = "pending"
-    BOOKED = "booked"
-    REJECTED = "rejected"
-
-
-@dataclass(frozen=True, slots=True)
-class Decision:
-    """What happens to a row: still waiting, booked against `account`, or rejected."""
-
-    state: State
-    account: str | None
-    ruling: Ruling | None
-    reason: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +50,12 @@ class ItemView:
     item: PileItem
     owners: frozenset[MemberId]
     decision: Decision
+    account: Account | None
+    """The household account the row is on; only ever one the member may review."""
+
+    @property
+    def unreviewed(self) -> bool:
+        return self.decision.state is State.UNREVIEWED
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,35 +65,43 @@ class GroupView:
 
     @property
     def pending(self) -> int:
-        return sum(1 for view in self.items if view.decision.state is State.PENDING)
+        return sum(1 for view in self.items if view.unreviewed)
 
 
-UNRULED = Decision(State.PENDING, None, None, "nobody has ruled on it")
+UNCERTAIN_GROUPS = frozenset(
+    {"unsure", "unknown", "unknown-type", "uncategorized", "uncategorised", "other", "misc"}
+)
+"""Group names an import gives rows it could not place: groups defined by being unsure."""
 
 
-def decide(item: PileItem, rulings: Iterable[tuple[Ruling, str | None]]) -> Decision:
-    """The decision `rulings` (oldest first, all applicable to the row) make for `item`.
+class NotOneDecision(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
+    """A group that is no one kind of transaction, so no single accept may settle it."""
 
-    Each ruling comes with the account the row was accepted as, for an accept.
+    def __init__(self, group: str) -> None:
+        super().__init__(f"{group!r} is not one kind of transaction; review it row by row")
+
+
+def one_decision(group: str, waiting: Collection[PileItem]) -> bool:
+    """Whether accepting `group` is one decision about one kind of transaction.
+
+    Only when every row waiting in it has the same suggestion, and the group is not one an
+    import made of what it could not place. A group of guesses, of mixed suggestions, or with
+    a row nothing was suggested for, is reviewed row by row, however the accept is asked for.
     """
-    latest: dict[Scope, tuple[Ruling, str | None]] = {}
-    for ruling, accepted in rulings:
-        latest[ruling.scope] = (ruling, accepted)
-    deciding = latest.get(Scope.ROW) or latest.get(Scope.GROUP)
-    if deciding is None:
-        return UNRULED
-    return _apply(item, *deciding)
+    if group.strip().casefold() in UNCERTAIN_GROUPS:
+        return False
+    suggestions = {item.proposed for item in waiting}
+    return len(suggestions) == 1 and None not in suggestions
 
 
-def _apply(item: PileItem, ruling: Ruling, accepted: str | None) -> Decision:
-    if ruling.action is Action.REJECT:
-        return Decision(State.REJECTED, None, ruling, None)
-    if ruling.action is Action.ACCOUNT:
-        return Decision(State.BOOKED, ruling.account, ruling, None)
-    if item.proposed != accepted:
-        reason = "the import's proposal has changed since it was accepted"
-        return Decision(State.PENDING, None, ruling, reason)
-    return Decision(State.BOOKED, accepted, ruling, None)
+@dataclass(frozen=True, slots=True)
+class Acceptance:
+    """What an accept recorded, and how many of the rows it was shown it left as they are."""
+
+    ruling: Ruling | None
+    accepted: int
+    changed: int
+    """Rows shown with a proposal they no longer have, or no longer waiting for this member."""
 
 
 def resolve(
@@ -97,7 +110,7 @@ def resolve(
     rulings: RulingStore,
     may_review: MayReview,
 ) -> dict[str, Decision]:
-    """Every row's decision, for the import that books them. Not for display to anyone."""
+    """Every row's decision, for the books to lay over the ledger. Not for display to anyone."""
     owners = _owners(accounts)
     applicable: defaultdict[str, list[tuple[Ruling, str | None]]] = defaultdict(list)
     by_id = {item.review_id: item for item in pile}
@@ -110,6 +123,11 @@ def resolve(
 def _owners(accounts: Sequence[Account]) -> Callable[[PileItem], frozenset[MemberId]]:
     by_ledger_account = {account.ledger_account: account.owners for account in accounts}
     return lambda item: by_ledger_account.get(item.account, frozenset())
+
+
+def _account(accounts: Sequence[Account]) -> Callable[[PileItem], Account | None]:
+    by_ledger_account = {account.ledger_account: account for account in accounts}
+    return lambda item: by_ledger_account.get(item.account)
 
 
 class ReviewDesk:
@@ -133,37 +151,72 @@ class ReviewDesk:
             item.review_id: item for item in pile if may_review(member, self._owners(item))
         }
 
+    def items(self) -> list[ItemView]:
+        """Every row on the member's pile, decided or not, in a stable order."""
+        views = self._views(self._mine.values())
+        return sorted(views, key=lambda v: (v.item.group, v.item.date, v.item.review_id))
+
     def groups(self) -> list[GroupView]:
         """The member's rows by group, groups and rows in a stable order."""
-        views = self._views(self._mine.values())
         by_group: defaultdict[str, list[ItemView]] = defaultdict(list)
-        for view in views:
+        for view in self.items():
             by_group[view.item.group].append(view)
-        return [
-            GroupView(name, tuple(sorted(rows, key=lambda v: (v.item.date, v.item.review_id))))
-            for name, rows in sorted(by_group.items())
-        ]
+        return [GroupView(name, tuple(rows)) for name, rows in sorted(by_group.items())]
 
     def item(self, review_id: str) -> ItemView:
         (view,) = self._views([self._row(review_id)])
         return view
 
-    def accept_group(self, group: str, note: str | None = None) -> Ruling:
-        """Accept the proposal for every row of `group` on the member's pile, as it is now.
+    def last_reviewed(self) -> datetime | None:
+        """When the member last reviewed, or `None` if they never have; an undo does not count."""
+        return self._rulings.latest_by(self._member)
 
-        A row the import proposed nothing for is left out, and if that is every row, nothing
-        is recorded: there is nothing to accept.
+    def accept(self, review_id: str, shown: str, note: str | None = None) -> Acceptance:
+        """Accept one row's proposal, if it is still waiting and still proposes `shown`."""
+        item = self._row(review_id)
+        return self._accept(Scope.ROW, None, [item], {review_id: shown}, note)
+
+    def accept_group(
+        self, group: str, shown: Mapping[str, str], note: str | None = None
+    ) -> Acceptance:
+        """Accept every row of `group` in `shown`, each bound to the account it was shown with.
+
+        Rows of the group that were not shown are left alone, and so is a row that is no longer
+        waiting or now proposes something else: it is counted as changed and stays as it is.
         """
         rows = [item for item in self._mine.values() if item.group == group]
         if not rows:
             raise Concealed
-        proposed = {item.review_id: item.proposed for item in rows if item.proposed is not None}
-        if not proposed:
-            raise ValueError(f"the import proposed no account for any row of {group!r}")
-        return self._record(Scope.GROUP, group, Action.ACCEPT, None, note, proposed)
+        waiting = [view.item for view in self._views(rows) if view.unreviewed]
+        if not one_decision(group, waiting):
+            raise NotOneDecision(group)
+        return self._accept(Scope.GROUP, group, rows, shown, note)
+
+    def ruling(self, ruling_id: int) -> tuple[Ruling, int] | None:
+        """One of the member's own rulings and how many rows of their pile it covers, for
+        saying what an undo would take back; `None` for anyone else's, or none."""
+        found = self._rulings.get(ruling_id)
+        if found is None or found[0].member_id != self._member:
+            return None
+        ruling, covered = found
+        return ruling, sum(1 for review_id in covered if review_id in self._mine)
+
+    def undo(self, ruling_id: int) -> Ruling:
+        """Take back one of the member's own rulings: the rows it covered on their pile are
+        unreviewed again. Anyone else's ruling, or none, is concealed like a missing one."""
+        found = self._rulings.get(ruling_id)
+        if found is None:
+            raise Concealed
+        ruling, covered = found
+        rows = [review_id for review_id in covered if review_id in self._mine]
+        if ruling.member_id != self._member or ruling.action is Action.REOPEN or not rows:
+            raise Concealed
+        return self._record(
+            ruling.scope, ruling.group, Action.REOPEN, None, None, dict.fromkeys(rows)
+        )
 
     def set_account(self, review_id: str, account: str, note: str | None = None) -> Ruling:
-        """Book one row against `account`, whatever its group was given."""
+        """Review one row against `account`, whatever its group was given."""
         self._row(review_id)
         check_account(account)
         return self._record(Scope.ROW, None, Action.ACCOUNT, account, note, {review_id: None})
@@ -172,6 +225,26 @@ class ReviewDesk:
         """One row is not a transaction: book nothing for it."""
         self._row(review_id)
         return self._record(Scope.ROW, None, Action.REJECT, None, note, {review_id: None})
+
+    def _accept(
+        self,
+        scope: Scope,
+        group: str | None,
+        rows: Sequence[PileItem],
+        shown: Mapping[str, str],
+        note: str | None,
+    ) -> Acceptance:
+        waiting = {
+            view.item.review_id: view.item.proposed
+            for view in self._views(rows)
+            if view.unreviewed and view.item.proposed is not None
+        }
+        bound = {rid: account for rid, account in shown.items() if waiting.get(rid) == account}
+        changed = len(set(shown) - set(bound))
+        if not bound:
+            return Acceptance(None, 0, changed)
+        ruling = self._record(scope, group, Action.ACCEPT, None, note, dict(bound))
+        return Acceptance(ruling, len(bound), changed)
 
     def _row(self, review_id: str) -> PileItem:
         item = self._mine.get(review_id)
@@ -202,4 +275,8 @@ class ReviewDesk:
     def _views(self, items: Iterable[PileItem]) -> list[ItemView]:
         rows = list(items)
         decisions = resolve(rows, self._accounts, self._rulings, self._may_review)
-        return [ItemView(item, self._owners(item), decisions[item.review_id]) for item in rows]
+        account = _account(self._accounts)
+        return [
+            ItemView(item, self._owners(item), decisions[item.review_id], account(item))
+            for item in rows
+        ]

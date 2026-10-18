@@ -1,101 +1,256 @@
 {% extends "base.html" %}
+{% set q = queue %}
+{% set remaining = q.remaining %}
 {% block title %}Review{% endblock %}
+{% macro back_fields(next_id="") %}
+<input type="hidden" name="csrf" value="{{ session.csrf }}">
+<input type="hidden" name="back" value="{{ where.query() }}">
+<input type="hidden" name="focus" value="{{ next_id }}">
+{% endmacro %}
+{% macro row_day(d) %}{{ d | day if d.year == today.year else d | year_day }}{% endmacro %}
+{% macro reason(row) %}{% set band = confidence(row) %}<span class="second">{{ band.value }}{% if not where.filter.group %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}</span>{% endmacro %}
+{# One row and its decision: the suggestion is already in the box, so Accept keeps it and
+   typing another account books that instead. The page sends back what it showed. #}
+{% macro decide_row(row, next_id) %}
+{% set rid = row.item.review_id %}
+{% set what = row.item.payee or row.item.narration or "No description" %}
+<tr id="r-{{ rid }}" data-row{% if focus == rid %} data-focus{% endif %}>
+  <td class="col-hide-sm muted tnum">{{ row_day(row.item.date) }}</td>
+  <td><span class="primary">{{ what }}</span>{{ reason(row) }}</td>
+  <td class="num amt{% if row.item.amount > 0 %} amt-in{% endif %}">{{ row.item.amount | amount }}</td>
+  <td>
+    <form method="post" action="/review/rows/book" id="f-{{ rid }}" data-decide>
+      {{ back_fields(next_id) }}
+      <input type="hidden" name="review_id" value="{{ rid }}">
+      <input type="hidden" name="shown" value="{{ row.item.proposed or '' }}">
+      <label class="vh" for="c-{{ rid }}">Category for {{ what }}</label>
+      <input class="input mono-input" id="c-{{ rid }}" name="account" list="categories" placeholder="Expenses:Category" value="{{ row.item.proposed or '' }}" required autocomplete="off" spellcheck="false">
+    </form>
+  </td>
+  <td class="act">
+    <div class="ract">
+      <button class="btn btn-sm" type="submit" form="f-{{ rid }}" data-accept>Accept</button>
+      <form method="post" action="/review/rows/reject" data-exclude>
+        {{ back_fields(next_id) }}
+        <input type="hidden" name="review_id" value="{{ rid }}">
+        <button class="btn btn-sm btn-quiet" type="submit">Exclude<span class="vh"> {{ what }}: not a transaction</span></button>
+      </form>
+    </div>
+  </td>
+</tr>
+{% endmacro %}
+{# `after` is where focus goes once the last row is decided: the next row, or the group. #}
+{% macro decide_table(rows, caption, after="") %}
+<table class="table ritems has-exclude">
+  <colgroup><col class="c-date"><col><col class="c-amt"><col class="c-cat"><col class="c-act"></colgroup>
+  <caption class="vh">{{ caption }}</caption>
+  <thead><tr><th scope="col" class="col-hide-sm">Date</th><th scope="col">Merchant</th><th scope="col" class="num">Amount</th><th scope="col">Category</th><th scope="col"><span class="vh">Decide</span></th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    {{ decide_row(row, rows[loop.index].item.review_id if not loop.last else after) }}
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
 {% block content %}
   <div class="page-head">
     <div>
       <h1>Review</h1>
-      <p class="sub measure">Nothing is booked until someone checks it. Your decisions are remembered by each transaction's content, so a re-import never asks twice.</p>
+      <p class="sub measure">Every transaction is in your books the moment it arrives. Until you check one it counts at its suggested category, and every total that leans on it says so. Your decisions are remembered by each transaction's content, so a re-import never asks twice.</p>
     </div>
   </div>
 
   {% if message %}
-  <div class="alert alert-info mb-4" role="status"><svg aria-hidden="true"><use href="#i-info"/></svg><div class="alert-body"><p style="color: var(--ink)">{{ message }}</p></div></div>
+  <div class="alert alert-info mb-4" role="status">
+    <svg aria-hidden="true"><use href="#i-info"/></svg>
+    <div class="alert-body">
+      <p style="color: var(--ink)">{{ message }}</p>
+      {% if undo %}
+      <p>Undo takes back exactly this decision: {{ plural(undo.rows, "transaction") }}{% if undo.ruling.group %} in {{ undo.ruling.group }}{% endif %}, which will wait for review again. It is offered here until your next decision; after that, change a transaction from the queue or the list below.</p>
+      <form class="alert-actions" method="post" action="/review/undo" data-undo>
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="back" value="{{ where.query() }}">
+        <input type="hidden" name="ruling" value="{{ undo.ruling.id }}">
+        <button class="btn btn-sm" type="submit">Undo</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
   {% endif %}
 
-  {% if groups %}
-  {% set rows = groups | map(attribute="items") | sum(start=()) | selectattr("decision.state", "equalto", "pending") | list %}
+  {% if remaining.rows %}
   <section class="panel" aria-labelledby="rq-h">
     <div class="panel-body review-summary" style="padding-top: var(--s-6)">
       <div class="hero">
         <h2 id="rq-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Waiting for you</h2>
-        <p class="hero-value">{{ review_count }}</p>
-        <p class="muted"><span class="tnum">{{ rows | sum(attribute="item.amount") | money }}</span> across {{ plural(groups | length, "group") }}. Oldest from {{ (rows | map(attribute="item.date") | min) | day }}.</p>
+        <p class="hero-value">{{ "{:,}".format(remaining.rows) }}</p>
+        <p class="muted"><span class="tnum">{{ remaining.moved | money }}</span> moved, across {{ plural(q.group_count, "group") }}. Oldest from {{ q.oldest | year_day if q.oldest.year != today.year else q.oldest | day }}.</p>
+      </div>
+      <div class="review-bulk rprogress">
+        <p class="sm"><span class="tnum" style="font-weight: 600">{{ "{:,}".format(q.reviewed) }}</span> of <span class="tnum">{{ "{:,}".format(q.total) }}</span> reviewed</p>
+        <div class="meter" role="img" aria-label="{{ q.reviewed }} of {{ q.total }} reviewed"><span style="width: {{ '%.1f' | format(q.reviewed / q.total * 100) }}%"></span></div>
+        {% if q.changed %}
+        <p class="xs faint">{{ plural(q.changed, "row") }} came back because the suggestion changed after you accepted it.</p>
+        {% endif %}
       </div>
     </div>
   </section>
 
+  <section class="panel mt-4 rtools" aria-label="Order and filter">
+    <div class="panel-body">
+      <div class="rtools-row">
+        <nav class="seg" aria-label="View">
+          <a href="{{ where.url(one_by_one=false) }}"{% if not where.one_by_one %} aria-current="page"{% endif %}>By group</a>
+          <a href="{{ where.url(one_by_one=true) }}"{% if where.one_by_one %} aria-current="page"{% endif %}>One by one</a>
+        </nav>
+        <nav class="rorder" aria-label="Put first">
+          <span class="sm faint">Put first</span>
+          <span class="seg">
+            {% for order in orders %}
+            <a href="{{ where.url(order=order) }}"{% if where.order == order %} aria-current="true"{% endif %}{% if order in quick_orders %} class="is-quick"{% endif %}>{{ order_labels[order] }}</a>
+            {% endfor %}
+          </span>
+        </nav>
+      </div>
+      <form class="rfilter mt-4" method="get" action="/review">
+        {% if where.one_by_one %}<input type="hidden" name="view" value="rows">{% endif %}
+        {% if where.order.value != "size" %}<input type="hidden" name="order" value="{{ where.order.value }}">{% endif %}
+        {% if where.filter.group %}<input type="hidden" name="group" value="{{ where.filter.group }}">{% endif %}
+        <div class="field">
+          <label for="f-account">Account</label>
+          <select class="select" id="f-account" name="account" data-autosubmit>
+            <option value="">All accounts</option>
+            {% for c in q.accounts %}<option value="{{ c.value }}"{% if c.value == where.filter.account %} selected{% endif %}>{{ c.label }} ({{ "{:,}".format(c.rows) }})</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-category">Suggested category</label>
+          <select class="select" id="f-category" name="category" data-autosubmit>
+            <option value="">All categories</option>
+            {% for c in q.categories %}<option value="{{ c.value }}"{% if c.value == where.filter.category %} selected{% endif %}>{{ c.label }} ({{ "{:,}".format(c.rows) }})</option>{% endfor %}
+          </select>
+        </div>
+        <button class="btn" type="submit" data-autosubmit-button>Filter</button>
+      </form>
+      {% if q.filter.active %}
+      <p class="sm mt-4 rleft" role="status">
+        {% if q.shown.rows %}Showing <strong class="tnum">{{ "{:,}".format(q.shown.rows) }}</strong> of {{ "{:,}".format(remaining.rows) }} waiting, <span class="tnum">{{ q.shown.moved | money }}</span> moved{% if where.filter.group %}, in {{ where.filter.group }}{% endif %}.{% else %}Nothing waiting matches this filter.{% endif %}
+        <a href="{{ where.cleared() }}">Show everything</a>
+      </p>
+      {% endif %}
+    </div>
+  </section>
+
   <datalist id="categories">{% for name in categories %}<option value="{{ name }}">{% endfor %}</datalist>
-  {% for group in groups %}
-  {% set pending = group.items | selectattr("decision.state", "equalto", "pending") | list %}
-  {% set suggested = pending | map(attribute="item.proposed") | reject("none") | unique | list %}
-  <section class="panel rgroup mt-4" aria-labelledby="g{{ loop.index }}-h">
+
+  {% if where.one_by_one %}
+  {% set p = page %}
+  {% if p.rows %}
+  <section class="panel mt-4" aria-labelledby="rows-h" data-queue>
+    <div class="panel-head">
+      <h2 id="rows-h">{% if where.filter.group %}{{ where.filter.group }}{% else %}One by one{% endif %}, {{ order_labels[where.order] | lower }} first</h2>
+      <p class="sm faint tnum">{{ "{:,}".format(p.start + 1) }}&ndash;{{ "{:,}".format(p.start + p.rows | length) }} of {{ "{:,}".format(q.shown.rows) }}</p>
+    </div>
+    {{ decide_table(p.rows, "Transactions waiting for review") }}
+    {% if p.pages > 1 %}
+    <nav class="panel-foot rpager" aria-label="Pages">
+      {% if p.number > 1 %}<a class="btn btn-sm" href="{{ where.url(page=p.number - 1) }}" rel="prev" data-prev-page>Previous</a>{% else %}<span></span>{% endif %}
+      <span class="sm muted tnum">Page {{ p.number }} of {{ p.pages }}</span>
+      {% if p.number < p.pages %}<a class="btn btn-sm" href="{{ where.url(page=p.number + 1) }}" rel="next" data-next-page>Next</a>{% else %}<span></span>{% endif %}
+    </nav>
+    {% endif %}
+  </section>
+  {% endif %}
+  {% else %}
+  {% for group in q.groups %}
+  {% set suggested = group.suggested %}
+  {% set acceptable = group.acceptable %}
+  {% set gid = "g" ~ loop.index %}
+  <section class="panel rgroup mt-4" aria-labelledby="{{ gid }}-h" id="r-group-{{ loop.index }}" data-group{% if focus == "group-" ~ loop.index %} data-focus{% endif %}>
     <div class="rgroup-head">
       <div class="rgroup-what">
-        <h2 id="g{{ loop.index }}-h">{{ group.name }}</h2>
-        <p class="muted">{% if suggested | length == 1 %}Each has the same suggestion, so one decision settles them.{% elif suggested %}Several suggestions; check before accepting.{% else %}Nothing could be suggested; each needs a look.{% endif %}</p>
+        <h2 id="{{ gid }}-h">{{ group.name }}</h2>
+        <p class="muted">{% if group.one_decision %}Each has the same suggestion, so one decision settles them.{% elif suggested %}Not one kind of transaction, so there is no accepting them together; each needs its own look.{% else %}Nothing could be suggested; each needs a look.{% endif %} <span class="faint">Least sure: {{ group.lowest.value | lower }}.</span></p>
       </div>
       <dl class="rgroup-figs">
-        <div><dt>Transactions</dt><dd class="tnum">{{ pending | length }}</dd></div>
-        <div><dt>Total</dt><dd class="tnum">{{ pending | sum(attribute="item.amount") | money }}</dd></div>
-        <div><dt>Suggested</dt><dd>{{ suggested | map("category") | join(", ") if suggested else "Nothing" }}</dd></div>
+        <div><dt>Transactions</dt><dd class="tnum">{% if group.rows | length < group.size %}{{ "{:,}".format(group.rows | length) }} <span class="faint">of {{ "{:,}".format(group.size) }}</span>{% else %}{{ "{:,}".format(group.size) }}{% endif %}</dd></div>
+        <div><dt>Total</dt><dd class="tnum">{{ group.total | money }}</dd></div>
+        <div><dt>Suggested</dt><dd>{% if suggested | length == 1 %}{{ suggested[0] | category }}{% elif suggested %}Varies{% else %}<span class="faint">None</span>{% endif %}</dd></div>
       </dl>
       <div class="rgroup-act">
-        {% if suggested %}
-        <form method="post" action="/review/groups/accept">
-          <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        {% if acceptable %}
+        <form method="post" action="/review/groups/accept" data-accept-group>
+          {{ back_fields("group-" ~ loop.index) }}
           <input type="hidden" name="group" value="{{ group.name }}">
-          <button class="btn btn-primary" type="submit">Accept {{ pending | selectattr("item.proposed") | list | length }}</button>
+          {% for row in acceptable %}<input type="hidden" name="rows" value="{{ row.item.review_id }} {{ row.item.proposed }}">{% endfor %}
+          <button class="btn btn-primary" type="submit">Accept {{ "{:,}".format(acceptable | length) }}</button>
         </form>
         {% endif %}
       </div>
     </div>
+    {% if group.one_decision %}
     <details class="rgroup-items">
-      <summary>Show the {{ plural(pending | length, "transaction") }}</summary>
+      <summary>Show the {{ plural(group.rows | length, "transaction") }}</summary>
       <table class="table">
-        <caption class="vh">{{ group.name }}, awaiting review</caption>
-        <thead><tr><th scope="col" class="col-hide-sm">Date</th><th scope="col">Merchant</th><th scope="col" class="num">Amount</th><th scope="col"><span class="vh">Decide</span></th></tr></thead>
+        <caption class="vh">{{ group.name }}, waiting for review</caption>
+        <thead><tr><th scope="col" class="col-hide-sm">Date</th><th scope="col">Merchant</th><th scope="col" class="num">Amount</th></tr></thead>
         <tbody>
-          {% for row in pending | sort(attribute="item.date", reverse=true) %}
-          <tr>
-            <td class="col-hide-sm muted tnum">{{ row.item.date | day }}</td>
-            <td>{{ row.item.payee or row.item.narration or "No description" }}{% if row.item.proposed %}<span class="second">Suggested: {{ row.item.proposed | category }}</span>{% endif %}</td>
-            <td class="num amt">{{ row.item.amount | amount }}</td>
-            <td>
-              <div class="row wrap" style="gap: var(--s-2); justify-content: flex-end">
-                <form method="post" action="/review/rows/book" class="row" style="gap: var(--s-2)">
-                  <input type="hidden" name="csrf" value="{{ session.csrf }}">
-                  <input type="hidden" name="review_id" value="{{ row.item.review_id }}">
-                  <label class="vh" for="book-{{ row.item.review_id }}">Book {{ row.item.payee or "this transaction" }} as</label>
-                  <input class="input mono-input" id="book-{{ row.item.review_id }}" name="account" list="categories" placeholder="Expenses:Category" value="{{ row.item.proposed or '' }}" required style="height: 32px; width: 220px">
-                  <button class="btn btn-sm" type="submit">Book</button>
-                </form>
-                <form method="post" action="/review/rows/reject">
-                  <input type="hidden" name="csrf" value="{{ session.csrf }}">
-                  <input type="hidden" name="review_id" value="{{ row.item.review_id }}">
-                  <button class="btn btn-sm btn-quiet" type="submit">Not a transaction</button>
-                </form>
-              </div>
-            </td>
-          </tr>
+          {% for row in group.rows %}
+          <tr><td class="col-hide-sm muted tnum">{{ row_day(row.item.date) }}</td><td><span class="primary">{{ row.item.payee or row.item.narration or "No description" }}</span>{{ reason(row) }}</td><td class="num amt{% if row.item.amount > 0 %} amt-in{% endif %}">{{ row.item.amount | amount }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
+      <p class="panel-foot sm"><a href="{{ where.in_group(group.name) }}">Review these one by one</a></p>
     </details>
+    {% else %}
+    {% set preview = group.rows[:group_preview] %}
+    <div class="rgroup-items is-open">
+      {{ decide_table(preview, group.name ~ ", each needing a look", "group-" ~ loop.index) }}
+      {% if group.rows | length > preview | length %}
+      <p class="panel-foot sm"><a href="{{ where.in_group(group.name) }}">Review all {{ "{:,}".format(group.rows | length) }} one by one</a></p>
+      {% endif %}
+    </div>
+    {% endif %}
   </section>
   {% endfor %}
+  {% endif %}
+
+  <details class="panel mt-4 rkeys">
+    <summary>Keyboard shortcuts</summary>
+    <dl class="rkeys-list">
+      <div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next and previous {{ "transaction" if where.one_by_one else "group or transaction" }}</dd></div>
+      <div><dt><kbd>a</kbd></dt><dd>Accept the focused transaction, or the whole focused group</dd></div>
+      <div><dt><kbd>s</kbd></dt><dd>Skip: leave it waiting and move on</dd></div>
+      <div><dt><kbd>c</kbd></dt><dd>Change the category, then <kbd>Enter</kbd> to book it</dd></div>
+      <div><dt><kbd>x</kbd></dt><dd>Exclude: not a transaction</dd></div>
+      <div><dt><kbd>]</kbd> <kbd>[</kbd></dt><dd>Next and previous group{% if where.one_by_one %} or page{% endif %}</dd></div>
+      <div><dt><kbd>u</kbd></dt><dd>Undo the last decision</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>Leave the category box</dd></div>
+    </dl>
+  </details>
+  {% elif q.total %}
+  <section class="panel" aria-labelledby="ok-h">
+    <div class="caught-up">
+      <span class="glyph" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
+      <div>
+        <h2 id="ok-h">All caught up</h2>
+        <p class="muted">Every transaction in your accounts has been checked. New ones arrive in your books flagged until you look at them.</p>
+      </div>
+    </div>
+  </section>
   {% else %}
   <section class="panel" aria-labelledby="ok-h">
     <div class="caught-up">
       <span class="glyph" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
       <div>
         <h2 id="ok-h">All caught up</h2>
-        <p class="muted">Every transaction in your accounts has been checked by you. The next import is checked the moment it arrives.</p>
+        <p class="muted">Nothing in your accounts is waiting for review. New transactions arrive in your books flagged until you look at them.</p>
       </div>
     </div>
   </section>
   {% endif %}
 
-  {% if decided %}
+  {% if q.decided %}
   <section class="panel mt-4" aria-labelledby="dec-h">
     <div class="panel-head">
       <h2 id="dec-h">Decided recently</h2>
@@ -105,11 +260,11 @@
         <caption class="vh">Your recent decisions</caption>
         <thead><tr><th scope="col">Decision</th><th scope="col" class="col-hide-sm">When</th><th scope="col" class="num">Amount</th></tr></thead>
         <tbody>
-          {% for row in decided | sort(attribute="decision.ruling.at", reverse=true) %}
+          {% for row in q.decided[:20] %}
           <tr>
-            <td><span class="primary">{{ row.item.payee or row.item.narration or "No description" }}</span><span class="second">{% if row.decision.account %}Booked as {{ row.decision.account | category }}{% else %}Not booked{% endif %}</span></td>
-            <td class="col-hide-sm muted">{{ when(row.decision.ruling.at, today, starting=true) }}</td>
-            <td class="num amt">{{ row.item.amount | amount }}</td>
+            <td><span class="primary">{{ row.item.payee or row.item.narration or "No description" }}</span><span class="second">{% if row.decision.account %}Booked as {{ row.decision.account | category }}{% else %}Excluded: not a transaction{% endif %}</span></td>
+            <td class="col-hide-sm muted">{{ when(row.decision.ruling.at, today) }}</td>
+            <td class="num amt{% if row.item.amount > 0 %} amt-in{% endif %}">{{ row.item.amount | amount }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -117,4 +272,30 @@
     </div>
   </section>
   {% endif %}
+
+  <section class="panel mt-4" aria-labelledby="cad-h">
+    <div class="panel-head">
+      <h2 id="cad-h">Reminders</h2>
+    </div>
+    <div class="panel-body">
+      <form class="row between wrap" method="post" action="/review/reminders" style="align-items: flex-end">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="back" value="{{ where.query() }}">
+        <div>
+          <p style="font-weight: 500">{% if reminder.cadence.value == "off" %}No reminder{% else %}Remind me {{ reminder.cadence.value }}{% endif %}</p>
+          <p class="sm faint">Hearth sends no email. The count on your dashboard says when a review is due, and only if something is waiting.</p>
+          <p class="sm muted mt-1">{% if reminder.last_reviewed %}Last reviewed {{ when(reminder.last_reviewed, today) }}.{% else %}You have not reviewed anything yet.{% endif %}{% if reminder.due %} <strong>Your review is due.</strong>{% elif reminder.due_at and reminder.waiting %} Next due {{ reminder.due_at.astimezone().date() | day }}.{% endif %}</p>
+        </div>
+        <div class="row" style="gap: var(--s-2)">
+          <label class="vh" for="every">How often to remind me</label>
+          <select class="select" id="every" name="every" style="width: 140px">
+            {% for c in cadences %}<option value="{{ c.value }}"{% if c == reminder.cadence %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
+          </select>
+          <button class="btn" type="submit">Save</button>
+        </div>
+      </form>
+      <p class="sm muted mt-4" style="border-top: 1px solid var(--line); padding-top: var(--s-4)">There is no auto-accept. A transaction nobody has looked at stays flagged in your books, however long it waits.</p>
+    </div>
+  </section>
+  <script src="/static/review.js" defer></script>
 {% endblock %}

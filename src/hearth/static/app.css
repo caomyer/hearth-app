@@ -28,3 +28,61 @@
 /* The system's spacing utilities, in the one direction it does not provide: an alert above a
    panel keeps the same gap panels keep between themselves. */
 .mb-4 { margin-bottom: var(--s-4); }
+
+/* Review at the size of a first import: the design draws the queue for a few groups; these
+   carry its components to a thousand rows without restyling any of them. */
+
+/* The segmented control, for links as well as buttons: a view or an order is a place. */
+.seg a { display: inline-flex; align-items: center; height: 28px; padding: 0 var(--s-3); border-radius: 4px; font: 500 var(--t-sm)/1 var(--font); color: var(--ink-2); text-decoration: none; white-space: nowrap; }
+.seg a:hover { color: var(--ink); }
+.seg a[aria-current] { background: var(--surface); color: var(--ink); box-shadow: var(--e-1); }
+.seg a:focus-visible { outline-offset: 0; }
+
+.rtools-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3) var(--s-6); flex-wrap: wrap; }
+.rorder { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.rorder > .faint { white-space: nowrap; }
+.rorder .seg { flex-wrap: wrap; }
+.rtools-row > * { min-width: 0; }
+.rfilter { display: flex; align-items: flex-end; gap: var(--s-3) var(--s-4); flex-wrap: wrap; }
+.rfilter .field { flex: 1 1 220px; max-width: 320px; }
+.rfilter .field + .field { margin-top: 0; }
+.rleft { color: var(--ink-2); }
+.rprogress { flex: 0 1 260px; justify-items: stretch; }
+.rprogress > p { justify-self: end; }
+@media (max-width: 640px) {
+  .rprogress { flex-basis: 100%; }
+  .rprogress > p { justify-self: start; }
+  /* One row of orders that scrolls sideways, rather than a block of wrapped buttons. */
+  .rorder { flex-wrap: nowrap; min-width: 0; max-width: 100%; }
+  .rorder .seg { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+}
+
+/* A row with two decisions: accept as shown (or as typed), or exclude it from the books. */
+.ritems.has-exclude .c-act { width: 184px; }
+.ritems.has-exclude .c-cat { width: 248px; }
+.ritems.has-exclude .c-date { width: 136px; }
+.ritems td.col-hide-sm { white-space: nowrap; }
+.ract { display: flex; justify-content: flex-end; gap: var(--s-2); }
+.ritems .input { height: 32px; font-size: var(--t-sm); }
+.ritems td { vertical-align: middle; }
+.rgroup-items .panel-foot { border-top: 1px solid var(--line); }
+
+/* The item the keys act on. Focus may land on it from a redirect rather than a key, where a
+   browser need not draw its ring, so it carries the system's ring as long as it is current,
+   and a tint besides: never colour alone, and never two rings at once. */
+[data-row].is-current, [data-row]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+[data-row].is-current > td { background: color-mix(in srgb, var(--accent-bg) 55%, var(--surface)); }
+/* On a phone the row is a card of stacked cells, so the card is tinted, not each cell. */
+@media (max-width: 640px) {
+  [data-row].is-current { background: color-mix(in srgb, var(--accent-bg) 55%, var(--surface)); }
+  [data-row].is-current > td { background: none; }
+}
+[data-group].is-current, [data-group]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-md); }
+
+.rpager { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.rkeys > summary { cursor: pointer; padding: var(--s-4) var(--s-6); font-weight: 500; font-size: var(--t-sm); color: var(--accent); }
+.rkeys-list { margin: 0; padding: 0 var(--s-6) var(--s-5); display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s-2) var(--s-6); }
+.rkeys-list > div { display: flex; gap: var(--s-3); align-items: baseline; }
+.rkeys-list dt { flex: none; min-width: 56px; }
+.rkeys-list dd { margin: 0; color: var(--ink-2); font-size: var(--t-sm); }
+kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; background: var(--surface); font: 500 var(--t-xs)/1.4 var(--mono); color: var(--ink); text-align: center; }

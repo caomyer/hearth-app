@@ -94,14 +94,19 @@ class MonthFlows:
     """One month of money in and out, for every part at once.
 
     `to_day` is set when only the month's first days count: the month in progress, or an
-    earlier month cut to the same day so the two compare like with like.
+    earlier month cut to the same day so the two compare like with like. The `unreviewed`
+    flows are the part of each that rests on rows nobody has checked yet, at the category the
+    import suggested.
     """
 
     month: Month
     to_day: int | None
     spending: Flows
     income: Flows
+    unreviewed_spending: Flows
+    unreviewed_income: Flows
     unreviewed: Mapping[Owners, int]
+    """How many unreviewed rows each part paid or received this month."""
 
     def spent_by_category(self, owners: Owners) -> dict[str, Decimal]:
         return dict(self.spending.by_owners.get(owners, {}))
@@ -112,11 +117,17 @@ class MonthFlows:
     def earned(self, owners: Owners) -> Decimal:
         return sum(self.income.by_owners.get(owners, {}).values(), Decimal(0))
 
+    def spent_unreviewed(self, owners: Owners) -> Decimal:
+        return sum(self.unreviewed_spending.by_owners.get(owners, {}).values(), Decimal(0))
+
+    def earned_unreviewed(self, owners: Owners) -> Decimal:
+        return sum(self.unreviewed_income.by_owners.get(owners, {}).values(), Decimal(0))
+
 
 def month_flows(
     books: Books, ownership: OwnersOf, month: Month, *, to_day: int | None = None
 ) -> MonthFlows:
-    """Spending by category, income and unreviewed counts for a month, by owners.
+    """Spending by category, income and what of each is unreviewed for a month, by owners.
 
     With `to_day`, only the month's first `to_day` days count.
     """
@@ -124,18 +135,27 @@ def month_flows(
     last = calendar.monthrange(month.year, month.month)[1]
     end = start.replace(day=min(to_day or last, last))
     unreviewed: defaultdict[Owners, int] = defaultdict(int)
+    flagged: list[Transaction] = []
     for entry in _transactions(books, start, end):
+        if entry.flag != "!":
+            continue
+        flagged.append(entry)
         paid_by = payers(entry, ownership)
-        if entry.flag == "!" and not isinstance(paid_by, str):
+        if not isinstance(paid_by, str):
             unreviewed[paid_by] += 1
+    currency = books.currency
     return MonthFlows(
         month=month,
         to_day=to_day,
         spending=spending_by_category(
-            books.entries, ownership, start=start, end=end, currency=books.currency
+            books.entries, ownership, start=start, end=end, currency=currency
         ),
-        income=income_by_source(
-            books.entries, ownership, start=start, end=end, currency=books.currency
+        income=income_by_source(books.entries, ownership, start=start, end=end, currency=currency),
+        unreviewed_spending=spending_by_category(
+            flagged, ownership, start=start, end=end, currency=currency
+        ),
+        unreviewed_income=income_by_source(
+            flagged, ownership, start=start, end=end, currency=currency
         ),
         unreviewed=dict(unreviewed),
     )

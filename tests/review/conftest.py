@@ -14,7 +14,7 @@ from hearth.accounts import Account
 from hearth.members import MemberId
 from hearth.review.desk import ReviewDesk
 from hearth.review.pile import PileItem, read_pile
-from hearth.review.rulings import RulingStore
+from hearth.review.rulings import Ruling, RulingStore
 from tests.conftest import FakeClock
 
 ALEX = MemberId(1)
@@ -144,3 +144,19 @@ def desk_for(pile: list[PileItem], rulings: RulingStore, clock: FakeClock) -> De
         )
 
     return make
+
+
+def shown(desk: ReviewDesk, group: str) -> dict[str, str]:
+    """What a page shows of `group`: each waiting row with the account it proposes now."""
+    return {
+        view.item.review_id: view.item.proposed
+        for view in desk.items()
+        if view.item.group == group and view.unreviewed and view.item.proposed is not None
+    }
+
+
+def accept_shown(desk: ReviewDesk, group: str, note: str | None = None) -> Ruling:
+    """Accept `group` as a page showing it now would."""
+    ruling = desk.accept_group(group, shown(desk, group), note).ruling
+    assert ruling is not None
+    return ruling

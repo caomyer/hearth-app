@@ -16,6 +16,7 @@ Runs on one machine. Each household member signs in with a username and password
 
 Early.
 Members, sign-in, sharing and the privacy boundary are in place ([docs/privacy-boundary.md](docs/privacy-boundary.md)), and so are the dashboards over the beancount ledger: the household, each member's own page, other members' shared pages, net worth with positions and price provenance, review, and sharing settings ([docs/dashboards.md](docs/dashboards.md)).
+Every imported transaction is in the books at once, flagged until a member reviews it, and every total says how much rests on unreviewed rows ([docs/review.md](docs/review.md)).
 Institution links come next.
 The calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md) and [docs/dashboards.md](docs/dashboards.md); `design/` holds the approved design.
 
@@ -24,6 +25,7 @@ The calls made along the way are in [docs/foundation-decisions.md](docs/foundati
 ```sh
 uv sync
 uv run hearth demo          # an invented household in a throwaway directory
+uv run hearth demo --first-review  # the same, the day its two-year first import lands
 uv run pytest
 ```
 

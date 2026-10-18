@@ -73,6 +73,8 @@ STATE_CHANGING_ROUTES = {
     ("POST", "/review/groups/accept"),
     ("POST", "/review/rows/book"),
     ("POST", "/review/rows/reject"),
+    ("POST", "/review/reminders"),
+    ("POST", "/review/undo"),
 }
 
 # All an anonymous visitor may be served; everything else sends them to sign in.
@@ -85,6 +87,8 @@ TAMPERED_QUERIES: tuple[dict[str, str], ...] = (
     {"month": "not-a-month"},
     {"outcome": "price-recorded", "saved": "transactions"},
     {"month": "2026-13"},
+    {"view": "rows", "order": "confidence", "group": "Unsure", "category": "-", "page": "2"},
+    {"order": "amount", "outcome": "changed", "focus": "casey-row-1"},
     {
         "viewer": "blake",
         "as": "blake",

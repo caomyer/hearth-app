@@ -15,7 +15,7 @@ from hearth.review.rulings import RulingStore
 from hearth.sharing import Facet
 from hearth.valuation.networth import NetWorth
 from tests.conftest import FakeClock
-from tests.review.conftest import ACCOUNTS, ALEX, BLAIR
+from tests.review.conftest import ACCOUNTS, ALEX, BLAIR, accept_shown
 
 EVERYTHING = frozenset(Facet)
 
@@ -78,9 +78,9 @@ def test_being_an_admin_opens_no_pile(
 def test_the_import_counts_a_ruling_only_while_its_author_may_review(
     pile: list[PileItem], rulings: RulingStore, clock: FakeClock
 ) -> None:
-    disclosure_for(member(ALEX), pile).review_desk(rulings, clock).accept_group("payroll")
+    accept_shown(disclosure_for(member(ALEX), pile).review_desk(rulings, clock), "payroll")
 
     decisions = review_decisions(pile, ACCOUNTS, rulings)
 
-    assert decisions["pay0000001"].state is State.BOOKED
-    assert decisions["p2p0000003"].state is State.PENDING
+    assert decisions["pay0000001"].state is State.REVIEWED
+    assert decisions["p2p0000003"].state is State.UNREVIEWED

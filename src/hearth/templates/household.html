@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, part_avatar, as_table %}
+{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, part_avatar, as_table, unreviewed_sub, unreviewed_caveat %}
 {% set h = household %}
 {% set head = h.headline %}
 {% set books = status.books %}
@@ -13,6 +13,17 @@
   </div>
 
   {{ failure_alert(notice, today) }}
+
+  {% if reminder.due %}
+  <div class="alert alert-info mb-4" role="status">
+    <svg aria-hidden="true"><use href="#i-review"/></svg>
+    <div class="alert-body">
+      <p style="color: var(--ink); font-weight: 600">Your {{ reminder.cadence.value }} review is due: {{ plural(reminder.waiting, "transaction") }} waiting.</p>
+      <p>{% if reminder.last_reviewed %}You last reviewed {{ when(reminder.last_reviewed, today) }}.{% else %}You have not reviewed anything yet.{% endif %} Until you do, they count at their suggested category, and totals say so.</p>
+      <div class="alert-actions"><a class="btn btn-sm btn-primary" href="/review">Review now</a></div>
+    </div>
+  </div>
+  {% endif %}
 
   <section class="panel" aria-labelledby="nw-h">
     <div class="panel-body" style="padding-top: var(--s-6)">
@@ -91,7 +102,7 @@
     <section class="panel" aria-labelledby="sp-h">
       <div class="panel-head">
         <h2 id="sp-h">Spending by month</h2>
-        <p class="finding">{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}</p>
+        <p class="finding">{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
       </div>
       <div class="panel-body">
         <div class="figs" style="margin-bottom: var(--s-5)">
@@ -99,11 +110,13 @@
             <p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
             <p class="fig-value">{{ sp.spent | hero }}</p>
             {% if sp.spent_without %}<p class="fig-sub">{{ private("Without " ~ (sp.spent_without | names("name"))) }}</p>{% endif %}
+            {{ unreviewed_sub(sp.spent_unreviewed) }}
           </div>
           <div>
             <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
             <p class="fig-value">{{ sp.earned | hero }}</p>
             {% if sp.earned_without %}<p class="fig-sub">{{ private("Without " ~ (sp.earned_without | names("name"))) }}</p>{% endif %}
+            {{ unreviewed_sub(sp.earned_unreviewed) }}
           </div>
           <div>
             <p class="fig-label">Saved in {{ saved_month_name }}</p>
@@ -175,10 +188,10 @@
         </div>
         {% endif %}
       </div>
-      {% if cats.unreviewed %}
+      {% if cats.unreviewed.leans or cats.unreviewed.unknown %}
       <div class="panel-foot">
-        <span>Includes {{ plural(cats.unreviewed, "unreviewed transaction") }}, at their suggested category.</span>
-        <a href="/review">Review</a>
+        <span>{% if cats.unreviewed.leans %}Includes <span class="tnum">{{ cats.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ unreviewed_caveat(cats.unreviewed) }}</span>
+        {% if review_count %}<a href="/review">Review yours</a>{% endif %}
       </div>
       {% endif %}
     </section>

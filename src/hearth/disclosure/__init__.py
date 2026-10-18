@@ -52,6 +52,7 @@ from hearth.valuation.networth import Freshness
 
 if TYPE_CHECKING:
     # hearth.review raises this package's Concealed, so it is imported where it is used.
+    from hearth.books import Decide
     from hearth.clock import Clock
     from hearth.review.desk import Decision, ReviewDesk
     from hearth.review.pile import PileItem
@@ -77,6 +78,7 @@ __all__ = [
     "Worth",
     "may_administer",
     "review_decisions",
+    "rulings_in",
 ]
 
 OUTSIDER = Member(MemberId(0), "", "", is_admin=False, must_change_password=False)
@@ -325,10 +327,18 @@ class Disclosure:
 def review_decisions(
     pile: Sequence[PileItem], accounts: Sequence[Account], rulings: RulingStore
 ) -> dict[str, Decision]:
-    """Every set-aside row's decision, for the import that books them. Never rendered.
+    """Every review row's decision, for the books to lay over the ledger. Never rendered.
 
     A ruling counts only while ``may_review`` still lets its author review the row.
     """
     from hearth.review.desk import resolve
 
     return resolve(pile, accounts, rulings, may_review)
+
+
+def rulings_in(conn: sqlite3.Connection) -> Decide:
+    """How the rulings recorded in `conn` decide review rows, for a recompute of the books."""
+    from hearth.review.rulings import RulingStore
+
+    accounts, store = all_accounts(conn), RulingStore(conn)
+    return lambda pile: review_decisions(pile, accounts, store)

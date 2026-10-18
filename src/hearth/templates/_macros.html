@@ -122,3 +122,17 @@
   </tbody>
 </table>
 {% endmacro %}
+
+{# How much of a total rests on rows nobody has reviewed yet, at their suggested category.
+   Others' rows count only when their review state is the viewer's to know; for anyone else
+   the page says their share may include unreviewed rows, the same way whether it does or
+   not. `href` links the note to the viewer's own queue, when the rows are theirs. #}
+{% macro unreviewed_sub(u, href=none) %}
+{% if u.leans %}
+<p class="fig-sub">{% if href %}<a class="tag tag-review" href="{{ href }}">{% else %}<span class="tag tag-review">{% endif %}<span class="tnum">{{ (u.amount | abs) | dollars }}</span> not yet reviewed{% if href %}</a>{% else %}</span>{% endif %}</p>
+{% endif %}
+{% endmacro %}
+
+{% macro unreviewed_caveat(u) %}
+{% if u.unknown %} {{ u.unknown | names("name") }} {{ "reviews" if u.unknown | length == 1 else "review" }} their own transactions, so {{ "that share" if u.unknown | length == 1 else "those shares" }} may include some not yet checked.{% endif %}
+{% endmacro %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, avatar, day_table %}
+{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, avatar, day_table, unreviewed_sub %}
 {% set m = view %}
 {% set name = m.member.display_name %}
 {% set books = status.books %}
@@ -38,14 +38,16 @@
           {% endif %}
         </div>
         <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
-          {% for label, value in [("Spent", m.totals.spent), ("Income", m.totals.earned)] %}
+          {% for label, value, u in [("Spent", m.totals.spent, m.totals.spent_unreviewed), ("Income", m.totals.earned, m.totals.earned_unreviewed)] %}
           <div>
             <p class="fig-label">{{ label }}, {{ month_abbr }} 1&ndash;{{ m.totals.to_day }}</p>
             {% if value is withheld %}
             <p class="fig-value">{{ private("Not shared") }}</p>
             {% else %}
             <p class="fig-value">{{ value | hero }}</p>
-            <p class="fig-sub">{% if label == "Spent" and m.categories is withheld %}Total only{% elif label == "Income" and m.days is withheld %}Total only{% endif %}</p>
+            {% set total_only = (label == "Spent" and m.categories is withheld) or (label == "Income" and m.days is withheld) %}
+            <p class="fig-sub">{% if total_only %}Total only{% endif %}{% if u.unknown %}{{ "; it" if total_only else "It" }} may include some {{ u.unknown[0].name }} has not checked yet{% endif %}</p>
+            {{ unreviewed_sub(u) }}
             {% endif %}
           </div>
           {% endfor %}
