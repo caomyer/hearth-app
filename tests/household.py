@@ -1,28 +1,28 @@
 """An invented household whose every private datum is a unique, searchable string.
 
-Avery (the admin) and Blake own two joint accounts; each of them, and Casey,
-also owns two accounts alone. Every name, balance, payee, category and figure below is
-distinct, so finding one in a response proves exactly which datum leaked.
+Avery (the admin) and Blake own a joint account; each of them, and Casey, also own accounts
+alone, and one account belongs to nobody. Every name, balance, payee, category, security and
+figure below is distinct, so finding one in a response proves exactly which datum leaked.
 
-The figures and the visibility rules are written out by hand here rather than
-computed by hearth, so the tests check hearth against the contract instead of
-against itself.
+The household is written as a real beancount ledger with stored prices, so the tests run the
+same code a household's own books do. The figures and visibility rules are worked out by hand
+here, rather than computed by hearth, so the tests check hearth against the contract instead
+of against itself.
 """
 
+import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
-from hearth.ledger import InMemoryLedger, Transaction
 from hearth.sharing import Facet
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
-THIS_MONTH = "2026-10"
-LAST_MONTH = "2026-09"
-
 USERNAMES = ("avery", "blake", "casey")
 ADMIN = "avery"
+OPENED = date(2026, 8, 1)
+OCT, SEP, PRICED = date(2026, 10, 3), date(2026, 9, 21), date(2026, 10, 14)
 
 
 @dataclass(frozen=True)
@@ -31,128 +31,144 @@ class AccountFixture:
     ledger_account: str
     name: str
     owners: frozenset[str]
-    balance: Decimal
-    transactions: tuple[Transaction, ...]
-
-
-OCT, SEP = date(2026, 10, 3), date(2026, 9, 21)
-
-
-def _t(day: date, payee: str, category: str, amount: str, narration: str = "") -> Transaction:
-    return Transaction(day, payee, narration, category, Decimal(amount))
 
 
 ACCOUNTS = (
+    AccountFixture("avery_solo", "Assets:Zq:AverySolo", "Quokka Savings", frozenset({"avery"})),
+    AccountFixture("avery_invest", "Assets:Zq:AveryInvest", "Wombat Shares", frozenset({"avery"})),
+    AccountFixture("joint", "Assets:Zq:Joint", "Narwhal Joint", frozenset({"avery", "blake"})),
+    AccountFixture("blake_solo", "Assets:Zq:BlakeSolo", "Bilby Brokerage", frozenset({"blake"})),
     AccountFixture(
-        key="avery_solo",
-        ledger_account="Assets:Zq:AverySolo",
-        name="Quokka Savings",
-        owners=frozenset({"avery"}),
-        balance=Decimal("52341.17"),
-        transactions=(
-            _t(OCT, "Payee Avocet Market", "Expenses:Avocados", "-311.07", "Memo Avocet note"),
-            _t(SEP, "Payee Avocet September", "Expenses:Avocados", "-88.83"),
-            _t(SEP, "Payee Umber Stall", "Expenses:Umbrellas", "-19.06"),
-        ),
+        "casey_checking", "Assets:Zq:CaseyChecking", "Caracal Checking", frozenset({"casey"})
     ),
-    AccountFixture(
-        key="avery_card",
-        ledger_account="Liabilities:Zq:AveryCard",
-        name="Puffin Card",
-        owners=frozenset({"avery"}),
-        balance=Decimal("-2468.13"),
-        transactions=(_t(OCT, "Payee Pipit Pantry", "Expenses:Pastries", "-54.21"),),
-    ),
-    AccountFixture(
-        key="joint",
-        ledger_account="Assets:Zq:Joint",
-        name="Narwhal Joint",
-        owners=frozenset({"avery", "blake"}),
-        balance=Decimal("20000.42"),
-        transactions=(_t(OCT, "Payee Jacana Hall", "Expenses:Jointery", "-640.84"),),
-    ),
-    AccountFixture(
-        key="joint_card",
-        ledger_account="Liabilities:Zq:JointCard",
-        name="Numbat Joint Card",
-        owners=frozenset({"avery", "blake"}),
-        balance=Decimal("-1188.09"),
-        transactions=(_t(OCT, "Payee Jabiru Jams", "Expenses:Jamboree", "-73.31"),),
-    ),
-    AccountFixture(
-        key="blake_solo",
-        ledger_account="Assets:Zq:BlakeSolo",
-        name="Bilby Brokerage",
-        owners=frozenset({"blake"}),
-        balance=Decimal("73519.27"),
-        transactions=(
-            _t(OCT, "Payee Bittern Nursery", "Expenses:Bonsai", "-927.53"),
-            _t(OCT, "Payee Bittern Wages", "Income:Bittern", "2604.19"),
-        ),
-    ),
-    AccountFixture(
-        key="blake_cash",
-        ledger_account="Assets:Zq:BlakeCash",
-        name="Bandicoot Cash",
-        owners=frozenset({"blake"}),
-        balance=Decimal("361.44"),
-        transactions=(_t(OCT, "Payee Brolga Bakery", "Expenses:Breadmaking", "-66.18"),),
-    ),
-    AccountFixture(
-        key="casey_checking",
-        ledger_account="Assets:Zq:CaseyChecking",
-        name="Caracal Checking",
-        owners=frozenset({"casey"}),
-        balance=Decimal("4815.62"),
-        transactions=(_t(OCT, "Payee Curlew Maps", "Expenses:Cartography", "-45.19"),),
-    ),
-    AccountFixture(
-        key="casey_card",
-        ledger_account="Liabilities:Zq:CaseyCard",
-        name="Coati Card",
-        owners=frozenset({"casey"}),
-        balance=Decimal("-310.25"),
-        transactions=(_t(OCT, "Payee Kestrel Kites", "Expenses:Kites", "-12.34"),),
-    ),
+    AccountFixture("casey_card", "Liabilities:Zq:CaseyCard", "Coati Card", frozenset({"casey"})),
     # Claimed by nobody: it must be visible to nobody, not to everybody.
-    AccountFixture(
-        key="unowned",
-        ledger_account="Assets:Zq:Orphan",
-        name="Ocelot Orphan",
-        owners=frozenset(),
-        balance=Decimal("9134.58"),
-        transactions=(_t(OCT, "Payee Oriole Unowned", "Expenses:Orphanage", "-17.36"),),
-    ),
+    AccountFixture("unowned", "Assets:Zq:Orphan", "Ocelot Orphan", frozenset()),
 )
 
-# Figures, by hand. A member's cover only the accounts they own alone; the joint
-# accounts are one line of their own. Half of a joint figure must appear nowhere.
-NET_WORTH = {"avery": "49,873.04", "blake": "73,880.71", "casey": "4,505.37"}
-SPENDING = {"avery": "365.28", "blake": "993.71", "casey": "57.53"}
-AVERY_SPENDING_LAST_MONTH = "107.89"
-JOINT_OWNERS = frozenset({"avery", "blake"})
-JOINT_NET_WORTH = "18,812.33"
-JOINT_SPENDING = "714.15"
-JOINT_HALVES = ("9,406.16", "9,406.17", "357.07", "357.08", "320.42", "10,000.21")
-HOUSEHOLD_NET_WORTH = "147,071.45"
-HOUSEHOLD_SPENDING = "2,130.67"
+# Each security: the account holding it, the units held, and its stored price.
+SECURITIES = {
+    "ZQAA": ("Assets:Zq:AveryInvest", "10", "1234.56"),
+    "ZQBB": ("Assets:Zq:BlakeSolo", "50", "700.00"),
+}
+
+# date, payee, narration, expense or income account, paying account, amount on that account
+TRANSACTIONS = (
+    (
+        OCT,
+        "Payee Avocet Market",
+        "Memo Avocet note",
+        "Expenses:Avocados",
+        "Assets:Zq:AverySolo",
+        "-1311.07",
+    ),
+    (SEP, "Payee Avocet September", "", "Expenses:Avocados", "Assets:Zq:AverySolo", "-88.83"),
+    (SEP, "Payee Umber Stall", "", "Expenses:Umbrellas", "Assets:Zq:AverySolo", "-19.06"),
+    (OCT, "Payee Aardvark Payroll", "", "Income:Aardwork", "Assets:Zq:AverySolo", "3113.58"),
+    (OCT, "Payee Jacana Hall", "", "Expenses:Jointery", "Assets:Zq:Joint", "-1640.84"),
+    (OCT, "Payee Bittern Nursery", "", "Expenses:Bonsai", "Assets:Zq:BlakeSolo", "-1927.53"),
+    (OCT, "Payee Bittern Wages", "", "Income:Bittern", "Assets:Zq:BlakeSolo", "2604.19"),
+    (OCT, "Payee Curlew Maps", "", "Expenses:Cartography", "Assets:Zq:CaseyChecking", "-1045.19"),
+    (OCT, "Payee Curlew Stipend", "", "Income:Curlew", "Assets:Zq:CaseyChecking", "1418.77"),
+    (OCT, "Payee Kestrel Kites", "", "Expenses:Kites", "Liabilities:Zq:CaseyCard", "-12.34"),
+    (OCT, "Payee Oriole Unowned", "", "Expenses:Orphanage", "Assets:Zq:Orphan", "-17.36"),
+)
+
+# A row the import set aside for Casey to review: nothing could be proposed for it.
+PILE = (
+    (OCT, "Payee Shrike Pending", "Assets:Zq:CaseyChecking", "-23.45", "casey-row-1", "Unsure"),
+)
+UNRESOLVED = "Equity:Review:Unresolved"
+
+# The cash each account ends with today; the opening balance makes the ledger arrive there.
+CASH = {
+    "Assets:Zq:AverySolo": "52341.17",
+    "Assets:Zq:Joint": "20000.42",
+    "Assets:Zq:BlakeSolo": "38519.27",
+    "Assets:Zq:CaseyChecking": "4815.62",
+    "Liabilities:Zq:CaseyCard": "-310.25",
+    "Assets:Zq:Orphan": "9134.58",
+}
+
+# Figures by hand. Member figures are sole accounts only; the joint account is its own line.
+BALANCE = {
+    "avery_solo": "52,341.17",
+    "avery_invest": "12,345.60",
+    "joint": "20,000.42",
+    "blake_solo": "73,519.27",
+    "casey_checking": "4,815.62",
+    "casey_card": "310.25",
+    "unowned": "9,134.58",
+}
+NET_WORTH = {"avery": "64,686.77", "blake": "73,519.27", "casey": "4,505.37"}
+SPENDING = {"avery": "1,311.07", "blake": "1,927.53", "casey": "1,057.53"}
+INCOME = {"avery": "3,113.58", "blake": "2,604.19", "casey": "1,418.77"}
+JOINT_NET_WORTH = "20,000.42"
+JOINT_SPENDING = "1,640.84"
+HOUSEHOLD_NET_WORTH = "162,711.83"
+HOUSEHOLD_SPENDING = "5,936.97"
+HOUSEHOLD_INCOME = "7,136.54"
 
 
-def ledger() -> InMemoryLedger:
-    return InMemoryLedger(
-        {a.ledger_account: a.balance for a in ACCOUNTS},
-        {a.ledger_account: a.transactions for a in ACCOUNTS},
-    )
+def ledger_text() -> str:
+    """The household's books, as beancount reads them."""
+    lines = ['option "operating_currency" "USD"', ""]
+    lines += [f"{OPENED} commodity {symbol}" for symbol in SECURITIES]
+    lines += [f"{OPENED} open {account.ledger_account}" for account in ACCOUNTS]
+    lines += [f"{OPENED} open {category}" for category in sorted({t[3] for t in TRANSACTIONS})]
+    lines += [f"{OPENED} open Equity:Opening", f"{OPENED} open {UNRESOLVED}", ""]
+    moved: dict[str, Decimal] = {}
+    for *_, account, amount in TRANSACTIONS:
+        moved[account] = moved.get(account, Decimal(0)) + Decimal(amount)
+    for _, _, account, amount, _, _ in PILE:
+        moved[account] = moved.get(account, Decimal(0)) + Decimal(amount)
+    for account, cash in CASH.items():
+        opening = Decimal(cash) - moved.get(account, Decimal(0))
+        lines += [f'{OPENED} * "Opening"', f"  {account}  {opening} USD", "  Equity:Opening", ""]
+    for symbol, (account, units, price) in SECURITIES.items():
+        lines += [
+            f'{OPENED} * "Opening position"',
+            f"  {account}  {units} {symbol} {{{price} USD}}",
+            "  Equity:Opening",
+            "",
+        ]
+    for day, payee, account, amount, review_id, group in PILE:
+        lines += [
+            f'{day} ! "{payee}" ""',
+            f'  review-id: "{review_id}"',
+            f'  review-group: "{group}"',
+            f"  {account}  {amount} USD",
+            f"  {UNRESOLVED}",
+            "",
+        ]
+    for day, payee, narration, category, account, amount in TRANSACTIONS:
+        lines += [
+            f'{day} * "{payee}" "{narration}"',
+            f"  {account}  {amount} USD",
+            f"  {category}",
+            "",
+        ]
+    return "\n".join(lines)
+
+
+def prices() -> Iterator[tuple[str, date, Decimal]]:
+    """The stored closes: each security at the end of September and on the latest session."""
+    for symbol, (_, _, price) in SECURITIES.items():
+        for day in (date(2026, 9, 30), PRICED):
+            yield symbol, day, Decimal(price)
 
 
 # The sharing contract, stated independently of hearth's implementation.
 
 Choices = Mapping[str, frozenset[Facet]]
 Rule = Callable[[str, Choices], bool]
+JOINT = frozenset({"avery", "blake"})
+PARTS = (*(frozenset({u}) for u in USERNAMES), JOINT)
 
 
 def shared(facet: Facet, owners: frozenset[str]) -> Rule:
-    """Visible to an owner, or to anyone once every owner shares ``facet``."""
+    """Visible to an owner, or to anyone once every owner shares `facet`. What nobody owns,
+    nobody sees."""
 
     def rule(viewer: str, choices: Choices) -> bool:
         if not owners:
@@ -176,111 +192,155 @@ def never(viewer: str, choices: Choices) -> bool:
 
 @dataclass(frozen=True)
 class Secret:
-    text: str
+    """One private datum, in every form a page renders it, and the rule that governs it.
+
+    Money is shown to the cent in tables and in whole dollars as a total, so a figure is
+    leaked if either form appears, and reached if either does.
+    """
+
+    texts: tuple[str, ...]
     what: str
     visible: Rule
 
 
-def _money(amount: Decimal) -> str:
-    return f"{abs(amount):,.2f}"
+def secret(text: str, what: str, visible: Rule) -> Secret:
+    """A secret; an amount in the thousands is also looked for in whole dollars. (A smaller
+    whole number, such as "12", would match too much else to prove anything.)"""
+    forms = [text]
+    if re.fullmatch(r"\d{1,3}(,\d{3})+\.\d\d", text):
+        whole = Decimal(text.replace(",", "")).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        forms.append(f"{whole:,}")
+    return Secret(tuple(forms), what, visible)
 
 
-def _account(key: str) -> AccountFixture:
-    return next(a for a in ACCOUNTS if a.key == key)
+def owners_of(key: str) -> frozenset[str]:
+    return next(a.owners for a in ACCOUNTS if a.key == key)
 
 
-def _net_worth(username: str) -> Rule:
-    return shared(Facet.NET_WORTH_TOTAL, frozenset({username}))
+def _key_of(ledger_account: str) -> str:
+    return next(a.key for a in ACCOUNTS if a.ledger_account == ledger_account)
 
 
-def _spending(username: str) -> Rule:
-    return shared(Facet.MONTHLY_SPENDING_TOTAL, frozenset({username}))
+def _detail(key: str) -> Rule:
+    """Spending detail reaches a viewer through the transactions or the category breakdown."""
+    return any_of(
+        shared(Facet.TRANSACTIONS, owners_of(key)),
+        shared(Facet.CATEGORY_BREAKDOWN, owners_of(key)),
+    )
 
 
-def _breakdown(username: str) -> Rule:
-    return shared(Facet.CATEGORY_BREAKDOWN, frozenset({username}))
-
-
-def _transactions_of(key: str) -> Rule:
-    return shared(Facet.TRANSACTIONS, _account(key).owners)
+def _total(facet: Facet, username: str, key: str) -> Rule:
+    """A member total that equals its only transaction is visible through either."""
+    return any_of(shared(facet, frozenset({username})), _detail(key))
 
 
 def secrets(account_ids: Mapping[str, str]) -> Iterator[Secret]:
     """Every private datum in the household, each with the rule that governs it."""
     for account in ACCOUNTS:
-        balance = shared(Facet.ACCOUNT_BALANCES, account.owners)
-        transactions = shared(Facet.TRANSACTIONS, account.owners)
-        exists = any_of(balance, transactions)
-        yield Secret(account.name, f"{account.key} name", exists)
-        yield Secret(account_ids[account.key], f"{account.key} id", exists)
-        yield Secret(account.ledger_account, f"{account.key} ledger name", never)
-        yield Secret(_money(account.balance), f"{account.key} balance", balance)
-        for t in account.transactions:
-            for text in (t.payee, t.narration):
-                if text:
-                    yield Secret(text, f"{account.key} transaction", transactions)
-
-    # Categories and amounts reach a viewer through a transaction or a breakdown.
-    yield from _either("Avocados", "avery_solo", "avery")
-    yield from _either("311.07", "avery_solo", "avery")
-    yield from _either("88.83", "avery_solo", "avery")
-    yield from _either("Umbrellas", "avery_solo", "avery")
-    yield from _either("19.06", "avery_solo", "avery")
-    yield from _either("Pastries", "avery_card", "avery")
-    yield from _either("54.21", "avery_card", "avery")
-    yield from _either("Bonsai", "blake_solo", "blake")
-    yield from _either("927.53", "blake_solo", "blake")
-    yield from _either("Breadmaking", "blake_cash", "blake")
-    yield from _either("66.18", "blake_cash", "blake")
-    yield from _either("Cartography", "casey_checking", "casey")
-    yield from _either("45.19", "casey_checking", "casey")
-    yield from _either("Kites", "casey_card", "casey")
-    yield from _either("12.34", "casey_card", "casey")
-    yield Secret("Bittern", "blake income category", _transactions_of("blake_solo"))
-    yield Secret("2,604.19", "blake income", _transactions_of("blake_solo"))
-    yield Secret("Orphanage", "unowned category", never)
-    yield Secret("17.36", "unowned amount", never)
-    # Joint spending is in no member's breakdown, only in the joint transactions.
-    yield Secret("Jointery", "joint category", _transactions_of("joint"))
-    yield Secret("640.84", "joint amount", _transactions_of("joint"))
-    yield Secret("Jamboree", "joint card category", _transactions_of("joint_card"))
-    yield Secret("73.31", "joint card amount", _transactions_of("joint_card"))
-    for half in JOINT_HALVES:
-        yield Secret(half, "a share of a joint figure", never)
-
-    for username in USERNAMES:
-        yield Secret(NET_WORTH[username], f"{username} net worth", _net_worth(username))
-        yield Secret(SPENDING[username], f"{username} spending", _spending(username))
-    yield Secret(AVERY_SPENDING_LAST_MONTH, "avery spending last month", _spending("avery"))
-    joint_net_worth = shared(Facet.NET_WORTH_TOTAL, JOINT_OWNERS)
-    joint_spending = shared(Facet.MONTHLY_SPENDING_TOTAL, JOINT_OWNERS)
-    yield Secret(JOINT_NET_WORTH, "joint net worth", joint_net_worth)
-    yield Secret(JOINT_SPENDING, "joint spending", joint_spending)
-    # A total that is shown while one part is withheld gives that part away.
-    yield Secret(
-        HOUSEHOLD_NET_WORTH,
-        "household net worth",
-        all_of(joint_net_worth, *(_net_worth(u) for u in USERNAMES)),
+        exists = any_of(
+            shared(Facet.ACCOUNT_BALANCES, account.owners),
+            shared(Facet.TRANSACTIONS, account.owners),
+        )
+        yield secret(account.name, f"{account.key} name", exists)
+        yield secret(account_ids[account.key], f"{account.key} id", exists)
+        yield secret(account.ledger_account, f"{account.key} ledger name", never)
+    for key in ("avery_solo", "avery_invest", "casey_checking", "casey_card", "unowned"):
+        yield secret(BALANCE[key], f"{key} balance", shared(Facet.ACCOUNT_BALANCES, owners_of(key)))
+    # A part with a single account has a net worth equal to that account's balance.
+    yield secret(
+        BALANCE["blake_solo"],
+        "blake's balance, which is blake's net worth",
+        any_of(
+            shared(Facet.ACCOUNT_BALANCES, owners_of("blake_solo")),
+            shared(Facet.NET_WORTH_TOTAL, owners_of("blake_solo")),
+        ),
     )
-    yield Secret(
-        HOUSEHOLD_SPENDING,
-        "household spending",
-        all_of(joint_spending, *(_spending(u) for u in USERNAMES)),
+    yield secret(
+        JOINT_NET_WORTH,
+        "the joint balance, which is the joint line's net worth",
+        any_of(shared(Facet.ACCOUNT_BALANCES, JOINT), shared(Facet.NET_WORTH_TOTAL, JOINT)),
     )
-    yield from partial_totals()
 
-
-def partial_totals() -> Iterator[Secret]:
-    """A household total missing one part: a smaller number posing as complete."""
-    for figures, what in (
-        ({**NET_WORTH, "joint": JOINT_NET_WORTH}, "net worth"),
-        ({**SPENDING, "joint": JOINT_SPENDING}, "spending"),
+    for _, payee, narration, _, paid_from, _ in TRANSACTIONS:
+        key = _key_of(paid_from)
+        rule = shared(Facet.TRANSACTIONS, owners_of(key))
+        yield secret(payee, f"{key} payee", rule)
+        if narration:
+            yield secret(narration, f"{key} narration", rule)
+    for text, key in (
+        ("Avocados", "avery_solo"),
+        ("Bonsai", "blake_solo"),
+        ("Cartography", "casey_checking"),
+        ("Kites", "casey_card"),
+        ("12.34", "casey_card"),
+        ("Jointery", "joint"),
     ):
-        for left_out in figures:
-            rest = sum(Decimal(v.replace(",", "")) for k, v in figures.items() if k != left_out)
-            yield Secret(f"{rest:,.2f}", f"household {what} without {left_out}", never)
+        yield secret(text, f"{key} spending detail", _detail(key))
+    # Last month's detail: the dashboards show this month, so it is reached only through the
+    # account's own transactions, month by month.
+    for text in ("Umbrellas", "19.06", "88.83"):
+        yield secret(
+            text, "avery_solo last month", shared(Facet.TRANSACTIONS, owners_of("avery_solo"))
+        )
+    for _, payee, set_aside_from, _, _, _ in PILE:
+        rule = shared(Facet.TRANSACTIONS, owners_of(_key_of(set_aside_from)))
+        yield secret(payee, "a set-aside row's payee", rule)
+    yield secret("Orphanage", "unowned category", never)
+    yield secret("17.36", "unowned amount", never)
 
+    yield secret(
+        SPENDING["avery"],
+        "avery spending",
+        _total(Facet.MONTHLY_SPENDING_TOTAL, "avery", "avery_solo"),
+    )
+    yield secret(
+        SPENDING["blake"],
+        "blake spending",
+        _total(Facet.MONTHLY_SPENDING_TOTAL, "blake", "blake_solo"),
+    )
+    yield secret(
+        SPENDING["casey"],
+        "casey spending",
+        shared(Facet.MONTHLY_SPENDING_TOTAL, frozenset({"casey"})),
+    )
+    yield secret(
+        JOINT_SPENDING,
+        "joint spending",
+        any_of(shared(Facet.MONTHLY_SPENDING_TOTAL, JOINT), _detail("joint")),
+    )
+    for username, key in (
+        ("avery", "avery_solo"),
+        ("blake", "blake_solo"),
+        ("casey", "casey_checking"),
+    ):
+        yield secret(
+            INCOME[username],
+            f"{username} income",
+            any_of(
+                shared(Facet.MONTHLY_INCOME_TOTAL, frozenset({username})),
+                shared(Facet.TRANSACTIONS, owners_of(key)),
+            ),
+        )
+    for username in ("avery", "casey"):
+        yield secret(
+            NET_WORTH[username],
+            f"{username} net worth",
+            shared(Facet.NET_WORTH_TOTAL, frozenset({username})),
+        )
 
-def _either(text: str, account_key: str, username: str) -> Iterator[Secret]:
-    rule = any_of(_transactions_of(account_key), _breakdown(username))
-    yield Secret(text, f"{username} spending detail", rule)
+    for symbol, (held_in, _, _) in SECURITIES.items():
+        key = _key_of(held_in)
+        yield secret(symbol, f"{key} position", shared(Facet.ACCOUNT_BALANCES, owners_of(key)))
+    yield secret(
+        "35,000.00", "blake position value", shared(Facet.ACCOUNT_BALANCES, owners_of("blake_solo"))
+    )
+
+    # A household total shown as complete must have every part visible, or a withheld part
+    # could be had by subtraction. A total without some part is labelled "without" it, and
+    # is a sum of parts each visible on its own.
+    for text, facet, what in (
+        (HOUSEHOLD_NET_WORTH, Facet.NET_WORTH_TOTAL, "household net worth"),
+        (HOUSEHOLD_SPENDING, Facet.MONTHLY_SPENDING_TOTAL, "household spending"),
+        (HOUSEHOLD_INCOME, Facet.MONTHLY_INCOME_TOTAL, "household income"),
+    ):
+        yield secret(text, what, all_of(*(shared(facet, part) for part in PARTS)))

@@ -40,6 +40,21 @@ def may_review(member: MemberId, owners: Collection[MemberId]) -> bool:
     return member in owners
 
 
+def may_enter_price(viewer: Member, holders: Collection[Collection[MemberId]]) -> bool:
+    """Whether ``viewer`` may record a price by hand for a security.
+
+    A price changes the value of every holding of that security, so only someone who holds it
+    in an account they own may enter one; it is recorded as theirs, never as the source's.
+    """
+    return any(viewer.id in owners for owners in holders)
+
+
+def may_use_connection(viewer: Member, holder: MemberId) -> bool:
+    """A connection to an institution is its member's alone, joint accounts included: nobody
+    else sees it, reconnects it, or reads through it. Being an admin grants nothing."""
+    return viewer.id == holder
+
+
 def may_administer(viewer: Member) -> bool:
     """Admins manage members and passwords. That is all being an admin means."""
     return viewer.is_admin

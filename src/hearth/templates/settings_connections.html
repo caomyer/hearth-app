@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Connections{% endblock %}
+{% block content %}
+  {% include "_settings_nav.html" %}
+
+  <section class="panel mt-6" aria-labelledby="conn-h">
+    <div class="panel-head">
+      <h2 id="conn-h">Your connections</h2>
+      <span class="sm faint">Only you can use these</span>
+    </div>
+    <div class="panel-body">
+      {% if connections %}
+      <ul class="list" role="list">
+        {% for c in connections | sort(attribute="state") %}
+        {% if c.state == "expired" %}
+        <li class="conn is-expired">
+          <div class="grow">
+            <div class="row between wrap">
+              <p><span style="font-weight: 600">{{ c.institution }}</span> <span class="faint sm">&middot; {{ plural(c.ledger_accounts | length, "account") }}</span></p>
+              <span class="tag tag-warn"><svg aria-hidden="true"><use href="#i-unlink"/></svg>Expired</span>
+            </div>
+            <p class="muted mt-2 measure">{{ c.institution }} has stopped sending updates, usually because it asks you to sign in again from time to time. Until you do, its balances and transactions stop{% if c.data_until %} at {{ c.data_until | day }}{% endif %}. Reconnecting keeps your history and never imports anything twice.</p>
+            {% if c.data_until %}
+            {% set stopped = (today - c.data_until).days %}
+            {% set gap = [stopped, 30] | min %}
+            <div class="cov mt-3" aria-hidden="true">
+              <div class="cov-bar cov-gap"><span style="right: {{ '%.1f' | format(gap / 30 * 100) }}%"></span><i style="left: {{ '%.1f' | format(100 - gap / 30 * 100) }}%"></i></div>
+              <div class="cov-scale"><span>Last 30 days</span><span>Data stops {{ c.data_until | day }} &middot; Today</span></div>
+            </div>
+            {% endif %}
+            <p class="sm faint mt-4">Reconnecting opens {{ c.institution }}'s own sign-in. It arrives with bank linking; until then, import the missing statements.</p>
+          </div>
+        </li>
+        {% else %}
+        <li class="conn">
+          <div class="grow">
+            <div class="row between wrap">
+              <p><span style="font-weight: 600">{{ c.institution }}</span> <span class="faint sm">&middot; {{ plural(c.ledger_accounts | length, "account") }}</span></p>
+              <span class="tag tag-ok"><svg aria-hidden="true"><use href="#i-check"/></svg>Working</span>
+            </div>
+            {% if c.data_until %}<p class="sm faint mt-1">Updated {{ c.data_until | day }}</p>{% endif %}
+          </div>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty">
+        <span class="glyph" aria-hidden="true"><svg><use href="#i-link"/></svg></span>
+        <h3>No connections yet</h3>
+        <p>Bank linking is on its way. Until it lands, hearth reads the ledger you keep, and every figure says how far its history goes.</p>
+      </div>
+      {% endif %}
+    </div>
+    {% if expired %}
+    <div class="panel-foot">
+      <span>While a connection is expired, net worth uses the last balance it brought in. The household sees how many accounts are behind beside the total, never which ones or whose.</span>
+    </div>
+    {% endif %}
+  </section>
+{% endblock %}

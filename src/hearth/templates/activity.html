@@ -1,41 +1,40 @@
 {% extends "base.html" %}
-{% set section = "activity" %}
-{% block title %}Activity{% endblock %}
+{% set tab = "activity" %}
 {% macro name(ref) %}{{ ref.display_name if ref else "The command line" }}{% endmacro %}
+{% block title %}Activity{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <h1>Activity</h1>
-    <p class="subtitle">
-      {% if session.member.is_admin %}Sign-ins, password changes and sharing choices across the household.
-      {% else %}Sign-ins, password changes and sharing choices on your account, including any password reset by an admin.{% endif %}
-    </p>
-  </div>
-</div>
-{% if lines %}
-<section class="panel flush">
-  <table class="ledger">
-    <thead><tr><th scope="col">When</th><th scope="col">What happened</th></tr></thead>
-    <tbody>
-      {% for line in lines %}
-      <tr>
-        <td class="nowrap fit muted">{{ line.at | moment }}</td>
-        <td>
-          {% if line.kind == "member_created" %}{{ name(line.actor) }} added {{ name(line.subject) }}{% if line.detail %} {{ line.detail }}{% endif %}
-          {% elif line.kind == "password_reset" %}<strong>{{ name(line.actor) }} reset {{ name(line.subject) }}’s password</strong>
-          {% elif line.kind == "password_changed" %}{{ name(line.subject) }} changed their password
-          {% elif line.kind == "signed_in" %}{{ name(line.subject) }} signed in
-          {% elif line.kind == "sign_in_failed" %}A sign-in as {{ name(line.subject) }} failed
-          {% elif line.kind == "signed_out" %}{{ name(line.subject) }} signed out
-          {% elif line.kind == "sharing_changed" %}{{ name(line.subject) }} {{ line.detail }}
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% else %}
-<p class="empty">Nothing yet.</p>
-{% endif %}
+  {% include "_settings_nav.html" %}
+  <section class="panel mt-6" aria-labelledby="act-h">
+    <div class="panel-head">
+      <h2 id="act-h">Activity</h2>
+      <p class="finding">{% if session.member.is_admin %}Sign-ins, password changes and sharing choices across the household.{% else %}Sign-ins, password changes and sharing choices on your account, including any password reset by an admin.{% endif %}</p>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      {% if lines %}
+      <table class="table">
+        <caption class="vh">Activity, newest first</caption>
+        <thead><tr><th scope="col">When</th><th scope="col">What happened</th></tr></thead>
+        <tbody>
+          {% for line in lines %}
+          <tr>
+            <td class="muted tnum" style="white-space: nowrap">{{ line.at | day }}, {{ line.at | clock_time }}</td>
+            <td>
+              {% if line.kind == "member_created" %}{{ name(line.actor) }} added {{ name(line.subject) }}{% if line.detail %} {{ line.detail }}{% endif %}
+              {% elif line.kind == "password_reset" %}<strong>{{ name(line.actor) }} reset {{ name(line.subject) }}’s password</strong>
+              {% elif line.kind == "password_changed" %}{{ name(line.subject) }} changed their password
+              {% elif line.kind == "signed_in" %}{{ name(line.subject) }} signed in
+              {% elif line.kind == "sign_in_failed" %}A sign-in as {{ name(line.subject) }} failed
+              {% elif line.kind == "signed_out" %}{{ name(line.subject) }} signed out
+              {% elif line.kind == "sharing_changed" %}{{ name(line.subject) }} {{ line.detail }}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">Nothing yet.</p>
+      {% endif %}
+    </div>
+  </section>
 {% endblock %}

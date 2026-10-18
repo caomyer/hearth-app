@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, as_table %}
+{% set w = view %}
+{% set head = w.headline %}
+{% set books = status.books %}
+{% block title %}Net worth{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Net worth</h1>
+      <p class="sub">What the household owns and owes, and where every figure comes from.</p>
+    </div>
+  </div>
+
+  {{ failure_alert(notice, today) }}
+  {% if message %}
+  <div class="alert alert-info mb-4" role="status"><svg aria-hidden="true"><use href="#i-info"/></svg><div class="alert-body"><p style="color: var(--ink)">{{ message }}</p></div></div>
+  {% endif %}
+
+  <section class="panel" aria-labelledby="hnw-h">
+    <div class="panel-body" style="padding-top: var(--s-6)">
+      <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
+        <div class="hero">
+          <h2 id="hnw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth{% if head.is_partial %}, without {{ head.without | names("name") }}{% endif %}</h2>
+          {{ hero_value(head.value, status, head.without, head.unpriced) }}
+          {% if not head.is_partial %}<div class="hero-meta">{{ delta(head.since_month_start, since) }}</div>{% endif %}
+          <div class="recompute mt-4{% if status.recomputing %} recomputing{% endif %}">
+            {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on) %} Recomputes daily, never silently on page load.{% endcall %}
+            {% if not status.recomputing %}
+            <form method="post" action="/net-worth/recompute">
+              <input type="hidden" name="csrf" value="{{ session.csrf }}">
+              <button class="btn btn-sm" type="submit"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Recompute now</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+
+        <div>
+          <h3 class="sm" style="color: var(--ink-2); font-weight: 500">How it adds up</h3>
+          <table class="table addup mt-2">
+            <caption class="vh">How household net worth adds up</caption>
+            <thead class="vh"><tr><th scope="col">Part</th><th scope="col" class="num">Amount</th></tr></thead>
+            <tbody>
+              {% for part in w.adds_up %}
+              {% set ref = part.part %}
+              {% set hue = "" if ref.hue == "who-1" else " " ~ ref.hue %}
+              <tr>
+                <th scope="row">
+                  <span class="who{{ hue }}">{% if ref.is_joint %}Joint accounts{% if not ref.is_viewers %} of {{ ref.owners | names }}{% endif %}{% elif ref.is_viewers %}Your accounts, excluding joint{% else %}{{ ref.name }}, excluding joint{% endif %}</span>
+                  {% if part.worth is withheld %}
+                  <span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared with you</span>
+                  {% elif part.owned is not none and not ref.is_joint %}
+                  <span class="second">{{ part.owned | money }} owned, {{ part.owed | money }} owed</span>
+                  {% elif ref.is_joint and part.accounts is not none %}
+                  <span class="second">{{ plural(part.accounts, "account") }}{% if ref.is_viewers %}, every owner sees detail{% endif %}</span>
+                  {% else %}
+                  <span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Total only, shared by {{ ref.owner_names }}</span>
+                  {% endif %}
+                </th>
+                <td class="num{% if part.worth is withheld %} priv{% endif %}">{% if part.worth is withheld %}Not included{% else %}{% if part.worth.is_floor %}at least {% endif %}{{ part.worth.value | money }}{% endif %}</td>
+              </tr>
+              {% endfor %}
+              <tr class="total-row"><th scope="row">{% if head.is_partial %}Known so far{% else %}Household{% endif %}</th><td class="num">{% if head.is_floor %}at least {% endif %}{{ head.value | money }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {% if notice and notice.detail is not none and notice.detail is not withheld %}
+  {% set f = notice.detail %}
+  <section class="panel mt-4" id="what-happened" aria-labelledby="err-h">
+    <div class="panel-head">
+      <h2 id="err-h">What happened</h2>
+      <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>{% if f.owners | length > 1 %}Its owners only{% else %}Only you{% endif %}</span>
+    </div>
+    <div class="panel-body">
+      <p class="measure">The ledger says this account held {{ "less" if f.difference > 0 else "more" }} than the statement says it does. A difference like this is usually one transaction that was not imported, or one that was booked twice.</p>
+      <dl class="err-facts mt-4">
+        <div><dt>Account</dt><dd><code>{{ f.account }}</code></dd></div>
+        {% if f.location %}<div><dt>Where</dt><dd><code>{{ f.location }}</code>, balance on {{ f.check.date | day }}</dd></div>{% endif %}
+        <div><dt>Statement says</dt><dd class="tnum">{{ f.check.asserted | money }}</dd></div>
+        <div><dt>Ledger says</dt><dd class="tnum">{{ f.check.computed | money }}</dd></div>
+        <div><dt>Difference</dt><dd class="tnum" style="font-weight: 600">{{ (f.difference | abs) | money }}</dd></div>
+      </dl>
+      <div class="row wrap mt-6">
+        <form method="post" action="/net-worth/recompute">
+          <input type="hidden" name="csrf" value="{{ session.csrf }}">
+          <button class="btn" type="submit"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Try again</button>
+        </form>
+      </div>
+    </div>
+    <div class="panel-foot"><span>Everyone else sees only that today's figures are waiting on a fix to one member's records. No account, no amount, no name.</span></div>
+  </section>
+  {% endif %}
+
+  <section class="panel mt-4" aria-labelledby="chg-h">
+    <div class="panel-head">
+      <h2 id="chg-h">What moved it: saving or the market?</h2>
+      {% if moves_finding %}<p class="finding">{{ moves_finding }}</p>{% endif %}
+    </div>
+    <div class="panel-body">
+      {% if charts.moves %}
+      <figure>
+        <figcaption class="vh" id="mv-t">Monthly change in net worth, split into money saved and market movement</figcaption>
+        <div class="chart-wrap">
+{{ charts.moves }}
+        </div>
+        <div class="chart-legend" aria-hidden="true">
+          <span class="k"><i class="saved"></i>Saved: money you put in</span>
+          <span class="k"><i class="market"></i>Market: prices moving</span>
+          {% if w.moves_leave_out %}<span class="k faint">{{ w.moves_leave_out | names("name") }} {{ "is" if w.moves_leave_out | length == 1 else "are" }} not included: you see a total, not its parts.</span>{% endif %}
+        </div>
+        {{ as_table("Monthly change in net worth, saved and market", ("Month", "Saved / market"), moves_rows) }}
+      </figure>
+      {% else %}
+      <p class="muted">There is not enough priced history yet to split the change into saving and the market.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {% set invested = w.holdings | selectattr("held") | list %}
+  <section class="panel mt-4" aria-labelledby="pos-h" id="joint">
+    <div class="panel-head">
+      <h2 id="pos-h">Positions</h2>
+      {% if w.provenance.priced_on %}<span class="sm faint">Prices as of {{ w.provenance.priced_on.strftime("%a") }}, {{ w.provenance.priced_on | day }} close{% if w.stale %}, except where marked{% endif %}</span>{% endif %}
+    </div>
+    {% if w.stale or w.unpriced %}
+    <div class="panel-body" style="padding-top: var(--s-3)" id="stale">
+      {% for holding, p in w.stale %}
+      <div class="alert alert-warn{% if not loop.first %} mt-3{% endif %}">
+        <svg aria-hidden="true"><use href="#i-clock"/></svg>
+        <div class="alert-body">
+          <p style="color: var(--ink); font-weight: 600">{{ names_by_symbol.get(p.commodity, p.commodity) }} has no price since {{ p.price_day.strftime("%a") }}, {{ p.price_day | day }}.</p>
+          <p>The price source has not returned a quote for {{ p.commodity }} since then. Its value below uses that day's close of {{ p.price | money }}, so it may be off. Every price is stored with its source and day, so this one will not pass as current.</p>
+          <div class="alert-actions">
+            <form method="post" action="/net-worth/prices/refresh">
+              <input type="hidden" name="csrf" value="{{ session.csrf }}">
+              <button class="btn btn-sm" type="submit"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Try the source again</button>
+            </form>
+            <details class="hand-price">
+              <summary class="btn btn-sm btn-quiet">Enter a price by hand</summary>
+              <form method="post" action="/net-worth/prices" class="row wrap mt-3" style="gap: var(--s-2)">
+                <input type="hidden" name="csrf" value="{{ session.csrf }}">
+                <input type="hidden" name="symbol" value="{{ p.commodity }}">
+                <label class="field"><span class="sm muted">Close on</span><input class="input" type="date" name="day" value="{{ w.provenance.priced_on or books.as_of }}" required></label>
+                <label class="field"><span class="sm muted">Price, USD</span><input class="input" name="price" inputmode="decimal" pattern="[0-9]+(\.[0-9]{1,4})?" required></label>
+                <button class="btn btn-sm btn-primary" type="submit" style="align-self: end">Record</button>
+              </form>
+              <p class="xs faint mt-2">Recorded as entered by you, with the time you entered it, never as the source's.</p>
+            </details>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      {% for holding, p in w.unpriced %}
+      <div class="alert alert-warn mt-3">
+        <svg aria-hidden="true"><use href="#i-warn"/></svg>
+        <div class="alert-body">
+          <p style="color: var(--ink); font-weight: 600">{{ p.commodity }} has no price at all.</p>
+          <p>Its {{ p.units | units }} units are left out, so every total that includes {{ holding.name }} is a floor, labelled "at least".</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      {% set ns = namespace(any=false) %}
+      <table class="table positions">
+        <caption class="vh">Investment positions in the accounts you can see</caption>
+        <thead>
+          <tr><th scope="col">Holding</th><th scope="col" class="num col-hide-sm">Units</th><th scope="col" class="num">Price</th><th scope="col" class="num">Value</th></tr>
+        </thead>
+        <tbody>
+          {% for holding in invested if holding.held | rejectattr("is_cash") | list %}
+          {% set ns.any = true %}
+          {% set hue = "" if holding.part.hue == "who-1" else " " ~ holding.part.hue %}
+          <tr class="group-row"><th scope="rowgroup" colspan="4"><span class="who{{ hue }}">{{ holding.name }} &middot; {{ holding.owners | names }}</span></th></tr>
+          {% for p in holding.held %}
+          {% set stale = p.freshness == "stale" %}
+          {% set unpriced = p.freshness == "unpriced" %}
+          <tr{% if stale or unpriced %} class="is-flag"{% endif %}>
+            <th scope="row"><span class="primary">{{ "Cash" if p.is_cash else names_by_symbol.get(p.commodity, p.commodity) }}</span><span class="second">{{ "Uninvested" if p.is_cash else p.commodity }}</span></th>
+            <td class="num col-hide-sm{% if p.is_cash %} faint{% endif %}">{{ "–" if p.is_cash else p.units | units }}</td>
+            {% if p.is_cash %}
+            <td class="num faint">&ndash;</td>
+            {% elif unpriced %}
+            <td class="num"><span class="stale-line"><svg aria-hidden="true"><use href="#i-warn"/></svg>No price</span></td>
+            {% else %}
+            <td class="num">{{ p.price | money }}{% if stale %}<span class="second stale-line"><svg aria-hidden="true"><use href="#i-clock"/></svg>{{ close(p.price_day, books.as_of) }}</span>{% else %}<span class="second">{{ close(p.price_day, books.as_of) }}{% if p.source == "hand" %}, by hand{% endif %}</span>{% endif %}</td>
+            {% endif %}
+            <td class="num">{% if unpriced %}<span class="stale-line" style="justify-content: flex-end">Not counted</span>{% else %}<span class="primary">{{ p.value | money }}</span>{% if stale %}<span class="second stale-line" style="justify-content: flex-end">may be off</span>{% endif %}{% endif %}</td>
+          </tr>
+          {% endfor %}
+          {% endfor %}
+          {% if ns.any %}
+          <tr class="total-row">
+            <th scope="row">Positions you can see</th>
+            <td class="col-hide-sm"></td>
+            <td></td>
+            <td class="num">{% if w.unpriced %}at least {% endif %}{{ invested_total | money }}{% if w.unpriced %}<span class="second stale-line" style="justify-content: flex-end">leaves out {{ plural(w.unpriced | length, "holding") }} with no price</span>{% endif %}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="muted">No investment positions in the accounts you can see.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+      {% for p in w.private %}
+      <div class="withheld compact" style="margin: var(--s-3) var(--s-6) var(--s-5)">
+        <span class="glyph" aria-hidden="true"><svg><use href="#i-lock"/></svg></span>
+        <p style="margin: 0">{% if p.part.is_joint %}The joint accounts of {{ p.part.owners | names }}{% else %}{{ p.part.name }}'s positions{% endif %} are private to {{ "their owners" if p.part.is_joint else p.part.name }}.{% if p.total_shared %} Their value is inside the shared total above.{% endif %}</p>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="panel-foot">
+      <span>Each price is stored with its source and time.{% if w.provenance.sources %} Source: {{ w.provenance.sources | join(", ") }}{% if w.provenance.fetched_at %}, fetched {{ when(w.provenance.fetched_at, today) }}{% endif %}.{% endif %}</span>
+    </div>
+  </section>
+{% endblock %}

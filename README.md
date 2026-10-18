@@ -15,9 +15,9 @@ Runs on one machine. Each household member signs in with a username and password
 ## Status
 
 Early.
-Members, sign-in, sharing choices and the privacy boundary are in place; see [docs/privacy-boundary.md](docs/privacy-boundary.md).
-Reading the beancount ledger, institution links and the dashboards come next; the calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md).
-See `design/` for the approved interaction design.
+Members, sign-in, sharing and the privacy boundary are in place ([docs/privacy-boundary.md](docs/privacy-boundary.md)), and so are the dashboards over the beancount ledger: the household, each member's own page, other members' shared pages, net worth with positions and price provenance, review, and sharing settings ([docs/dashboards.md](docs/dashboards.md)).
+Institution links come next.
+The calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md) and [docs/dashboards.md](docs/dashboards.md); `design/` holds the approved design.
 
 ## Development
 
@@ -27,14 +27,15 @@ uv run hearth demo          # an invented household in a throwaway directory
 uv run pytest
 ```
 
-To run for real, create the first admin, then serve on this machine only:
+To run for real, create the first admin, point hearth at the household's ledger, then serve on this machine only:
 
 ```sh
 uv run hearth add-member <username> --name "<name>" --admin
+export HEARTH_LEDGER="$HOME/path/to/household.beancount"
 uv run hearth serve
 ```
 
-Until the ledger reader lands (on the branch stacked on this foundation), `hearth serve` shows every figure as zero; that is expected, not a bug.
+Hearth only reads the ledger. It recomputes at start-up, every morning at 6:00 and on request, never on page load.
 
 State lives in `$HEARTH_DATA_DIR`, by default `~/.local/share/hearth`, outside any cloud-synced folder.
 Set `HEARTH_HTTPS=1` when serving behind TLS so the session cookie is marked secure.

@@ -8,13 +8,15 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from hearth import access, db, members, sessions
+from hearth import db, members, sessions
+from hearth.books import Bookkeeper
 from hearth.clock import Clock
 from hearth.config import Settings
-from hearth.disclosure import Concealed, Disclosure
-from hearth.ledger import Ledger
+from hearth.connections import Connections
+from hearth.disclosure import Concealed, Disclosure, may_administer
 from hearth.members import Member
 from hearth.months import Month
+from hearth.valuation.quotes import PriceSource
 from hearth.web.errors import FormExpired, PasswordChangeRequired, SignInRequired
 
 SESSION_COOKIE = "hearth_session"
@@ -27,8 +29,10 @@ class Hearth:
     """Everything a running application is built from."""
 
     settings: Settings
-    ledger: Ledger
+    bookkeeper: Bookkeeper
     clock: Clock
+    price_source: PriceSource
+    connections: Connections
 
     @property
     def signer(self) -> sessions.CookieSigner:
@@ -112,7 +116,7 @@ def acting(session: Annotated[Session, Depends(form_token_checked)]) -> Session:
 
 
 def administering(session: Annotated[Session, Depends(signed_in)]) -> Session:
-    if not access.may_administer(session.member):
+    if not may_administer(session.member):
         raise Concealed
     return session
 
@@ -122,7 +126,7 @@ def administering_change(session: Annotated[Session, Depends(acting)]) -> Sessio
 
 
 def disclosure(app: App, conn: Conn, session: Annotated[Session, Depends(signed_in)]) -> Disclosure:
-    return Disclosure.load(conn, session.member, app.ledger)
+    return Disclosure.load(conn, session.member, app.bookkeeper.status)
 
 
 def selected_month(app: App, month: str | None = None) -> Month:

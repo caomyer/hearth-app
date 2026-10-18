@@ -1,71 +1,174 @@
 {% extends "base.html" %}
-{% from "_macros.html" import figure, month_nav, not_shared, transactions_table %}
-{% set summary = view.summary %}
-{% set mine = summary.is_viewer %}
-{% set section = "mine" if mine else "household" %}
-{% set path = "/members/" ~ summary.member.username %}
-{% block title %}{{ summary.member.display_name }}{% endblock %}
+{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, avatar, day_table %}
+{% set m = view %}
+{% set name = m.member.display_name %}
+{% set books = status.books %}
+{% block title %}{{ name }}{% endblock %}
 {% block content %}
-<div class="page-head">
-  <h1>{{ "Mine" if mine else summary.member.display_name }}</h1>
-  {{ month_nav(path, view.month) }}
-</div>
+  <p class="crumbs"><a href="/">Household</a> / {{ name }}</p>
+  <div class="page-head">
+    <div class="row" style="gap: var(--s-4)">
+      {{ avatar(m.member, large=true) }}
+      <div>
+        <h1>{{ name }}</h1>
+        <p class="sub">You see what {{ name }} shares with the household{% if m.joint %}, and the accounts you can see into together{% endif %}.</p>
+      </div>
+    </div>
+  </div>
 
-<section class="figures">
-  {{ figure("Net worth, excluding joint accounts", summary.net_worth) }}
-  {{ figure("Spending, " ~ view.month.label ~ ", excluding joint accounts", summary.spending) }}
-</section>
+  {{ failure_alert(notice, today) }}
 
-<section>
-  <h2>Where the money went, excluding joint accounts</h2>
-  {% if view.breakdown is withheld %}
-  {{ not_shared(summary.member.display_name ~ "’s category breakdown is not shared with you.") }}
-  {% elif view.breakdown %}
-  <table class="ledger">
-    <tbody>
-      {% for line in view.breakdown %}
-      <tr><td>{{ line.category }}</td><td class="numeric">{{ line.amount | money }}</td></tr>
+  <div class="grid grid-main">
+    <section class="panel" aria-labelledby="snw-h">
+      <div class="panel-body" style="padding-top: var(--s-6)">
+        <div class="hero">
+          <div class="row between wrap">
+            <h2 id="snw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">{{ name }}'s net worth, excluding joint</h2>
+            {% if m.worth is not withheld %}<span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Shared by {{ name }}</span>{% endif %}
+          </div>
+          {% if not m.connected %}
+          <p class="hero-value muted">&ndash;</p>
+          <p class="muted mt-2">{{ name }} has nothing connected yet, so there is no figure to show, not a figure of zero.</p>
+          {% elif m.worth is withheld %}
+          <p class="mt-3">{{ private("Not shared with you") }}</p>
+          {% else %}
+          {{ hero_value(m.worth.value, status, (), m.worth.unpriced) }}
+          <div class="hero-meta">{{ delta(m.change, since) if m.change is not withheld else "" }}</div>
+          {% call asof(books, status, today, notice, 0, m.worth.unpriced) %} Excludes joint accounts{% if m.joint %}, shown below{% endif %}.{% endcall %}
+          {% endif %}
+        </div>
+        <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
+          {% for label, value in [("Spent", m.totals.spent), ("Income", m.totals.earned)] %}
+          <div>
+            <p class="fig-label">{{ label }}, {{ month_abbr }} 1&ndash;{{ m.totals.to_day }}</p>
+            {% if value is withheld %}
+            <p class="fig-value">{{ private("Not shared") }}</p>
+            {% else %}
+            <p class="fig-value">{{ value | hero }}</p>
+            <p class="fig-sub">{% if label == "Spent" and m.categories is withheld %}Total only{% elif label == "Income" and m.days is withheld %}Total only{% endif %}</p>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="shares-h">
+      <div class="panel-head">
+        <h2 id="shares-h">What {{ name }} shares</h2>
+      </div>
+      <div class="panel-body">
+        <ul class="list share-list" role="list">
+          {% for description, shared in m.shares %}
+          {% if shared %}
+          <li><span class="mark is-on" aria-hidden="true"><svg><use href="#i-check"/></svg></span><span class="grow">{{ description.title }}</span><span class="end sm muted">Shared</span></li>
+          {% else %}
+          <li><span class="mark" aria-hidden="true"><svg><use href="#i-lock"/></svg></span><span class="grow">{{ description.title }}</span><span class="end sm priv">Not shared</span></li>
+          {% endif %}
+          {% endfor %}
+        </ul>
+        <p class="sm muted mt-4">Only {{ name }} can change this.{% if session.member.is_admin %} Being the household admin does not let you see more.{% endif %}</p>
+      </div>
+    </section>
+  </div>
+
+  {% if m.withheld %}
+  {% set titles = m.withheld | map(attribute="title") | map("lower") | list %}
+  <section class="withheld mt-4" aria-labelledby="wh-h">
+    <span class="glyph" aria-hidden="true"><svg><use href="#i-lock"/></svg></span>
+    <div>
+      <h2 id="wh-h" style="font-size: var(--t-h3); line-height: var(--lh-h3)">{{ name }}'s {% for t in titles %}{{ t }}{% if not loop.last %}{{ " and " if loop.revindex == 2 else ", " }}{% endif %}{% endfor %} {{ "is" if titles | length == 1 else "are" }} private</h2>
+      <p class="measure">They are not hidden on this page; they were never sent to it.{% if m.worth is not withheld %} The totals above are computed from them, so the household figures stay complete.{% endif %}</p>
+      <p class="measure mt-2">If you need something specific, ask {{ name }}. Categories can be shared without sharing a single transaction.</p>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if m.categories is not withheld and (m.categories.rows or m.categories.fixed) %}
+  {% set cats = m.categories %}
+  {% set scale = cats.scale if cats.scale > 0 else 1 %}
+  <section class="panel mt-4" aria-labelledby="mcat-h">
+    <div class="panel-head">
+      <h2 id="mcat-h">By category</h2>
+      <span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Shared by {{ name }}</span>
+    </div>
+    <div class="panel-body">
+      {% for bill in cats.fixed %}
+      <p class="fixed-row"><span><span class="muted">Fixed:</span> {{ bill.name }}, paid {{ bill.paid_on | day }}</span><span class="tnum">{{ bill.amount | money }}</span></p>
       {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="empty">No spending in {{ view.month.label }}.</p>
+      <div class="cats" role="list">
+        {% for row in cats.rows %}
+        <div class="cat" role="listitem">
+          <span class="name">{{ row.name }}</span>
+          <span class="track" aria-hidden="true"><span class="fill" style="width: {{ '%.1f' | format(row.amount / scale * 100) }}%"></span></span>
+          <span class="val">{{ row.amount | money }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
   {% endif %}
-</section>
 
-<section>
-  <h2>Accounts</h2>
-  {% if view.accounts %}
-  <table class="ledger">
-    <thead>
-      <tr><th scope="col">Account</th><th scope="col">Owners</th><th scope="col" class="numeric">Balance</th></tr>
-    </thead>
-    <tbody>
-      {% for account in view.accounts %}
-      <tr>
-        <td><a href="/accounts/{{ account.id }}?month={{ view.month }}">{{ account.name }}</a></td>
-        <td class="muted">{{ account.owners | map(attribute="display_name") | join(", ") }}</td>
-        <td class="numeric">{% if account.balance is withheld %}<span class="is-withheld">Not shared</span>{% else %}{{ account.balance | money }}{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% elif mine %}
-  <p class="empty">No accounts are linked to you yet.</p>
-  {% else %}
-  {{ not_shared(summary.member.display_name ~ "’s account detail is not shared with you.") }}
+  {% if m.accounts is not withheld and m.accounts %}
+  <section class="panel mt-4" aria-labelledby="macc-h">
+    <div class="panel-head">
+      <h2 id="macc-h">Accounts</h2>
+      <span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Shared by {{ name }}</span>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      {% with accounts = m.accounts %}{% include "_accounts_table.html" %}{% endwith %}
+    </div>
+  </section>
   {% endif %}
-</section>
 
-<section>
-  <h2>Transactions, {{ view.month.label }}</h2>
-  {% if not mine %}
-  <p class="note">Only transactions shared with you, and those in accounts you own together, appear here.</p>
+  {% if m.days is not withheld and m.days %}
+  <section class="panel mt-4" aria-labelledby="mtx-h">
+    <div class="panel-head">
+      <h2 id="mtx-h">{{ month_name }} transactions</h2>
+      <span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Shared by {{ name }}</span>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      {{ day_table(m.days, name ~ "'s transactions, newest first, grouped by day") }}
+    </div>
+  </section>
   {% endif %}
-  {% if view.transactions %}
-  {{ transactions_table(view.transactions) }}
-  {% else %}
-  <p class="empty">Nothing to show for {{ view.month.label }}.</p>
+
+  {% for joint in m.joint %}
+  {% set both = joint.part.is_viewers %}
+  <section class="panel mt-4" aria-labelledby="joint-h-{{ loop.index }}">
+    <div class="panel-head">
+      <h2 id="joint-h-{{ loop.index }}">Joint accounts{% if not both %} of {{ joint.part.owners | names }}{% endif %}</h2>
+      <span class="tag tag-joint">{% if both %}You and {{ name }} both see this{% else %}Shared by every owner{% endif %}</span>
+    </div>
+    {% if joint.accounts is not withheld %}
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      <table class="table">
+        <caption class="vh">Joint accounts and balances</caption>
+        <thead><tr><th scope="col">Account</th><th scope="col" class="col-hide-sm">Updated</th><th scope="col" class="num">Balance</th></tr></thead>
+        <tbody>
+          {% for row in joint.accounts %}
+          <tr>
+            <th scope="row"><a class="primary" href="/accounts/{{ row.id }}">{{ row.name }}</a></th>
+            <td class="col-hide-sm muted">{{ row.updated | day if row.updated else "" }}</td>
+            <td class="num"><span class="primary">{% if row.value.is_floor %}at least {% endif %}{{ row.value.value | money }}</span></td>
+          </tr>
+          {% endfor %}
+          <tr class="total-row"><th scope="row">Joint total</th><td class="col-hide-sm"></td><td class="num">{% if joint.total.is_floor %}at least {% endif %}{{ joint.total.value | money }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+  {% if joint.days is not withheld and joint.days %}
+  <section class="panel mt-4" aria-labelledby="jtx-h-{{ loop.index }}">
+    <div class="panel-head">
+      <h2 id="jtx-h-{{ loop.index }}">Recent joint transactions</h2>
+      <span class="tag tag-joint">{% if both %}You and {{ name }} both see this{% else %}Shared by every owner{% endif %}</span>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      {{ day_table(joint.days, "Joint transactions, newest first, grouped by day") }}
+    </div>
+  </section>
   {% endif %}
-</section>
+  {% endfor %}
 {% endblock %}

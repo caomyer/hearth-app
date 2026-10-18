@@ -1,5 +1,6 @@
 """Application factory."""
 
+import os
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from urllib.parse import quote
@@ -11,10 +12,14 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
 from hearth import db
+from hearth.books import Bookkeeper
 from hearth.clock import Clock, system_clock
 from hearth.config import Settings
+from hearth.connections import Connections, NoConnections
 from hearth.disclosure import Concealed
-from hearth.ledger import Ledger
+from hearth.valuation.eodhd import EodhdSource
+from hearth.valuation.quotes import PriceSource
+from hearth.valuation.verify import API_KEY_VARIABLE
 from hearth.web.deps import Hearth, session_outside_routing
 from hearth.web.errors import FormExpired, PasswordChangeRequired, SignInRequired
 from hearth.web.routes import ROUTERS
@@ -24,7 +29,10 @@ _STATIC = Path(__file__).parent / "static"
 
 _SECURITY_HEADERS = {
     "Content-Security-Policy": (
-        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self';"
+        # Style attributes carry chart and bar geometry, as the design system draws them.
+        # Scripts stay locked to this origin, and templates escape everything they render.
+        "default-src 'none'; script-src 'self'; style-src 'self';"
+        " style-src-attr 'unsafe-inline'; img-src 'self';"
         " connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
     ),
     "X-Content-Type-Options": "nosniff",
@@ -40,10 +48,23 @@ _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 type CallNext = Callable[[Request], Awaitable[Response]]
 
 
-def create_app(settings: Settings, ledger: Ledger, clock: Clock = system_clock) -> FastAPI:
+def create_app(
+    settings: Settings,
+    bookkeeper: Bookkeeper,
+    clock: Clock = system_clock,
+    price_source: PriceSource | None = None,
+    connections: Connections | None = None,
+) -> FastAPI:
+    """The web application. The caller decides when `bookkeeper` recomputes."""
     db.initialise(settings.database)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
-    app.state.hearth = Hearth(settings=settings, ledger=ledger, clock=clock)
+    app.state.hearth = Hearth(
+        settings=settings,
+        bookkeeper=bookkeeper,
+        clock=clock,
+        price_source=price_source or EodhdSource(os.environ.get(API_KEY_VARIABLE)),
+        connections=connections or NoConnections(),
+    )
 
     app.middleware("http")(_refuse_cross_site_changes)
     app.middleware("http")(_add_security_headers)

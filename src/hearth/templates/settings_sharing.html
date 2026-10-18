@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% from "_macros.html" import avatar, private %}
+{% block title %}Sharing{% endblock %}
+{% block content %}
+  {% include "_settings_nav.html" %}
+
+  <div class="grid grid-main mt-6" style="align-items: start" id="sharing">
+    <section class="panel" aria-labelledby="share-h">
+      <div class="panel-head">
+        <h2 id="share-h">What the household sees of you</h2>
+        <p class="finding">These six are the only things that can be shared. Net worth and spending totals start shared, and everything else starts private. Each change applies the moment you make it.</p>
+      </div>
+      <div class="panel-body" style="padding-top: var(--s-2)">
+        <ul class="list settings-list" role="list">
+          {% for facet, description, shared in rows %}
+          <li>
+            <div class="grow">
+              <p class="label-lg" id="s-{{ facet.value }}-l">{{ description.title }}</p>
+              <p class="sm faint" id="s-{{ facet.value }}-d">{{ description.explanation }}</p>
+            </div>
+            <form method="post" action="/settings/sharing/{{ facet.value }}" hx-post="/settings/sharing/{{ facet.value }}" hx-trigger="change" hx-target="#sharing" hx-select="#sharing" hx-swap="outerHTML">
+              <input type="hidden" name="csrf" value="{{ session.csrf }}">
+              <input type="hidden" name="shared" value="{{ 'false' if shared else 'true' }}">
+              <label class="switch"><input type="checkbox"{% if shared %} checked{% endif %} aria-labelledby="s-{{ facet.value }}-l" aria-describedby="s-{{ facet.value }}-d"><span class="track" aria-hidden="true"></span><span class="state" aria-hidden="true"></span></label>
+              <noscript><button class="btn btn-sm mt-2" type="submit">{{ "Stop sharing" if shared else "Share" }}</button></noscript>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="saved-note" role="status" aria-live="polite">{% if just_saved %}Saved. {{ descriptions[just_saved].title }} is now {{ "shared" if just_saved in (rows | selectattr(2) | map(attribute=0) | list) else "private" }}.{% endif %}</p>
+      </div>
+      <div class="panel-foot">
+        <span><span class="tag tag-joint">Joint</span>&nbsp; Joint accounts are fully visible to every owner. Anyone else sees a joint account's figures only when every owner shares them.</span>
+      </div>
+    </section>
+
+    <aside class="panel preview" aria-labelledby="pv-h">
+      <div class="panel-head">
+        <h2 id="pv-h">What the household sees</h2>
+        <span class="sm faint">Live preview</span>
+      </div>
+      <div class="panel-body">
+        {% if preview %}
+        {% set p = preview %}
+        <div class="pv-card">
+          <div class="row" style="gap: var(--s-3)">
+            {{ avatar(p.member) }}
+            <p style="font-weight: 600">{{ p.member.display_name }}</p>
+          </div>
+          {% macro pv(label, value) %}
+          <div class="pv-row">
+            <p class="fig-label">{{ label }}</p>
+            {% if value is withheld %}<p class="pv-off priv-line sm" style="display: flex"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</p>{% else %}{{ caller() }}{% endif %}
+          </div>
+          {% endmacro %}
+          {% call pv("Net worth, excluding joint", p.worth) %}<p class="pv-on fig-value" style="font-size: 22px; line-height: 28px">{% if p.worth.is_floor %}<span class="sm muted">at least </span>{% endif %}{{ p.worth.value | hero }}</p>{% if p.worth.is_floor %}<p class="xs faint">A floor: {{ plural(p.worth.unpriced | length, "holding") }} {{ "has" if p.worth.unpriced | length == 1 else "have" }} no price.</p>{% endif %}{% endcall %}
+          {% call pv("Spent, " ~ month_name ~ " so far", p.totals.spent) %}<p class="pv-on tnum">{{ p.totals.spent | dollars }}</p>{% endcall %}
+          {% call pv("Earned, " ~ month_name ~ " so far", p.totals.earned) %}<p class="pv-on tnum">{{ p.totals.earned | dollars }}</p>{% endcall %}
+          {% call pv("By category", p.categories) %}{% set listed = (p.categories.fixed | list) + (p.categories.rows | list) %}<p class="pv-on sm">{% for row in listed[:3] %}{{ row.name }} {{ row.amount | dollars }}{% if not loop.last %}, {% endif %}{% else %}Nothing spent yet{% endfor %}{% if listed | length > 3 %}, and {{ listed | length - 3 }} more{% endif %}</p>{% endcall %}
+          {% call pv("Transactions", p.days) %}<p class="pv-on sm">All {{ p.days | map(attribute="lines") | map("length") | sum }} this month, with merchants</p>{% endcall %}
+          {% call pv("Accounts", p.accounts) %}<p class="pv-on sm">{{ plural(p.accounts | length, "account") }} with balances</p>{% endcall %}
+        </div>
+        {% else %}
+        <p class="muted">The preview appears once today's figures are computed.</p>
+        {% endif %}
+        <p class="xs faint mt-3">Private items are never sent to anyone else's browser. This is enforced by the server on every request, not by hiding things on screen.</p>
+      </div>
+    </aside>
+  </div>
+
+  <section class="panel mt-4" aria-labelledby="adm-h">
+    <div class="panel-head">
+      <h2 id="adm-h">Admins and your data</h2>
+    </div>
+    <div class="panel-body">
+      <div class="grid grid-2" style="gap: var(--s-6)">
+        <div>
+          <p class="measure">An admin manages accounts, not other people's money. Being an admin does not let anyone see what you have not shared.</p>
+          <p class="measure mt-2 muted">An admin can reset your password, and so could sign in as you. That is the price of a household server without email, so every reset is recorded here and cannot be removed.</p>
+        </div>
+        <div>
+          <h3 class="sm" style="color: var(--ink-2); font-weight: 500">Password resets on your account</h3>
+          <table class="table addup mt-2">
+            <caption class="vh">Password reset history</caption>
+            <thead class="vh"><tr><th scope="col">When</th><th scope="col">By</th></tr></thead>
+            <tbody>
+              {% for line in resets %}
+              <tr><td>{{ line.at | day }}, {{ line.at | clock_time }}</td><td>Reset by {{ line.actor.display_name if line.actor else "the command line" }}</td></tr>
+              {% else %}
+              <tr><td class="muted" colspan="2">None. Nobody but you has set your password.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

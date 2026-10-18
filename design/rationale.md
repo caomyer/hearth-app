@@ -71,14 +71,19 @@ Each of these is flagged here so firstmate can overturn it in one line.
    An honest range has to be computed from the withheld figure, and subtracting the known part from it reveals that figure to within the range's width.
    A range not computed from it is not honest.
    The design instead shows the known part at hero size with a hatched "+ Sam, not shared" chip attached, under the label "without Sam", so it can never read as complete.
-   Firstmate amended decision 3 on 2026-10-18 for this reason: a range bounds the withheld value from both sides, so it tells a viewer more about the member who withdrew than a labelled partial does.
+   Decision 3 was amended by firstmate on 2026-10-18 under authority the captain delegated in writing ("you can decide on my behalf because I am going to sleep").
+   The captain's original criterion asked for a range.
+   A range bounds the withheld value from BOTH sides and therefore reveals more about the member who withdrew than a labelled partial does, so the amendment makes the product more private, not less.
+   The captain has not yet reviewed this amendment; it is listed for him in the overnight brief and he may overturn it.
    The labelled partial is strictly more private and no less clear, which is why the design differs from the recorded decision text.
    The range is never the primary presentation; `states/sharing-withdrawn.html` keeps it only as a secondary side-by-side comparison.
-2. **Income is shared by its own switch, "Monthly income total", beside "Monthly spending total". Accepted by firstmate.**
+2. **Income is shared by its own switch, "Monthly income total", beside "Monthly spending total". Accepted by firstmate; its default reversed by firstmate on 2026-10-18.**
    The approved household dashboard shows household income and a savings rate, which cannot be computed unless each member shares income.
    The mock's sharing list had no income item, so one is added as a separate, independently controlled item rather than folded into the spending total.
-   Both default on, matching the approved dashboard, and no switch ever covers more than its label says.
-   There are now six shareable items.
+   It was first accepted defaulting on, matching the approved dashboard.
+   Firstmate reversed that on 2026-10-18: the captain approved "the top two shared, everything else private", and a third default-shared facet exceeds that, for the most sensitive number after net worth, and would apply silently to every member added later.
+   Income now defaults off, so household income and the savings rate read "without" each member until they turn it on, never as a complete figure.
+   No switch ever covers more than its label says, and there are now six shareable items.
 3. **A member chooses their own password at first sign-in, on by default. Accepted by firstmate.**
    Decision 1 accepts that an admin can reset a password; it does not require the admin to keep knowing one.
 4. **Joint accounts are their own part of the household total. Accepted by firstmate as the data model.**
@@ -89,6 +94,10 @@ Each of these is flagged here so firstmate can overturn it in one line.
    It is secondary, states its count and what it leaves open, and the empty queue keeps an undo list for a week.
 6. **Errors respect the privacy boundary.**
    A failed balance check names an account and a balance, so only that account's owner sees the details; everyone else sees one sentence that reveals nothing.
+7. **Typical-by-date ticks and fixed bills' paid days are transactions-level detail. Changed by firstmate on 2026-10-18.**
+   The household screen first drew "Fixed: Housing, paid Oct 1" and a typical-by-date tick on every category for anyone who shares categories.
+   A single payment's day and amount is an individual transaction, and typical by a date reads off when money went out, which the category facet promises not to show.
+   They now appear only for parts whose transactions the viewer can see; anyone else sees each category's amount so far, a fixed bill included as an ordinary row.
 
 ## The three places this design is still weakest
 

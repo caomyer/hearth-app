@@ -16,7 +16,7 @@ def member(member_id: MemberId, *, is_admin: bool = False) -> Member:
 EVERYTHING = frozenset(Facet)
 
 
-def test_new_members_share_their_two_totals_and_nothing_more() -> None:
+def test_new_members_share_net_worth_and_spending_totals_and_nothing_more() -> None:
     assert frozenset({Facet.NET_WORTH_TOTAL, Facet.MONTHLY_SPENDING_TOTAL}) == DEFAULT_SHARED
 
 

@@ -1,7 +1,8 @@
 """What each member has chosen to share with the rest of the household.
 
 Sharing is a choice per member and per facet of their finances. A member who has
-never chosen gets the defaults: totals are shared, detail is not.
+never chosen gets the defaults: the net worth and spending totals are shared, and
+nothing else is. No facet ever covers more than its title says.
 """
 
 import sqlite3
@@ -19,6 +20,7 @@ from hearth.members import MemberId
 class Facet(StrEnum):
     NET_WORTH_TOTAL = "net_worth_total"
     MONTHLY_SPENDING_TOTAL = "monthly_spending_total"
+    MONTHLY_INCOME_TOTAL = "monthly_income_total"
     CATEGORY_BREAKDOWN = "category_breakdown"
     TRANSACTIONS = "transactions"
     ACCOUNT_BALANCES = "account_balances"
@@ -28,23 +30,41 @@ class Facet(StrEnum):
 class FacetDescription:
     title: str
     explanation: str
+    tag: str
+    """The one word the household page uses for it, as in "Shares: Net worth, Spending"."""
 
 
 DESCRIPTIONS: Mapping[Facet, FacetDescription] = {
     Facet.NET_WORTH_TOTAL: FacetDescription(
-        "Net worth total", "The household sees your total, and nothing behind it."
+        "Net worth total",
+        "One number. Turning it off makes the household total show as incomplete,"
+        " never as a smaller number.",
+        "Net worth",
     ),
     Facet.MONTHLY_SPENDING_TOTAL: FacetDescription(
-        "Monthly spending total", "The household sees what you spent each month, as one number."
+        "Monthly spending total",
+        "How much you spent each month. One number a month, nothing about what on.",
+        "Spending",
+    ),
+    Facet.MONTHLY_INCOME_TOTAL: FacetDescription(
+        "Monthly income total",
+        "How much you earned each month. One number a month, nothing about where from.",
+        "Income",
     ),
     Facet.CATEGORY_BREAKDOWN: FacetDescription(
-        "Category breakdown", "Spending by category, such as food or housing, without transactions."
+        "Spending by category",
+        "Food, transport and so on, per month. No merchants, no individual transactions.",
+        "Categories",
     ),
     Facet.TRANSACTIONS: FacetDescription(
-        "Individual transactions", "Every transaction in full, including payees."
+        "Transactions",
+        "Every transaction with its merchant, amount and category.",
+        "Transactions",
     ),
     Facet.ACCOUNT_BALANCES: FacetDescription(
-        "Account balances", "The balance of each of your accounts, not just the total."
+        "Account balances",
+        "Each account and its balance, and your investment positions.",
+        "Balances",
     ),
 }
 

@@ -1,17 +1,19 @@
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from hearth import accounts, auth, db, sessions
+from hearth import accounts, auth, books, db, sessions
 from hearth.app import create_app
 from hearth.config import Settings
 from hearth.members import MemberId
 from hearth.sharing import Facet
+from hearth.valuation.pricestore import PriceStore
+from hearth.valuation.quotes import Quote
 from hearth.web.deps import SESSION_COOKIE
 from tests import household
 
@@ -40,6 +42,13 @@ class World:
     clock: FakeClock
     member_ids: dict[str, MemberId]
     account_ids: dict[str, str]
+    bookkeeper: books.Bookkeeper
+    ledger: Path
+
+    @property
+    def bookkeeper_establish(self) -> books.Establish:
+        """How this world's books are recomputed, for a bookkeeper of a test's own."""
+        return books.from_ledger(self.ledger, self.settings.database)
 
     def connect(self) -> sqlite3.Connection:
         return db.connect(self.settings.database)
@@ -61,6 +70,10 @@ class World:
         assert token is not None
         return signer.csrf_token(token)
 
+    def recompute(self) -> None:
+        """Recompute the books now, as the morning schedule or "Recompute now" would."""
+        self.bookkeeper.recompute()
+
     def choose(self, username: str, shared: frozenset[Facet]) -> None:
         """Set exactly which facets a member shares."""
         conn = self.connect()
@@ -81,10 +94,24 @@ def clock() -> FakeClock:
     return FakeClock(household.NOW)
 
 
+class SourceNotSetUp:
+    """The price source as it is before a key is bought: never asked, never fails."""
+
+    name = "eodhd"
+
+    def unavailable_reason(self) -> str | None:
+        return "no key"
+
+    def quotes(self, symbol: str, start: date, end: date) -> list[Quote]:
+        raise AssertionError("an unavailable source is never asked")
+
+
 @pytest.fixture
 def world(tmp_path: Path, clock: FakeClock) -> World:
-    settings = Settings.in_directory(tmp_path / "data")
-    app = create_app(settings, household.ledger(), clock)
+    ledger = tmp_path / "household.beancount"
+    ledger.write_text(household.ledger_text())
+    settings = Settings.in_directory(tmp_path / "data", ledger=ledger)
+    db.initialise(settings.database)
     conn = db.connect(settings.database)
     try:
         member_ids = {}
@@ -108,6 +135,13 @@ def world(tmp_path: Path, clock: FakeClock) -> World:
             ).id
             for fixture in household.ACCOUNTS
         }
+        store = PriceStore(conn)
+        for symbol, day, price in household.prices():
+            store.record(Quote(symbol, day, price, "USD", "eodhd", "test", clock()))
     finally:
         conn.close()
-    return World(app, settings, clock, member_ids, account_ids)
+    bookkeeper = books.Bookkeeper(books.from_ledger(ledger, settings.database), clock)
+    bookkeeper.recompute()
+    assert bookkeeper.status.failure is None, bookkeeper.status.failure
+    app = create_app(settings, bookkeeper, clock, price_source=SourceNotSetUp())
+    return World(app, settings, clock, member_ids, account_ids, bookkeeper, ledger)

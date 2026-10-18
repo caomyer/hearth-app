@@ -46,6 +46,17 @@ SCENARIOS: dict[str, dict[str, frozenset[Facet]]] = {
         "blake": DEFAULT_SHARED
         | {Facet.ACCOUNT_BALANCES, Facet.TRANSACTIONS, Facet.CATEGORY_BREAKDOWN}
     },
+    "avery keeps the joint line private, blake shares everything": {
+        "avery": DEFAULT_SHARED - {Facet.NET_WORTH_TOTAL, Facet.MONTHLY_SPENDING_TOTAL},
+        "blake": EVERYTHING,
+    },
+    "everyone also shares income": dict.fromkeys(
+        household.USERNAMES, DEFAULT_SHARED | {Facet.MONTHLY_INCOME_TOTAL}
+    ),
+    "casey also shares income": {"casey": DEFAULT_SHARED | {Facet.MONTHLY_INCOME_TOTAL}},
+    "everyone shares categories only": dict.fromkeys(
+        household.USERNAMES, frozenset({Facet.CATEGORY_BREAKDOWN})
+    ),
 }
 
 # Pages that change state are attacked in test_tampering; the crawl reads.
@@ -56,6 +67,12 @@ STATE_CHANGING_ROUTES = {
     ("POST", "/settings/sharing/{facet}"),
     ("POST", "/admin/members"),
     ("POST", "/admin/members/{username}/reset-password"),
+    ("POST", "/net-worth/recompute"),
+    ("POST", "/net-worth/prices"),
+    ("POST", "/net-worth/prices/refresh"),
+    ("POST", "/review/groups/accept"),
+    ("POST", "/review/rows/book"),
+    ("POST", "/review/rows/reject"),
 }
 
 # All an anonymous visitor may be served; everything else sends them to sign in.
@@ -63,9 +80,10 @@ PUBLIC_PAGES = {"/sign-in", "/healthz"}
 
 TAMPERED_QUERIES: tuple[dict[str, str], ...] = (
     {},
-    {"month": household.THIS_MONTH},
-    {"month": household.LAST_MONTH},
+    {"month": "2026-10"},
+    {"month": "2026-09"},
     {"month": "not-a-month"},
+    {"outcome": "price-recorded", "saved": "transactions"},
     {"month": "2026-13"},
     {
         "viewer": "blake",
@@ -172,10 +190,11 @@ def test_a_member_sees_exactly_what_the_contract_allows(
     leaked, missing = [], []
     for secret in household.secrets(world.account_ids):
         visible = secret.visible(viewer, choices)
-        if secret.text in seen and not visible:
-            leaked.append(f"{secret.what}: {secret.text!r}")
-        if visible and secret.text not in seen:
-            missing.append(f"{secret.what}: {secret.text!r}")
+        present = [text for text in secret.texts if text in seen]
+        if present and not visible:
+            leaked.append(f"{secret.what}: {present!r}")
+        if visible and not present:
+            missing.append(f"{secret.what}: {secret.texts!r}")
     assert not leaked, f"{viewer} could see private data: {leaked}"
     assert not missing, f"{viewer} could not see data shared with them: {missing}"
 
@@ -188,7 +207,7 @@ def test_an_anonymous_visitor_sees_nothing_at_all(world: World) -> None:
     leaked = [
         s.what
         for s in household.secrets(world.account_ids)
-        if s.text in seen and not s.what.endswith(" id")
+        if any(text in seen for text in s.texts) and not s.what.endswith(" id")
     ]
     assert not leaked
     client = world.anonymous()
@@ -211,54 +230,24 @@ def test_the_crawl_reaches_every_route_the_application_serves(world: World) -> N
         assert set(route.param_convertors) <= set(path_values(world)), route.path
 
 
-def test_at_defaults_a_non_owner_sees_every_members_totals_and_the_household_totals(
-    world: World,
-) -> None:
-    page = world.signed_in("casey").get(f"/?month={household.THIS_MONTH}").text
-
-    for username in household.USERNAMES:
-        assert household.NET_WORTH[username] in page
-        assert household.SPENDING[username] in page
-    assert "Avery &amp; Blake, joint" in page
-    assert household.JOINT_NET_WORTH in page
-    assert household.JOINT_SPENDING in page
-    assert household.HOUSEHOLD_NET_WORTH in page
-    assert household.HOUSEHOLD_SPENDING in page
-
-
 def amounts(page: str) -> set[Decimal]:
     return {Decimal(text.replace(",", "")) for text in re.findall(r"\d[\d,]*\.\d\d", page)}
 
 
 def test_a_joint_account_cannot_be_recovered_from_what_one_owner_shares(world: World) -> None:
-    scenario = "avery at defaults, blake shares balances, transactions and breakdown"
+    """Blake shares everything; Avery keeps the joint line's totals. Nothing Casey is sent,
+    nor any difference or doubling of what Casey is sent, is the joint balance or spending."""
+    scenario = "avery keeps the joint line private, blake shares everything"
     for username, shared in SCENARIOS[scenario].items():
         world.choose(username, shared)
     client = world.signed_in("casey")
-    joint = next(a for a in household.ACCOUNTS if a.key == "joint")
-    joint_spending = sum(-t.amount for t in joint.transactions if t.amount < 0)
 
-    shown = amounts(client.get(f"/members/blake?month={household.THIS_MONTH}").text)
-    shown |= amounts(client.get(f"/?month={household.THIS_MONTH}").text)
+    shown: set[Decimal] = set()
+    for path in ("/", "/members/blake", "/members/avery", "/net-worth"):
+        shown |= amounts(client.get(path).text)
 
-    # Casey sees everything blake shares alone, and blake's total is just that.
     assert Decimal(household.NET_WORTH["blake"].replace(",", "")) in shown
     derivable = shown | {a - b for a in shown for b in shown}
     derivable |= {2 * a for a in derivable}
-    assert joint.balance not in derivable
-    assert joint_spending not in derivable
-
-
-def test_once_both_joint_owners_share_detail_it_is_shown(world: World) -> None:
-    detail = DEFAULT_SHARED | {Facet.ACCOUNT_BALANCES, Facet.TRANSACTIONS}
-    world.choose("avery", detail)
-    world.choose("blake", detail)
-    client = world.signed_in("casey")
-    joint = next(a for a in household.ACCOUNTS if a.key == "joint")
-
-    page = client.get(f"/members/blake?month={household.THIS_MONTH}").text
-    assert f"{joint.balance:,.2f}" in page
-    assert joint.transactions[0].payee in page
-    page = client.get(f"/?month={household.THIS_MONTH}").text
-    assert household.JOINT_NET_WORTH in page
-    assert household.HOUSEHOLD_NET_WORTH in page
+    assert Decimal(household.JOINT_NET_WORTH.replace(",", "")) not in derivable
+    assert Decimal(household.JOINT_SPENDING.replace(",", "")) not in derivable

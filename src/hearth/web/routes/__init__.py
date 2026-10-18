@@ -4,6 +4,14 @@ The privacy suite crawls exactly these routers, so a route served from anywhere
 else would escape it; ``hearth.app`` serves only what is listed here.
 """
 
-from hearth.web.routes import admin, auth, health, pages, sharing
+from hearth.web.routes import admin, auth, health, pages, prices, sharing
 
-ROUTERS = (pages.router, auth.router, sharing.router, admin.router, health.router)
+ROUTERS = (
+    pages.router,
+    prices.router,
+    auth.router,
+    sharing.router,
+    sharing.connections_router,
+    admin.router,
+    health.router,
+)

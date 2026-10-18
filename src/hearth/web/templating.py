@@ -1,47 +1,141 @@
-"""Jinja rendering, with the formatting every page shares."""
+"""Jinja rendering, with the number and date formatting every page shares.
+
+The rules follow the design system (``design/system.html``, Numbers): aggregates in whole
+dollars, line items to the cent, a true minus sign everywhere, and the dollar sign set small
+on hero figures.
+"""
 
 from datetime import date, datetime
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
+from markupsafe import Markup, escape
 
 from hearth.disclosure import Withheld
 
 _CENT = Decimal("0.01")
-_MINUS = "\N{MINUS SIGN}"
+_DOLLAR = Decimal(1)
+MINUS = "\N{MINUS SIGN}"
+
+
+def _sign(amount: Decimal) -> str:
+    return MINUS if amount < 0 else ""
 
 
 def money(amount: Decimal) -> str:
-    """Dollars to the cent, grouped by thousands, with a typographic minus (U+2212)."""
+    """Dollars to the cent, negatives with a true minus: "$820.45"."""
     rounded = amount.quantize(_CENT, rounding=ROUND_HALF_EVEN)
-    sign = _MINUS if rounded < 0 else ""
-    return f"{sign}${abs(rounded):,.2f}"
+    return f"{_sign(rounded)}${abs(rounded):,.2f}"
 
 
-def signed_money(amount: Decimal) -> str:
-    """Like ``money``, but marks gains with a plus sign."""
-    text = money(amount)
-    return text if text.startswith(_MINUS) or amount.is_zero() else f"+{text}"
+def dollars(amount: Decimal) -> str:
+    """Whole dollars, for aggregates: "$611,295"."""
+    rounded = amount.quantize(_DOLLAR, rounding=ROUND_HALF_UP)
+    return f"{_sign(rounded)}${abs(rounded):,.0f}"
 
 
-def category(ledger_account: str) -> str:
-    """A ledger category as people say it, without the "Expenses:" or "Income:" root."""
-    parts = ledger_account.split(":")
-    return " \N{SINGLE RIGHT-POINTING ANGLE QUOTATION MARK} ".join(
-        parts[1:] if parts[0] in {"Expenses", "Income"} and len(parts) > 1 else parts
-    )
+def hero(amount: Decimal) -> Markup:
+    """A hero figure in whole dollars with the currency sign set small, as the design draws it."""
+    rounded = amount.quantize(_DOLLAR, rounding=ROUND_HALF_UP)
+    return Markup('{}<span class="cur">$</span>{}').format(_sign(rounded), f"{abs(rounded):,.0f}")
+
+
+def amount(value: Decimal) -> str:
+    """A transaction's amount, signed, without the currency: "+3,299.60"."""
+    rounded = value.quantize(_CENT, rounding=ROUND_HALF_EVEN)
+    sign = MINUS if rounded < 0 else "+" if rounded > 0 else ""
+    return f"{sign}{abs(rounded):,.2f}"
+
+
+def compact(value: Decimal) -> str:
+    """A short label: "$8.2K", "$1.3M"."""
+    size = abs(value)
+    for limit, suffix in ((Decimal(1_000_000), "M"), (Decimal(1_000), "K")):
+        if size >= limit:
+            return f"{_sign(value)}${size / limit:.1f}{suffix}"
+    return dollars(value)
+
+
+def units(value: Decimal) -> str:
+    """Security units to three decimals: "1,284.301"."""
+    return f"{_sign(value)}{abs(value):,.3f}"
+
+
+def percent(value: Decimal) -> str:
+    return f"{(value * 100).quantize(_DOLLAR, rounding=ROUND_HALF_UP):,.0f}"
 
 
 def day(value: date) -> str:
+    """ "Oct 17"."""
     return f"{value:%b} {value.day}"
 
 
-def moment(value: datetime) -> str:
-    return f"{value:%Y-%m-%d %H:%M} UTC"
+def full_day(value: date) -> str:
+    """ "Saturday, Oct 17"."""
+    return f"{value:%A}, {value:%b} {value.day}"
+
+
+def year_day(value: date) -> str:
+    """ "Oct 18, 2024"."""
+    return f"{value:%b} {value.day}, {value.year}"
+
+
+def month_year(value: date) -> str:
+    """ "Oct 2024"."""
+    return f"{value:%b %Y}"
+
+
+def clock_time(value: datetime) -> str:
+    """ "6:00 AM", in the household machine's own time zone."""
+    local = value.astimezone()
+    return f"{local:%I:%M %p}".lstrip("0")
+
+
+def when(value: datetime, today: date) -> str:
+    """ "today, 6:00 AM", "yesterday, Oct 17, 6:00 AM" or "Oct 12, 6:00 AM"."""
+    local = value.astimezone()
+    days = (today - local.date()).days
+    if days == 0:
+        return f"today, {clock_time(value)}"
+    if days == 1:
+        return f"yesterday, {day(local.date())}, {clock_time(value)}"
+    return f"{day(local.date())}, {clock_time(value)}"
+
+
+def close(price_day: date, today: date) -> str:
+    """Which close a price is: "Fri close" within the last week, "Oct 13 close" before."""
+    if 0 <= (today - price_day).days < 7:
+        return f"{price_day:%a} close"
+    return f"{day(price_day)} close"
+
+
+def category(ledger_account: str | None) -> str:
+    """What a transaction was, as the design labels it.
+
+    Spending reads as its most specific category ("Expenses:Food:Dining" is "Dining"), money
+    earned as "Income", and a move between balance-sheet accounts as "Transfer".
+    """
+    if not ledger_account:
+        return "Transfer"
+    if ledger_account.startswith("Income:"):
+        return "Income"
+    return ledger_account.rsplit(":", 1)[-1]
+
+
+def plural(count: int, singular: str, plural_form: str | None = None) -> str:
+    return f"{count} {singular if count == 1 else plural_form or singular + 's'}"
+
+
+def names(items: Any, attribute: str = "display_name") -> Markup:
+    """ "Alex", "Alex and Sam", "Alex, Sam and Jo", escaped."""
+    words = [str(escape(getattr(item, attribute))) for item in items]
+    if len(words) < 3:
+        return Markup(" and ".join(words))  # noqa: S704 - every part was escaped above
+    return Markup(", ".join(words[:-1]) + " and " + words[-1])  # noqa: S704 - escaped above
 
 
 def _is_withheld(value: object) -> bool:
@@ -56,8 +150,22 @@ environment = Environment(
     lstrip_blocks=True,
 )
 environment.filters.update(
-    money=money, signed_money=signed_money, category=category, day=day, moment=moment
+    money=money,
+    dollars=dollars,
+    hero=hero,
+    amount=amount,
+    compact=compact,
+    units=units,
+    percent=percent,
+    day=day,
+    full_day=full_day,
+    year_day=year_day,
+    month_year=month_year,
+    clock_time=clock_time,
+    category=category,
+    names=names,
 )
+environment.globals.update(when=when, close=close, plural=plural, MINUS=MINUS)
 environment.tests["withheld"] = _is_withheld
 
 

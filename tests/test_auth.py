@@ -20,7 +20,7 @@ def is_signed_in(client: TestClient) -> bool:
 
 
 def one_time_password(page: str) -> str:
-    match = re.search(r'<p class="one-time-password">([^<]+)</p>', page)
+    match = re.search(r'<p class="one-time-password[^"]*"[^>]*>([^<]+)</p>', page)
     assert match, page
     return match[1]
 
@@ -187,7 +187,7 @@ def test_a_member_reads_only_what_happened_to_them(world: World) -> None:
     blake = world.signed_in("blake")
     blake.post("/settings/sharing/transactions", data={"csrf": world.csrf(blake), "shared": "true"})
 
-    event = "Blake now shares individual transactions"
+    event = "Blake now shares transactions"
     assert event in blake.get("/activity").text
     assert event in world.signed_in("avery").get("/activity").text
     casey_activity = world.signed_in("casey").get("/activity").text

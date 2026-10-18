@@ -1,16 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Sign in{% endblock %}
+{% block body_class %} class="signin-body"{% endblock %}
+{% block main_class %}signin{% endblock %}
 {% block content %}
-<div class="narrow sign-in">
-  <p class="brand brand-large">Hearth</p>
-  <form class="stack panel" method="post" action="/sign-in">
-    <h1>Sign in</h1>
-    {% if problem %}<p class="problem" role="alert">{{ problem }}</p>{% endif %}
-    <input type="hidden" name="destination" value="{{ destination }}">
-    <label>Username <input name="username" value="{{ username }}" autocomplete="username" autocapitalize="none" spellcheck="false" required{% if not username %} autofocus{% endif %}></label>
-    <label>Password <input type="password" name="password" autocomplete="current-password" required{% if username %} autofocus{% endif %}></label>
-    <button type="submit" class="button">Sign in</button>
-  </form>
-  <p class="note">The household admin creates accounts and resets forgotten passwords.</p>
-</div>
+  <div class="signin-card">
+    <div class="signin-brand">
+      <svg aria-hidden="true"><use href="#i-mark"/></svg>
+      <h1>Hearth</h1>
+      <p class="muted">Household finances, on this machine.</p>
+    </div>
+
+    <form method="post" action="/sign-in" class="panel signin-form" aria-label="Sign in">
+      <div class="panel-body" style="padding: var(--s-6)">
+        {% if problem %}
+        <div class="alert alert-err mb-4" role="alert">
+          <svg aria-hidden="true"><use href="#i-error"/></svg>
+          <div class="alert-body"><p style="color: var(--ink); margin: 0">{{ problem }}</p></div>
+        </div>
+        {% endif %}
+        <input type="hidden" name="destination" value="{{ destination }}">
+        <div class="field">
+          <label for="u">Username</label>
+          <input class="input" id="u" name="username" value="{{ username }}" autocomplete="username" autocapitalize="none" spellcheck="false" required{% if not username %} autofocus{% endif %}>
+        </div>
+        <div class="field">
+          <label for="p">Password</label>
+          <input class="input" id="p" name="password" type="password" autocomplete="current-password" required{% if problem %} aria-invalid="true"{% endif %}{% if username %} autofocus{% endif %}>
+        </div>
+        <button class="btn btn-primary btn-lg btn-block mt-6" type="submit">Sign in</button>
+      </div>
+    </form>
+
+    <p class="sm faint signin-help">Forgot your password? Ask a household admin to reset it. There is no email here, and nothing leaves this machine.</p>
+  </div>
 {% endblock %}

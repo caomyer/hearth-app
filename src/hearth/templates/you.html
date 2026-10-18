@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% from "_macros.html" import delta, hero_value, asof, failure_alert, seen_tag, avatar, day_table %}
+{% set me = view %}
+{% set books = status.books %}
+{% set shares = me.shares | selectattr(1) | map(attribute=0) | list %}
+{% set shared_titles = shares | map(attribute="title") | list %}
+{% macro shared(title) %}{{ seen_tag(title in shared_titles) }}{% endmacro %}
+{% block title %}You{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div class="row" style="gap: var(--s-4)">
+      {{ avatar(me.member, large=true) }}
+      <div>
+        <h1>{{ me.member.display_name }}</h1>
+        {% if not me.connected %}
+        <p class="sub">Your own accounts, once you connect them.</p>
+        {% elif me.joint %}
+        <p class="sub">Your own accounts. Joint accounts with {{ me.joint | map(attribute="part") | map(attribute="owners") | first | rejectattr("username", "equalto", me.member.username) | list | names }} are on <a href="/net-worth#joint">Net worth</a>.</p>
+        {% else %}
+        <p class="sub">Your own accounts.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {{ failure_alert(notice, today) }}
+
+  {% if not me.connected %}
+  <section class="empty empty-hero" aria-labelledby="e-h">
+    <span class="glyph" aria-hidden="true"><svg><use href="#i-link"/></svg></span>
+    <h2 id="e-h">Connect a bank to get started</h2>
+    <p>Hearth reads two years of history from each bank you connect, checks the balances, and hands you a review. Your connections are yours alone.</p>
+    <div class="row wrap mt-4" style="justify-content: center">
+      <a class="btn btn-primary btn-lg" href="/settings/connections"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect a bank</a>
+    </div>
+  </section>
+
+  <h2 class="sm mt-8" style="color: var(--ink-2); font-weight: 500">What will be here</h2>
+  <div class="grid grid-3 mt-3">
+    <div class="empty empty-tile">
+      <h3>Net worth</h3>
+      <p class="sm">What you own minus what you owe, recomputed every morning.</p>
+      {% if "Net worth total" in shared_titles %}<span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Household will see</span>{% else %}<span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>{% endif %}
+    </div>
+    <div class="empty empty-tile">
+      <h3>This month</h3>
+      <p class="sm">Spending against your typical month, and where it went.</p>
+      {% set spending_shared = "Monthly spending total" in shared_titles %}
+      {% set income_shared = "Monthly income total" in shared_titles %}
+      {% if spending_shared or income_shared %}<span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>{% if spending_shared and income_shared %}Spending and income totals{% elif spending_shared %}Spending total only{% else %}Income total only{% endif %}</span>{% else %}<span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>{% endif %}
+    </div>
+    <div class="empty empty-tile">
+      <h3>Accounts and transactions</h3>
+      <p class="sm">Every account and every transaction, after you review them.</p>
+      {% if "Transactions" in shared_titles %}<span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Household will see</span>{% else %}<span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>{% endif %}
+    </div>
+  </div>
+
+  <p class="seen-by mt-8">
+    <svg aria-hidden="true"><use href="#i-eye"/></svg>
+    <span>Until you connect something, the household sees "nothing connected yet" next to your name, and the household total is unchanged.</span>
+    <a href="/settings/sharing">What you share</a>
+  </p>
+  {% else %}
+
+  <p class="seen-by">
+    <svg aria-hidden="true"><use href="#i-eye"/></svg>
+    {% if shares %}
+    <span>The household sees your {% for d in shares %}<strong>{{ d.title | lower }}</strong>{% if not loop.last %}{{ " and " if loop.revindex == 2 else ", " }}{% endif %}{% endfor %}. Everything marked <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span> stays with you.</span>
+    {% else %}
+    <span>The household sees nothing of yours: every section stays with you.</span>
+    {% endif %}
+    <a href="/settings/sharing">Change what you share</a>
+  </p>
+
+  <div class="grid grid-main">
+    <section class="panel" aria-labelledby="mynw-h">
+      <div class="panel-body" style="padding-top: var(--s-6)">
+        <div class="hero">
+          <div class="row between wrap">
+            <h2 id="mynw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Your net worth, excluding joint</h2>
+            {{ shared("Net worth total") }}
+          </div>
+          {{ hero_value(me.worth.value, status, (), me.worth.unpriced) }}
+          <div class="hero-meta">
+            {{ delta(me.change, since) }}
+          </div>
+          {% call asof(books, status, today, notice, 0, me.worth.unpriced) %}{% if me.joint %} Joint accounts ({{ me.joint_total | dollars }}), which you own with others, are counted once in the household total instead.{% endif %}{% endcall %}
+        </div>
+        {% set totals = me.totals %}
+        <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
+          <div>
+            <div class="row between"><p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p></div>
+            <p class="fig-value">{{ totals.spent | hero }}</p>
+            {% if totals.over_typical is not none %}
+            <p class="fig-sub">{{ delta(totals.over_typical, ("over" if totals.over_typical > 0 else "under") ~ " typical by the " ~ ordinal_today, rising_is_good=false) }}</p>
+            {% endif %}
+          </div>
+          <div>
+            <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p>
+            <p class="fig-value">{{ totals.earned | hero }}</p>
+            <p class="fig-sub">{% if totals.payments_in == 0 %}Nothing paid in yet{% else %}{{ plural(totals.payments_in, "payment") }} in{% endif %}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel review-card" aria-labelledby="rq-h">
+      <div class="panel-head">
+        <h2 id="rq-h">Waiting for you</h2>
+        {{ seen_tag(false) }}
+      </div>
+      <div class="panel-body">
+        {% if review_count %}
+        <p class="fig-value tnum" style="margin-top: 0">{{ review_count }} <span class="lg" style="font-weight: 400; color: var(--ink-2); letter-spacing: 0">{{ "transaction" if review_count == 1 else "transactions" }}</span></p>
+        <p class="muted mt-1">{{ plural(groups | length, "decision") }} {{ "settles" if groups | length == 1 else "settle" }} them.</p>
+        <ul class="list mt-4" role="list">
+          {% for group in groups %}
+          <li><span class="grow">{{ group.name }}</span><span class="end tnum">{{ group.pending }}</span></li>
+          {% endfor %}
+        </ul>
+        <a class="btn btn-primary btn-block mt-6" href="/review">Start reviewing<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        {% else %}
+        <div class="caught-up" style="padding: 0">
+          <span class="glyph" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
+          <div><h2 class="sm">All caught up</h2><p class="muted">Nothing is waiting for your review.</p></div>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="grid grid-main mt-4">
+    <section class="panel" aria-labelledby="pace-h">
+      <div class="panel-head">
+        <h2 id="pace-h">{{ month_name }} spending, day by day</h2>
+        {{ shared("Transactions") }}
+        {% if totals.over_typical is not none %}
+        <p class="finding">You are <strong class="tnum">{{ (totals.over_typical | abs) | dollars }}</strong> {{ "above" if totals.over_typical > 0 else "below" }} a typical {{ month_name }} at this point.</p>
+        {% elif me.pace.typical | length == 0 %}
+        <p class="finding">There is not enough history yet to say what a typical month looks like.</p>
+        {% endif %}
+      </div>
+      <div class="panel-body">
+        <figure>
+          <figcaption class="vh" id="pace-t">Your cumulative spending in {{ month_name }} against your typical month</figcaption>
+          <div class="chart-wrap">
+{{ charts.pace }}
+          </div>
+          <div class="chart-legend" aria-hidden="true">
+            <span class="k"><i class="line"></i>{{ month_name }} so far</span>
+            {% if me.pace.typical %}
+            <span class="k"><i class="mline"></i>Typical month (median of the last {{ me.pace.months_compared }})</span>
+            <span class="k"><i class="band"></i>Usual range</span>
+            {% endif %}
+          </div>
+          <details class="as-table">
+            <summary>Show as a table</summary>
+            <table class="table">
+              <caption class="vh">Cumulative spending by day</caption>
+              <thead><tr><th scope="col">Day</th><th scope="col" class="num">So far</th>{% if me.pace.typical %}<th scope="col" class="num">Typical by then</th>{% endif %}</tr></thead>
+              <tbody>
+                {% for value in me.pace.actual %}
+                <tr><td>{{ month_abbr }} {{ loop.index }}{% if loop.last %} (today){% endif %}</td><td class="num">{{ value | money }}</td>{% if me.pace.typical %}<td class="num">{{ me.pace.typical[loop.index0] | dollars }}</td>{% endif %}</tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
+        </figure>
+      </div>
+    </section>
+
+    {% set cats = me.categories %}
+    <section class="panel" aria-labelledby="mycat-h">
+      <div class="panel-head">
+        <h2 id="mycat-h">By category</h2>
+        {{ shared("Spending by category") }}
+      </div>
+      <div class="panel-body">
+        {% for bill in cats.fixed %}
+        <p class="fixed-row"><span><span class="muted">Fixed:</span> {{ bill.name }}, paid {{ bill.paid_on | day }}</span><span class="tnum">{{ bill.amount | money }}</span></p>
+        {% endfor %}
+        {% set scale = cats.scale if cats.scale > 0 else 1 %}
+        {% if cats.rows %}
+        <div class="cats" role="list">
+          {% for row in cats.rows %}
+          <div class="cat{% if row.over_by %} is-over{% endif %}" role="listitem">
+            <span class="name">{{ row.name }}</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: {{ '%.1f' | format(row.amount / scale * 100) }}%"></span>{% if row.typical is not none %}<span class="typ" style="left: {{ '%.1f' | format(row.typical / scale * 100) }}%"></span>{% endif %}</span>
+            <span class="val">{{ row.amount | money }}</span>
+            {% if row.over_by %}<span class="note"><span aria-hidden="true">&#9650;</span> {{ row.over_by | dollars }} over typical</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        <div class="chart-legend mt-4" aria-hidden="true">
+          <span class="k"><i class="fill"></i>{{ month_abbr }} 1&ndash;{{ cats.to_day }}</span>
+          {% if cats.has_typical %}<span class="k"><i class="tick"></i>Typical by the {{ ordinal_today }}</span>{% endif %}
+        </div>
+        {% elif not cats.fixed %}
+        <p class="muted">No spending yet this month.</p>
+        {% endif %}
+      </div>
+      {% if cats.unreviewed %}
+      <div class="panel-foot"><span>Includes {{ cats.unreviewed }} unreviewed, at their suggested category.</span></div>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="panel mt-4" aria-labelledby="acc-h">
+    <div class="panel-head">
+      <h2 id="acc-h">Accounts</h2>
+      {{ shared("Account balances") }}
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      {% with accounts = me.accounts, total_label = "Your net worth" %}{% include "_accounts_table.html" %}{% endwith %}
+    </div>
+  </section>
+
+  <section class="panel mt-4" aria-labelledby="tx-h">
+    <div class="panel-head">
+      <h2 id="tx-h">{{ month_name }} transactions</h2>
+      {{ shared("Transactions") }}
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      {% if me.days %}
+      {{ day_table(me.days, "Your transactions, newest first, grouped by day") }}
+      {% else %}
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">No transactions yet this month.</p>
+      {% endif %}
+    </div>
+    <div class="panel-foot">
+      <span>Day totals count spending only. Income and transfers between your own accounts are excluded.</span>
+    </div>
+  </section>
+  {% endif %}
+{% endblock %}

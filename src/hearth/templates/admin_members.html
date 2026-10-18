@@ -1,49 +1,51 @@
 {% extends "base.html" %}
-{% set section = "admin" %}
+{% set tab = "members" %}
 {% block title %}Members{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <h1>Members</h1>
-    <p class="subtitle">Add members and reset forgotten passwords. Being an admin does not show you anyone’s finances.</p>
-  </div>
-</div>
+  {% include "_settings_nav.html" %}
 
-<section class="panel flush">
-  <table class="ledger">
-    <thead>
-      <tr><th scope="col">Name</th><th scope="col">Username</th><th scope="col">Role</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr>
-    </thead>
-    <tbody>
-      {% for member in household %}
-      <tr>
-        <td>{{ member.display_name }}</td>
-        <td class="muted">{{ member.username }}</td>
-        <td>{{ "Admin" if member.is_admin else "Member" }}{% if member.must_change_password %} <span class="tag">Awaiting first sign-in</span>{% endif %}</td>
-        <td class="numeric">
-          {% if member.id != session.member.id %}
-          <form method="post" action="/admin/members/{{ member.username }}/reset-password">
-            <input type="hidden" name="csrf" value="{{ session.csrf }}">
-            <button type="submit" class="link-button">Reset password</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
+  <section class="panel mt-6" aria-labelledby="mem-h">
+    <div class="panel-head">
+      <h2 id="mem-h">Members</h2>
+      <p class="finding">Add members and reset forgotten passwords. Being an admin does not show you anyone's finances.</p>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      <table class="table">
+        <caption class="vh">Household members</caption>
+        <thead><tr><th scope="col">Member</th><th scope="col" class="col-hide-sm">Username</th><th scope="col">Role</th><th scope="col" class="num"><span class="vh">Actions</span></th></tr></thead>
+        <tbody>
+          {% for member in household %}
+          <tr>
+            <th scope="row"><span class="primary">{{ member.display_name }}</span></th>
+            <td class="col-hide-sm muted">{{ member.username }}</td>
+            <td>{{ "Admin" if member.is_admin else "Member" }}{% if member.must_change_password %} <span class="tag tag-warn">Awaiting first sign-in</span>{% endif %}</td>
+            <td class="num">
+              {% if member.id != session.member.id %}
+              <form method="post" action="/admin/members/{{ member.username }}/reset-password">
+                <input type="hidden" name="csrf" value="{{ session.csrf }}">
+                <button class="btn btn-sm btn-quiet" type="submit">Reset password</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 
-<section>
-  <h2>Add a member</h2>
-  <form class="stack panel narrow-form" method="post" action="/admin/members">
-    <input type="hidden" name="csrf" value="{{ session.csrf }}">
-    {% if problem %}<p class="problem" role="alert">{{ problem }}</p>{% endif %}
-    <label>Name <input name="display_name" maxlength="64" required></label>
-    <label>Username <input name="username" pattern="[a-z][a-z0-9_\-]{1,31}" autocapitalize="none" spellcheck="false" required></label>
-    <label class="check"><input type="checkbox" name="is_admin" value="true"> Admin</label>
-    <p class="hint">They get a one-time password to sign in with, and choose their own straight away.</p>
-    <button type="submit" class="button">Add member</button>
-  </form>
-</section>
+  <section class="panel mt-4" aria-labelledby="add-h" style="max-width: 520px">
+    <div class="panel-head"><h2 id="add-h">Add a member</h2></div>
+    <form method="post" action="/admin/members" class="panel-body">
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      {% if problem %}
+      <div class="alert alert-err mb-4" role="alert"><svg aria-hidden="true"><use href="#i-error"/></svg><div class="alert-body"><p style="color: var(--ink); margin: 0">{{ problem }}</p></div></div>
+      {% endif %}
+      <div class="field"><label for="dn">Name</label><input class="input" id="dn" name="display_name" maxlength="64" required></div>
+      <div class="field"><label for="un">Username</label><input class="input" id="un" name="username" pattern="[a-z][a-z0-9_\-]{1,31}" autocapitalize="none" spellcheck="false" required></div>
+      <label class="check mt-2"><input type="checkbox" name="is_admin" value="true"> Admin</label>
+      <p class="sm faint mt-2">They get a one-time password to sign in with, and choose their own straight away.</p>
+      <button class="btn btn-primary mt-4" type="submit">Add member</button>
+    </form>
+  </section>
 {% endblock %}

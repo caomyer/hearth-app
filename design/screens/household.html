@@ -325,6 +325,7 @@
       </div>
       <div class="panel-body">
         <p class="fixed-row"><span><span class="muted">Fixed:</span> Housing, paid Oct 1</span><span class="tnum">$3,150.00</span></p>
+        <!-- Paid day and typical ticks: only for parts whose transactions the viewer can see. Otherwise Housing is an ordinary row and the bars carry no ticks. -->
         <div class="cats" role="list">
           <div class="cat" role="listitem">
             <span class="name">Groceries</span>
@@ -441,7 +442,8 @@
       <li><strong>Charts carry their finding as a sentence.</strong> "Dining is $196 above where it usually is" is the answer; the bars are the evidence. Every chart has a table twin.</li>
       <li><strong>Privacy is visible inside the data.</strong> Sam shares a monthly total but not categories, so Sam's spending appears as a hatched row with its total and the reason, instead of being silently left out or silently folded in.</li>
       <li><strong>Unreviewed money is disclosed.</strong> The category totals include 19 transactions nobody has checked yet, and the footer says so.</li>
-      <li><strong>Spending and income are shared separately.</strong> The approved mock shows household income, so "Monthly income total" is its own switch beside "Monthly spending total", both on by default. No switch covers more than its label says. See rationale.md.</li>
+      <li><strong>Spending and income are shared separately.</strong> The approved mock shows household income, so "Monthly income total" is its own switch beside "Monthly spending total". Income is off by default (firstmate, 2026-10-18), so until a member turns it on, household income and the savings rate read "without" them. No switch covers more than its label says. See rationale.md.</li>
+      <li><strong>Paid days and typical-by-date ticks are transactions detail.</strong> "Fixed: Housing, paid Oct 1" and the typical-by-the-18th ticks appear here because everyone in these categories shares transactions with the viewer. A single payment's day and amount is an individual transaction, so a viewer who sees only someone's categories gets the category amount only: Housing as an ordinary row, no ticks, no "over typical" note. See rationale.md.</li>
     </ol>
   </div>
 </section>

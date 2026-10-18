@@ -1,49 +1,124 @@
-{% macro figure(label, value, signed=false, withheld_note="Not shared with you") %}
-<div class="figure">
-  <div class="figure-label">{{ label }}</div>
-  {% if value is withheld %}
-  <div class="figure-value is-withheld">{{ withheld_note }}</div>
-  {% else %}
-  <div class="figure-value">{{ value | signed_money if signed else value | money }}</div>
+{# Pieces every page draws the same way. Markup follows design/hearth.css. #}
+
+{# A change, carried four ways: sign, arrow, words, colour. Colour means favourable or not,
+   so rising spending is red and rising net worth is green. #}
+{% macro delta(value, ctx, rising_is_good=true) %}
+{% if value is not none %}
+{% if value == 0 %}
+<span class="delta is-flat">No change <span class="ctx">{{ ctx }}</span></span>
+{% else %}
+{% set up = value > 0 %}
+<span class="delta {{ 'is-good' if up == rising_is_good else 'is-bad' }}"><span class="arrow" aria-hidden="true">{{ '▲' if up else '▼' }}</span><span class="vh">{{ 'Up' if up else 'Down' }}</span> {{ (value if up else -value) | dollars }} <span class="ctx">{{ ctx }}</span></span>
+{% endif %}
+{% endif %}
+{% endmacro %}
+
+{# The figure at display size, held and dimmed while it is being recomputed. What it leaves
+   out is attached to the number itself, so it can never read as complete: violet and a lock
+   for a part its owner withholds, amber and a clock for a price nobody has. #}
+{% macro hero_value(value, status, withheld=(), unpriced=()) %}
+{% if withheld or unpriced %}
+<div class="hero-partial">
+  <p class="hero-value{% if status.recomputing %} is-stale-hold{% endif %}">{{ value | hero }}</p>
+  {% for part in withheld %}
+  <span class="missing-chip"><svg aria-hidden="true"><use href="#i-lock"/></svg>+ {{ part.name }}, not shared</span>
+  {% endfor %}
+  {% if unpriced %}
+  <span class="missing-chip is-gap"><svg aria-hidden="true"><use href="#i-clock"/></svg>+ {{ plural(unpriced | length, "holding") }} with no price</span>
   {% endif %}
 </div>
+{% else %}
+<p class="hero-value{% if status.recomputing %} is-stale-hold{% endif %}">{{ value | hero }}</p>
+{% endif %}
 {% endmacro %}
 
-{% macro month_nav(path, month) %}
-<nav class="month-nav" aria-label="Month">
-  <a href="{{ path }}?month={{ month.previous() }}" aria-label="Previous month">&lsaquo;</a>
-  <span>{{ month.label }}</span>
-  <a href="{{ path }}?month={{ month.following() }}" aria-label="Next month">&rsaquo;</a>
-</nav>
+{# When the figures were computed and from which prices, and what is behind them. #}
+{% macro asof(books, status, today, notice=none, stale=0, unpriced=(), price_day=none) %}
+{% if status.recomputing %}
+<p class="asof mt-2" role="status"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Recomputing with today's prices. Showing {{ when(books.computed_at, today) }} until it finishes.</p>
+{% elif notice %}
+<p class="asof asof-old mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>Figures from {{ when(books.computed_at, today) }}. Today's are waiting on a fix.</p>
+{% else %}
+<p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>Computed {{ when(books.computed_at, today) }}{% if price_day %}, with {{ price_day.strftime("%A") }}'s closing prices{% if stale %}, <a class="warn-link" href="/net-worth#stale">except {{ "one" if stale == 1 else stale }}</a>{% endif %}{% endif %}.{{ caller() if caller is defined else "" }}</p>
+{% endif %}
+{% if unpriced %}
+<p class="asof asof-old mt-1"><svg aria-hidden="true"><use href="#i-clock"/></svg>A floor, not a total: no price for {{ unpriced | join("; ") }}.</p>
+{% endif %}
 {% endmacro %}
 
-{% macro not_shared(text) %}
-<p class="not-shared">{{ text }}</p>
+{# Today's figures failed. The detail names an account and amounts, so only those who may see
+   that account's balance get it; everyone else gets one sentence that names nobody. #}
+{% macro failure_alert(notice, today) %}
+{% if notice %}
+<div class="alert alert-err mb-4" role="alert">
+  <svg aria-hidden="true"><use href="#i-error"/></svg>
+  <div class="alert-body">
+    {% if notice.showing_from %}
+    <p style="color: var(--ink); font-weight: 600">Today's figures could not be computed. Everything below is from {{ when(notice.showing_from, today) }}.</p>
+    {% else %}
+    <p style="color: var(--ink); font-weight: 600">The figures could not be computed.</p>
+    {% endif %}
+    {% if notice.detail is none %}
+    <p>{{ notice.summary }}</p>
+    {% elif notice.detail is withheld %}
+    <p>Today's figures are waiting on a fix to one member's records.</p>
+    {% else %}
+    <p>A balance check failed on one of your accounts, so nothing was updated rather than something being updated wrongly. <a href="/net-worth#what-happened">What happened</a></p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 {% endmacro %}
 
-{% macro transactions_table(lines, show_account=true) %}
-<div class="table-scroll">
-<table class="ledger">
-  <thead>
-    <tr>
-      <th scope="col">Date</th>
-      <th scope="col">Payee</th>
-      <th scope="col">Category</th>
-      {% if show_account %}<th scope="col">Account</th>{% endif %}
-      <th scope="col" class="numeric">Amount</th>
-    </tr>
-  </thead>
+{# Something its owner keeps to themself: violet, a lock, never red. #}
+{% macro private(text) %}
+<span class="priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>{{ text }}</span>
+{% endmacro %}
+
+{% macro seen_tag(shared) %}
+{% if shared %}
+<span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Household sees</span>
+{% else %}
+<span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+{% endif %}
+{% endmacro %}
+
+{% macro avatar(ref, large=false) %}
+<span class="avatar{% if large %} lg{% endif %}{% if ref.hue > 1 %} who-{{ ref.hue }}{% endif %}" aria-hidden="true">{{ ref.initial }}</span>
+{% endmacro %}
+
+{% macro part_avatar(part) %}
+<span class="avatar{% if part.is_joint %} who-joint{% elif part.owners[0].hue > 1 %} who-{{ part.owners[0].hue }}{% endif %}" aria-hidden="true">{{ "J" if part.is_joint else part.owners[0].initial }}</span>
+{% endmacro %}
+
+{# A chart's table twin, so every value reaches the keyboard and screen readers. #}
+{% macro as_table(caption, head, rows) %}
+<details class="as-table">
+  <summary>Show as a table</summary>
+  <table class="table">
+    <caption class="vh">{{ caption }}</caption>
+    <thead><tr><th scope="col">{{ head[0] }}</th><th scope="col" class="num">{{ head[1] }}</th></tr></thead>
+    <tbody>
+      {% for label, value in rows %}
+      <tr><td>{{ label }}</td><td class="num">{{ value }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endmacro %}
+
+{# Transactions grouped under day headers, each day with what was spent that day. #}
+{% macro day_table(days, caption, show_account=true) %}
+<table class="table tx">
+  <caption class="vh">{{ caption }}</caption>
+  <thead class="vh"><tr><th scope="col">Description</th><th scope="col" class="num">Amount</th></tr></thead>
   <tbody>
-    {% for line in lines %}
-    <tr>
-      <td class="nowrap">{{ line.date | day }}</td>
-      <td>{{ line.payee }}{% if line.narration %}<span class="narration">{{ line.narration }}</span>{% endif %}</td>
-      <td class="muted">{{ line.category | category }}</td>
-      {% if show_account %}<td><a href="/accounts/{{ line.account_id }}">{{ line.account_name }}</a></td>{% endif %}
-      <td class="numeric">{{ line.amount | signed_money }}</td>
-    </tr>
+    {% for group in days %}
+    <tr class="day"><th scope="rowgroup" colspan="2">{{ group.day | full_day }}{% if group.spent %} <span class="num">{{ (-group.spent) | money }}</span>{% endif %}</th></tr>
+    {% for line in group.lines %}
+    <tr><td><span class="primary">{{ line.payee }}</span>{% if line.unreviewed %} <a class="tag tag-review" href="/review">To review</a>{% endif %}<span class="second">{{ line.category | category }}{% if line.unreviewed %}, suggested{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}{% if line.narration %} &middot; {{ line.narration }}{% endif %}</span></td><td class="num amt{% if line.amount > 0 %} amt-in{% endif %}">{{ line.amount | amount }}</td></tr>
+    {% endfor %}
     {% endfor %}
   </tbody>
 </table>
-</div>
 {% endmacro %}

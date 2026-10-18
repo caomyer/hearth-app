@@ -5,9 +5,10 @@ This document describes how the server enforces that, and how the tests prove it
 
 ## The rule
 
-There are five facets of a member's finances, defined in `src/hearth/sharing.py`:
-net worth total, monthly spending total, category breakdown, individual transactions, and account balances.
-A new member shares the two totals and nothing else.
+There are six facets of a member's finances, defined in `src/hearth/sharing.py`:
+net worth total, monthly spending total, monthly income total, spending by category, transactions, and account balances.
+A new member shares the net worth and spending totals and nothing else, and no facet covers more than its title says.
+Monthly income is private until its member turns it on, so household income and the savings rate are labelled "without" each member who has not.
 
 For any viewer, facet, and set of owners, `hearth.access.may_see` decides:
 
@@ -19,7 +20,7 @@ For any viewer, facet, and set of owners, `hearth.access.may_see` decides:
   Admins create members and reset passwords; they do not read anyone's money.
 - Something with no owner is seen by nobody.
 
-Member-level facets (the totals and the category breakdown) have one owner: the member.
+Member-level facets (the totals and spending by category) have one owner: the member.
 Account-level facets (balances and transactions) have the account's owners.
 
 A member's net worth, spending total and category breakdown cover only the accounts that member owns alone.
@@ -27,16 +28,39 @@ No part of a joint account is ever in a member's figure, so nothing about a join
 Joint accounts form their own line on the household page, one per set of co-owners, whose net worth is the sum of their joint accounts' balances and whose spending is those accounts' spending for the month.
 A joint line's net worth or spending is shown only when `may_see` allows that facet for its owners: every owner shares it, or the viewer is one of them.
 
-A household total is the sum of every member's figure and every joint line, and is shown only when every one of those parts is visible to the viewer.
-Otherwise the withheld part could be recovered by subtraction, and a partial total would be a smaller number posing as complete.
+A household figure is a sum over parts, and only over parts the viewer may see that figure of.
+When every part is visible it is the household total.
+When some part is withheld the figure is labelled "without" each withheld part, with that part attached to the number as "+ Sam, not shared", so it never reads as complete; every part in it is one the viewer may see on its own, so nothing shown can be taken apart into something withheld.
+
+Decision 3 was amended by firstmate on 2026-10-18 under authority the captain delegated in writing ("you can decide on my behalf because I am going to sleep").
+The captain's original criterion asked for a range.
+A range bounds the withheld value from BOTH sides and therefore reveals more about the member who withdrew than a labelled partial does, so the amendment makes the product more private, not less.
+The captain has not yet reviewed this amendment; it is listed for him in the overnight brief and he may overturn it.
+
+Spending that went through accounts nobody owns, or through several owners' accounts at once, belongs to no part; it is in nobody's figure, its amount is never shown, and a household figure says it leaves it out.
+
+Detail that is finer than its facet goes with the finer facet.
+Day-by-day spending, and "typical by the 18th", read off when money went out, so they need the transactions facet, not the monthly total.
+The same holds for categories: a category's "typical by this date", and the day a fixed bill was paid with its single payment, appear only where the viewer may see the transactions of every part in the panel.
+Anyone who sees only the category facet gets each category's amount for the month so far, with a fixed bill as an ordinary category row.
+
+The dashboards add four more decisions, each in `hearth.access` and asked only through the gate:
+
+- A failed balance check names an account and amounts, so its detail is shown only to those who may see that account's balance; everyone else reads one sentence that names nothing.
+  Beancount's own error messages are never passed on, because they name accounts and amounts.
+- A connection to an institution is its holder's alone, joint accounts included; the household learns only how many accounts are behind, never which or whose.
+- Only someone who holds a security in an account they own may enter its price by hand, and it is stored as theirs, never as the source's.
+- Only an owner may review an account's set-aside rows; sharing transactions shares what has been booked, not the right to decide what gets booked.
 
 ## Where it is enforced
 
-- `src/hearth/access.py` is the only place that decides.
-- `src/hearth/disclosure.py` is the only place that reads the ledger and ownership for a page.
-  It asks `access` before computing anything, and a figure the viewer may not see is never computed into a view.
+- `src/hearth/access.py` holds the rules.
+- `src/hearth/disclosure/gate.py` is the only module that imports `hearth.access`: every decision in the application is asked there.
+- The rest of the `hearth.disclosure` package (`household`, `people`, `worth`) is the only code that reads the books and ownership for a page.
+  Each module receives the gate and asks it before computing anything, so a figure the viewer may not see is never computed into a view.
   Withheld figures are the value-less `WITHHELD` sentinel.
-- Pages under `src/hearth/web/` render only the views `Disclosure` returns.
+- Pages under `src/hearth/web/` render only the views `Disclosure` returns, and never touch the books' raw data.
+- Figures come from the books (`src/hearth/books.py`): the beancount ledger as loaded and valued by one recompute, daily and on request, never on page load.
 - Anything that does not exist and anything the viewer may not see raise the same `Concealed`, which renders one fixed not-found page.
   The answer depends on who is asking, never on what was asked for.
 
@@ -52,9 +76,11 @@ There is no JSON API, and `/docs` and `/openapi.json` are disabled.
   It fails if a route exists that it does not know how to attack.
 - `tests/test_concealment.py` requires private and missing things to produce byte-identical responses, covers redirects to and after sign-in, open redirects, sign-in error messages and throttling.
 - `tests/test_tampering.py` attempts to change another member's sharing, to act as an admin, and to forge requests, and checks nothing changed.
-  It is the enforcement of the boundary.
-- `tests/test_architecture.py` is an architecture fitness check against erosion: it fails if a second module starts consulting the policy or turning the ledger into figures, a call site the crawl might not cover.
-  It is not proof of the boundary, and it cannot see aliasing, re-exports, `getattr` or dynamic imports.
+- `tests/test_disclosure.py` and `tests/test_dashboard_boundary.py` attack what the dashboards add: the default dashboard showing every total, a joint balance recovered by subtraction, failure details, connection names, hand-entered prices, other members' review rows and unpriced floors.
+
+These behavioural suites are the enforcement of the boundary.
+`tests/test_architecture.py` is an architecture fitness check against erosion: it fails if anything but the gate consults the policy, if anything outside `hearth.disclosure` turns the ledger into figures, or if a page reads the books directly, which is a call site the crawl might not cover.
+It is not proof of the boundary, and it cannot see aliasing, re-exports, `getattr` or dynamic imports.
 
 ## Sessions and passwords
 
@@ -66,7 +92,6 @@ Failed sign-ins are throttled per username (whether or not it exists) and per cl
 An admin can reset a member's password.
 That hands the admin a password that works as the member until they change it, so a reset signs the member out everywhere, forces a new password at next sign-in, and is recorded in the audit log, which the member can read under Activity.
 
-## Secrets still to come
+## Institution tokens
 
-Institution tokens arrive with the Plaid work.
-They are to be stored encrypted at rest with a key held in the OS keychain: a table holding ciphertext, nonce and key id per member and institution, never a plaintext column, so a copy of the database alone reveals nothing.
+Tokens are stored encrypted at rest under a master key held in the macOS Keychain; see `docs/vault.md`.

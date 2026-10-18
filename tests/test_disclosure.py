@@ -1,60 +1,134 @@
-"""Member figures cover only what a member owns alone; joint accounts are their own line."""
+"""Member figures cover only what a member owns alone; joint accounts are their own line.
+
+These read the views disclosure builds, for the invented household in ``tests/household.py``.
+"""
 
 from decimal import Decimal
 
-from hearth.accounts import Account
-from hearth.disclosure import WITHHELD, Disclosed, Disclosure, HouseholdView
-from hearth.ledger import InMemoryLedger
-from hearth.members import Member, MemberId
-from hearth.months import Month
-from hearth.sharing import DEFAULT_SHARED, Facet, SharingChoices
+from hearth import db
+from hearth.disclosure import WITHHELD, Disclosure, HouseholdView, Worth
+from hearth.disclosure.household import MemberRow
+from hearth.members import find
+from hearth.sharing import DEFAULT_SHARED, Facet
+from tests import household
+from tests.conftest import World
 
-DANA, ELI, FINN = MemberId(1), MemberId(2), MemberId(3)
-MEMBERS = [Member(m, f"m{m}", f"M{m}", False, False) for m in (DANA, ELI, FINN)]
-JOINT = Account("joint", "Assets:Zq:Joint", "Joint", frozenset({DANA, ELI}))
-ELI_SOLO = Account("eli", "Assets:Zq:Eli", "Eli solo", frozenset({ELI}))
-MONTH = Month(2026, 10)
-DEFAULTS = dict.fromkeys((DANA, ELI, FINN), DEFAULT_SHARED)
+EVERYTHING = frozenset(Facet)
 
 
-def household(
-    viewer: MemberId, choices: SharingChoices, joint_balance: str = "800.00"
-) -> HouseholdView:
-    ledger = InMemoryLedger(
-        {JOINT.ledger_account: Decimal(joint_balance), ELI_SOLO.ledger_account: Decimal(100)}, {}
+def household_for(world: World, username: str) -> HouseholdView:
+    return disclosure_for(world, username).household()
+
+
+def disclosure_for(world: World, username: str) -> Disclosure:
+    conn = db.connect(world.settings.database)
+    try:
+        viewer = find(conn, username)
+        assert viewer is not None
+        return Disclosure.load(conn, viewer, world.bookkeeper.status)
+    finally:
+        conn.close()
+
+
+def amount(text: str) -> Decimal:
+    return Decimal(text.replace(",", ""))
+
+
+def worth(row: MemberRow) -> Decimal:
+    assert isinstance(row.net_worth, Worth)
+    return row.net_worth.value
+
+
+def test_at_the_defaults_everyone_sees_net_worth_and_spending(world: World) -> None:
+    """The family dashboard as approved: a member who owns nothing of someone's still sees
+    their net worth and spending, the joint line and those household totals. Income is
+    private until each member shares it, so household income leaves the others out."""
+    view = household_for(world, "casey")
+
+    assert [worth(row) for row in view.members] == [
+        Decimal(household.NET_WORTH[u].replace(",", "")) for u in household.USERNAMES
+    ]
+    assert [worth(row) for row in view.joint] == [Decimal("20000.42")]
+    assert not view.headline.is_partial
+    assert view.headline.value == amount(household.HOUSEHOLD_NET_WORTH)
+    assert view.spending.spent == amount(household.HOUSEHOLD_SPENDING)
+    assert not view.spending.spent_without
+    assert view.spending.earned == amount(household.INCOME["casey"])
+    assert [p.name for p in view.spending.earned_without] == ["Avery", "Blake", "Joint accounts"]
+    assert [p.name for p in view.spending.saved_without] == ["Avery", "Blake", "Joint accounts"]
+
+
+def test_household_income_is_whole_only_once_everyone_shares_it(world: World) -> None:
+    for username in household.USERNAMES:
+        world.choose(username, DEFAULT_SHARED | {Facet.MONTHLY_INCOME_TOTAL})
+
+    view = household_for(world, "casey")
+
+    assert view.spending.earned == amount(household.HOUSEHOLD_INCOME)
+    assert not view.spending.earned_without
+    assert not view.spending.saved_without
+
+
+def test_no_member_figure_moves_when_only_a_joint_account_does(world: World) -> None:
+    before = household_for(world, "casey")
+    world.ledger.write_text(
+        world.ledger.read_text().replace(
+            '"Payee Jacana Hall" ""\n  Assets:Zq:Joint  -1640.84 USD',
+            '"Payee Jacana Hall" ""\n  Assets:Zq:Joint  -10640.84 USD',
+        )
     )
-    return Disclosure(
-        MEMBERS[viewer - 1],
-        household=MEMBERS,
-        accounts=[JOINT, ELI_SOLO],
-        choices=choices,
-        ledger=ledger,
-    ).household(MONTH)
+    world.recompute()
+    after = household_for(world, "casey")
+
+    assert [worth(row) for row in after.members] == [worth(row) for row in before.members]
+    assert worth(after.joint[0]) == worth(before.joint[0]) - 9000
 
 
-def net_worths(view: HouseholdView) -> list[Disclosed[Decimal]]:
-    return [summary.net_worth for summary in view.members]
+def test_a_member_whose_only_account_is_joint_has_nothing_of_their_own(world: World) -> None:
+    world.choose("casey", DEFAULT_SHARED)
+    conn = world.connect()
+    try:
+        conn.execute("DELETE FROM account_owners WHERE member_id = ?", (world.member_ids["casey"],))
+        conn.execute(
+            "INSERT INTO account_owners (account_id, member_id) VALUES (?, ?)",
+            (world.account_ids["joint"], world.member_ids["casey"]),
+        )
+    finally:
+        conn.close()
+
+    view = household_for(world, "avery")
+
+    casey = next(r for r in view.members if r.part.owners[0].username == "casey")
+    assert not casey.connected
+    assert all(part.part.owners[0].username != "casey" for part in view.composition)
 
 
-def test_a_member_whose_only_account_is_joint_has_nothing_of_their_own() -> None:
-    view = household(FINN, DEFAULTS)
+def test_a_joint_line_needs_every_owner_to_share_it(world: World) -> None:
+    world.choose("avery", DEFAULT_SHARED - {Facet.NET_WORTH_TOTAL})
 
-    assert net_worths(view) == [Decimal(0), Decimal(100), Decimal(0)]
-    assert [line.net_worth for line in view.joint] == [Decimal(800)]
-    assert view.net_worth == Decimal(900)
+    casey = household_for(world, "casey")
+    blake = household_for(world, "blake")
 
-
-def test_no_member_figure_moves_when_only_a_joint_account_does() -> None:
-    before = household(DANA, DEFAULTS)
-    after = household(DANA, DEFAULTS, joint_balance="1234.56")
-
-    assert net_worths(before) == net_worths(after)
-    assert after.joint[0].net_worth == Decimal("1234.56")
+    assert casey.joint[0].net_worth is WITHHELD
+    assert casey.headline.is_partial
+    assert {p.name for p in casey.headline.without} == {"Avery", "Joint accounts"}
+    assert worth(blake.joint[0]) == Decimal("20000.42")
 
 
-def test_a_joint_line_needs_every_owner_to_share_it() -> None:
-    choices = {**DEFAULTS, DANA: DEFAULT_SHARED - {Facet.NET_WORTH_TOTAL}}
+def test_the_joint_balance_cannot_be_had_by_subtraction(world: World) -> None:
+    """Blake shares everything, Avery keeps the joint line private: nothing Casey sees adds
+    up to, or can be taken apart into, the joint account's balance or spending."""
+    world.choose("blake", EVERYTHING)
+    world.choose("avery", DEFAULT_SHARED - {Facet.NET_WORTH_TOTAL, Facet.MONTHLY_SPENDING_TOTAL})
 
-    assert household(FINN, choices).joint[0].net_worth is WITHHELD
-    assert household(FINN, choices).net_worth is WITHHELD
-    assert household(ELI, choices).joint[0].net_worth == Decimal(800)
+    view = household_for(world, "casey")
+    blake = disclosure_for(world, "casey").person("blake")
+
+    assert isinstance(blake.worth, Worth)
+    assert blake.worth.value == Decimal("73519.27")
+    assert view.headline.is_partial
+    assert view.headline.value == Decimal("73519.27") + Decimal("4505.37")
+    assert view.spending.spent == amount(household.SPENDING["blake"]) + amount(
+        household.SPENDING["casey"]
+    )
+    assert blake.joint == ()

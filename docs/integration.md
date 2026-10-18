@@ -9,12 +9,13 @@ Each has its own document; this one says which module answers which question.
 | Question | Module | Entry point | Reads |
 |---|---|---|---|
 | What does the household hold, and on which account? | `valuation.holdings` | `holdings_at(entries, as_of)` | ledger |
-| What is it worth, and how far can that be trusted? | `valuation.networth` | `value_holdings(...)` | holdings, `price` table |
+| What is it worth, and how far can that be trusted? | `valuation.networth` | `net_worth_by_owners(...)`, `value_holdings(...)` | holdings, `price` table |
 | Where do prices come from, and when are they refreshed? | `valuation.eodhd`, `valuation.refresh` | `EodhdSource`, `refresh_prices(...)` | EODHD, once a key exists |
 | Income, expenses and savings rate by month | `reports.statement` | `income_statement(...)` | ledger |
-| Whose accounts make up a member's or a joint account's figures | `hearth.figures` | `figures.solo(...)`, `figures.joint(...)` | `accounts`, `account_owners` |
-| Each account's balance, and whether it matches the statements | `reports.balances` | `account_balances(...)` | ledger |
+| Spending and income by category, per member, per joint account, for the household | `reports.flows` | `spending_by_category(...)`, `income_by_source(...)` | ledger, ownership |
+| Each account's balance, owners, and whether it matches the statements | `reports.balances` | `account_balances(...)` | ledger, ownership |
 | How much history each account holds, and from which source | `reports.coverage` | `account_coverage(...)` | ledger |
+| Who owns which account | `reports.ownership` | `Ownership.from_accounts(accounts)` | `accounts`, `account_owners` |
 | A member's Plaid tokens | `vault.tokens` | `TokenVault` | `vault_*` tables, Keychain |
 | What an import set aside, and what members ruled | `review.desk` | `Disclosure.review_desk(...)`, `disclosure.review_decisions(...)` | pile file, `review_*` tables |
 
@@ -28,19 +29,20 @@ Each has its own document; this one says which module answers which question.
 
 ## Rules every caller can rely on
 
-- **Member figures are sole accounts only, and that model has one implementation: `hearth.figures`.**
+- **Member figures are sole accounts only.**
   Each joint account is its own line, belonging to its owners together, and the household counts every account exactly once.
-  `valuation` values whichever accounts `figures.solo` or `figures.joint` names; nothing else groups accounts by owner.
+  This holds for spending and income (`Flows.for_member`, `.joint`, `.household`) and net worth (`OwnedNetWorth.solo`, `.joint`, `.household`).
 - **Nothing incomplete poses as complete.**
   An unpriced holding is worth `None`, never zero; `NetWorth.total` raises while anything is unpriced, and `known_total` is the labelled floor.
   Stale prices carry their age.
-  Amounts in another currency and failed balance assertions are listed, never dropped.
+  Amounts in another currency, unattributed spending, unassigned accounts and failed balance assertions are listed, never dropped.
 - **Nothing is booked that nobody ruled on.**
   A group ruling covers only the rows its author saw; there is no auto-accept.
 - **No token or key is ever printed**, in any repr, log, exception or traceback.
 
 ## What is not wired yet
 
-- `hearth.figures` reads through the `Ledger` protocol, which has only an in-memory implementation; a beancount-backed `Ledger` is next, and its balances should be the ones `reports.balances` verifies against the statements.
+- `hearth.figures` (foundation) and `hearth.reports` both compute member spending: `figures` over the `Ledger` protocol, which has only an in-memory implementation, and `reports` over beancount entries.
+  The beancount-backed `Ledger` should delegate to `reports`, so each figure has one implementation.
 - Prices: no EODHD key exists until the plan is bought, so every fund values as unpriced; the daily refresh schedule and the two-year backfill wait on the key (`docs/valuation.md`).
 - Review: the pile is read from beancount_nextgen's `pending.beancount`; a pile fed by Plaid will need its importer to assign review ids by the same contract (`review.ids`).

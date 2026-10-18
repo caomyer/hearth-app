@@ -50,7 +50,7 @@ def test_a_member_changes_only_their_own_sharing_whatever_the_form_claims(world:
     assert shared_by(world, "blake") == DEFAULT_SHARED
 
 
-def test_sharing_through_htmx_returns_only_the_changed_row(world: World) -> None:
+def test_a_sharing_change_updates_the_switch_and_the_preview_together(world: World) -> None:
     blake = world.signed_in("blake")
 
     response = blake.post(
@@ -58,11 +58,12 @@ def test_sharing_through_htmx_returns_only_the_changed_row(world: World) -> None
         data={"shared": "true"},
         headers={"HX-Request": "true", "X-CSRF-Token": world.csrf(blake)},
     )
+    page = blake.get(response.headers["location"]).text
 
-    assert response.status_code == 200
-    assert response.text.lstrip().startswith('<li class="choice" id="share-account_balances">')
-    assert 'aria-checked="true"' in response.text
+    assert response.status_code == 303
     assert Facet.ACCOUNT_BALANCES in shared_by(world, "blake")
+    assert "Saved. Account balances is now shared." in page
+    assert "1 account with balances" in page
 
 
 @pytest.mark.parametrize(

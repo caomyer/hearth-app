@@ -1,0 +1,30 @@
+/*
+  Additions to the design system (design.css, a verbatim copy of design/hearth.css) for states
+  the design names but does not draw. Each follows the system's own rules for that kind of
+  absence; nothing here restyles a component the design defines.
+*/
+
+/* A gap in the data, not a choice: the system's amber-with-a-clock "not there" look, applied to
+   the partial-total chip (a holding with no price) instead of the violet withheld hatch. */
+.missing-chip.is-gap {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: color-mix(in srgb, var(--warn-line) 60%, transparent);
+  padding-left: var(--s-3);
+}
+
+/* A month the ledger does not fully hold: drawn as an outline, never as a solid bar. */
+.chart .bar.is-partial { fill: none; stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .bar.is-now.is-partial { stroke: var(--chart-line); }
+
+/* A link that names a problem uses the problem's colour. */
+.warn-link { color: var(--warn); }
+.chart-legend .k i.partial { background: transparent; box-shadow: none; border: 1px dashed var(--ink-3); }
+
+/* The composition bar gives the first two members and joint their hue; a third member needs the
+   third identity hue too (design.css defines it for avatars and legends, not here). */
+.comp > .who-3 { --who: var(--who-3); }
+
+/* The system's spacing utilities, in the one direction it does not provide: an alert above a
+   panel keeps the same gap panels keep between themselves. */
+.mb-4 { margin-bottom: var(--s-4); }

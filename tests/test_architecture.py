@@ -1,13 +1,21 @@
-"""An architecture fitness check that keeps the boundary in one place.
+"""An architecture fitness check: the shape that keeps the boundary in one place.
 
-Visibility is decided only in ``hearth.access``, consulted only by
-``hearth.disclosure``, and pages reach household data only through the views
-``disclosure`` builds. This resists erosion: someone adding a second call site
-that the crawl in ``test_privacy_boundary`` does not cover fails here first.
+This is erosion prevention, not proof. The behavioural crawl in ``tests/test_privacy_boundary.py``
+is what enforces the privacy boundary: it attacks every route and checks every response. This
+file answers a different question: whether someone has added a second place that decides, or
+a page that reads the books directly, which the crawl only catches if its fixtures happen to
+exercise the new path. That is how boundaries like this one actually erode.
 
-It is not proof of the boundary; the crawl is. It reads the import graph and
-attribute names, so it cannot catch aliasing, re-export, ``getattr`` or dynamic
-import.
+The rules, for the package as it is now:
+
+- ``hearth.access`` is imported by exactly one module, ``hearth.disclosure.gate``, and every
+  call into it is made there.
+- Only modules of the ``hearth.disclosure`` package turn the ledger into figures.
+- Pages (``hearth.web``) import no ledger reader and touch none of the books' raw data.
+
+What it cannot catch, so nobody mistakes it for proof: an alias or re-export of an ``access``
+function, a ``getattr`` or ``importlib`` call, or any other dynamic import. It reads import
+statements and attribute names, which are a proxy for the structure, not the behaviour.
 """
 
 import ast
@@ -19,6 +27,20 @@ import pytest
 import hearth
 
 PACKAGE = Path(hearth.__file__).parent
+GATE = "hearth.disclosure.gate"
+
+LEDGER_READERS = (
+    "hearth.figures",
+    "hearth.reports",
+    "hearth.accounts",
+    "hearth.valuation.networth",
+    "hearth.valuation.holdings",
+    "hearth.review.pile",
+)
+"""Modules that read household data. Pages get it only through hearth.disclosure."""
+
+RAW_BOOKS = ("entries", "positions", "month_ends", "pile", "coverage")
+"""The books' raw contents. A page that names one of these is reading past disclosure."""
 
 
 def modules() -> Iterator[tuple[str, ast.Module]]:
@@ -39,51 +61,53 @@ def imported_by(tree: ast.Module) -> set[str]:
     return found
 
 
+def _imports(module: str, target: str) -> bool:
+    return module == target or module.startswith(f"{target}.")
+
+
 def importers_of(target: str) -> set[str]:
     return {
         name
         for name, tree in modules()
-        if name != target
-        and any(m == target or m.startswith(f"{target}.") for m in imported_by(tree))
+        if name != target and any(_imports(m, target) for m in imported_by(tree))
     }
 
 
-def test_only_disclosure_and_the_admin_gate_consult_the_access_policy() -> None:
-    assert importers_of("hearth.access") == {"hearth.disclosure", "hearth.web.deps"}
+def test_only_the_gate_consults_the_access_policy() -> None:
+    assert importers_of("hearth.access") == {GATE}
+
+
+def test_every_call_into_the_access_policy_is_made_by_the_gate() -> None:
+    callers = {
+        name
+        for name, tree in modules()
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "access"
+    }
+    assert callers == {GATE}
 
 
 def test_only_disclosure_turns_the_ledger_into_figures() -> None:
-    assert importers_of("hearth.figures") == {"hearth.disclosure"}
-
-
-@pytest.mark.parametrize("module", ["hearth.figures", "hearth.accounts", "hearth.ledger"])
-def test_pages_cannot_reach_household_data_except_through_disclosure(module: str) -> None:
-    web = {name for name in importers_of(module) if name.startswith("hearth.web")}
-    # deps only carries the ledger to Disclosure.load; it reads nothing from it.
-    allowed = {"hearth.web.deps"} if module == "hearth.ledger" else set()
-    assert web <= allowed
-
-
-def test_visibility_is_decided_by_one_function() -> None:
-    callers = {
-        name
-        for name, tree in modules()
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute) and node.attr == "may_see"
+    outside = {
+        name for name in importers_of("hearth.figures") if not _imports(name, "hearth.disclosure")
     }
-    assert callers == {"hearth.disclosure"}
+    assert outside == set()
 
 
-def test_only_disclosure_consults_the_review_policy() -> None:
-    """An erosion guard, not enforcement: it reads attribute names, so it cannot catch aliasing,
-    ``getattr``, re-export or dynamic import. The behaviour is enforced in
-    ``tests/review/test_policy.py``: sharing everything opens nobody else's pile, and being an
-    admin opens no pile.
-    """
-    callers = {
-        name
+@pytest.mark.parametrize("reader", LEDGER_READERS)
+def test_pages_import_no_ledger_reader(reader: str) -> None:
+    pages = {name for name in importers_of(reader) if _imports(name, "hearth.web")}
+    assert pages == set()
+
+
+def test_pages_touch_none_of_the_books_raw_data() -> None:
+    reaching = sorted(
+        (name, node.attr)
         for name, tree in modules()
+        if _imports(name, "hearth.web")
         for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute) and node.attr == "may_review"
-    }
-    assert callers == {"hearth.disclosure"}
+        if isinstance(node, ast.Attribute) and node.attr in RAW_BOOKS
+    )
+    assert reaching == []

@@ -22,6 +22,7 @@ from hearth.web.templating import render
 router = APIRouter()
 
 _HOME = "/"
+REJECTED = "That username and password don't match. Check caps lock, or ask an admin to reset it."
 
 
 def safe_destination(raw: str | None) -> str:
@@ -82,7 +83,7 @@ def sign_in(
         case auth.Throttled():
             problem, status = "Too many attempts. Wait a few minutes, then try again.", 429
         case auth.Rejected():
-            problem, status = "That username and password do not match.", 400
+            problem, status = REJECTED, 400
     return render(
         request,
         "sign_in.html",

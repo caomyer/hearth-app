@@ -1,42 +1,61 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
-  <title>{% block title %}{% endblock %} - Hearth</title>
-  <link rel="stylesheet" href="/static/hearth.css">
-  <script src="/static/vendor/htmx-2.0.7.min.js" defer></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
+<title>{% block title %}{% endblock %} - Hearth</title>
+<link rel="stylesheet" href="/static/design.css">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/vendor/htmx-2.0.7.min.js" defer></script>
+<script src="/static/design.js" defer></script>
 </head>
-<body{% if session %} hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'{% endif %}>
-{% if session %}
-  <header class="masthead">
-    <div class="masthead-inner">
-      <a class="brand" href="/">Hearth</a>
-      {% if not session.member.must_change_password %}
-      <nav class="nav" aria-label="Main">
-        {% set links = [
-          ("household", "/", "Household"),
-          ("mine", "/members/" ~ session.member.username, "Mine"),
-          ("sharing", "/settings/sharing", "Sharing"),
-          ("activity", "/activity", "Activity"),
-        ] %}
-        {% if session.member.is_admin %}{% set links = links + [("admin", "/admin/members", "Members")] %}{% endif %}
-        {% for key, href, label in links %}
-        <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}>{{ label }}</a>
-        {% endfor %}
-      </nav>
-      {% endif %}
-      <form class="sign-out" method="post" action="/sign-out">
-        <input type="hidden" name="csrf" value="{{ session.csrf }}">
-        <span class="who">{{ session.member.display_name }}</span>
-        <button type="submit" class="link-button">Sign out</button>
-      </form>
+<body{% block body_class %}{% endblock %}{% if session %} hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'{% endif %}>
+{% include "_sprite.html" %}
+<a class="skip" href="#main">Skip to content</a>
+<div class="app">
+{% if session and not session.member.must_change_password %}
+{% set nav = [
+  ("household", "/", "Household", "i-home"),
+  ("you", "/you", "You", "i-user"),
+  ("review", "/review", "Review", "i-review"),
+  ("net-worth", "/net-worth", "Net worth", "i-worth"),
+  ("settings", "/settings/sharing", "Settings", "i-gear"),
+] %}
+{% set waiting = review_count | default(0) %}
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="/"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</a>
+    <nav class="nav" aria-label="Primary">
+      {% for key, href, label, icon in nav %}
+      <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}>{{ label }}{% if key == "review" and waiting %} <span class="count" aria-label="{{ waiting }} to review">{{ waiting }}</span>{% endif %}</a>
+      {% endfor %}
+    </nav>
+    <div class="topbar-end">
+      <a class="me-chip" href="/settings/sharing"><span class="me-name">{{ session.member.display_name }}</span><span class="avatar{% if viewer_hue | default(1) > 1 %} who-{{ viewer_hue }}{% endif %}" aria-hidden="true">{{ session.member.display_name[:1] | upper }}</span><span class="vh">Signed in as {{ session.member.display_name }}. Account settings</span></a>
     </div>
-  </header>
+  </div>
+</header>
+{% for c in expired | default([]) %}
+<div class="banner banner-warn" role="status">
+  <div class="banner-in">
+    <svg aria-hidden="true"><use href="#i-unlink"/></svg>
+    <p><strong>{{ c.institution }} stopped updating{% if c.data_until %} after {{ c.data_until | day }}{% endif %}.</strong> <span class="muted">Reconnect it to bring in what has happened since.</span></p>
+    <a class="btn btn-sm" href="/settings/connections">Reconnect</a>
+  </div>
+</div>
+{% endfor %}
 {% endif %}
-  <main class="page">
+<main id="main" class="{% block main_class %}page{% endblock %}">
 {% block content %}{% endblock %}
-  </main>
+</main>
+{% if session and not session.member.must_change_password %}
+<nav class="tabbar" aria-label="Primary">
+  {% for key, href, label, icon in nav %}
+  <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#{{ icon }}"/></svg>{% if key == "review" and waiting %}<span class="count" aria-hidden="true">{{ waiting }}</span>{% endif %}{{ label }}{% if key == "review" and waiting %}<span class="vh">, {{ waiting }} to review</span>{% endif %}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+</div>
 </body>
 </html>

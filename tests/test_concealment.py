@@ -11,7 +11,6 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx2 import Response
 
-from tests import household
 from tests.conftest import World
 
 UNSTABLE_HEADERS = {"date", "content-length"}
@@ -27,7 +26,7 @@ def assert_indistinguishable(first: Response, second: Response) -> None:
 
 
 @pytest.mark.parametrize("private", ["avery_solo", "blake_solo", "joint", "unowned"])
-@pytest.mark.parametrize("month", [None, household.THIS_MONTH, "garbage"])
+@pytest.mark.parametrize("month", [None, "2026-10", "garbage"])
 def test_a_private_account_answers_exactly_like_a_missing_one(
     world: World, private: str, month: str | None
 ) -> None:
@@ -53,9 +52,10 @@ def test_a_private_account_answers_like_a_missing_one_even_to_the_admin(world: W
 
 def test_a_malformed_month_answers_like_a_missing_page(world: World) -> None:
     casey = world.signed_in("casey")
+    own = world.account_ids["casey_checking"]
 
     assert_indistinguishable(
-        casey.get("/members/blake?month=2026-99"), casey.get("/members/nobody")
+        casey.get(f"/accounts/{own}?month=2026-99"), casey.get("/members/nobody")
     )
 
 

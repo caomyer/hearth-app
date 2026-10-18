@@ -1,29 +1,49 @@
 {% extends "base.html" %}
-{% from "_macros.html" import figure, month_nav, not_shared, transactions_table %}
-{% set account = view.account %}
-{% set section = "household" %}
-{% block title %}{{ account.name }}{% endblock %}
+{% from "_macros.html" import day_table, private %}
+{% set a = view %}
+{% block title %}{{ a.name }}{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div>
-    <h1>{{ account.name }}</h1>
-    <p class="subtitle">Owned by {{ account.owners | map(attribute="display_name") | join(" and ") }}</p>
+  <p class="crumbs"><a href="/">Household</a> / {{ a.name }}</p>
+  <div class="page-head">
+    <div>
+      <h1>{{ a.name }}</h1>
+      <p class="sub">{% if a.kind is not withheld %}{{ a.kind }} &middot; owned{% else %}Owned{% endif %} by {{ a.owners | names }}</p>
+    </div>
+    <nav class="row" aria-label="Month" style="gap: var(--s-2)">
+      <a class="btn btn-sm btn-quiet" href="/accounts/{{ a.id }}?month={{ view.month.previous() }}" aria-label="Previous month">&lsaquo;</a>
+      <span class="tnum">{{ view.month.label }}</span>
+      <a class="btn btn-sm btn-quiet" href="/accounts/{{ a.id }}?month={{ view.month.following() }}" aria-label="Next month">&rsaquo;</a>
+    </nav>
   </div>
-  {{ month_nav("/accounts/" ~ account.id, view.month) }}
-</div>
 
-<section class="figures">
-  {{ figure("Balance", account.balance) }}
-</section>
+  <section class="panel" aria-labelledby="bal-h">
+    <div class="panel-body" style="padding-top: var(--s-6)">
+      <div class="hero">
+        <h2 id="bal-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Balance today</h2>
+        {% if view.balance is withheld %}
+        <p class="mt-3">{{ private("Not shared with you") }}</p>
+        {% else %}
+        <p class="hero-value">{% if view.balance.is_floor %}<span class="sm muted">at least </span>{% endif %}{{ view.balance.value | hero }}</p>
+        {% endif %}
+        {% if a.spans %}
+        <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>History since {{ a.spans[0].earliest | year_day }}{% for span in a.spans %}; {{ span.origin | replace("-", " ") }} from {{ span.earliest | day }} to {{ span.latest | day }}{% endfor %}.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
 
-<section>
-  <h2>Transactions, {{ view.month.label }}</h2>
-  {% if view.transactions is withheld %}
-  {{ not_shared("The transactions in this account are not shared with you.") }}
-  {% elif view.transactions %}
-  {{ transactions_table(view.transactions, show_account=false) }}
-  {% else %}
-  <p class="empty">No transactions in {{ view.month.label }}.</p>
-  {% endif %}
-</section>
+  <section class="panel mt-4" aria-labelledby="tx-h">
+    <div class="panel-head">
+      <h2 id="tx-h">Transactions, {{ view.month.label }}</h2>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      {% if view.days is withheld %}
+      <p style="padding: var(--s-4) var(--s-6)">{{ private("The transactions in this account are not shared with you.") }}</p>
+      {% elif view.days %}
+      {{ day_table(view.days, "Transactions in " ~ a.name ~ ", newest first", show_account=false) }}
+      {% else %}
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">No transactions in {{ view.month.label }}.</p>
+      {% endif %}
+    </div>
+  </section>
 {% endblock %}

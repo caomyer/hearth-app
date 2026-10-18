@@ -1,62 +1,232 @@
 {% extends "base.html" %}
-{% from "_macros.html" import figure, month_nav %}
-{% set section = "household" %}
+{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, part_avatar, as_table %}
+{% set h = household %}
+{% set head = h.headline %}
+{% set books = status.books %}
 {% block title %}Household{% endblock %}
 {% block content %}
-<div class="page-head">
-  <h1>Household</h1>
-  {{ month_nav("/", household.month) }}
-</div>
+  <div class="page-head">
+    <div>
+      <h1>Household</h1>
+      <p class="sub">Everyone's shared totals, and the joint accounts. Detail stays with its owner.</p>
+    </div>
+  </div>
 
-<section class="figures">
-  {{ figure("Household net worth", household.net_worth, withheld_note="Not shared with you") }}
-  {{ figure("Spending, " ~ household.month.label, household.spending, withheld_note="Not shared with you") }}
-</section>
-{% if household.net_worth is withheld or household.spending is withheld %}
-<p class="note">A household total appears only when every part of it can be shown to you, so that no one’s figure can be worked out from the rest.</p>
-{% endif %}
+  {{ failure_alert(notice, today) }}
 
-<section>
-  <h2>Members</h2>
-  <ul class="member-list">
-    {% for summary in household.members %}
-    <li>
-      <a class="member-card" href="/members/{{ summary.member.username }}?month={{ household.month }}">
-        <span class="member-name">{{ summary.member.display_name }}{% if summary.is_viewer %} <span class="tag">You</span>{% endif %}</span>
-        <span class="member-figures">
-          {% for label, value in [("Net worth, excluding joint accounts", summary.net_worth), ("Spending, excluding joint accounts", summary.spending)] %}
-          <span class="member-figure">
-            <span class="figure-label">{{ label }}</span>
-            {% if value is withheld %}<span class="is-withheld">Not shared with you</span>{% else %}<span>{{ value | money }}</span>{% endif %}
-          </span>
-          {% endfor %}
-        </span>
-      </a>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
+  <section class="panel" aria-labelledby="nw-h">
+    <div class="panel-body" style="padding-top: var(--s-6)">
+      <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
+        <div>
+          <div class="hero">
+            <h2 id="nw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth{% if head.is_partial %}, without {{ head.without | names("name") }}{% endif %}</h2>
+            {{ hero_value(head.value, status, head.without, head.unpriced) }}
+            {% if head.is_partial %}
+            <p class="muted mt-2 measure">{{ head.without | names("name") }} {{ "does" if head.without | length == 1 else "do" }} not share net worth with you, so there is no household total. This is everyone else.</p>
+            {% else %}
+            <div class="hero-meta">
+              {{ delta(head.since_month_start, since) }}
+              {{ delta(head.over_year, "in 12 months") }}
+            </div>
+            {% endif %}
+            {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on) %}{% if lag %} {{ plural(lag.accounts, "account") }} not updated{% if lag.since %} since {{ lag.since | day }}{% endif %}.{% endif %}{% if head.is_partial %} Past months leave {{ head.without | names("name") }} out too, so trends compare like with like.{% else %} <a href="/net-worth">How it adds up</a>{% endif %}{% endcall %}
+          </div>
 
-{% if household.joint %}
-<section>
-  <h2>Joint accounts</h2>
-  <ul class="member-list">
-    {% for line in household.joint %}
-    <li>
-      <div class="member-card">
-        <span class="member-name">{{ line.owners | map(attribute="display_name") | join(" & ") }}, joint</span>
-        <span class="member-figures">
-          {% for label, value in [("Net worth", line.net_worth), ("Spending", line.spending)] %}
-          <span class="member-figure">
-            <span class="figure-label">{{ label }}</span>
-            {% if value is withheld %}<span class="is-withheld">Not shared with you</span>{% else %}<span>{{ value | money }}</span>{% endif %}
-          </span>
-          {% endfor %}
-        </span>
+          {% if h.composition %}
+          {% set total = h.composition | sum(attribute="value") %}
+          {% if total > 0 and h.composition | selectattr("value", "lt", 0) | list | length == 0 %}
+          <div class="mt-6">
+            <div class="comp" role="img" aria-label="Composition: {% for s in h.composition %}{{ s.part.name }} {{ (s.value / total * 100) | round | int }} percent{% if not loop.last %}, {% endif %}{% endfor %}">
+              {% for s in h.composition %}<span{% if s.part.hue != "who-1" %} class="{{ s.part.hue }}"{% endif %} style="width: {{ '%.1f' | format(s.value / total * 100) }}%"></span>{% endfor %}
+            </div>
+            <div class="comp-legend">
+              {% for s in h.composition %}
+              <div><span class="who{% if s.part.hue != 'who-1' %} {{ s.part.hue }}{% endif %} sm muted">{{ "Joint" if s.part.is_joint else s.part.name ~ ", excluding joint" }}</span><span class="num">{{ s.value | dollars }}</span></div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% endif %}
+        </div>
+
+        {% if head.is_partial %}
+        <div>
+          <h3 class="sm" style="color: var(--ink-2); font-weight: 500">What is included</h3>
+          <table class="table addup mt-2">
+            <caption class="vh">Parts of the household figure</caption>
+            <thead class="vh"><tr><th scope="col">Part</th><th scope="col" class="num">Amount</th></tr></thead>
+            <tbody>
+              {% for row in h.members + h.joint if row.connected %}
+              {% set hue = "" if row.part.hue == "who-1" else " " ~ row.part.hue %}
+              <tr>
+                <th scope="row"><span class="who{{ hue }}">{{ row.part.name }}{% if row.part.is_viewers and not row.part.is_joint %} (you){% endif %}{% if not row.part.is_joint %}, excluding joint{% endif %}</span>{% if row.net_worth is withheld %}<span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared with you</span>{% endif %}</th>
+                <td class="num{% if row.net_worth is withheld %} priv{% endif %}">{% if row.net_worth is withheld %}Not included{% else %}{{ row.net_worth.value | dollars }}{% endif %}</td>
+              </tr>
+              {% endfor %}
+              <tr class="total-row"><th scope="row">Known so far</th><td class="num">{{ head.value | dollars }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <figure>
+          <figcaption>
+            <h3 id="nw-t" style="font-size: var(--t-sm); line-height: var(--lh-sm)">Net worth, end of each month</h3>
+            <p class="xs faint">{% if head.is_partial %}Everyone except {{ head.without | names("name") }}, every month.{% else %}Every member's shared total plus joint accounts.{% endif %}</p>
+          </figcaption>
+          <div class="chart-wrap mt-3">
+{{ charts.net_worth }}
+          </div>
+          {% if h.history | selectattr("is_floor") | list %}
+          <p class="xs faint mt-2">Months with a holding that had no price are floors, marked "at least" in the table: the line runs at or below the true figure there.</p>
+          {% endif %}
+          {{ as_table("Household net worth at the end of each month", ("Month end", "Net worth"), history_rows) }}
+        </figure>
+        {% endif %}
       </div>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
+    </div>
+  </section>
+
+  <div class="grid grid-2 mt-4">
+    {% set sp = h.spending %}
+    <section class="panel" aria-labelledby="sp-h">
+      <div class="panel-head">
+        <h2 id="sp-h">Spending by month</h2>
+        <p class="finding">{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}</p>
+      </div>
+      <div class="panel-body">
+        <div class="figs" style="margin-bottom: var(--s-5)">
+          <div>
+            <p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
+            <p class="fig-value">{{ sp.spent | hero }}</p>
+            {% if sp.spent_without %}<p class="fig-sub">{{ private("Without " ~ (sp.spent_without | names("name"))) }}</p>{% endif %}
+          </div>
+          <div>
+            <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
+            <p class="fig-value">{{ sp.earned | hero }}</p>
+            {% if sp.earned_without %}<p class="fig-sub">{{ private("Without " ~ (sp.earned_without | names("name"))) }}</p>{% endif %}
+          </div>
+          <div>
+            <p class="fig-label">Saved in {{ saved_month_name }}</p>
+            {% if sp.saved_rate is not none %}
+            <p class="fig-value">{{ sp.saved_rate | percent }}<span style="font-size: 0.64em; font-weight: 500; color: var(--ink-2)">%</span></p>
+            <p class="fig-sub">of income{% if sp.saved_without %}, without {{ sp.saved_without | names("name") }}{% endif %}</p>
+            {% else %}
+            <p class="fig-value muted">&ndash;</p>
+            {% if sp.saved_without %}
+            <p class="fig-sub">{{ private("Not shared by " ~ (sp.saved_without | names("name"))) }}</p>
+            {% else %}
+            <p class="fig-sub">No income that month</p>
+            {% endif %}
+            {% endif %}
+          </div>
+        </div>
+        <figure>
+          <figcaption class="vh" id="sp-t">Household spending per month, {{ first_bar_label }} to {{ last_bar_label }}</figcaption>
+          <div class="chart-wrap">
+{{ charts.spending }}
+          </div>
+          <div class="chart-legend" aria-hidden="true">
+            <span class="k"><i></i>Full month</span>
+            <span class="k"><i class="now"></i>{{ month_name }} so far</span>
+            {% if sp.typical %}<span class="k"><i class="mline"></i>Typical: median of complete months</span>{% endif %}
+            {% if sp.bars | rejectattr("covered") | list %}<span class="k"><i class="partial"></i>History incomplete</span>{% endif %}
+          </div>
+          {{ as_table("Household spending per month", ("Month", "Spent"), spending_rows) }}
+        </figure>
+      </div>
+      {% if sp.leaves_out_unassigned %}
+      <div class="panel-foot"><span>Some spending went through accounts nobody has claimed, or several people's at once. It is in nobody's total, so it is not counted here.</span><a href="/settings/connections">Assign accounts</a></div>
+      {% endif %}
+    </section>
+
+    {% set cats = h.categories %}
+    <section class="panel" aria-labelledby="cat-h">
+      <div class="panel-head">
+        <h2 id="cat-h">Where {{ month_name }} went</h2>
+        {% set over = cats.most_over %}
+        <p class="finding">{% if over %}{{ over.name }} is <strong class="tnum">{{ over.over_by | dollars }}</strong> above where it usually is by the {{ ordinal_today }}.{% elif cats.has_typical %}Everything is close to typical for this point in the month.{% elif cats.rows or cats.fixed %}By category, {{ month_abbr }} 1&ndash;{{ cats.to_day }}.{% if cats.timed and cats.rows %} There is not enough history yet to compare with a typical month.{% endif %}{% else %}Nobody shares spending by category yet.{% endif %}</p>
+      </div>
+      <div class="panel-body">
+        {% set scale = cats.scale if cats.scale > 0 else 1 %}
+        {% for bill in cats.fixed %}
+        <p class="fixed-row"><span><span class="muted">Fixed:</span> {{ bill.name }}, paid {{ bill.paid_on | day }}</span><span class="tnum">{{ bill.amount | money }}</span></p>
+        {% endfor %}
+        <div class="cats" role="list">
+          {% for row in cats.rows %}
+          <div class="cat{% if row.over_by %} is-over{% endif %}" role="listitem">
+            <span class="name">{{ row.name }}</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: {{ '%.1f' | format(row.amount / scale * 100) }}%"></span>{% if row.typical is not none %}<span class="typ" style="left: {{ '%.1f' | format(row.typical / scale * 100) }}%"></span>{% endif %}</span>
+            <span class="val">{{ row.amount | money }}</span>
+            {% if row.over_by %}<span class="note"><span aria-hidden="true">&#9650;</span> {{ row.over_by | dollars }} over typical for this date</span>{% endif %}
+          </div>
+          {% endfor %}
+          {% for slice in cats.totals_only %}
+          <div class="cat is-withheld" role="listitem">
+            <span class="name">{{ slice.part.name }}</span>
+            <span class="track"><i aria-hidden="true"></i><svg aria-hidden="true"><use href="#i-lock"/></svg>Total only, not by category</span>
+            <span class="val">{{ slice.value | money }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% if cats.rows or cats.fixed %}
+        <div class="chart-legend mt-4" aria-hidden="true">
+          <span class="k"><i class="fill"></i>{{ month_abbr }} 1&ndash;{{ cats.to_day }}</span>
+          {% if cats.has_typical %}<span class="k"><i class="tick"></i>Typical by the {{ ordinal_today }}</span>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% if cats.unreviewed %}
+      <div class="panel-foot">
+        <span>Includes {{ plural(cats.unreviewed, "unreviewed transaction") }}, at their suggested category.</span>
+        <a href="/review">Review</a>
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="panel mt-4" aria-labelledby="mem-h">
+    <div class="panel-head">
+      <h2 id="mem-h">Members</h2>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      <table class="table members">
+        <caption class="vh">Household members and joint accounts</caption>
+        <thead>
+          <tr><th scope="col">Member</th><th scope="col" class="col-hide-sm">Shares with the household</th><th scope="col" class="num">Net worth</th><th scope="col" class="num col-hide-sm">{{ since[:1] | upper }}{{ since[1:] }}</th></tr>
+        </thead>
+        <tbody>
+          {% for row in h.members %}
+          {% set ref = row.part.owners[0] %}
+          <tr>
+            <th scope="row"><a class="row member-link" href="/members/{{ ref.username }}">{{ part_avatar(row.part) }}<span><span class="primary">{{ ref.display_name }}</span>{% if row.part.is_viewers %} <span class="faint">(you)</span>{% endif %}<span class="second">{% if not row.connected %}Nothing connected yet{% elif row.accounts is not none %}{{ plural(row.accounts, "account") }}{% else %}&nbsp;{% endif %}</span></span></a></th>
+            <td class="col-hide-sm"><span class="row wrap" style="gap: 6px">{% for tag in row.shares %}<span class="tag tag-shared">{{ tag }}</span>{% else %}<span class="faint">Nothing yet</span>{% endfor %}</span></td>
+            {% if not row.connected %}
+            <td class="num"><span class="faint">Not connected</span></td>
+            <td class="num col-hide-sm"></td>
+            {% elif row.net_worth is withheld %}
+            <td class="num"><span class="priv-line" style="justify-content: flex-end"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</span></td>
+            <td class="num col-hide-sm"></td>
+            {% else %}
+            <td class="num"><span class="primary">{% if row.net_worth.is_floor %}at least {% endif %}{{ row.net_worth.value | dollars }}</span><span class="second">excluding joint</span></td>
+            <td class="num col-hide-sm">{{ delta(row.change, "") if row.change is not withheld else "" }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+          {% for row in h.joint %}
+          <tr>
+            <th scope="row"><a class="row member-link" href="/net-worth#joint">{{ part_avatar(row.part) }}<span><span class="primary">Joint accounts</span><span class="second">{{ row.part.owners | names }}{% if row.accounts is not none %}, {{ plural(row.accounts, "account") }}{% endif %}</span></span></a></th>
+            <td class="col-hide-sm">{% if row.part.is_viewers %}<span class="tag tag-joint">Full detail to both owners</span>{% else %}<span class="faint">Totals, as its owners share them</span>{% endif %}</td>
+            {% if row.net_worth is withheld %}
+            <td class="num"><span class="priv-line" style="justify-content: flex-end"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</span></td>
+            <td class="num col-hide-sm"></td>
+            {% else %}
+            <td class="num"><span class="primary">{% if row.net_worth.is_floor %}at least {% endif %}{{ row.net_worth.value | dollars }}</span></td>
+            <td class="num col-hide-sm">{{ delta(row.change, "") if row.change is not withheld else "" }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 {% endblock %}

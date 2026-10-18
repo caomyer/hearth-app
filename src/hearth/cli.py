@@ -7,11 +7,11 @@ from pathlib import Path
 
 import uvicorn
 
-from hearth import auth, db, demo
+from hearth import auth, books, db, demo
 from hearth.app import create_app
 from hearth.clock import system_clock
 from hearth.config import Settings
-from hearth.ledger import InMemoryLedger
+from hearth.connections import Connections
 from hearth.members import MemberRejectedError
 
 
@@ -50,8 +50,21 @@ def _add_address(parser: argparse.ArgumentParser) -> None:
 
 
 def _serve(host: str, port: int) -> None:
-    # Until ledger import lands there is no ledger to read, so every figure is zero.
-    app = create_app(Settings.from_environment(), InMemoryLedger({}, {}))
+    settings = Settings.from_environment()
+    _run(settings, books.from_ledger(settings.ledger, settings.database), host, port)
+
+
+def _run(
+    settings: Settings,
+    establish: books.Establish,
+    host: str,
+    port: int,
+    connections: Connections | None = None,
+) -> None:
+    """Serve, recomputing at start-up and then every morning (decision 6)."""
+    bookkeeper = books.Bookkeeper(establish, system_clock)
+    bookkeeper.recompute_daily()
+    app = create_app(settings, bookkeeper, connections=connections)
     uvicorn.run(app, host=host, port=port)
 
 
@@ -77,14 +90,18 @@ def _add_member(username: str, name: str, *, is_admin: bool) -> None:
 
 def _demo(host: str, port: int) -> None:
     with tempfile.TemporaryDirectory(prefix="hearth-demo-") as directory:
-        settings = Settings.in_directory(Path(directory))
+        ledger = Path(directory) / "household.beancount"
+        settings = Settings.in_directory(Path(directory), ledger=ledger)
         db.initialise(settings.database)
         conn = db.connect(settings.database)
         try:
-            ledger, passwords = demo.seed(conn, now=system_clock())
+            now = system_clock()
+            passwords = demo.seed(conn, ledger, now=now)
+            connections = demo.connections(conn, now.date())
         finally:
             conn.close()
         print("An invented household. Sign in as any of them:")
         for username, password in passwords.items():
             print(f"  {username:<8} {password}", flush=True)
-        uvicorn.run(create_app(settings, ledger), host=host, port=port)
+        establish = books.from_ledger(ledger, settings.database, sources=(demo.PRICE_SOURCE,))
+        _run(settings, establish, host, port, connections)

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% from "_macros.html" import failure_alert %}
+{# The first recompute failed, so there are no figures at all yet: say what happened, never
+   show a page of zeros. #}
+{% block title %}Figures unavailable{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>No figures yet</h1>
+      <p class="sub">Hearth could not compute the household's figures, so it shows none rather than wrong ones.</p>
+    </div>
+  </div>
+  {{ failure_alert(notice, today) }}
+{% endblock %}

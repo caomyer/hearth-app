@@ -16,26 +16,23 @@ A joint line's totals reach anyone else only when every owner shares that total,
 
 ## A household total when a member withholds their part
 
-The total is shown only when every member's figure and every joint line is visible to the viewer; otherwise the page says it is not shared with them.
-Decision 3 asks for a range in that case, with a note that a member has withdrawn.
-The range is deferred to the dashboard work, as authorised by firstmate on 2026-10-18.
-It is presentation: the current behaviour leaks nothing and never presents a smaller number as complete, and a range needs care so that it cannot be narrowed to the withheld figure.
+The foundation hid such a total and deferred decision 3's range to the dashboard work.
+The dashboards replaced both with a labelled partial, under decision 3 as amended; see [privacy-boundary.md](privacy-boundary.md).
 
 ## Private transactions are absent, not masked
 
 The approved mock showed another member's transactions as masked rows such as `-xxx.xx`.
 Masked rows still reveal how many transactions there were and roughly how large each was, so a private section shows "Not shared" and nothing else.
 
-## The ledger is behind an interface
+## The ledger
 
-`hearth.ledger.Ledger` has one implementation today, in memory, used by the tests and by `hearth demo`.
-A real ledger reader, together with per-member secret storage (an encrypted vault), is on a branch stacked directly on this one and lands after it.
-Until that stack lands, `hearth serve` shows every figure as zero; that is expected, not a bug.
+The foundation read figures through an in-memory stand-in for the ledger.
+That is gone: figures now come from the beancount ledger itself, through `hearth.books` (see `docs/dashboards.md`).
 
 ## Institution tokens
 
-No table for institution tokens exists yet, because nothing uses one.
-The intended design is in [privacy-boundary.md](privacy-boundary.md): ciphertext, nonce and key id per member and institution, with the key held in the OS keychain and no plaintext column.
+The foundation deliberately created no token table, because nothing used one yet.
+The vault has since landed as designed: envelope-encrypted tokens under a master key in the macOS Keychain, with no plaintext column (see `docs/vault.md`).
 
 ## Passwords an admin hands out
 

@@ -1,0 +1,15 @@
+{# The settings tabs, shared by every settings page. Expects `tab`. #}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+  </div>
+  <form method="post" action="/sign-out">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <button class="btn btn-sm btn-quiet" type="submit">Sign out</button>
+  </form>
+</div>
+<nav class="subnav" aria-label="Settings">
+  {% for key, href, label in [("sharing", "/settings/sharing", "Sharing"), ("connections", "/settings/connections", "Connections"), ("password", "/settings/password", "Password"), ("activity", "/activity", "Activity")] + ([("members", "/admin/members", "Members")] if session.member.is_admin else []) %}
+  <a href="{{ href }}"{% if tab == key %} aria-current="page"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
