@@ -14,15 +14,15 @@
     <tr>
       <th scope="row"><a class="primary" href="/accounts/{{ row.id }}">{{ row.name }}</a>{% if row.owners | length > 1 %}<span class="second">{{ row.owners | names }}</span>{% endif %}</th>
       <td class="col-hide-sm muted">
-        {% if not row.spans %}No transactions yet
+        {% if not row.since %}No transactions yet
         {% else %}
-        Since {{ row.spans[0].earliest | month_year }}
-        {% if row.spans | length > 1 %}
+        Since {{ row.since | month_year }}
+        {% if row.spans is not withheld and row.spans | length > 1 %}
         {% for span in row.spans %}<span class="second">{{ span.origin | replace("-", " ") | capitalize }}: {{ span.earliest | day }} to {{ span.latest | day }}{% if span.earliest.year != span.latest.year %}, {{ span.latest.year }}{% endif %}</span>{% endfor %}
         {% endif %}
         {% endif %}
       </td>
-      <td class="col-hide-sm muted">{{ row.updated | day if row.updated else "" }}{% if row.stale %}<span class="second" style="color: var(--warn)">A price is stale</span>{% endif %}</td>
+      <td class="col-hide-sm muted">{{ row.updated | day if row.updated is not withheld and row.updated else "" }}{% if row.stale %}<span class="second" style="color: var(--warn)">A price is stale</span>{% endif %}</td>
       <td class="num">
         {% if row.value.is_floor %}<span class="primary">at least {{ row.value.value | money }}</span><span class="second" style="color: var(--warn)">{{ row.value.unpriced | join(", ") }} has no price</span>
         {% else %}<span class="primary">{{ row.value.value | money }}</span>{% if row.is_owed %}<span class="second">owed</span>{% endif %}{% endif %}

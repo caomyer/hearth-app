@@ -1,5 +1,5 @@
-"""Command-line entry point: ``hearth serve``, ``hearth add-member``, ``hearth plaid`` and
-``hearth demo``.
+"""Command-line entry point: ``hearth serve``, ``hearth add-member``, ``hearth add-account``,
+``hearth accounts``, ``hearth plaid`` and ``hearth demo``.
 
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
 --approve-plaid OPERATION`` for the web pages, and ``--approved`` for each ``hearth plaid``
@@ -15,11 +15,13 @@ from datetime import datetime
 from pathlib import Path
 
 import uvicorn
+from beancount.core.data import Open
 
-from hearth import auth, books, db, demo
+from hearth import accounts, auth, books, db, demo, members
+from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
 from hearth.clock import system_clock
-from hearth.config import Settings
+from hearth.config import LEDGER_VARIABLE, Settings
 from hearth.disclosure import rulings_in
 from hearth.members import MemberRejectedError
 from hearth.plaid import cli as plaid_cli
@@ -27,6 +29,7 @@ from hearth.plaid import feed
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
 from hearth.plaid.connector import sync_all
 from hearth.plaid.setup import PlaidSetup
+from hearth.reports.common import is_balance_sheet
 
 _log = logging.getLogger(__name__)
 
@@ -67,6 +70,22 @@ def main(argv: list[str] | None = None) -> None:
         "--admin", action="store_true", help="let them add members and reset passwords"
     )
 
+    claim = commands.add_parser(
+        "add-account", help="say who owns one of the ledger's accounts; nobody sees it until then"
+    )
+    claim.add_argument("ledger_account", help="as the ledger names it, e.g. Assets:Bank:Checking")
+    claim.add_argument("--name", required=True, help="the name the household sees")
+    claim.add_argument(
+        "--owner",
+        action="append",
+        required=True,
+        metavar="USERNAME",
+        help="a member who owns it; give it once per owner for a joint account",
+    )
+    commands.add_parser(
+        "accounts", help="list the ledger's accounts and who owns each (reads the ledger only)"
+    )
+
     try_it = commands.add_parser(
         "demo", help="serve an invented household from a throwaway directory"
     )
@@ -85,6 +104,10 @@ def main(argv: list[str] | None = None) -> None:
             sys.exit(plaid_cli.run(arguments, Settings.from_environment()))
         case "add-member":
             _add_member(arguments.username, arguments.name, is_admin=arguments.admin)
+        case "add-account":
+            _add_account(arguments.ledger_account, arguments.name, arguments.owner)
+        case "accounts":
+            _list_accounts()
         case "demo":
             _demo(arguments.host, arguments.port, first_review=arguments.first_review)
 
@@ -156,6 +179,65 @@ def _add_member(username: str, name: str, *, is_admin: bool) -> None:
     finally:
         conn.close()
     print(f"Added {member.display_name}. One-time password for {member.username}: {password}")
+
+
+def _ledger_accounts(settings: Settings) -> list[str]:
+    """The ledger's balance-sheet accounts, read through the same read-only path as serving."""
+    if settings.ledger is None:
+        sys.exit(f"hearth: set {LEDGER_VARIABLE} to the household's ledger first.")
+    try:
+        entries = books.load_entries(settings.ledger)
+    except books.LedgerError as error:
+        sys.exit(f"hearth: {error.summary}")
+    return sorted(
+        entry.account
+        for entry in entries
+        if isinstance(entry, Open) and is_balance_sheet(entry.account)
+    )
+
+
+def _add_account(ledger_account: str, name: str, usernames: list[str]) -> None:
+    settings = Settings.from_environment()
+    if ledger_account not in _ledger_accounts(settings):
+        sys.exit(f"hearth: the ledger opens no Assets or Liabilities account {ledger_account}.")
+    db.initialise(settings.database)
+    conn = db.connect(settings.database)
+    try:
+        owners = []
+        for username in usernames:
+            member = members.find(conn, members.normalise_username(username))
+            if member is None:
+                sys.exit(f"hearth: there is no member {username}.")
+            if member not in owners:
+                owners.append(member)
+        accounts.claim(
+            conn,
+            ledger_account=ledger_account,
+            name=name,
+            owners=[member.id for member in owners],
+            now=system_clock(),
+        )
+    except AccountRejectedError as error:
+        sys.exit(f"hearth: {error}")
+    finally:
+        conn.close()
+    print(f"{name} is {' and '.join(m.display_name for m in owners)}'s.")
+
+
+def _list_accounts() -> None:
+    settings = Settings.from_environment()
+    in_ledger = _ledger_accounts(settings)
+    db.initialise(settings.database)
+    conn = db.connect(settings.database)
+    try:
+        names = {m.id: m.username for m in members.all_members(conn)}
+        claimed = {a.ledger_account: a for a in accounts.all_accounts(conn)}
+    finally:
+        conn.close()
+    for ledger_account in in_ledger:
+        account = claimed.get(ledger_account)
+        owners = ", ".join(sorted(names[o] for o in account.owners)) if account else ""
+        print(f"{ledger_account}  {account.name if account else '-'}  {owners or 'unclaimed'}")
 
 
 def _demo(host: str, port: int, *, first_review: bool = False) -> None:

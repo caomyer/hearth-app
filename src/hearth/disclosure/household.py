@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from hearth import figures
 from hearth.disclosure.common import (
+    DataEnds,
     Household,
     PartRef,
     Unreviewed,
@@ -46,6 +47,8 @@ class Headline:
     stale: int
     """Stale prices among holdings the viewer may see; others' holdings are not counted, so
     "except one" never says anything about positions their owner keeps private."""
+    ends: DataEnds | None
+    """Where the data behind the total stops, over the parts it adds up."""
 
     @property
     def is_partial(self) -> bool:
@@ -80,6 +83,9 @@ class MonthBar:
 class SpendingPanel:
     month: Month
     to_day: int
+    covered: bool
+    """Whether the ledger reaches this month for every part behind `spent` and `earned`;
+    if not, they are not this month's figures, only what the ledger holds of it so far."""
     spent: Decimal
     spent_without: tuple[PartRef, ...]
     spent_unreviewed: Unreviewed
@@ -170,6 +176,8 @@ class HouseholdView:
     headline: Headline
     composition: tuple[Slice, ...]
     history: tuple[MonthPoint, ...]
+    priced_from: date | None
+    """Where `history` starts when earlier month ends had no prices to value them at."""
     spending: SpendingPanel
     categories: CategoryPanel
     members: tuple[MemberRow, ...]
@@ -183,6 +191,7 @@ def household(h: Household) -> HouseholdView:
         headline=headline(h, parts),
         composition=_composition(h, parts),
         history=_history(h, parts),
+        priced_from=h.priced_from(_charted(h, parts)),
         spending=_spending(h, parts, this_month),
         categories=_categories(h, parts, this_month),
         members=tuple(_member_row(h, part) for part in h.parts if not part.is_joint),
@@ -195,6 +204,7 @@ def headline(h: Household, parts: Sequence[Part]) -> Headline:
     shown = [(part, h.disclosed_worth(part)) for part in parts]
     visible = [(part, worth) for part, worth in shown if isinstance(worth, Worth)]
     return Headline(
+        ends=h.ends([part for part, _ in visible]),
         value=sum((worth.value for _, worth in visible), Decimal(0)),
         unpriced=tuple(
             f"{h.part_ref(part).name}: {missing}"
@@ -243,10 +253,9 @@ def _composition(h: Household, parts: Sequence[Part]) -> tuple[Slice, ...]:
 def _history(h: Household, parts: Sequence[Part]) -> tuple[MonthPoint, ...]:
     """Net worth at each month end and today, over the same parts as the headline, so the
     trend compares like with like rather than jumping when a member withdraws."""
-    visible = [part for part in parts if h.gate.may(Facet.NET_WORTH_TOTAL, part.owners)]
-    valuations = [*h.books.month_ends, h.books.today]
+    visible = _charted(h, parts)
     points = []
-    for valuation in valuations:
+    for valuation in h.history(visible):
         worths = [figures.worth(valuation, part) for part in visible]
         points.append(
             MonthPoint(
@@ -256,6 +265,10 @@ def _history(h: Household, parts: Sequence[Part]) -> tuple[MonthPoint, ...]:
             )
         )
     return tuple(points)
+
+
+def _charted(h: Household, parts: Sequence[Part]) -> list[Part]:
+    return [part for part in parts if h.gate.may(Facet.NET_WORTH_TOTAL, part.owners)]
 
 
 def _split(
@@ -283,10 +296,13 @@ def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> Sp
         MonthBar(m, _sum(full[m], spenders, MonthFlows.spent), _covers(h, spenders, m))
         for m in past
     ]
-    bars.append(MonthBar(month, _sum(this_month, spenders, MonthFlows.spent), True))
+    bars.append(
+        MonthBar(month, _sum(this_month, spenders, MonthFlows.spent), _covers(h, spenders, month))
+    )
     return SpendingPanel(
         month=month,
         to_day=h.books.as_of.day,
+        covered=_covers(h, [*spenders, *earners], month),
         spent=_sum(this_month, spenders, MonthFlows.spent),
         spent_without=spent_without,
         spent_unreviewed=_unreviewed(h, spenders, this_month, MonthFlows.spent_unreviewed),
@@ -309,7 +325,7 @@ def _sum(
 
 
 def _covers(h: Household, parts: Sequence[Part], month: Month) -> bool:
-    return figures.covers(h.books, [a for part in parts for a in part.accounts], month)
+    return all(figures.flows_cover(h.books, part.accounts, month) for part in parts)
 
 
 def _categories(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> CategoryPanel:
@@ -353,13 +369,15 @@ def category_panel(
             for m in figures.past_months(h.books.month, figures.TYPICAL_MONTHS)
             if _covers(h, detailed, m)
         ]
+    by_category = _by_category(this_month, detailed)
+    names = category_names([*by_category, *fixed])
     rows = [
         CategoryRow(
-            name=_category_name(category),
+            name=names[category],
             amount=amount,
             typical=figures.typical([_category(flows, detailed, category) for flows in history]),
         )
-        for category, amount in _by_category(this_month, detailed).items()
+        for category, amount in by_category.items()
         if category not in fixed
     ]
     rows.sort(key=lambda row: row.amount, reverse=True)
@@ -368,7 +386,7 @@ def category_panel(
         to_day=today,
         timed=timed,
         fixed=tuple(
-            FixedRow(_category_name(category), fixed[category].amount, fixed[category].day)
+            FixedRow(names[category], fixed[category].amount, fixed[category].day)
             for category in sorted(fixed)
         ),
         rows=tuple(rows[:CATEGORY_ROWS]) + _other(rows[CATEGORY_ROWS:]),
@@ -404,15 +422,36 @@ def _category(flows: MonthFlows, parts: Sequence[Part], category: str) -> Decima
     return _by_category(flows, parts).get(category, Decimal(0))
 
 
+OTHER = "Other"
+
+
 def _other(rest: Sequence[CategoryRow]) -> tuple[CategoryRow, ...]:
     if not rest:
         return ()
-    return (CategoryRow("Other", sum((row.amount for row in rest), Decimal(0)), None),)
+    return (CategoryRow(OTHER, sum((row.amount for row in rest), Decimal(0)), None),)
 
 
-def _category_name(account: str) -> str:
-    """ "Expenses:Food:Dining" reads as "Dining": the most specific name is the useful one."""
-    return account.rsplit(":", 1)[-1]
+def category_names(accounts: Sequence[str]) -> dict[str, str]:
+    """What each category reads as on one panel: its most specific name, made unambiguous.
+
+    "Expenses:Food:Dining" reads as "Dining". Two categories with the same last name, such as
+    "Transport:Other" and "Travel:Other", each keep as many parent names as tell them apart,
+    and none is ever just "Other", which is the panel's row for everything left over.
+    """
+    names = {}
+    for account in accounts:
+        parts = account.split(":")[1:] or [account]
+        for depth in range(1, len(parts) + 1):
+            name = parts[-depth:]
+            clashes = any(
+                other != account and other.split(":")[-depth:] == name for other in accounts
+            )
+            if not clashes and name != [OTHER]:
+                break
+        if name == [OTHER]:
+            name = account.split(":")
+        names[account] = ": ".join(name)
+    return names
 
 
 def _member_row(h: Household, part: Part) -> MemberRow:

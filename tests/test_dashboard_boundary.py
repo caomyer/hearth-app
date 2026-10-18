@@ -330,6 +330,8 @@ def test_a_month_with_only_a_fixed_bill_so_far_is_not_an_empty_panel(world: Worl
     ):
         assert spent in text
         text = text.replace(spent, "")
+    # A quiet joint account is vouched for as a feed does, so its months still read as whole.
+    text += "\n2026-10-15 balance Assets:Zq:Joint  21641.26 USD\n"
     world.ledger.write_text(text)
     world.recompute()
     blake = world.signed_in("blake")

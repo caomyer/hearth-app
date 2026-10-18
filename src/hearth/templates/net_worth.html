@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, as_table %}
+{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, as_table, priced_from_note %}
 {% set w = view %}
 {% set head = w.headline %}
 {% set books = status.books %}
@@ -25,7 +25,7 @@
           {{ hero_value(head.value, status, head.without, head.unpriced) }}
           {% if not head.is_partial %}<div class="hero-meta">{{ delta(head.since_month_start, since) }}</div>{% endif %}
           <div class="recompute mt-4{% if status.recomputing %} recomputing{% endif %}">
-            {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on) %} Recomputes daily, never silently on page load.{% endcall %}
+            {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on, head.ends) %} Recomputes daily, never silently on page load.{% endcall %}
             {% if not status.recomputing %}
             <form method="post" action="/net-worth/recompute">
               <input type="hidden" name="csrf" value="{{ session.csrf }}">
@@ -101,7 +101,7 @@
       {% if moves_finding %}<p class="finding">{{ moves_finding }}</p>{% endif %}
     </div>
     <div class="panel-body">
-      {% if charts.moves %}
+      {% if charts.get("moves") %}
       <figure>
         <figcaption class="vh" id="mv-t">Monthly change in net worth, split into money saved and market movement</figcaption>
         <div class="chart-wrap">
@@ -112,6 +112,7 @@
           <span class="k"><i class="market"></i>Market: prices moving</span>
           {% if w.moves_leave_out %}<span class="k faint">{{ w.moves_leave_out | names("name") }} {{ "is" if w.moves_leave_out | length == 1 else "are" }} not included: you see a total, not its parts.</span>{% endif %}
         </div>
+        {{ priced_from_note(w.moves_priced_from) }}
         {{ as_table("Monthly change in net worth, saved and market", ("Month", "Saved / market"), moves_rows) }}
       </figure>
       {% else %}

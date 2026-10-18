@@ -20,6 +20,7 @@ class EventKind(StrEnum):
     SIGN_IN_FAILED = "sign_in_failed"
     SIGNED_OUT = "signed_out"
     SHARING_CHANGED = "sharing_changed"
+    ACCOUNT_CLAIMED = "account_claimed"
 
 
 @dataclass(frozen=True, slots=True)

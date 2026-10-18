@@ -54,10 +54,10 @@
           </div>
           {% endmacro %}
           {% call pv("Net worth, excluding joint", p.worth) %}<p class="pv-on fig-value" style="font-size: 22px; line-height: 28px">{% if p.worth.is_floor %}<span class="sm muted">at least </span>{% endif %}{{ p.worth.value | hero }}</p>{% if p.worth.is_floor %}<p class="xs faint">A floor: {{ plural(p.worth.unpriced | length, "holding") }} {{ "has" if p.worth.unpriced | length == 1 else "have" }} no price.</p>{% endif %}{% endcall %}
-          {% call pv("Spent, " ~ month_name ~ " so far", p.totals.spent) %}<p class="pv-on tnum">{{ p.totals.spent | dollars }}</p>{% endcall %}
-          {% call pv("Earned, " ~ month_name ~ " so far", p.totals.earned) %}<p class="pv-on tnum">{{ p.totals.earned | dollars }}</p>{% endcall %}
-          {% call pv("By category", p.categories) %}{% set listed = (p.categories.fixed | list) + (p.categories.rows | list) %}<p class="pv-on sm">{% for row in listed[:3] %}{{ row.name }} {{ row.amount | dollars }}{% if not loop.last %}, {% endif %}{% else %}Nothing spent yet{% endfor %}{% if listed | length > 3 %}, and {{ listed | length - 3 }} more{% endif %}</p>{% endcall %}
-          {% call pv("Transactions", p.days) %}<p class="pv-on sm">All {{ p.days | map(attribute="lines") | map("length") | sum }} this month, with merchants</p>{% endcall %}
+          {% call pv("Spent, " ~ month_name ~ " so far", p.totals.spent) %}<p class="pv-on tnum">{% if p.totals.covered %}{{ p.totals.spent | dollars }}{% else %}&ndash; <span class="sm muted">History incomplete</span>{% endif %}</p>{% endcall %}
+          {% call pv("Earned, " ~ month_name ~ " so far", p.totals.earned) %}<p class="pv-on tnum">{% if p.totals.covered %}{{ p.totals.earned | dollars }}{% else %}&ndash; <span class="sm muted">History incomplete</span>{% endif %}</p>{% endcall %}
+          {% call pv("By category", p.categories) %}{% if not p.totals.covered %}<p class="pv-on sm">&ndash; <span class="muted">History incomplete</span></p>{% else %}{% set listed = (p.categories.fixed | list) + (p.categories.rows | list) %}<p class="pv-on sm">{% for row in listed[:3] %}{{ row.name }} {{ row.amount | dollars }}{% if not loop.last %}, {% endif %}{% else %}Nothing spent yet{% endfor %}{% if listed | length > 3 %}, and {{ listed | length - 3 }} more{% endif %}</p>{% endif %}{% endcall %}
+          {% call pv("Transactions", p.days) %}<p class="pv-on sm">{% if p.totals.covered %}All {{ p.days | map(attribute="lines") | map("length") | sum }} this month, with merchants{% else %}&ndash; <span class="muted">History incomplete</span>{% endif %}</p>{% endcall %}
           {% call pv("Accounts", p.accounts) %}<p class="pv-on sm">{{ plural(p.accounts | length, "account") }} with balances</p>{% endcall %}
         </div>
         {% else %}

@@ -295,25 +295,49 @@ def lines(books: Books, accounts: Sequence[Account], start: date, end: date) -> 
     return sorted(found, key=lambda line: line.date, reverse=True)
 
 
-def covers(books: Books, accounts: Iterable[Account], month: Month) -> bool:
+def covers(books: Books, accounts: Sequence[Account], month: Month) -> bool:
     """Whether the ledger holds the whole month for every one of `accounts` open in it.
 
     An account whose history starts after the month began leaves the month incomplete, and a
-    figure for it must say so rather than look whole. Quiet stretches inside an account's
-    history are not treated as missing: a brokerage account that trades once a quarter is
-    quiet, not incomplete, and coverage reports such gaps per account instead.
+    figure for it must say so rather than look whole.
+
+    So does data that stops before the month is out: `accounts`, which are one part's, hold
+    the month only once one of them reaches past it, by the rule of `books.Reach.holds`. That
+    is decided by month alone, never by the day the data stops, which is transaction detail;
+    a month the ledger has not reached never reads as a month in which nothing happened. The
+    ledger cannot tell quiet from missing, so a quiet account, such as a brokerage that trades
+    once a quarter, leaves its months incomplete until it moves or carries a balance assertion
+    dated in a later month. Spending and income figures ask `flows_cover` instead, which
+    judges only the accounts that can move them. The remedy for quiet accounts is to take
+    freshness from each connection's last successful sync, which the Plaid connection work
+    tracks separately from the ledger.
     """
     first = date(month.year, month.month, 1)
     last = first.replace(day=calendar.monthrange(month.year, month.month)[1])
     by_account = {coverage.account: coverage for coverage in books.coverage}
+    open_in_month = False
     for account in accounts:
         coverage = by_account.get(account.ledger_account)
         if coverage is None or coverage.opened > last:
             continue
+        open_in_month = True
         expected_from = max(first, coverage.opened)
         if coverage.earliest is None or coverage.earliest > expected_from + QUIET_START:
             return False
-    return True
+    return not open_in_month or any(
+        books.account_reaches[a.ledger_account].holds(month, books.month)
+        for a in accounts
+        if a.ledger_account in books.account_reaches
+    )
+
+
+def flows_cover(books: Books, accounts: Sequence[Account], month: Month) -> bool:
+    """`covers` for a spending or income figure, judged only over the accounts that can move it.
+
+    An account that only ever takes transfers (`books.flowing`) adds nothing to spending or
+    income, so its quiet months never leave such a figure incomplete; a quiet card still does.
+    """
+    return covers(books, [a for a in accounts if a.ledger_account in books.flowing], month)
 
 
 FIXED_MONTHS = 3

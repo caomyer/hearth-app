@@ -74,6 +74,21 @@ Swapping sources means writing one class; stored history keeps its own `source`,
 With no API key it reports itself unavailable and is never called.
 That is the normal state until a plan is bought, so `refresh_prices` records nothing and says why, and every fund then values as unpriced.
 
+### The institution's own price, through Plaid
+
+The household chose to value holdings at each brokerage's own daily price (`plaid-only`), with no market data feed.
+`valuation.institution` reads a parsed `/investments/holdings/get` response, takes each holding's `institution_price` and `institution_price_as_of`, and stores it under source `plaid`, with the Plaid `security_id` as `source_ref` and the time it was fetched.
+A holding is matched to a ledger commodity by its security's ticker.
+One with no ticker, no price, no date or no ISO currency is listed with its reason, never stored on a guess; two holdings of one ticker that disagree on a day are both listed and neither stored.
+The response must be parsed with `parse_float=Decimal`; a float is refused.
+
+It is today-only: Plaid keeps no history of it, so a day nobody asked is a day with no price, and nothing before the first ask can ever be had.
+`valuation.institution` is a reader awaiting its producer; nothing in `valuation` calls Plaid.
+The holdings fetch is not implemented.
+It needs Plaid's Investments product, which the captain's brokerage Item is not consented to and which is separately billed.
+Until that decision is made and the fetch is built, the `plaid` price source yields nothing and every fund values as unpriced.
+Once today is priced, net worth history therefore starts after the last month end a holding had no price at, and both charts say so, rather than drawing earlier months at what the cash alone was worth.
+
 ## Verifying EODHD before trusting it
 
 EODHD's public quote page shows a fund NAV to four decimal places, while fund companies publish to the cent.

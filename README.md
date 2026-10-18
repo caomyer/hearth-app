@@ -30,11 +30,12 @@ uv run hearth demo --first-review  # the same, the day its two-year first import
 uv run pytest
 ```
 
-To run for real, create the first admin, point hearth at the household's ledger, then serve on this machine only:
+To run for real, create the first admin, point hearth at the household's ledger, say who owns each account, then serve on this machine only ([docs/real-ledger.md](docs/real-ledger.md)):
 
 ```sh
 uv run hearth add-member <username> --name "<name>" --admin
 export HEARTH_LEDGER="$HOME/path/to/household.beancount"
+uv run hearth add-account <ledger account> --name "<name>" --owner <username>
 uv run hearth serve
 ```
 

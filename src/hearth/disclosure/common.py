@@ -11,6 +11,7 @@ from hearth.books import Books
 from hearth.disclosure.gate import Disclosed, Gate, Withheld
 from hearth.figures import Part
 from hearth.members import Member, MemberId
+from hearth.months import Month
 from hearth.reports.flows import OwnersOf
 from hearth.sharing import Facet
 from hearth.valuation.networth import Freshness, NetWorth
@@ -111,6 +112,22 @@ class Worth:
 
 
 @dataclass(frozen=True, slots=True)
+class DataEnds:
+    """Where the data behind a figure stops.
+
+    A total is only as current as its stalest part. The day an account's money last moved is
+    transaction detail, so a viewer who may see the transactions of every part the figure adds
+    up is given `day`, the earliest last day among them, and `stalest`, that part, when they
+    may see its balances. Anyone else is given `month` alone: the earliest of the parts'
+    last months, with `day` and `stalest` None, as nothing on that path may depend on a day.
+    """
+
+    month: Month
+    day: date | None
+    stalest: PartRef | None
+
+
+@dataclass(frozen=True, slots=True)
 class Household:
     """Everything disclosure knows, before deciding anything for the viewer."""
 
@@ -182,11 +199,94 @@ class Household:
         def compute() -> Decimal | None:
             now = figures.worth(self.books.today, part)
             then = figures.worth(valuation, part)
-            if not now.complete or not then.complete:
+            if not now.complete or not then.complete or not self.reaches(part, valuation):
                 return None
             return now.known_total - then.known_total
 
         return self.gate.disclose(Facet.NET_WORTH_TOTAL, part.owners, compute)
+
+    def ends(self, parts: Sequence[Part]) -> DataEnds | None:
+        """Where the data behind a figure over `parts` stops, if the page should say so.
+
+        Only parts whose net worth the viewer may see count, as only they add up to a figure
+        the viewer is shown. A viewer who may see the transactions of every one of them is
+        told the day, once it is long enough ago to say so. Anyone else is told the month,
+        always: deciding when, or naming whose, from the day would give the day away to
+        whoever watches the note change.
+        """
+        shown = [part for part in parts if self.gate.may(Facet.NET_WORTH_TOTAL, part.owners)]
+        lasts = [(day, part) for part in shown if (day := self._last_day(part)) is not None]
+        if not lasts:
+            return None
+        if not all(self.gate.may(Facet.TRANSACTIONS, part.owners) for part in shown):
+            return DataEnds(min(Month.of(day) for day, _ in lasts), None, None)
+        day, part = min(lasts, key=lambda last: last[0])
+        if not self.books.behind(day):
+            return None
+        named = len(shown) > 1 and self.gate.may(Facet.ACCOUNT_BALANCES, part.owners)
+        return DataEnds(Month.of(day), day, self.part_ref(part) if named else None)
+
+    def _last_day(self, part: Part) -> date | None:
+        days = [
+            self.books.account_ends[account.ledger_account]
+            for account in part.accounts
+            if account.ledger_account in self.books.account_ends
+        ]
+        return max(days, default=None)
+
+    def reaches(self, part: Part, valuation: NetWorth) -> bool:
+        """Whether the ledger's history of the part reaches back to `valuation`'s month.
+
+        Before an account's history starts, the ledger holds nothing for it, so its value
+        there is not zero but unknown. Uses the rule the spending bars use, `figures.covers`.
+        """
+        return figures.covers(self.books, part.accounts, Month.of(valuation.as_of))
+
+    def history(self, parts: Sequence[Part]) -> list[NetWorth]:
+        """Each month end `parts` can be valued at, then today.
+
+        That leaves out month ends the ledger does not reach back to and, once today is fully
+        priced, every month end up to the last one a holding had no price at. Prices are looked
+        up as of a day, so a month end after a security's first price is at worst stale, never
+        unpriced. A price reported one day at a time, as an institution's is, has no past, and
+        valuing those months at what the cash alone was worth would draw a fall that never
+        happened. A month end from before a holding was bought is priced, but keeping it would
+        join it straight to a later one across the months left out. While today itself is
+        unpriced, every month end stays, each a labelled floor.
+        """
+        reached = self._reached(parts)
+        if self._priced(parts, self.books.today):
+            unpriced = [i for i, v in enumerate(reached) if not self._priced(parts, v)]
+            reached = reached[unpriced[-1] + 1 :] if unpriced else reached
+        return [*reached, self.books.today]
+
+    def priced_from(self, parts: Sequence[Part]) -> date | None:
+        """The day `history` starts on when it leaves out month ends for want of prices."""
+        history = self.history(parts)
+        if len(history) - 1 == len(self._reached(parts)):
+            return None
+        return history[0].as_of
+
+    def _reached(self, parts: Sequence[Part]) -> list[NetWorth]:
+        """Month ends after the first of `parts`' accounts opened, that the ledger reaches."""
+        opened = {c.account: c.opened for c in self.books.coverage}
+        days = [
+            opened[a.ledger_account]
+            for p in parts
+            for a in p.accounts
+            if a.ledger_account in opened
+        ]
+        return [
+            valuation
+            for valuation in self.books.month_ends
+            if days
+            and min(days) <= valuation.as_of
+            and all(self.reaches(part, valuation) for part in parts)
+        ]
+
+    @staticmethod
+    def _priced(parts: Sequence[Part], valuation: NetWorth) -> bool:
+        return all(figures.worth(valuation, part).complete for part in parts)
 
     @property
     def month_start_valuation(self) -> NetWorth:

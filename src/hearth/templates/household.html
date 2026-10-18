@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, part_avatar, as_table, unreviewed_sub, unreviewed_caveat %}
+{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, part_avatar, as_table, priced_from_note, unreviewed_sub, unreviewed_caveat %}
 {% set h = household %}
 {% set head = h.headline %}
 {% set books = status.books %}
@@ -40,7 +40,7 @@
               {{ delta(head.over_year, "in 12 months") }}
             </div>
             {% endif %}
-            {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on) %}{% if lag %} {{ plural(lag.accounts, "account") }} not updated{% if lag.since %} since {{ lag.since | day }}{% endif %}.{% endif %}{% if head.is_partial %} Past months leave {{ head.without | names("name") }} out too, so trends compare like with like.{% else %} <a href="/net-worth">How it adds up</a>{% endif %}{% endcall %}
+            {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on, head.ends) %}{% if lag %} {{ plural(lag.accounts, "account") }} not updated{% if lag.since %} since {{ lag.since | day }}{% endif %}.{% endif %}{% if head.is_partial %} Past months leave {{ head.without | names("name") }} out too, so trends compare like with like.{% else %} <a href="/net-worth">How it adds up</a>{% endif %}{% endcall %}
           </div>
 
           {% if h.composition %}
@@ -87,6 +87,7 @@
           <div class="chart-wrap mt-3">
 {{ charts.net_worth }}
           </div>
+          {{ priced_from_note(h.priced_from) }}
           {% if h.history | selectattr("is_floor") | list %}
           <p class="xs faint mt-2">Months with a holding that had no price are floors, marked "at least" in the table: the line runs at or below the true figure there.</p>
           {% endif %}
@@ -102,21 +103,23 @@
     <section class="panel" aria-labelledby="sp-h">
       <div class="panel-head">
         <h2 id="sp-h">Spending by month</h2>
-        <p class="finding">{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
+        <p class="finding">{% if sp.covered %}{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% else %}The ledger does not reach far enough into {{ month_name }} to say what it has come to.{% endif %}{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
       </div>
       <div class="panel-body">
         <div class="figs" style="margin-bottom: var(--s-5)">
           <div>
             <p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
-            <p class="fig-value">{{ sp.spent | hero }}</p>
+            {% if sp.covered %}<p class="fig-value">{{ sp.spent | hero }}</p>{% else %}<p class="fig-value muted">&ndash;</p>
+            <p class="fig-sub">History incomplete</p>{% endif %}
             {% if sp.spent_without %}<p class="fig-sub">{{ private("Without " ~ (sp.spent_without | names("name"))) }}</p>{% endif %}
-            {{ unreviewed_sub(sp.spent_unreviewed) }}
+            {% if sp.covered %}{{ unreviewed_sub(sp.spent_unreviewed) }}{% endif %}
           </div>
           <div>
             <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
-            <p class="fig-value">{{ sp.earned | hero }}</p>
+            {% if sp.covered %}<p class="fig-value">{{ sp.earned | hero }}</p>{% else %}<p class="fig-value muted">&ndash;</p>
+            <p class="fig-sub">History incomplete</p>{% endif %}
             {% if sp.earned_without %}<p class="fig-sub">{{ private("Without " ~ (sp.earned_without | names("name"))) }}</p>{% endif %}
-            {{ unreviewed_sub(sp.earned_unreviewed) }}
+            {% if sp.covered %}{{ unreviewed_sub(sp.earned_unreviewed) }}{% endif %}
           </div>
           <div>
             <p class="fig-label">Saved in {{ saved_month_name }}</p>
@@ -157,9 +160,12 @@
       <div class="panel-head">
         <h2 id="cat-h">Where {{ month_name }} went</h2>
         {% set over = cats.most_over %}
-        <p class="finding">{% if over %}{{ over.name }} is <strong class="tnum">{{ over.over_by | dollars }}</strong> above where it usually is by the {{ ordinal_today }}.{% elif cats.has_typical %}Everything is close to typical for this point in the month.{% elif cats.rows or cats.fixed %}By category, {{ month_abbr }} 1&ndash;{{ cats.to_day }}.{% if cats.timed and cats.rows %} There is not enough history yet to compare with a typical month.{% endif %}{% else %}Nobody shares spending by category yet.{% endif %}</p>
+        {% if sp.covered %}<p class="finding">{% if over %}{{ over.name }} is <strong class="tnum">{{ over.over_by | dollars }}</strong> above where it usually is by the {{ ordinal_today }}.{% elif cats.has_typical %}Everything is close to typical for this point in the month.{% elif cats.rows or cats.fixed %}By category, {{ month_abbr }} 1&ndash;{{ cats.to_day }}.{% if cats.timed and cats.rows %} There is not enough history yet to compare with a typical month.{% endif %}{% else %}Nobody shares spending by category yet.{% endif %}</p>{% endif %}
       </div>
       <div class="panel-body">
+        {% if not sp.covered %}
+        <p class="muted">History incomplete.</p>
+        {% else %}
         {% set scale = cats.scale if cats.scale > 0 else 1 %}
         {% for bill in cats.fixed %}
         <p class="fixed-row"><span><span class="muted">Fixed:</span> {{ bill.name }}, paid {{ bill.paid_on | day }}</span><span class="tnum">{{ bill.amount | money }}</span></p>
@@ -187,8 +193,9 @@
           {% if cats.has_typical %}<span class="k"><i class="tick"></i>Typical by the {{ ordinal_today }}</span>{% endif %}
         </div>
         {% endif %}
+        {% endif %}
       </div>
-      {% if cats.unreviewed.leans or cats.unreviewed.unknown %}
+      {% if sp.covered and (cats.unreviewed.leans or cats.unreviewed.unknown) %}
       <div class="panel-foot">
         <span>{% if cats.unreviewed.leans %}Includes <span class="tnum">{{ cats.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ unreviewed_caveat(cats.unreviewed) }}</span>
         {% if review_count %}<a href="/review">Review yours</a>{% endif %}

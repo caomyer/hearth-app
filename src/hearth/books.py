@@ -18,23 +18,26 @@ Nothing here decides who may see what; pages reach the books only through
 import logging
 import sqlite3
 import threading
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from typing import Any
 
 from beancount import loader
-from beancount.core.data import Directive, Transaction
+from beancount.core.data import Balance, Directive, Transaction
 from beancount.core.interpolate import BalanceError
 
 from hearth import db
 from hearth.clock import Clock
 from hearth.months import Month
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
+from hearth.reports.common import is_balance_sheet, root
 from hearth.reports.coverage import AccountCoverage, account_coverage
 from hearth.review.decision import Decision
 from hearth.review.overlay import reviewed
 from hearth.review.pile import PileItem, read_pile
+from hearth.valuation import institution
 from hearth.valuation.holdings import holdings_at
 from hearth.valuation.networth import NetWorth, PriceLookup, value_holdings
 from hearth.valuation.pricestore import PriceStore
@@ -46,10 +49,14 @@ CURRENCY = "USD"
 HISTORY_MONTHS = 12
 DAILY_AT = time(6, 0)
 
-PRICE_SOURCES = ("eodhd", "hand")
-"""Where stored prices come from: the market data source, and prices a member typed in.
+BEHIND_AFTER = timedelta(days=7)
+"""A ledger a few days short is a feed that has not caught up; a week short is worth saying."""
 
-A hand-entered price is stored under its own source, so it never passes as the source's.
+PRICE_SOURCES = ("eodhd", institution.SOURCE, "hand")
+"""Where stored prices come from: the market data source, the price each institution reports
+for its own holdings through Plaid, and prices a member typed in.
+
+Each is stored under its own source, so none ever passes as another's.
 """
 
 
@@ -71,10 +78,20 @@ class Books:
     pile: tuple[PileItem, ...]
     """Every review row as the import wrote it, before any ruling: the `!` entries that carry
     a review id. `entries` hold the same rows as their rulings make them."""
+    account_ends: dict[str, date] = field(default_factory=dict)
+    """Each balance-sheet account's last day in the ledger, by the rule of `account_ends`."""
+    account_reaches: dict[str, Reach] = field(default_factory=dict)
+    """How far each balance-sheet account reaches in the ledger, by month (`account_reaches`)."""
+    flowing: frozenset[str] = frozenset()
+    """Balance-sheet accounts that can move a spending or income figure (`flowing`)."""
 
     @property
     def month(self) -> Month:
         return Month.of(self.as_of)
+
+    def behind(self, day: date) -> bool:
+        """Whether data ending on `day` stops long enough before the recompute to say so."""
+        return self.computed_at.date() - day > BEHIND_AFTER
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,7 +139,7 @@ def load_entries(path: Path) -> tuple[Directive, ...]:
     owners alone. Beancount's own messages name accounts and amounts, so no other error's
     message is ever passed on: only where it is, which is enough to find it.
     """
-    entries, errors, _ = loader.load_file(str(path))
+    entries, errors, _ = _read(path)
     problems = [error for error in errors if not isinstance(error, BalanceError)]
     if problems:
         source = getattr(problems[0], "source", None) or {}
@@ -131,6 +148,17 @@ def load_entries(path: Path) -> tuple[Directive, ...]:
         summary = f"The ledger has {count} error{'s' if count > 1 else ''} hearth cannot read past"
         raise LedgerError(f"{summary}{f', the first at {where}' if where else ''}.")
     return tuple(entries)
+
+
+def _read(path: Path) -> tuple[list[Directive], list[Any], Any]:
+    """Load the ledger without touching the directory it lives in.
+
+    `loader.load_file` goes through beancount's pickle cache, which writes a
+    `.<name>.picklecache` beside the ledger whenever a load takes over a second, and deletes
+    one it finds stale. The ledger and its directory belong to the household, and hearth only
+    reads them, so the cache is bypassed for the loader's own uncached path.
+    """
+    return loader._load([(str(path), True)], None, None, None)
 
 
 type Decide = Callable[[Sequence[PileItem]], Mapping[str, Decision]]
@@ -164,8 +192,106 @@ def compute(
         today=worth(today),
         month_ends=tuple(worth(day) for day in month_ends(today, HISTORY_MONTHS)),
         coverage=tuple(account_coverage(entries, as_of=today)),
+        account_ends=account_ends(entries, today),
+        account_reaches=account_reaches(entries, today),
+        flowing=flowing(entries),
         pile=pile,
     )
+
+
+def account_ends(entries: Sequence[Directive], today: date) -> dict[str, date]:
+    """The last day the ledger knows about each balance-sheet account, or `today` if earlier.
+
+    That is the account's newest transaction, or the day before its newest balance assertion,
+    which states the balance at the start of its day and so vouches for everything before it:
+    a statement import closes each cycle that way. The ledger knows nothing about the days
+    after: a statement import stops at its period's end, and a bank feed stops when it last
+    ran. Accounts with neither are left out.
+    """
+    ends: dict[str, date] = {}
+    for account, entry in _account_entries(entries):
+        day = min(_known_through(entry), today)
+        if day > ends.get(account, date.min):
+            ends[account] = day
+    return ends
+
+
+@dataclass(frozen=True, slots=True)
+class Reach:
+    """The newest month an account has a transaction in, and a balance assertion in.
+
+    Months only, never days: which months count as complete must not tell anyone the day an
+    account's money last moved.
+    """
+
+    transacted: Month | None = None
+    asserted: Month | None = None
+
+    def holds(self, month: Month, current: Month) -> bool:
+        """Whether the account's data is whole for `month`, `current` being this month.
+
+        A past month is whole once a transaction or a balance assertion is dated in a later
+        month: a statement closing on Sep 30 is imported with an Oct 1 assertion, which makes
+        September whole. This month is whole only with a transaction in it, as an assertion
+        dated in it says nothing about the rest of the month.
+        """
+        if month == current:
+            return self.transacted == current
+        return any(
+            newest is not None and newest > month for newest in (self.transacted, self.asserted)
+        )
+
+
+def account_reaches(entries: Sequence[Directive], today: date) -> dict[str, Reach]:
+    """Each balance-sheet account's `Reach`, counting an entry dated after `today` as today's."""
+    reaches: dict[str, Reach] = {}
+    for account, entry in _account_entries(entries):
+        month = Month.of(min(entry.date, today))
+        reach = reaches.get(account, Reach())
+        if isinstance(entry, Transaction) and (
+            reach.transacted is None or month > reach.transacted
+        ):
+            reach = Reach(month, reach.asserted)
+        elif isinstance(entry, Balance) and (reach.asserted is None or month > reach.asserted):
+            reach = Reach(reach.transacted, month)
+        reaches[account] = reach
+    return reaches
+
+
+def flowing(entries: Sequence[Directive]) -> frozenset[str]:
+    """Balance-sheet accounts with a posting beside an Expenses or Income one anywhere.
+
+    Only they can move a spending or income figure; an account that only ever takes transfers,
+    such as a retirement account, cannot.
+    """
+    return frozenset(
+        posting.account
+        for entry in entries
+        if isinstance(entry, Transaction)
+        and any(root(p.account) in ("Expenses", "Income") for p in entry.postings)
+        for posting in entry.postings
+        if is_balance_sheet(posting.account)
+    )
+
+
+def _account_entries(
+    entries: Sequence[Directive],
+) -> Iterator[tuple[str, Transaction | Balance]]:
+    """Each balance-sheet account with each transaction or balance assertion that names it."""
+    for entry in entries:
+        if isinstance(entry, Transaction):
+            accounts = {posting.account for posting in entry.postings}
+        elif isinstance(entry, Balance):
+            accounts = {entry.account}
+        else:
+            continue
+        for account in accounts:
+            if is_balance_sheet(account):
+                yield account, entry
+
+
+def _known_through(entry: Transaction | Balance) -> date:
+    return entry.date if isinstance(entry, Transaction) else entry.date - timedelta(days=1)
 
 
 def _set_aside(entry: Directive) -> bool:

@@ -48,5 +48,6 @@ Each has its own document; this one says which module answers which question.
 
 - `hearth.figures` (foundation) and `hearth.reports` both compute member spending: `figures` over the `Ledger` protocol, which has only an in-memory implementation, and `reports` over beancount entries.
   The beancount-backed `Ledger` should delegate to `reports`, so each figure has one implementation.
-- Prices: no EODHD key exists until the plan is bought, so every fund values as unpriced; the daily refresh schedule and the two-year backfill wait on the key (`docs/valuation.md`).
-- Review: rulings are laid over the ledger at each recompute and never written back to the ledger file; an importer that writes rows must assign review ids by the same contract (`review.ids`) for rulings to follow them.
+- Prices: the household values holdings at each institution's own price (`valuation.institution`), a reader awaiting its producer. The holdings fetch is not implemented. It needs Plaid's Investments product, which the captain's brokerage Item is not consented to and which is separately billed. Until that decision is made and the fetch is built, the `plaid` price source yields nothing and every fund values as unpriced (`docs/valuation.md`).
+- Review: rulings are laid over the ledger at each recompute and never written back to the ledger file.
+  Plaid snapshots go through the same `bcng import` stage as statements, so their rows carry review ids by the same contract (`review.ids`), a proposed account and the categoriser's confidence, and rulings follow them.

@@ -2,9 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from hearth import db, members
+from hearth import accounts, audit, db, members
+from hearth.audit import EventKind
 from hearth.cli import main
-from hearth.config import DATA_DIR_VARIABLE
+from hearth.config import DATA_DIR_VARIABLE, LEDGER_VARIABLE
 from tests.conftest import World
 
 
@@ -76,3 +77,149 @@ def test_every_connection_is_listed_with_its_last_successful_sync(
         assert "accounts=2" in line
         assert "last-sync=2026-10-15" in line
     assert out.count("5 of 10 connections remaining (1 in hearth, 4 elsewhere)") == 3
+
+
+LEDGER = """
+2026-01-01 open Assets:Zq:Joint USD
+2026-01-01 open Liabilities:Zq:Card USD
+2026-01-01 open Expenses:Zq:Food USD
+"""
+
+
+@pytest.fixture
+def household(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    ledger = tmp_path / "ledger" / "household.beancount"
+    ledger.parent.mkdir()
+    ledger.write_text(LEDGER)
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(tmp_path / "data"))
+    monkeypatch.setenv(LEDGER_VARIABLE, str(ledger))
+    main(["add-member", "avery", "--name", "Avery", "--admin"])
+    main(["add-member", "blake", "--name", "Blake"])
+    return tmp_path
+
+
+def test_a_joint_account_is_claimed_for_each_of_its_owners(
+    household: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    capsys.readouterr()
+    main(
+        [
+            "add-account",
+            "Assets:Zq:Joint",
+            "--name",
+            "Joint",
+            "--owner",
+            "avery",
+            "--owner",
+            "Blake",
+        ]
+    )
+
+    assert capsys.readouterr().out == "Joint is Avery and Blake's.\n"
+    conn = db.connect(household / "data" / "hearth.sqlite3")
+    try:
+        (claimed,) = accounts.all_accounts(conn)
+        claims = [e for e in audit.all_events(conn) if e.kind is EventKind.ACCOUNT_CLAIMED]
+        avery, blake = members.find(conn, "avery"), members.find(conn, "blake")
+    finally:
+        conn.close()
+    assert avery is not None
+    assert blake is not None
+    assert (claimed.ledger_account, claimed.name) == ("Assets:Zq:Joint", "Joint")
+    assert claimed.owners == {avery.id, blake.id}
+    assert sorted(e.subject_id for e in claims if e.subject_id) == sorted([avery.id, blake.id])
+
+
+def test_an_owner_named_twice_owns_the_account_once(
+    household: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    capsys.readouterr()
+    main(
+        [
+            "add-account",
+            "Liabilities:Zq:Card",
+            "--name",
+            "Card",
+            "--owner",
+            "avery",
+            "--owner",
+            "Avery",
+        ]
+    )
+
+    assert capsys.readouterr().out == "Card is Avery's.\n"
+    conn = db.connect(household / "data" / "hearth.sqlite3")
+    try:
+        (claimed,) = accounts.all_accounts(conn)
+        claims = [e for e in audit.all_events(conn) if e.kind is EventKind.ACCOUNT_CLAIMED]
+        avery = members.find(conn, "avery")
+    finally:
+        conn.close()
+    assert avery is not None
+    assert claimed.owners == {avery.id}
+    assert [e.subject_id for e in claims] == [avery.id]
+
+
+def test_an_account_is_claimed_once_and_never_reassigned(household: Path) -> None:
+    main(["add-account", "Liabilities:Zq:Card", "--name", "Card", "--owner", "avery"])
+
+    with pytest.raises(SystemExit, match="hearth: Liabilities:Zq:Card is already claimed"):
+        main(["add-account", "Liabilities:Zq:Card", "--name", "Card", "--owner", "blake"])
+
+
+@pytest.mark.parametrize(
+    ("arguments", "refusal"),
+    [
+        (["Assets:Zq:Typo", "--owner", "avery"], "the ledger opens no Assets or Liabilities"),
+        (["Expenses:Zq:Food", "--owner", "avery"], "the ledger opens no Assets or Liabilities"),
+        (["Assets:Zq:Joint", "--owner", "nobody"], "there is no member nobody"),
+    ],
+)
+def test_a_claim_hearth_cannot_honour_is_refused_plainly(
+    household: Path, arguments: list[str], refusal: str
+) -> None:
+    with pytest.raises(SystemExit, match=f"hearth: {refusal}"):
+        main(["add-account", *arguments[:1], "--name", "X", *arguments[1:]])
+
+
+def test_the_ledgers_accounts_are_listed_with_their_owners(
+    household: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(
+        [
+            "add-account",
+            "Assets:Zq:Joint",
+            "--name",
+            "Joint",
+            "--owner",
+            "avery",
+            "--owner",
+            "blake",
+        ]
+    )
+    capsys.readouterr()
+
+    main(["accounts"])
+
+    assert capsys.readouterr().out.splitlines() == [
+        "Assets:Zq:Joint  Joint  avery, blake",
+        "Liabilities:Zq:Card  -  unclaimed",
+    ]
+
+
+def test_claiming_reads_the_ledger_and_writes_nothing_beside_it(household: Path) -> None:
+    folder = household / "ledger"
+    before = sorted(path.name for path in folder.iterdir())
+
+    main(["accounts"])
+    main(["add-account", "Assets:Zq:Joint", "--name", "Joint", "--owner", "avery"])
+
+    assert sorted(path.name for path in folder.iterdir()) == before
+
+
+def test_claiming_needs_the_ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(tmp_path))
+    monkeypatch.delenv(LEDGER_VARIABLE, raising=False)
+
+    with pytest.raises(SystemExit, match="hearth: set HEARTH_LEDGER"):
+        main(["accounts"])

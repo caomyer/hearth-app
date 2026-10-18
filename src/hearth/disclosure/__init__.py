@@ -137,7 +137,7 @@ class AccountView:
     id: str
     name: str
     owners: tuple[MemberRef, ...]
-    spans: tuple[Span, ...]
+    spans: Disclosed[tuple[Span, ...]]
     kind: Disclosed[str]
     balance: Disclosed[Worth]
     month: Month
@@ -205,7 +205,9 @@ class Disclosure:
             id=account.id,
             name=account.name,
             owners=tuple(h.ref(m) for m in h.members if m.id in account.owners),
-            spans=coverage.spans if coverage else (),
+            spans=self._gate.disclose(
+                Facet.TRANSACTIONS, account.owners, lambda: coverage.spans if coverage else ()
+            ),
             kind=row.kind if isinstance(row, AccountRow) else WITHHELD,
             balance=row.value if isinstance(row, AccountRow) else WITHHELD,
             month=month,

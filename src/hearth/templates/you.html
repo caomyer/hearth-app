@@ -13,10 +13,13 @@
       {{ avatar(me.member, large=true) }}
       <div>
         <h1>{{ me.member.display_name }}</h1>
-        {% if not me.connected %}
+        {% set joint_with = me.joint | map(attribute="part") | map(attribute="owners") | first | default([]) | rejectattr("username", "equalto", me.member.username) | list %}
+        {% if not me.connected and me.joint %}
+        <p class="sub">Your own accounts, once you connect them. Joint accounts with {{ joint_with | names }} are on <a href="/net-worth#joint">Net worth</a>.</p>
+        {% elif not me.connected %}
         <p class="sub">Your own accounts, once you connect them.</p>
         {% elif me.joint %}
-        <p class="sub">Your own accounts. Joint accounts with {{ me.joint | map(attribute="part") | map(attribute="owners") | first | rejectattr("username", "equalto", me.member.username) | list | names }} are on <a href="/net-worth#joint">Net worth</a>.</p>
+        <p class="sub">Your own accounts. Joint accounts with {{ joint_with | names }} are on <a href="/net-worth#joint">Net worth</a>.</p>
         {% else %}
         <p class="sub">Your own accounts.</p>
         {% endif %}
@@ -86,22 +89,28 @@
           <div class="hero-meta">
             {{ delta(me.change, since) }}
           </div>
-          {% call asof(books, status, today, notice, 0, me.worth.unpriced) %}{% if me.joint %} Joint accounts ({{ me.joint_total | dollars }}), which you own with others, are counted once in the household total instead.{% endif %}{% endcall %}
+          {% call asof(books, status, today, notice, 0, me.worth.unpriced, ends=me.ends) %}{% if me.joint %} Joint accounts ({{ me.joint_total | dollars }}), which you own with others, are counted once in the household total instead.{% endif %}{% endcall %}
         </div>
         {% set totals = me.totals %}
         <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
           <div>
             <div class="row between"><p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p></div>
+            {% if totals.covered %}
             <p class="fig-value">{{ totals.spent | hero }}</p>
             {% if totals.over_typical is not none %}
             <p class="fig-sub">{{ delta(totals.over_typical, ("over" if totals.over_typical > 0 else "under") ~ " typical by the " ~ ordinal_today, rising_is_good=false) }}</p>
             {% endif %}
             {{ unreviewed_sub(totals.spent_unreviewed, "/review") }}
+            {% else %}<p class="fig-value muted">&ndash;</p>
+            <p class="fig-sub">History incomplete</p>{% endif %}
           </div>
           <div>
             <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p>
+            {% if totals.covered %}
             <p class="fig-value">{{ totals.earned | hero }}</p>
             <p class="fig-sub">{% if totals.payments_in == 0 %}Nothing paid in yet{% else %}{{ plural(totals.payments_in, "payment") }} in{% endif %}</p>
+            {% else %}<p class="fig-value muted">&ndash;</p>
+            <p class="fig-sub">History incomplete</p>{% endif %}
           </div>
         </div>
       </div>
@@ -138,13 +147,18 @@
       <div class="panel-head">
         <h2 id="pace-h">{{ month_name }} spending, day by day</h2>
         {{ shared("Transactions") }}
-        {% if totals.over_typical is not none %}
+        {% if not totals.covered %}
+        <p class="finding">The ledger does not reach far enough into {{ month_name }} to say what it has come to.</p>
+        {% elif totals.over_typical is not none %}
         <p class="finding">You are <strong class="tnum">{{ (totals.over_typical | abs) | dollars }}</strong> {{ "above" if totals.over_typical > 0 else "below" }} a typical {{ month_name }} at this point.</p>
         {% elif me.pace.typical | length == 0 %}
         <p class="finding">There is not enough history yet to say what a typical month looks like.</p>
         {% endif %}
       </div>
       <div class="panel-body">
+        {% if not totals.covered %}
+        <p class="muted">History incomplete.</p>
+        {% else %}
         <figure>
           <figcaption class="vh" id="pace-t">Your cumulative spending in {{ month_name }} against your typical month</figcaption>
           <div class="chart-wrap">
@@ -170,6 +184,7 @@
             </table>
           </details>
         </figure>
+        {% endif %}
       </div>
     </section>
 
@@ -180,6 +195,9 @@
         {{ shared("Spending by category") }}
       </div>
       <div class="panel-body">
+        {% if not totals.covered %}
+        <p class="muted">History incomplete.</p>
+        {% else %}
         {% for bill in cats.fixed %}
         <p class="fixed-row"><span><span class="muted">Fixed:</span> {{ bill.name }}, paid {{ bill.paid_on | day }}</span><span class="tnum">{{ bill.amount | money }}</span></p>
         {% endfor %}
@@ -202,8 +220,9 @@
         {% elif not cats.fixed %}
         <p class="muted">No spending yet this month.</p>
         {% endif %}
+        {% endif %}
       </div>
-      {% if cats.unreviewed.leans %}
+      {% if totals.covered and cats.unreviewed.leans %}
       <div class="panel-foot"><span>Includes <span class="tnum">{{ cats.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.</span></div>
       {% endif %}
     </section>

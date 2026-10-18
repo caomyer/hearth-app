@@ -16,6 +16,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoes
 from markupsafe import Markup, escape
 
 from hearth.disclosure import Withheld
+from hearth.months import Month
 
 _CENT = Decimal("0.01")
 _DOLLAR = Decimal(1)
@@ -84,9 +85,9 @@ def year_day(value: date) -> str:
     return f"{value:%b} {value.day}, {value.year}"
 
 
-def month_year(value: date) -> str:
+def month_year(value: date | Month) -> str:
     """ "Oct 2024"."""
-    return f"{value:%b %Y}"
+    return f"{date(value.year, value.month, 1):%b %Y}"
 
 
 def clock_time(value: datetime) -> str:

@@ -10,6 +10,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 - Server-rendered only: never add an endpoint that returns data as JSON.
 - No live Plaid call without the captain's approval for that step: the client refuses unless the run was started with `--approve-plaid OPERATION` (or `hearth plaid ... --approved`). Build and test against `hearth.plaid.fake`, which the demo also uses. What Plaid sends lives in `feed.sqlite3`, never the app database. See `docs/connections.md`.
 - Figures come from `hearth.books`: one recompute of the beancount ledger at `HEARTH_LEDGER`, daily and on request, never on page load. `uv run hearth demo` serves an invented household through the same path.
+- The ledger is the household's and read-only: load it only through `books.load_entries`, never `loader.load_file`, whose pickle cache writes beside the ledger (`tests/test_books.py`). Serving a real one: `docs/real-ledger.md`.
 - Every imported row is in the books; review rulings live in the app database and each recompute lays them over the ledger, which hearth never writes. Unreviewed rows stay `!`, and any new total must say how much rests on them without revealing another member's queue (`docs/review.md`).
 - Pages follow `design/` exactly: the app serves `design/hearth.css` and `design.js` byte for byte (a test checks); additions go in `src/hearth/static/app.css`.
 - `design/` belongs to the design crew; do not edit it from app work.

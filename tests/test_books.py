@@ -1,11 +1,138 @@
-"""The bookkeeper: one recompute at a time, and none asked for is ever dropped."""
+"""The books: the ledger read without a trace beside it, how far each account reaches, and
+one recompute at a time with none asked for ever dropped."""
 
 import threading
-from datetime import UTC, datetime
+import time
+from datetime import UTC, date, datetime
+from pathlib import Path
 
+import pytest
+from beancount import loader
+from beancount.core.data import Directive
+from beancount.parser import parser
+
+from hearth import books
 from hearth.books import Bookkeeper, Books
+from hearth.months import Month
 from hearth.valuation.networth import NetWorth
 from tests.conftest import FakeClock
+
+LEDGER = """
+option "operating_currency" "USD"
+2026-01-01 open Assets:Checking USD
+2026-01-01 open Expenses:Food USD
+2026-01-05 * "Grocer" "Groceries"
+  Expenses:Food  12.50 USD
+  Assets:Checking
+"""
+
+
+def _contents(directory: Path) -> dict[str, tuple[int, bytes]]:
+    return {path.name: (path.stat().st_mtime_ns, path.read_bytes()) for path in directory.iterdir()}
+
+
+def test_loading_leaves_a_stale_cache_beside_the_ledger_alone(tmp_path: Path) -> None:
+    ledger = tmp_path / "household.beancount"
+    ledger.write_text(LEDGER)
+    # Beancount's cached loader deletes a cache it cannot trust; this one is not even a pickle.
+    (tmp_path / ".household.beancount.picklecache").write_bytes(b"not a pickle")
+    before = _contents(tmp_path)
+
+    entries = books.load_entries(ledger)
+
+    assert len(entries) == 3
+    assert _contents(tmp_path) == before
+
+
+def test_a_slow_load_writes_no_cache_beside_the_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = tmp_path / "household.beancount"
+    ledger.write_text(LEDGER)
+    parse_file = parser.parse_file
+
+    def slow_parse(*args: object, **kwargs: object) -> object:
+        # Past the one-second threshold over which beancount's loader caches a result.
+        time.sleep(loader.PICKLE_CACHE_THRESHOLD + 0.1)
+        return parse_file(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(parser, "parse_file", slow_parse)
+
+    books.load_entries(ledger)
+
+    assert [path.name for path in tmp_path.iterdir()] == ["household.beancount"]
+
+
+def _entries(text: str) -> tuple[Directive, ...]:
+    entries, errors, _ = loader.load_string(LEDGER + text)
+    assert not errors
+    return tuple(entries)
+
+
+def _computed(on: datetime) -> books.Books:
+    return books.compute(_entries(""), lambda symbol, day: None, now=on, decide=lambda pile: {})
+
+
+def test_figures_are_as_of_today_however_early_the_ledger_stops() -> None:
+    computed = _computed(datetime(2026, 3, 1, 9, tzinfo=UTC))
+
+    assert computed.as_of == date(2026, 3, 1)
+    assert computed.month_ends[-1].as_of == date(2026, 2, 28)
+    assert computed.account_ends == {"Assets:Checking": date(2026, 1, 5)}
+
+
+def test_an_account_reaches_the_months_of_its_newest_entries_by_their_own_dates() -> None:
+    entries = _entries(
+        "2026-01-01 open Liabilities:Card USD\n"
+        '2026-01-03 * "Shop"\n  Liabilities:Card  -3.00 USD\n  Expenses:Food\n'
+        "2026-02-01 balance Assets:Checking  -12.50 USD\n"
+    )
+
+    assert books.account_reaches(entries, date(2026, 3, 1)) == {
+        "Assets:Checking": books.Reach(Month(2026, 1), Month(2026, 2)),
+        "Liabilities:Card": books.Reach(Month(2026, 1), None),
+    }
+    assert books.account_reaches(entries, date(2026, 1, 20)) == {
+        "Assets:Checking": books.Reach(Month(2026, 1), Month(2026, 1)),
+        "Liabilities:Card": books.Reach(Month(2026, 1), None),
+    }
+
+
+def test_an_assertion_makes_the_months_before_it_whole_but_not_its_own() -> None:
+    asserted = books.Reach(Month(2026, 9), Month(2026, 10))
+    october = Month(2026, 10)
+
+    assert asserted.holds(Month(2026, 9), current=october)
+    assert not asserted.holds(october, current=october)
+    assert books.Reach(october, None).holds(october, current=october)
+    assert not books.Reach(Month(2026, 9), Month(2026, 9)).holds(Month(2026, 9), october)
+
+
+def test_an_account_never_ends_after_today() -> None:
+    assert books.account_ends(_entries(""), date(2026, 1, 2)) == {
+        "Assets:Checking": date(2026, 1, 2)
+    }
+
+
+def test_each_account_ends_on_its_own_last_day() -> None:
+    entries = _entries(
+        "2026-01-01 open Liabilities:Card USD\n"
+        '2026-01-03 * "Shop"\n  Liabilities:Card  -3.00 USD\n  Expenses:Food\n'
+        "2026-02-01 balance Assets:Checking  -12.50 USD\n"
+    )
+
+    assert books.account_ends(entries, date(2026, 3, 1)) == {
+        "Assets:Checking": date(2026, 1, 31),
+        "Liabilities:Card": date(2026, 1, 3),
+    }
+
+
+def test_data_a_few_days_short_is_not_called_behind() -> None:
+    computed = _computed(datetime(2026, 1, 12, 9, tzinfo=UTC))
+
+    assert not computed.behind(date(2026, 1, 5))
+    assert computed.behind(date(2026, 1, 4))
+
 
 NOW = datetime(2026, 10, 18, 9, 0, tzinfo=UTC)
 

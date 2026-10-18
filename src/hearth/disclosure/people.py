@@ -14,7 +14,15 @@ from decimal import Decimal
 
 from hearth import figures
 from hearth.accounts import Account
-from hearth.disclosure.common import Household, MemberRef, PartRef, Unreviewed, Worth, unreviewed
+from hearth.disclosure.common import (
+    DataEnds,
+    Household,
+    MemberRef,
+    PartRef,
+    Unreviewed,
+    Worth,
+    unreviewed,
+)
 from hearth.disclosure.gate import Concealed, Disclosed
 from hearth.disclosure.household import CategoryPanel, category_panel
 from hearth.figures import Line, MonthFlows, Part
@@ -34,9 +42,12 @@ class AccountRow:
     owners: tuple[MemberRef, ...]
     value: Worth
     stale: bool
-    spans: tuple[Span, ...]
-    gaps: int
-    updated: date | None
+    since: Month | None
+    """The month the account's history in the ledger starts."""
+    spans: Disclosed[tuple[Span, ...]]
+    updated: Disclosed[date | None]
+    """Each source's days and the account's last day are when its money moved, which is
+    transaction detail, so they go with the transactions facet."""
 
     @property
     def is_owed(self) -> bool:
@@ -59,6 +70,9 @@ class Totals:
 
     month: Month
     to_day: int
+    covered: bool
+    """Whether the ledger reaches far enough into the month for its figures to mean anything;
+    when it does not, they are not shown as figures, nor set against typical."""
     spent: Disclosed[Decimal]
     earned: Disclosed[Decimal]
     payments_in: Disclosed[int]
@@ -68,7 +82,7 @@ class Totals:
 
     @property
     def over_typical(self) -> Decimal | None:
-        if self.typical_spent is None or not isinstance(self.spent, Decimal):
+        if not self.covered or self.typical_spent is None or not isinstance(self.spent, Decimal):
             return None
         return self.spent - self.typical_spent
 
@@ -97,6 +111,8 @@ class PersonView:
     accounts: Disclosed[tuple[AccountRow, ...]]
     days: Disclosed[tuple[Day, ...]]
     joint: tuple[Joint, ...]
+    ends: DataEnds | None
+    """Where this member's own data stops, when the page should say so."""
 
     @property
     def withheld(self) -> tuple[FacetDescription, ...]:
@@ -127,6 +143,7 @@ def person_of(h: Household, member: Member) -> PersonView:
         worth=h.disclosed_worth(part),
         change=h.change_since(part, h.month_start_valuation),
         totals=_totals(h, part, this_month),
+        ends=h.ends([part]),
         # Day by day is finer than "one number a month": it reads off when money went out,
         # which is transaction detail, so it needs the transactions facet.
         pace=gate.disclose(
@@ -192,6 +209,7 @@ def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
     return Totals(
         month=h.books.month,
         to_day=h.books.as_of.day,
+        covered=figures.flows_cover(h.books, part.accounts, h.books.month),
         spent=spent,
         earned=gate.disclose(
             Facet.MONTHLY_INCOME_TOTAL, part.owners, lambda: this_month.earned(part.owners)
@@ -226,7 +244,7 @@ def _covered_months(h: Household, part: Part, count: int) -> list[Month]:
     return [
         m
         for m in figures.past_months(h.books.month, count)
-        if figures.covers(h.books, part.accounts, m)
+        if figures.flows_cover(h.books, part.accounts, m)
     ]
 
 
@@ -249,9 +267,13 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
             tuple(p.holding.commodity for p in positions if p.freshness is Freshness.UNPRICED),
         ),
         stale=any(p.freshness is Freshness.STALE for p in positions),
-        spans=coverage.spans if coverage else (),
-        gaps=len(coverage.gaps) if coverage else 0,
-        updated=coverage.latest if coverage else None,
+        since=Month.of(coverage.spans[0].earliest) if coverage and coverage.spans else None,
+        spans=h.gate.disclose(
+            Facet.TRANSACTIONS, account.owners, lambda: coverage.spans if coverage else ()
+        ),
+        updated=h.gate.disclose(
+            Facet.TRANSACTIONS, account.owners, lambda: coverage.latest if coverage else None
+        ),
     )
 
 

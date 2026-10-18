@@ -26,6 +26,7 @@
               {% elif line.kind == "sign_in_failed" %}A sign-in as {{ name(line.subject) }} failed
               {% elif line.kind == "signed_out" %}{{ name(line.subject) }} signed out
               {% elif line.kind == "sharing_changed" %}{{ name(line.subject) }} {{ line.detail }}
+              {% elif line.kind == "account_claimed" %}An account was claimed for {{ name(line.subject) }} from the command line
               {% endif %}
             </td>
           </tr>

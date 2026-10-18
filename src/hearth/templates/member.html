@@ -34,7 +34,7 @@
           {% else %}
           {{ hero_value(m.worth.value, status, (), m.worth.unpriced) }}
           <div class="hero-meta">{{ delta(m.change, since) if m.change is not withheld else "" }}</div>
-          {% call asof(books, status, today, notice, 0, m.worth.unpriced) %} Excludes joint accounts{% if m.joint %}, shown below{% endif %}.{% endcall %}
+          {% call asof(books, status, today, notice, 0, m.worth.unpriced, ends=m.ends) %} Excludes joint accounts{% if m.joint %}, shown below{% endif %}.{% endcall %}
           {% endif %}
         </div>
         <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
@@ -43,6 +43,9 @@
             <p class="fig-label">{{ label }}, {{ month_abbr }} 1&ndash;{{ m.totals.to_day }}</p>
             {% if value is withheld %}
             <p class="fig-value">{{ private("Not shared") }}</p>
+            {% elif not m.totals.covered %}
+            <p class="fig-value muted">&ndash;</p>
+            <p class="fig-sub">History incomplete</p>
             {% else %}
             <p class="fig-value">{{ value | hero }}</p>
             {% set total_only = (label == "Spent" and m.categories is withheld) or (label == "Income" and m.days is withheld) %}
@@ -86,7 +89,7 @@
   </section>
   {% endif %}
 
-  {% if m.categories is not withheld and (m.categories.rows or m.categories.fixed) %}
+  {% if m.categories is not withheld and m.totals.covered and (m.categories.rows or m.categories.fixed) %}
   {% set cats = m.categories %}
   {% set scale = cats.scale if cats.scale > 0 else 1 %}
   <section class="panel mt-4" aria-labelledby="mcat-h">
@@ -151,7 +154,7 @@
           {% for row in joint.accounts %}
           <tr>
             <th scope="row"><a class="primary" href="/accounts/{{ row.id }}">{{ row.name }}</a></th>
-            <td class="col-hide-sm muted">{{ row.updated | day if row.updated else "" }}</td>
+            <td class="col-hide-sm muted">{{ row.updated | day if row.updated is not withheld and row.updated else "" }}</td>
             <td class="num"><span class="primary">{% if row.value.is_floor %}at least {% endif %}{{ row.value.value | money }}</span></td>
           </tr>
           {% endfor %}

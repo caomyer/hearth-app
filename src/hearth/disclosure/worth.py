@@ -18,6 +18,7 @@ from hearth.disclosure.common import Household, MemberRef, PartRef, Worth
 from hearth.disclosure.gate import Disclosed
 from hearth.disclosure.household import Headline, headline
 from hearth.figures import Part
+from hearth.months import Month
 from hearth.reports.common import units
 from hearth.sharing import Facet
 from hearth.valuation.networth import Freshness, NetWorth, Valued
@@ -89,6 +90,8 @@ class NetWorthView:
     moves: tuple[Move, ...]
     moves_cover: tuple[PartRef, ...]
     moves_leave_out: tuple[PartRef, ...]
+    moves_priced_from: date | None
+    """Where `moves` start when earlier month ends had no prices to value them at."""
     holdings: tuple[Holding, ...]
     private: tuple[PrivateHoldings, ...]
     provenance: Provenance
@@ -125,6 +128,7 @@ def net_worth(h: Household) -> NetWorthView:
         moves=_moves(h, moving),
         moves_cover=tuple(h.part_ref(p) for p in moving),
         moves_leave_out=tuple(h.part_ref(p) for p in parts if p not in moving),
+        moves_priced_from=h.priced_from(moving),
         holdings=tuple(
             holding
             for part in _viewer_first(h, detailed)
@@ -180,9 +184,11 @@ def _moves(h: Household, parts: Sequence[Part]) -> tuple[Move, ...]:
     if not parts:
         return ()
     accounts = frozenset(name for part in parts for name in part.ledger_accounts)
-    valuations = [*h.books.month_ends, h.books.today]
     moves = []
-    for before, after in pairwise(valuations):
+    for before, after in pairwise(h.history(parts)):
+        if Month.of(after.as_of) != Month.of(before.as_of).following():
+            moves.append(Move(after.as_of, None, None))
+            continue
         start_worth = [figures.worth(before, p) for p in parts]
         end_worth = [figures.worth(after, p) for p in parts]
         if not all(w.complete for w in [*start_worth, *end_worth]):

@@ -33,13 +33,18 @@
 {% endmacro %}
 
 {# When the figures were computed and from which prices, and what is behind them. #}
-{% macro asof(books, status, today, notice=none, stale=0, unpriced=(), price_day=none) %}
+{% macro asof(books, status, today, notice=none, stale=0, unpriced=(), price_day=none, ends=none) %}
 {% if status.recomputing %}
 <p class="asof mt-2" role="status"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Recomputing with today's prices. Showing {{ when(books.computed_at, today) }} until it finishes.</p>
 {% elif notice %}
 <p class="asof asof-old mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>Figures from {{ when(books.computed_at, today) }}. Today's are waiting on a fix.</p>
 {% else %}
 <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>Computed {{ when(books.computed_at, today) }}{% if price_day %}, with {{ price_day.strftime("%A") }}'s closing prices{% if stale %}, <a class="warn-link" href="/net-worth#stale">except {{ "one" if stale == 1 else stale }}</a>{% endif %}{% endif %}.{{ caller() if caller is defined else "" }}</p>
+{% endif %}
+{% if ends and ends.day %}
+<p class="asof asof-old mt-1"><svg aria-hidden="true"><use href="#i-clock"/></svg>{% if ends.stalest and ends.stalest.is_joint %}The joint accounts stop{% elif ends.stalest and ends.stalest.is_viewers %}Your accounts stop{% elif ends.stalest %}{{ ends.stalest.name }}’s accounts stop{% else %}The accounts behind this stop{% endif %} at {{ ends.day | day }}, so it is only as current as that. Nothing after it has been imported yet.</p>
+{% elif ends %}
+<p class="asof asof-old mt-1"><svg aria-hidden="true"><use href="#i-clock"/></svg>The accounts behind this figure end in {{ ends.month.label }}.</p>
 {% endif %}
 {% if unpriced %}
 <p class="asof asof-old mt-1"><svg aria-hidden="true"><use href="#i-clock"/></svg>A floor, not a total: no price for {{ unpriced | join("; ") }}.</p>
@@ -121,6 +126,12 @@
     {% endfor %}
   </tbody>
 </table>
+{% endmacro %}
+
+{% macro priced_from_note(day) %}
+{% if day %}
+<p class="asof asof-old mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>Starts on {{ day | day }}: the holdings have no price before then. An institution reports today's price only, so earlier months cannot be valued, and the line is not drawn through them at what the cash alone was worth.</p>
+{% endif %}
 {% endmacro %}
 
 {# How much of a total rests on rows nobody has reviewed yet, at their suggested category.

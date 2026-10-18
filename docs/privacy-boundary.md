@@ -44,6 +44,21 @@ Day-by-day spending, and "typical by the 18th", read off when money went out, so
 The same holds for categories: a category's "typical by this date", and the day a fixed bill was paid with its single payment, appear only where the viewer may see the transactions of every part in the panel.
 Anyone who sees only the category facet gets each category's amount for the month so far, with a fixed bill as an ordinary category row.
 
+The day a member's data stops is the day their money last moved, which is transaction detail too.
+A viewer who may see the transactions of every part behind a figure is told that day, once it is more than a week ago, and whose accounts stop there when they may see those accounts.
+Anyone else reads one fixed sentence on every such figure, whatever the day: "The accounts behind this figure end in October 2026."
+Its month is the earliest month any of the parts ends in, and nothing about it, whether it appears, its wording, or whose it names, depends on a day.
+Which months count as complete is decided the same way, by month alone (`figures.covers`).
+An account's "Updated" day and the days each of its sources covers go with the transactions facet too; a viewer who sees only its balance reads the month its history starts.
+
+### Sharing a total means sharing when it changes
+
+A member who shares a total shares every value it takes.
+Someone who looks at it day by day can tell on which days the sharer's money moved, because those are the days the total changed.
+They cannot tell how much moved in any one account, where it went, or what it was for.
+This is how a shared total works, not a gap in the boundary, and nothing tries to hide it.
+Anyone unwilling to reveal which days their money moves should not share the total.
+
 The dashboards and review add five more decisions, each in `hearth.access` and asked only through the gate:
 
 - A failed balance check names an account and amounts, so its detail is shown only to those who may see that account's balance; everyone else reads one sentence that names nothing.

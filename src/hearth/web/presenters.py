@@ -79,7 +79,7 @@ def household_charts(view: HouseholdView) -> dict[str, Markup]:
         ticks=_ticks(len(points)),
         median=view.spending.typical,
         current=len(points) - 1,
-        current_label=compact(bars[-1].spent),
+        current_label=compact(bars[-1].spent) if view.spending.covered else "\u2013",
     )
     return out
 
