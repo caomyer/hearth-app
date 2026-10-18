@@ -30,6 +30,16 @@ def may_see(
     return all(facet in sharing.get(owner, frozenset()) for owner in owners)
 
 
+def may_review(member: MemberId, owners: Collection[MemberId]) -> bool:
+    """Whether ``member`` may review, and rule on, set-aside rows of an account ``owners`` own.
+
+    Only an owner. Sharing grants nothing here: a member who shares their transactions shares
+    what has been booked, not the right to decide what gets booked. Being an admin grants
+    nothing. What nobody owns, nobody reviews.
+    """
+    return member in owners
+
+
 def may_administer(viewer: Member) -> bool:
     """Admins manage members and passwords. That is all being an admin means."""
     return viewer.is_admin

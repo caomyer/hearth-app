@@ -165,9 +165,19 @@ def test_the_app_database_holds_no_money(world: World) -> None:
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         ]
         columns = {
-            column[1] for table in tables for column in conn.execute(f"PRAGMA table_info({table})")
+            (table, column[1])
+            for table in tables
+            for column in conn.execute(f"PRAGMA table_info({table})")
         }
     finally:
         conn.close()
     money_words = ("amount", "balance", "total", "value", "price", "worth")
-    assert not [c for c in columns if any(word in c for word in money_words)]
+    # A market price is not household money: the decisions keep price history in this
+    # database, each price with its source and date (hearth.valuation). It is the one
+    # column allowed a money word, and only in that table.
+    market_data = {("price", "price")}
+    assert not [
+        (table, column)
+        for table, column in columns
+        if (table, column) not in market_data and any(word in column for word in money_words)
+    ]

@@ -1,7 +1,10 @@
-"""The app-state database: members, sessions, sharing preferences and the audit log.
+"""The app-state database: members, sessions, sharing, the audit log, prices, institution
+tokens and review rulings.
 
 This database is deliberately separate from the ledger. The ledger is the source of
-truth for money, so no table here ever stores a monetary figure.
+truth for the household's money, so no table here ever stores a balance, an amount or
+any other figure about it. Market prices are kept here, each with its provenance,
+because a price is a fact about the market on a day, not about the household.
 
 Schema changes are append-only migrations keyed by SQLite's ``user_version``.
 """
@@ -77,6 +80,66 @@ MIGRATIONS: tuple[str, ...] = (
         detail TEXT NOT NULL
     ) STRICT;
     CREATE INDEX audit_events_by_subject ON audit_events (subject_id, at);
+    """,
+    """
+    -- Raw closing prices, append-only: a source's correction for a day is a newer row,
+    -- and the older one stays as the record of what was believed. See hearth.valuation.
+    CREATE TABLE price (
+        id INTEGER PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        as_of TEXT NOT NULL,
+        price TEXT NOT NULL,
+        currency TEXT NOT NULL,
+        source TEXT NOT NULL,
+        source_ref TEXT NOT NULL,
+        fetched_at TEXT NOT NULL
+    ) STRICT;
+    CREATE INDEX price_by_day ON price (symbol, source, as_of, id);
+
+    -- Institution tokens, envelope-encrypted under a master key held in the Keychain.
+    -- No plaintext column exists. See hearth.vault.
+    -- Names this database's keys in the Keychain, so two hearth databases on one Mac
+    -- (the demo and the real one, say) never share or rotate away each other's keys.
+    CREATE TABLE vault_identity (
+        id TEXT PRIMARY KEY
+    ) STRICT;
+    CREATE TABLE vault_master_key (
+        version INTEGER PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        retired_at TEXT
+    ) STRICT;
+    CREATE TABLE vault_token (
+        member_id INTEGER NOT NULL REFERENCES members (id),
+        item_id TEXT NOT NULL,
+        key_version INTEGER NOT NULL REFERENCES vault_master_key (version),
+        wrapped_key BLOB NOT NULL,
+        ciphertext BLOB NOT NULL,
+        stored_at TEXT NOT NULL,
+        PRIMARY KEY (member_id, item_id)
+    ) STRICT;
+
+    -- Rulings on set-aside rows, append-only and keyed by content-derived review id.
+    -- A group ruling lists the rows it covered, so it never reaches a later row.
+    -- See hearth.review.
+    CREATE TABLE review_rulings (
+        id INTEGER PRIMARY KEY,
+        member_id INTEGER NOT NULL REFERENCES members (id),
+        scope TEXT NOT NULL CHECK (scope IN ('row', 'group')),
+        group_name TEXT,
+        action TEXT NOT NULL CHECK (action IN ('accept', 'account', 'reject')),
+        account TEXT,
+        note TEXT,
+        at TEXT NOT NULL,
+        CHECK ((scope = 'group') = (group_name IS NOT NULL)),
+        CHECK ((action = 'account') = (account IS NOT NULL))
+    ) STRICT;
+    CREATE TABLE review_ruling_rows (
+        ruling_id INTEGER NOT NULL REFERENCES review_rulings (id),
+        review_id TEXT NOT NULL,
+        account TEXT,
+        PRIMARY KEY (ruling_id, review_id)
+    ) STRICT;
+    CREATE INDEX review_ruling_rows_by_row ON review_ruling_rows (review_id);
     """,
 )
 

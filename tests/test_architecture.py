@@ -72,3 +72,18 @@ def test_visibility_is_decided_by_one_function() -> None:
         if isinstance(node, ast.Attribute) and node.attr == "may_see"
     }
     assert callers == {"hearth.disclosure"}
+
+
+def test_only_disclosure_consults_the_review_policy() -> None:
+    """An erosion guard, not enforcement: it reads attribute names, so it cannot catch aliasing,
+    ``getattr``, re-export or dynamic import. The behaviour is enforced in
+    ``tests/review/test_policy.py``: sharing everything opens nobody else's pile, and being an
+    admin opens no pile.
+    """
+    callers = {
+        name
+        for name, tree in modules()
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr == "may_review"
+    }
+    assert callers == {"hearth.disclosure"}

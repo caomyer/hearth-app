@@ -14,7 +14,7 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from typing import final
+from typing import TYPE_CHECKING, final
 
 from hearth import access, audit, figures, members, sharing
 from hearth.accounts import Account, all_accounts
@@ -23,6 +23,13 @@ from hearth.ledger import Ledger
 from hearth.members import Member, MemberId
 from hearth.months import Month
 from hearth.sharing import Facet, SharingChoices
+
+if TYPE_CHECKING:
+    # hearth.review raises this module's Concealed, so it is imported where it is used.
+    from hearth.clock import Clock
+    from hearth.review.desk import Decision, ReviewDesk
+    from hearth.review.pile import PileItem
+    from hearth.review.rulings import RulingStore
 
 
 class Concealed(Exception):  # noqa: N818 - it names an outcome, not a fault
@@ -218,6 +225,21 @@ class Disclosure:
             if access.may_read_event(self._viewer, event)
         ]
 
+    def review_desk(
+        self, pile: Sequence[PileItem], rulings: RulingStore, clock: Clock
+    ) -> ReviewDesk:
+        """The viewer's own review desk: the set-aside rows ``access.may_review`` gives them."""
+        from hearth.review.desk import ReviewDesk
+
+        return ReviewDesk(
+            self._viewer.id,
+            pile=pile,
+            accounts=self._accounts,
+            rulings=rulings,
+            may_review=access.may_review,
+            clock=clock,
+        )
+
     def _may(self, facet: Facet, owners: Collection[MemberId]) -> bool:
         return access.may_see(self._viewer, facet, owners, self._choices)
 
@@ -302,6 +324,18 @@ class Disclosure:
     def _ref_for(self, member_id: MemberId | None) -> MemberRef | None:
         member = next((m for m in self._household if m.id == member_id), None)
         return _ref(member) if member else None
+
+
+def review_decisions(
+    pile: Sequence[PileItem], accounts: Sequence[Account], rulings: RulingStore
+) -> dict[str, Decision]:
+    """Every set-aside row's decision, for the import that books them. Never rendered.
+
+    A ruling counts only while ``access.may_review`` still lets its author review the row.
+    """
+    from hearth.review.desk import resolve
+
+    return resolve(pile, accounts, rulings, access.may_review)
 
 
 def _ref(member: Member) -> MemberRef:
