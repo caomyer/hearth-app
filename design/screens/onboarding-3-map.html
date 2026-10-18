@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Map accounts - Onboarding 3 of 4 - Hearth</title>
+<link rel="stylesheet" href="../hearth.css">
+</head>
+<body>
+<!-- @sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M3.5 10.6 12 3.8l8.5 6.8V20a.9.9 0 0 1-.9.9H4.4a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 18.4c-1.9 0-3.1-1.3-3.1-3 0-1.9 1.6-2.7 2.2-4.6.2.9.9 1.5 1.5 1.9.5-.6.7-1.2.7-1.9 1.3 1 1.8 2.7 1.8 3.7 0 2.3-1.3 3.9-3.1 3.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.6 14.7c.6-.2 1.2-.3 1.9-.3 2.3 0 4 1.5 4.5 4.6"/></g></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></g></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5h4l1.5 2.5h5l1.5-2.5h4"/><path d="M5.6 6.2 4 13.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5.5l-1.6-7.3a1 1 0 0 0-1-.7H6.6a1 1 0 0 0-1 .7Z"/></g></symbol>
+    <symbol id="i-worth" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 7.7 16.3a2.9 2.9 0 0 1-4-4l2.6-2.6a2.9 2.9 0 0 1 3.4-.5"/><path d="m14.5 9.5 1.8-1.8a2.9 2.9 0 0 1 4 4l-2.6 2.6a2.9 2.9 0 0 1-3.4.5"/><path d="M4 4l2 2M18 18l2 2M9 3v2M15 21v-2"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></g></symbol>
+  </defs>
+</svg>
+<!-- /@sprite -->
+<a class="skip" href="#main">Skip to content</a>
+<!-- @dstrip name="Onboarding 3 of 4: map accounts" viewer="Jordan, first sign-in" -->
+<div class="dstrip" role="note" aria-label="Design review">
+  <div class="dstrip-in">
+    <span><a href="../index.html">Hearth design</a> / <span class="dname">Onboarding 3 of 4: map accounts</span></span>
+    <span>Viewer: Jordan, first sign-in</span>
+    <span class="dspacer"></span>
+    <a href="#design-notes">Design notes</a>
+    <button type="button" data-theme-toggle>Theme: system</button>
+  </div>
+</div>
+<!-- /@dstrip -->
+<!-- @focus right="Jordan" -->
+<header class="focus-top">
+  <div class="focus-top-in">
+    <span class="brand"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</span>
+    <span class="sm muted">Jordan</span>
+  </div>
+</header>
+<!-- /@focus -->
+<main id="main" class="focus-page">
+<!-- @inc file="stepper-3.html" -->
+<ol class="stepper" aria-label="Setting up a new member">
+  <li data-state="done"><span class="n"><span class="t">Create the member</span><span class="vh"> (done)</span></span><span class="who-does">by an admin</span></li>
+  <li data-state="done"><span class="n"><span class="t">Connect institutions</span><span class="vh"> (done)</span></span><span class="who-does">by the member</span></li>
+  <li aria-current="step"><span class="n"><span class="t">Map accounts</span></span><span class="who-does">by the member</span></li>
+  <li><span class="n"><span class="t">Import and review</span></span><span class="who-does">by the member</span></li>
+</ol>
+<!-- /@inc -->
+
+  <h1>Check where each account goes</h1>
+  <p class="lede">Every bank account becomes an account in the household ledger. Confirm each one yourself; nothing is filed under a guess.</p>
+
+  <div class="alert alert-warn mt-6" id="near">
+    <svg aria-hidden="true"><use href="#i-warn"/></svg>
+    <div class="alert-body">
+      <p style="color: var(--ink); font-weight: 600">Two targets differ by one word.</p>
+      <p><code>Assets:Jordan:Lakeside:Checking</code> and <code>Assets:Jordan:Lakeside:Savings</code>. A swap here would go unnoticed because both are real accounts. Check the balances below match the bank before you confirm.</p>
+    </div>
+  </div>
+
+  <form class="mt-6" action="#">
+    <div class="maps">
+      <fieldset class="panel map is-warn">
+        <legend class="vh">Lakeside Bank checking ending 5521</legend>
+        <div class="map-from">
+          <p style="font-weight: 600">Lakeside Bank &middot; Checking</p>
+          <p class="sm faint">&bull;&bull;&nbsp;5521</p>
+          <p class="sm faint">Bank balance <span class="amt" style="color: var(--ink)">$2,410.55</span></p>
+        </div>
+        <div class="map-arrow" aria-hidden="true"><svg><use href="#i-arrow"/></svg></div>
+        <div class="map-to">
+          <label class="label" for="m1">Ledger account</label>
+          <select class="select mt-1" id="m1"><option>Assets:Jordan:Lakeside:Checking</option><option>Assets:Jordan:Lakeside:Savings</option></select>
+          <p class="xs faint mt-1">New ledger account</p>
+          <div class="map-meta">
+            <label class="label" for="o1">Owner</label>
+            <select class="select" id="o1"><option>Just Jordan</option><option>Joint with Alex</option><option>Joint with Sam</option><option>Joint with Alex and Sam</option></select>
+          </div>
+        </div>
+        <label class="check map-confirm"><input type="checkbox" checked><span>Confirmed</span></label>
+      </fieldset>
+
+      <fieldset class="panel map is-warn">
+        <legend class="vh">Lakeside Bank savings ending 5538</legend>
+        <div class="map-from">
+          <p style="font-weight: 600">Lakeside Bank &middot; Savings</p>
+          <p class="sm faint">&bull;&bull;&nbsp;5538</p>
+          <p class="sm faint">Bank balance <span class="amt" style="color: var(--ink)">$9,120.00</span></p>
+        </div>
+        <div class="map-arrow" aria-hidden="true"><svg><use href="#i-arrow"/></svg></div>
+        <div class="map-to">
+          <label class="label" for="m2">Ledger account</label>
+          <select class="select mt-1" id="m2"><option>Assets:Jordan:Lakeside:Savings</option><option>Assets:Jordan:Lakeside:Checking</option></select>
+          <p class="xs faint mt-1">New ledger account</p>
+          <div class="map-meta">
+            <label class="label" for="o2">Owner</label>
+            <select class="select" id="o2"><option>Just Jordan</option><option>Joint with Alex</option><option>Joint with Sam</option><option>Joint with Alex and Sam</option></select>
+          </div>
+        </div>
+        <label class="check map-confirm"><input type="checkbox"><span>Confirm</span></label>
+      </fieldset>
+
+      <fieldset class="panel map">
+        <legend class="vh">Pinecone Card credit card ending 9904</legend>
+        <div class="map-from">
+          <p style="font-weight: 600">Pinecone Card &middot; Credit card</p>
+          <p class="sm faint">&bull;&bull;&nbsp;9904</p>
+          <p class="sm faint">Bank balance <span class="amt" style="color: var(--ink)">&minus;$684.12</span></p>
+        </div>
+        <div class="map-arrow" aria-hidden="true"><svg><use href="#i-arrow"/></svg></div>
+        <div class="map-to">
+          <label class="label" for="m3">Ledger account</label>
+          <select class="select mt-1" id="m3"><option>Liabilities:Jordan:Pinecone:Card</option></select>
+          <p class="xs faint mt-1">New ledger account</p>
+          <div class="map-meta">
+            <label class="label" for="o3">Owner</label>
+            <select class="select" id="o3"><option>Just Jordan</option><option>Joint with Alex</option><option>Joint with Sam</option><option>Joint with Alex and Sam</option></select>
+          </div>
+        </div>
+        <label class="check map-confirm"><input type="checkbox"><span>Confirm</span></label>
+      </fieldset>
+    </div>
+  </form>
+
+  <div class="focus-actions">
+    <a class="btn btn-quiet" href="onboarding-2-connect.html">Back</a>
+    <div class="end">
+      <span class="sm muted" id="cnt">1 of 3 confirmed</span>
+      <button class="btn btn-primary btn-lg" type="button" aria-disabled="true" aria-describedby="cnt">Start the import</button>
+    </div>
+  </div>
+</main>
+
+<section class="dnotes" id="design-notes" aria-labelledby="dn-h">
+  <div class="dnotes-in">
+    <h2 id="dn-h">Design notes</h2>
+    <ol>
+      <li><strong>Learned the hard way, designed in.</strong> The existing setup once filed two joint accounts under each other's names and nothing caught it. So every mapping needs its own confirmation, and the button says how many are left.</li>
+      <li><strong>The near-name warning names both accounts and says what to check.</strong> Balances from the bank sit beside each mapping, so a swap shows up as a number that does not belong.</li>
+      <li><strong>Ownership is chosen per account, with every combination of members.</strong> Decision 4 makes ownership many-to-many; the control offers joint ownership with any set of members, not a single "shared" flag.</li>
+      <li><strong>Ledger names are shown in full, in monospace.</strong> They are what the ledger will contain, and one word is the difference that matters here.</li>
+      <li><strong>On a phone each mapping stacks:</strong> the bank account, then where it goes, then the confirmation, so nothing is squeezed into a row.</li>
+    </ol>
+  </div>
+</section>
+<script src="../design.js"></script>
+</body>
+</html>

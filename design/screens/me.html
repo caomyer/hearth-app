@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>You - Hearth</title>
+<link rel="stylesheet" href="../hearth.css">
+</head>
+<body>
+<!-- @sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M3.5 10.6 12 3.8l8.5 6.8V20a.9.9 0 0 1-.9.9H4.4a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 18.4c-1.9 0-3.1-1.3-3.1-3 0-1.9 1.6-2.7 2.2-4.6.2.9.9 1.5 1.5 1.9.5-.6.7-1.2.7-1.9 1.3 1 1.8 2.7 1.8 3.7 0 2.3-1.3 3.9-3.1 3.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.6 14.7c.6-.2 1.2-.3 1.9-.3 2.3 0 4 1.5 4.5 4.6"/></g></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></g></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5h4l1.5 2.5h5l1.5-2.5h4"/><path d="M5.6 6.2 4 13.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5.5l-1.6-7.3a1 1 0 0 0-1-.7H6.6a1 1 0 0 0-1 .7Z"/></g></symbol>
+    <symbol id="i-worth" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 7.7 16.3a2.9 2.9 0 0 1-4-4l2.6-2.6a2.9 2.9 0 0 1 3.4-.5"/><path d="m14.5 9.5 1.8-1.8a2.9 2.9 0 0 1 4 4l-2.6 2.6a2.9 2.9 0 0 1-3.4.5"/><path d="M4 4l2 2M18 18l2 2M9 3v2M15 21v-2"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></g></symbol>
+  </defs>
+</svg>
+<!-- /@sprite -->
+<a class="skip" href="#main">Skip to content</a>
+<!-- @dstrip name="Your own dashboard" -->
+<div class="dstrip" role="note" aria-label="Design review">
+  <div class="dstrip-in">
+    <span><a href="../index.html">Hearth design</a> / <span class="dname">Your own dashboard</span></span>
+    <span>Viewer: Alex (admin)</span>
+    <span class="dspacer"></span>
+    <a href="#design-notes">Design notes</a>
+    <button type="button" data-theme-toggle>Theme: system</button>
+  </div>
+</div>
+<!-- /@dstrip -->
+<div class="app">
+<!-- @top active="me" -->
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="../screens/household.html"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="../screens/household.html">Household</a>
+      <a href="../screens/me.html" aria-current="page">You</a>
+      <a href="../screens/review.html">Review <span class="count" aria-label="23 to review">23</span></a>
+      <a href="../screens/net-worth.html">Net worth</a>
+      <a href="../screens/sharing.html">Settings</a>
+    </nav>
+    <div class="topbar-end">
+      <a class="me-chip" href="../screens/sharing.html"><span class="me-name">Alex</span><span class="avatar" aria-hidden="true">A</span><span class="vh">Signed in as Alex. Account settings</span></a>
+    </div>
+  </div>
+</header>
+<!-- /@top -->
+<main id="main" class="page">
+
+  <div class="page-head">
+    <div class="row" style="gap: var(--s-4)">
+      <span class="avatar lg" aria-hidden="true">A</span>
+      <div>
+        <h1>Alex</h1>
+        <p class="sub">Your own accounts. Joint accounts with Sam are on <a href="net-worth.html#joint">Net worth</a>.</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="seen-by">
+    <svg aria-hidden="true"><use href="#i-eye"/></svg>
+    <span>The household sees your <strong>net worth</strong>, <strong>monthly spending total</strong> and <strong>monthly income total</strong>. Everything marked <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span> stays with you.</span>
+    <a href="sharing.html">Change what you share</a>
+  </p>
+
+  <div class="grid grid-main">
+    <section class="panel" aria-labelledby="mynw-h">
+      <div class="panel-body" style="padding-top: var(--s-6)">
+        <div class="hero">
+          <div class="row between wrap">
+            <h2 id="mynw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Your net worth, excluding joint</h2>
+            <span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Household sees</span>
+          </div>
+          <p class="hero-value"><span class="cur">$</span>611,295</p>
+          <div class="hero-meta">
+            <span class="delta is-good"><span class="arrow" aria-hidden="true">&#9650;</span><span class="vh">Up</span> $7,860 <span class="ctx">since Oct 1</span></span>
+          </div>
+          <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>Computed today, 6:00 AM. Joint accounts ($235,388), which you and Sam both own, are counted once in the household total instead.</p>
+        </div>
+        <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
+          <div>
+            <div class="row between"><p class="fig-label">Spent, Oct 1&ndash;18</p></div>
+            <p class="fig-value"><span class="cur">$</span>1,813</p>
+            <p class="fig-sub"><span class="delta is-bad"><span class="arrow" aria-hidden="true">&#9650;</span> $215 <span class="ctx">over typical by the 18th</span></span></p>
+          </div>
+          <div>
+            <p class="fig-label">Income, Oct 1&ndash;18</p>
+            <p class="fig-value"><span class="cur">$</span>6,599</p>
+            <p class="fig-sub">Two paychecks</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel review-card" aria-labelledby="rq-h">
+      <div class="panel-head">
+        <h2 id="rq-h">Waiting for you</h2>
+        <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+      </div>
+      <div class="panel-body">
+        <p class="fig-value tnum" style="margin-top: 0">23 <span class="lg" style="font-weight: 400; color: var(--ink-2); letter-spacing: 0">transactions</span></p>
+        <p class="muted mt-1">Two decisions settle 12 of them.</p>
+        <ul class="list mt-4" role="list">
+          <li><span class="grow">Subscriptions <span class="faint">&middot; same merchants as before</span></span><span class="end tnum">8</span></li>
+          <li><span class="grow">Transfers to joint <span class="faint">&middot; same account each time</span></span><span class="end tnum">4</span></li>
+          <li><span class="grow">Unsure <span class="faint">&middot; needs a look each</span></span><span class="end tnum">9</span></li>
+          <li><span class="grow">No description</span><span class="end tnum">2</span></li>
+        </ul>
+        <a class="btn btn-primary btn-block mt-6" href="review.html">Start reviewing<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid grid-main mt-4">
+    <section class="panel" aria-labelledby="pace-h">
+      <div class="panel-head">
+        <h2 id="pace-h">October spending, day by day</h2>
+        <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+        <p class="finding">You are <strong class="tnum">$215</strong> above a typical October at this point, almost all of it dining.</p>
+      </div>
+      <div class="panel-body">
+        <figure>
+          <figcaption class="vh" id="pace-t">Your cumulative spending in October against your typical month</figcaption>
+          <div class="chart-wrap">
+<!-- @svg file="pace.svg" -->
+<svg class="chart only-wide" viewBox="0 0 640 210" role="img" aria-labelledby="pace-t">
+<g class="grid"><line x1="44" x2="632" y1="132.9" y2="132.9"/><line x1="44" x2="632" y1="83.7" y2="83.7"/><line x1="44" x2="632" y1="34.6" y2="34.6"/></g>
+<text x="36" y="186.0" text-anchor="end">$0</text><text x="36" y="136.9" text-anchor="end">$1K</text><text x="36" y="87.7" text-anchor="end">$2K</text><text x="36" y="38.6" text-anchor="end">$3K</text>
+<polygon class="band" points="44.0,182.0 63.0,176.8 81.9,171.5 100.9,166.3 119.9,161.1 138.8,155.8 157.8,150.6 176.8,145.4 195.7,140.1 214.7,134.9 233.7,129.6 252.6,124.4 271.6,119.2 290.6,113.9 309.5,108.7 328.5,103.5 347.5,98.2 366.5,93.0 385.4,87.8 404.4,82.7 423.4,77.7 442.3,72.6 461.3,67.6 480.3,62.5 499.2,57.5 518.2,52.5 537.2,47.4 556.1,42.4 575.1,37.3 594.1,32.3 613.0,27.2 632.0,22.2 632.0,75.5 613.0,78.8 594.1,82.2 575.1,85.5 556.1,88.9 537.2,92.3 518.2,95.6 499.2,99.0 480.3,102.4 461.3,105.7 442.3,109.1 423.4,112.5 404.4,115.8 385.4,119.2 366.5,122.7 347.5,126.2 328.5,129.6 309.5,133.1 290.6,136.6 271.6,140.1 252.6,143.6 233.7,147.1 214.7,150.6 195.7,154.1 176.8,157.6 157.8,161.1 138.8,164.5 119.9,168.0 100.9,171.5 81.9,175.0 63.0,178.5 44.0,182.0"/>
+<polyline class="median" points="44.0,182.0 63.0,177.6 81.9,173.3 100.9,168.9 119.9,164.5 138.8,160.2 157.8,155.8 176.8,151.5 195.7,147.1 214.7,142.7 233.7,138.4 252.6,134.0 271.6,129.6 290.6,125.3 309.5,120.9 328.5,116.6 347.5,112.2 366.5,107.8 385.4,103.5 404.4,99.3 423.4,95.1 442.3,90.9 461.3,86.7 480.3,82.5 499.2,78.2 518.2,74.0 537.2,69.8 556.1,65.6 575.1,61.4 594.1,57.2 613.0,53.0 632.0,48.8"/>
+<line class="base" x1="44" x2="632" y1="182" y2="182"/>
+<polyline class="line" points="44.0,182.0 63.0,178.8 81.9,177.6 100.9,177.6 119.9,170.9 138.8,168.6 157.8,163.9 176.8,155.3 195.7,155.3 214.7,153.9 233.7,144.8 252.6,139.7 271.6,132.5 290.6,129.6 309.5,116.9 328.5,105.3 347.5,98.9 366.5,92.9 385.4,92.9"/>
+<circle class="dot" cx="385.4" cy="92.9" r="4.5"/>
+<text class="lbl" x="377.4" y="82.9" text-anchor="end">$1,813</text>
+<text x="63.0" y="202" text-anchor="start">Oct 1</text>
+<text x="195.7" y="202" text-anchor="middle">8</text>
+<text x="328.5" y="202" text-anchor="middle">15</text>
+<text x="385.4" y="202" text-anchor="middle" class="lbl-2" style="font-weight:600">Today</text>
+<text x="461.3" y="202" text-anchor="middle">22</text>
+<text x="632.0" y="202" text-anchor="end">31</text>
+<rect class="hit" x="53.5" y="10" width="19.0" height="172" data-tip="$65.12 so far|Oct 1 · typical $89"/>
+<rect class="hit" x="72.5" y="10" width="19.0" height="172" data-tip="$89.08 so far|Oct 2 · typical $178"/>
+<rect class="hit" x="91.4" y="10" width="19.0" height="172" data-tip="$89.08 so far|Oct 3 · typical $266"/>
+<rect class="hit" x="110.4" y="10" width="19.0" height="172" data-tip="$225.51 so far|Oct 4 · typical $355"/>
+<rect class="hit" x="129.4" y="10" width="19.0" height="172" data-tip="$272.69 so far|Oct 5 · typical $444"/>
+<rect class="hit" x="148.3" y="10" width="19.0" height="172" data-tip="$368.20 so far|Oct 6 · typical $533"/>
+<rect class="hit" x="167.3" y="10" width="19.0" height="172" data-tip="$542.96 so far|Oct 7 · typical $621"/>
+<rect class="hit" x="186.3" y="10" width="19.0" height="172" data-tip="$542.96 so far|Oct 8 · typical $710"/>
+<rect class="hit" x="205.2" y="10" width="19.0" height="172" data-tip="$570.80 so far|Oct 9 · typical $799"/>
+<rect class="hit" x="224.2" y="10" width="19.0" height="172" data-tip="$756.42 so far|Oct 10 · typical $888"/>
+<rect class="hit" x="243.2" y="10" width="19.0" height="172" data-tip="$860.72 so far|Oct 11 · typical $977"/>
+<rect class="hit" x="262.1" y="10" width="19.0" height="172" data-tip="$1,007.67 so far|Oct 12 · typical $1,065"/>
+<rect class="hit" x="281.1" y="10" width="19.0" height="172" data-tip="$1,066.87 so far|Oct 13 · typical $1,154"/>
+<rect class="hit" x="300.1" y="10" width="19.0" height="172" data-tip="$1,324.41 so far|Oct 14 · typical $1,243"/>
+<rect class="hit" x="319.0" y="10" width="19.0" height="172" data-tip="$1,559.99 so far|Oct 15 · typical $1,332"/>
+<rect class="hit" x="338.0" y="10" width="19.0" height="172" data-tip="$1,690.11 so far|Oct 16 · typical $1,420"/>
+<rect class="hit" x="357.0" y="10" width="19.0" height="172" data-tip="$1,812.55 so far|Oct 17 · typical $1,509"/>
+<rect class="hit" x="375.9" y="10" width="19.0" height="172" data-tip="$1,812.55 so far|Oct 18 · typical $1,598"/>
+</svg>
+<svg class="chart only-narrow" viewBox="0 0 320 210" role="img" aria-labelledby="pace-t">
+<g class="grid"><line x1="44" x2="312" y1="132.9" y2="132.9"/><line x1="44" x2="312" y1="83.7" y2="83.7"/><line x1="44" x2="312" y1="34.6" y2="34.6"/></g>
+<text x="36" y="186.0" text-anchor="end">$0</text><text x="36" y="136.9" text-anchor="end">$1K</text><text x="36" y="87.7" text-anchor="end">$2K</text><text x="36" y="38.6" text-anchor="end">$3K</text>
+<polygon class="band" points="44.0,182.0 52.6,176.8 61.3,171.5 69.9,166.3 78.6,161.1 87.2,155.8 95.9,150.6 104.5,145.4 113.2,140.1 121.8,134.9 130.5,129.6 139.1,124.4 147.7,119.2 156.4,113.9 165.0,108.7 173.7,103.5 182.3,98.2 191.0,93.0 199.6,87.8 208.3,82.7 216.9,77.7 225.5,72.6 234.2,67.6 242.8,62.5 251.5,57.5 260.1,52.5 268.8,47.4 277.4,42.4 286.1,37.3 294.7,32.3 303.4,27.2 312.0,22.2 312.0,75.5 303.4,78.8 294.7,82.2 286.1,85.5 277.4,88.9 268.8,92.3 260.1,95.6 251.5,99.0 242.8,102.4 234.2,105.7 225.5,109.1 216.9,112.5 208.3,115.8 199.6,119.2 191.0,122.7 182.3,126.2 173.7,129.6 165.0,133.1 156.4,136.6 147.7,140.1 139.1,143.6 130.5,147.1 121.8,150.6 113.2,154.1 104.5,157.6 95.9,161.1 87.2,164.5 78.6,168.0 69.9,171.5 61.3,175.0 52.6,178.5 44.0,182.0"/>
+<polyline class="median" points="44.0,182.0 52.6,177.6 61.3,173.3 69.9,168.9 78.6,164.5 87.2,160.2 95.9,155.8 104.5,151.5 113.2,147.1 121.8,142.7 130.5,138.4 139.1,134.0 147.7,129.6 156.4,125.3 165.0,120.9 173.7,116.6 182.3,112.2 191.0,107.8 199.6,103.5 208.3,99.3 216.9,95.1 225.5,90.9 234.2,86.7 242.8,82.5 251.5,78.2 260.1,74.0 268.8,69.8 277.4,65.6 286.1,61.4 294.7,57.2 303.4,53.0 312.0,48.8"/>
+<line class="base" x1="44" x2="312" y1="182" y2="182"/>
+<polyline class="line" points="44.0,182.0 52.6,178.8 61.3,177.6 69.9,177.6 78.6,170.9 87.2,168.6 95.9,163.9 104.5,155.3 113.2,155.3 121.8,153.9 130.5,144.8 139.1,139.7 147.7,132.5 156.4,129.6 165.0,116.9 173.7,105.3 182.3,98.9 191.0,92.9 199.6,92.9"/>
+<circle class="dot" cx="199.6" cy="92.9" r="4.5"/>
+<text class="lbl" x="191.6" y="82.9" text-anchor="end">$1,813</text>
+<text x="52.6" y="202" text-anchor="start">Oct 1</text>
+<text x="173.7" y="202" text-anchor="middle">15</text>
+<text x="199.6" y="202" text-anchor="middle" class="lbl-2" style="font-weight:600">Today</text>
+<text x="312.0" y="202" text-anchor="end">31</text>
+<rect class="hit" x="48.3" y="10" width="8.6" height="172" data-tip="$65.12 so far|Oct 1 · typical $89"/>
+<rect class="hit" x="57.0" y="10" width="8.6" height="172" data-tip="$89.08 so far|Oct 2 · typical $178"/>
+<rect class="hit" x="65.6" y="10" width="8.6" height="172" data-tip="$89.08 so far|Oct 3 · typical $266"/>
+<rect class="hit" x="74.3" y="10" width="8.6" height="172" data-tip="$225.51 so far|Oct 4 · typical $355"/>
+<rect class="hit" x="82.9" y="10" width="8.6" height="172" data-tip="$272.69 so far|Oct 5 · typical $444"/>
+<rect class="hit" x="91.5" y="10" width="8.6" height="172" data-tip="$368.20 so far|Oct 6 · typical $533"/>
+<rect class="hit" x="100.2" y="10" width="8.6" height="172" data-tip="$542.96 so far|Oct 7 · typical $621"/>
+<rect class="hit" x="108.8" y="10" width="8.6" height="172" data-tip="$542.96 so far|Oct 8 · typical $710"/>
+<rect class="hit" x="117.5" y="10" width="8.6" height="172" data-tip="$570.80 so far|Oct 9 · typical $799"/>
+<rect class="hit" x="126.1" y="10" width="8.6" height="172" data-tip="$756.42 so far|Oct 10 · typical $888"/>
+<rect class="hit" x="134.8" y="10" width="8.6" height="172" data-tip="$860.72 so far|Oct 11 · typical $977"/>
+<rect class="hit" x="143.4" y="10" width="8.6" height="172" data-tip="$1,007.67 so far|Oct 12 · typical $1,065"/>
+<rect class="hit" x="152.1" y="10" width="8.6" height="172" data-tip="$1,066.87 so far|Oct 13 · typical $1,154"/>
+<rect class="hit" x="160.7" y="10" width="8.6" height="172" data-tip="$1,324.41 so far|Oct 14 · typical $1,243"/>
+<rect class="hit" x="169.4" y="10" width="8.6" height="172" data-tip="$1,559.99 so far|Oct 15 · typical $1,332"/>
+<rect class="hit" x="178.0" y="10" width="8.6" height="172" data-tip="$1,690.11 so far|Oct 16 · typical $1,420"/>
+<rect class="hit" x="186.6" y="10" width="8.6" height="172" data-tip="$1,812.55 so far|Oct 17 · typical $1,509"/>
+<rect class="hit" x="195.3" y="10" width="8.6" height="172" data-tip="$1,812.55 so far|Oct 18 · typical $1,598"/>
+</svg>
+<!-- /@svg -->
+          </div>
+          <div class="chart-legend" aria-hidden="true">
+            <span class="k"><i class="line"></i>October so far</span>
+            <span class="k"><i class="mline"></i>Typical month (median of the last 6)</span>
+            <span class="k"><i class="band"></i>Usual range</span>
+          </div>
+          <details class="as-table">
+            <summary>Show as a table</summary>
+            <table class="table">
+              <caption class="vh">Cumulative spending by day</caption>
+              <thead><tr><th scope="col">Day</th><th scope="col" class="num">So far</th><th scope="col" class="num">Typical by then</th></tr></thead>
+              <tbody>
+                <tr><td>Oct 1</td><td class="num">$65.12</td><td class="num">$89</td></tr>
+                <tr><td>Oct 4</td><td class="num">$225.51</td><td class="num">$355</td></tr>
+                <tr><td>Oct 7</td><td class="num">$542.96</td><td class="num">$621</td></tr>
+                <tr><td>Oct 10</td><td class="num">$756.42</td><td class="num">$888</td></tr>
+                <tr><td>Oct 13</td><td class="num">$1,066.87</td><td class="num">$1,154</td></tr>
+                <tr><td>Oct 16</td><td class="num">$1,690.11</td><td class="num">$1,420</td></tr>
+                <tr><td>Oct 18 (today)</td><td class="num">$1,812.55</td><td class="num">$1,598</td></tr>
+              </tbody>
+            </table>
+          </details>
+        </figure>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="mycat-h">
+      <div class="panel-head">
+        <h2 id="mycat-h">By category</h2>
+        <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+      </div>
+      <div class="panel-body">
+        <div class="cats" role="list">
+          <div class="cat is-over" role="listitem">
+            <span class="name">Dining</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: 90.0%"></span><span class="typ" style="left: 53.7%"></span></span>
+            <span class="val">$486.20</span>
+            <span class="note"><span aria-hidden="true">&#9650;</span> $196 over typical</span>
+          </div>
+          <div class="cat" role="listitem">
+            <span class="name">Shopping</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: 59.0%"></span><span class="typ" style="left: 63.0%"></span></span>
+            <span class="val">$318.40</span>
+          </div>
+          <div class="cat" role="listitem">
+            <span class="name">Transport</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: 57.9%"></span><span class="typ" style="left: 51.9%"></span></span>
+            <span class="val">$312.60</span>
+          </div>
+          <div class="cat" role="listitem">
+            <span class="name">Groceries</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: 55.6%"></span><span class="typ" style="left: 51.9%"></span></span>
+            <span class="val">$300.15</span>
+          </div>
+          <div class="cat" role="listitem">
+            <span class="name">Health</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: 45.4%"></span><span class="typ" style="left: 42.6%"></span></span>
+            <span class="val">$245.00</span>
+          </div>
+          <div class="cat" role="listitem">
+            <span class="name">Subscriptions</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: 17.9%"></span><span class="typ" style="left: 17.8%"></span></span>
+            <span class="val">$96.40</span>
+          </div>
+          <div class="cat" role="listitem">
+            <span class="name">Other</span>
+            <span class="track" aria-hidden="true"><span class="fill" style="width: 10.0%"></span><span class="typ" style="left: 20.4%"></span></span>
+            <span class="val">$53.80</span>
+          </div>
+        </div>
+        <div class="chart-legend mt-4" aria-hidden="true">
+          <span class="k"><i class="fill"></i>Oct 1&ndash;18</span>
+          <span class="k"><i class="tick"></i>Typical by the 18th</span>
+        </div>
+      </div>
+      <div class="panel-foot"><span>Includes 19 unreviewed, at their suggested category.</span></div>
+    </section>
+  </div>
+
+  <section class="panel mt-4" aria-labelledby="acc-h">
+    <div class="panel-head">
+      <h2 id="acc-h">Accounts</h2>
+      <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      <table class="table">
+        <caption class="vh">Your accounts and balances</caption>
+        <thead>
+          <tr><th scope="col">Account</th><th scope="col" class="col-hide-sm">History</th><th scope="col" class="col-hide-sm">Updated</th><th scope="col" class="num">Balance</th></tr>
+        </thead>
+        <tbody>
+          <tr class="group-row"><th scope="rowgroup" colspan="4">Cash</th></tr>
+          <tr>
+            <th scope="row"><span class="primary">Everyday checking</span><span class="second">Northfield Bank &middot; &bull;&bull;&nbsp;0142</span></th>
+            <td class="col-hide-sm muted">Since Oct 2024</td>
+            <td class="col-hide-sm muted">Today, 5:58 AM</td>
+            <td class="num"><span class="primary">$12,480.16</span></td>
+          </tr>
+          <tr>
+            <th scope="row"><span class="primary">Savings</span><span class="second">Northfield Bank &middot; &bull;&bull;&nbsp;0159</span></th>
+            <td class="col-hide-sm muted">Since Oct 2024</td>
+            <td class="col-hide-sm muted">Today, 5:58 AM</td>
+            <td class="num"><span class="primary">$48,200.00</span></td>
+          </tr>
+          <tr class="group-row"><th scope="rowgroup" colspan="4">Credit</th></tr>
+          <tr>
+            <th scope="row"><span class="primary">Credit card</span><span class="second">Cedar Card &middot; &bull;&bull;&nbsp;7730</span></th>
+            <td class="col-hide-sm muted">Since Oct 2024</td>
+            <td class="col-hide-sm muted">Today, 5:59 AM</td>
+            <td class="num"><span class="primary">&minus;$3,140.22</span><span class="second">owed</span></td>
+          </tr>
+          <tr class="group-row"><th scope="rowgroup" colspan="4">Investments</th></tr>
+          <tr>
+            <th scope="row"><span class="primary">Individual brokerage</span><span class="second">Summit Brokerage &middot; &bull;&bull;&nbsp;2208</span></th>
+            <td class="col-hide-sm muted">Since Oct 2024</td>
+            <td class="col-hide-sm muted">Fri close</td>
+            <td class="num"><span class="primary">$186,912.40</span></td>
+          </tr>
+          <tr>
+            <th scope="row"><span class="primary">Retirement</span><span class="second">Summit Brokerage &middot; &bull;&bull;&nbsp;2215</span></th>
+            <td class="col-hide-sm muted">Since Oct 2024</td>
+            <td class="col-hide-sm muted">Fri close</td>
+            <td class="num"><span class="primary">$366,843.25</span></td>
+          </tr>
+          <tr class="total-row">
+            <th scope="row">Your net worth</th>
+            <td class="col-hide-sm"></td>
+            <td class="col-hide-sm"></td>
+            <td class="num">$611,295.59</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel mt-4" aria-labelledby="tx-h">
+    <div class="panel-head">
+      <h2 id="tx-h">Recent transactions</h2>
+      <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      <table class="table tx">
+        <caption class="vh">Your transactions, newest first, grouped by day</caption>
+        <thead class="vh"><tr><th scope="col">Description</th><th scope="col" class="num">Amount</th></tr></thead>
+        <tbody>
+          <tr class="day"><th scope="rowgroup" colspan="2">Saturday, Oct 17 <span class="num">&minus;$122.44</span></th></tr>
+          <tr><td><span class="primary">Corner Grocer</span><span class="second">Groceries &middot; Everyday checking</span></td><td class="num amt">&minus;64.18</td></tr>
+          <tr><td><span class="primary">Bookshop on Main</span><span class="second">Shopping &middot; Credit card</span></td><td class="num amt">&minus;43.27</td></tr>
+          <tr><td><span class="primary">Stride Fitness</span> <a class="tag tag-review" href="review.html">To review</a><span class="second">Subscriptions, suggested &middot; Credit card</span></td><td class="num amt">&minus;14.99</td></tr>
+          <tr class="day"><th scope="rowgroup" colspan="2">Friday, Oct 16 <span class="num">&minus;$130.12</span></th></tr>
+          <tr><td><span class="primary">Payroll</span><span class="second">Income &middot; Everyday checking</span></td><td class="num amt amt-in">+3,299.60</td></tr>
+          <tr><td><span class="primary">Corner Hardware</span> <a class="tag tag-review" href="review.html">To review</a><span class="second">Shopping, suggested &middot; Credit card</span></td><td class="num amt">&minus;84.12</td></tr>
+          <tr><td><span class="primary">Northside Parking</span><span class="second">Transport &middot; Credit card</span></td><td class="num amt">&minus;30.51</td></tr>
+          <tr><td><span class="primary">Lumen Video</span> <a class="tag tag-review" href="review.html">To review</a><span class="second">Subscriptions, suggested &middot; Credit card</span></td><td class="num amt">&minus;15.49</td></tr>
+          <tr class="day"><th scope="rowgroup" colspan="2">Thursday, Oct 15 <span class="num">&minus;$235.58</span></th></tr>
+          <tr><td><span class="primary">Transfer to joint checking</span> <a class="tag tag-review" href="review.html">To review</a><span class="second">Transfer, suggested &middot; Everyday checking</span></td><td class="num amt">&minus;460.00</td></tr>
+          <tr><td><span class="primary">Riverside Clinic</span> <a class="tag tag-review" href="review.html">To review</a><span class="second">Health, suggested &middot; Credit card</span></td><td class="num amt">&minus;95.00</td></tr>
+          <tr><td><span class="primary">Lantern Noodle Bar</span><span class="second">Dining &middot; Credit card</span></td><td class="num amt">&minus;55.81</td></tr>
+          <tr><td><span class="primary">TAP*BLUE DOOR</span> <a class="tag tag-review" href="review.html">To review</a><span class="second">Dining, suggested &middot; Credit card</span></td><td class="num amt">&minus;46.50</td></tr>
+          <tr><td><span class="primary">Market on 5th</span> <a class="tag tag-review" href="review.html">To review</a><span class="second">Groceries, suggested &middot; Everyday checking</span></td><td class="num amt">&minus;38.27</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel-foot">
+      <span>Day totals count spending only. Income and transfers between your own accounts are excluded.</span>
+      <a href="#">All 64 in October</a>
+    </div>
+  </section>
+
+</main>
+<!-- @tabbar active="me" -->
+<nav class="tabbar" aria-label="Primary">
+  <a href="../screens/household.html"><svg aria-hidden="true"><use href="#i-home"/></svg>Household</a>
+  <a href="../screens/me.html" aria-current="page"><svg aria-hidden="true"><use href="#i-user"/></svg>You</a>
+  <a href="../screens/review.html"><svg aria-hidden="true"><use href="#i-review"/></svg><span class="count" aria-hidden="true">23</span>Review<span class="vh">, 23 to review</span></a>
+  <a href="../screens/net-worth.html"><svg aria-hidden="true"><use href="#i-worth"/></svg>Net worth</a>
+  <a href="../screens/sharing.html"><svg aria-hidden="true"><use href="#i-gear"/></svg>Settings</a>
+</nav>
+<!-- /@tabbar -->
+</div>
+
+<section class="dnotes" id="design-notes" aria-labelledby="dn-h">
+  <div class="dnotes-in">
+    <h2 id="dn-h">Design notes</h2>
+    <ol>
+      <li><strong>Every section says who else can see it.</strong> "Household sees" or "Only you" sits on each panel, so the owner never has to guess what their partner is looking at. The sentence under the title says it once in words.</li>
+      <li><strong>The chart answers "am I on track this month?"</strong> Cumulative spend against a typical month and its usual range, so a slow start or a heavy weekend reads at a glance. A bar per day would show noise, not pace.</li>
+      <li><strong>Review is an action, not a statistic.</strong> The queue is broken down by the kind of decision it needs, with the one button that starts it.</li>
+      <li><strong>Signs, not just colour.</strong> Money in carries a "+" and green; money out carries a true minus sign and stays in ink. Most rows are spending, so painting them all red would make red meaningless.</li>
+      <li><strong>Balances keep cents; the hero does not.</strong> The account table reconciles to the cent against statements, and its total ($611,295.59) is the hero ($611,295) at a different precision. Whole-dollar figures are rounded so the household parts add up exactly.</li>
+      <li><strong>Grouped by day, with the day's spending.</strong> Dates are row-group headers rather than a repeated column, which frees the width a phone needs for the payee and the amount.</li>
+    </ol>
+  </div>
+</section>
+<script src="../design.js"></script>
+</body>
+</html>

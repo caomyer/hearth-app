@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Connections, one expired - Settings - Hearth</title>
+<link rel="stylesheet" href="../hearth.css">
+</head>
+<body>
+<!-- @sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M3.5 10.6 12 3.8l8.5 6.8V20a.9.9 0 0 1-.9.9H4.4a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 18.4c-1.9 0-3.1-1.3-3.1-3 0-1.9 1.6-2.7 2.2-4.6.2.9.9 1.5 1.5 1.9.5-.6.7-1.2.7-1.9 1.3 1 1.8 2.7 1.8 3.7 0 2.3-1.3 3.9-3.1 3.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.6 14.7c.6-.2 1.2-.3 1.9-.3 2.3 0 4 1.5 4.5 4.6"/></g></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></g></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5h4l1.5 2.5h5l1.5-2.5h4"/><path d="M5.6 6.2 4 13.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5.5l-1.6-7.3a1 1 0 0 0-1-.7H6.6a1 1 0 0 0-1 .7Z"/></g></symbol>
+    <symbol id="i-worth" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 7.7 16.3a2.9 2.9 0 0 1-4-4l2.6-2.6a2.9 2.9 0 0 1 3.4-.5"/><path d="m14.5 9.5 1.8-1.8a2.9 2.9 0 0 1 4 4l-2.6 2.6a2.9 2.9 0 0 1-3.4.5"/><path d="M4 4l2 2M18 18l2 2M9 3v2M15 21v-2"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></g></symbol>
+  </defs>
+</svg>
+<!-- /@sprite -->
+<a class="skip" href="#main">Skip to content</a>
+<!-- @dstrip name="State: an institution's connection has expired" -->
+<div class="dstrip" role="note" aria-label="Design review">
+  <div class="dstrip-in">
+    <span><a href="../index.html">Hearth design</a> / <span class="dname">State: an institution's connection has expired</span></span>
+    <span>Viewer: Alex (admin)</span>
+    <span class="dspacer"></span>
+    <a href="#design-notes">Design notes</a>
+    <button type="button" data-theme-toggle>Theme: system</button>
+  </div>
+</div>
+<!-- /@dstrip -->
+<div class="app">
+<!-- @top active="settings" -->
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="../screens/household.html"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="../screens/household.html">Household</a>
+      <a href="../screens/me.html">You</a>
+      <a href="../screens/review.html">Review <span class="count" aria-label="23 to review">23</span></a>
+      <a href="../screens/net-worth.html">Net worth</a>
+      <a href="../screens/sharing.html" aria-current="page">Settings</a>
+    </nav>
+    <div class="topbar-end">
+      <a class="me-chip" href="../screens/sharing.html"><span class="me-name">Alex</span><span class="avatar" aria-hidden="true">A</span><span class="vh">Signed in as Alex. Account settings</span></a>
+    </div>
+  </div>
+</header>
+<!-- /@top -->
+<div class="banner banner-warn" role="status">
+  <div class="banner-in">
+    <svg aria-hidden="true"><use href="#i-unlink"/></svg>
+    <p><strong>Cedar Card stopped updating 4 days ago.</strong> <span class="muted">Reconnect it to bring in Oct 14 onward.</span></p>
+    <a class="btn btn-sm" href="#cedar">Reconnect</a>
+  </div>
+</div>
+<main id="main" class="page">
+
+  <div class="page-head">
+    <div>
+      <h1>Settings</h1>
+    </div>
+  </div>
+  <nav class="subnav" aria-label="Settings">
+    <a href="../screens/sharing.html">Sharing</a>
+    <a href="connection-expired.html" aria-current="page">Connections</a>
+    <a href="#">Password</a>
+    <a href="#">Members</a>
+  </nav>
+
+  <section class="panel mt-6" aria-labelledby="c-h">
+    <div class="panel-head">
+      <h2 id="c-h">Your connections</h2>
+      <span class="sm faint">Only you can use these</span>
+    </div>
+    <div class="panel-body" style="padding-top: var(--s-3)">
+      <ul class="list conn-list" role="list">
+        <li id="cedar" class="conn is-expired">
+          <div class="grow">
+            <div class="row between wrap">
+              <p><span style="font-weight: 600">Cedar Card</span> <span class="faint sm">&middot; Credit card &bull;&bull;&nbsp;7730</span></p>
+              <span class="tag tag-warn"><svg aria-hidden="true"><use href="#i-unlink"/></svg>Expired Oct 14</span>
+            </div>
+            <p class="muted mt-2 measure">Cedar Card asks you to sign in again every 180 days. Until you do, this card's balance and transactions stop at Oct 13. Reconnecting keeps your history and never imports anything twice.</p>
+            <div class="cov mt-3" aria-hidden="true">
+              <div class="cov-bar cov-gap"><span style="right: 16.7%"></span><i style="left: 83.3%"></i></div>
+              <div class="cov-scale"><span>Last 30 days</span><span>Data stops Oct 13 &middot; Today</span></div>
+            </div>
+            <div class="row wrap mt-4">
+              <button class="btn btn-primary" type="button"><svg aria-hidden="true"><use href="#i-link"/></svg>Reconnect Cedar Card</button>
+              <span class="sm faint">Opens Cedar Card's own sign-in.</span>
+            </div>
+          </div>
+        </li>
+        <li class="conn">
+          <div class="grow">
+            <div class="row between wrap">
+              <p><span style="font-weight: 600">Northfield Bank</span> <span class="faint sm">&middot; Checking &bull;&bull;&nbsp;0142, Savings &bull;&bull;&nbsp;0159</span></p>
+              <span class="tag tag-ok"><svg aria-hidden="true"><use href="#i-check"/></svg>Working</span>
+            </div>
+            <p class="sm faint mt-1">Updated today, 5:58 AM &middot; history since Oct 18, 2024</p>
+          </div>
+        </li>
+        <li class="conn">
+          <div class="grow">
+            <div class="row between wrap">
+              <p><span style="font-weight: 600">Summit Brokerage</span> <span class="faint sm">&middot; Individual &bull;&bull;&nbsp;2208, Retirement &bull;&bull;&nbsp;2215, Joint &bull;&bull;&nbsp;2230</span></p>
+              <span class="tag tag-ok"><svg aria-hidden="true"><use href="#i-check"/></svg>Working</span>
+            </div>
+            <p class="sm faint mt-1">Updated Fri close &middot; history since Oct 18, 2024 &middot; the joint account's data is visible to Sam; this connection is not</p>
+          </div>
+        </li>
+      </ul>
+      <button class="btn mt-6" type="button"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect another bank</button>
+    </div>
+    <div class="panel-foot">
+      <span>While Cedar Card is expired, net worth uses its Oct 13 balance. The household sees "1 account not updated since Oct 13" beside the total, without the account's name.</span>
+    </div>
+  </section>
+
+</main>
+<!-- @tabbar active="settings" -->
+<nav class="tabbar" aria-label="Primary">
+  <a href="../screens/household.html"><svg aria-hidden="true"><use href="#i-home"/></svg>Household</a>
+  <a href="../screens/me.html"><svg aria-hidden="true"><use href="#i-user"/></svg>You</a>
+  <a href="../screens/review.html"><svg aria-hidden="true"><use href="#i-review"/></svg><span class="count" aria-hidden="true">23</span>Review<span class="vh">, 23 to review</span></a>
+  <a href="../screens/net-worth.html"><svg aria-hidden="true"><use href="#i-worth"/></svg>Net worth</a>
+  <a href="../screens/sharing.html" aria-current="page"><svg aria-hidden="true"><use href="#i-gear"/></svg>Settings</a>
+</nav>
+<!-- /@tabbar -->
+</div>
+
+<section class="dnotes" id="design-notes" aria-labelledby="dn-h">
+  <div class="dnotes-in">
+    <h2 id="dn-h">Design notes</h2>
+    <ol>
+      <li><strong>The banner follows its owner everywhere</strong> until it is fixed, because an expired connection silently ages every figure it feeds. It appears only for the person who can fix it.</li>
+      <li><strong>Expired sorts to the top</strong>, with its own coverage bar showing where the data stops.</li>
+      <li><strong>The explanation removes the two fears:</strong> it is the bank's routine, not a fault; and reconnecting will not duplicate anything.</li>
+      <li><strong>Reconnecting is the member's own act.</strong> No one else in the household can see or use this connection, including for joint accounts.</li>
+      <li><strong>The effect on everyone else is spelled out</strong>, and it leaks nothing: the household learns that one account is behind, not which one.</li>
+    </ol>
+  </div>
+</section>
+<script src="../design.js"></script>
+</body>
+</html>

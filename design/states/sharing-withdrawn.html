@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Household, a member has withdrawn sharing - Hearth</title>
+<link rel="stylesheet" href="../hearth.css">
+</head>
+<body>
+<!-- @sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M3.5 10.6 12 3.8l8.5 6.8V20a.9.9 0 0 1-.9.9H4.4a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 18.4c-1.9 0-3.1-1.3-3.1-3 0-1.9 1.6-2.7 2.2-4.6.2.9.9 1.5 1.5 1.9.5-.6.7-1.2.7-1.9 1.3 1 1.8 2.7 1.8 3.7 0 2.3-1.3 3.9-3.1 3.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.6 14.7c.6-.2 1.2-.3 1.9-.3 2.3 0 4 1.5 4.5 4.6"/></g></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></g></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5h4l1.5 2.5h5l1.5-2.5h4"/><path d="M5.6 6.2 4 13.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5.5l-1.6-7.3a1 1 0 0 0-1-.7H6.6a1 1 0 0 0-1 .7Z"/></g></symbol>
+    <symbol id="i-worth" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 7.7 16.3a2.9 2.9 0 0 1-4-4l2.6-2.6a2.9 2.9 0 0 1 3.4-.5"/><path d="m14.5 9.5 1.8-1.8a2.9 2.9 0 0 1 4 4l-2.6 2.6a2.9 2.9 0 0 1-3.4.5"/><path d="M4 4l2 2M18 18l2 2M9 3v2M15 21v-2"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></g></symbol>
+  </defs>
+</svg>
+<!-- /@sprite -->
+<a class="skip" href="#main">Skip to content</a>
+<!-- @dstrip name="State: a member has withdrawn sharing" -->
+<div class="dstrip" role="note" aria-label="Design review">
+  <div class="dstrip-in">
+    <span><a href="../index.html">Hearth design</a> / <span class="dname">State: a member has withdrawn sharing</span></span>
+    <span>Viewer: Alex (admin)</span>
+    <span class="dspacer"></span>
+    <a href="#design-notes">Design notes</a>
+    <button type="button" data-theme-toggle>Theme: system</button>
+  </div>
+</div>
+<!-- /@dstrip -->
+<div class="app">
+<!-- @top active="household" -->
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="../screens/household.html"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="../screens/household.html" aria-current="page">Household</a>
+      <a href="../screens/me.html">You</a>
+      <a href="../screens/review.html">Review <span class="count" aria-label="23 to review">23</span></a>
+      <a href="../screens/net-worth.html">Net worth</a>
+      <a href="../screens/sharing.html">Settings</a>
+    </nav>
+    <div class="topbar-end">
+      <a class="me-chip" href="../screens/sharing.html"><span class="me-name">Alex</span><span class="avatar" aria-hidden="true">A</span><span class="vh">Signed in as Alex. Account settings</span></a>
+    </div>
+  </div>
+</header>
+<!-- /@top -->
+<main id="main" class="page">
+
+  <div class="page-head">
+    <div>
+      <h1>Household</h1>
+      <p class="sub">Everyone's shared totals, and the joint accounts. Detail stays with its owner.</p>
+    </div>
+  </div>
+
+  <section class="panel" aria-labelledby="nw-h">
+    <div class="panel-body" style="padding-top: var(--s-6)">
+      <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
+        <div class="hero">
+          <h2 id="nw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth, without Sam</h2>
+          <div class="hero-partial">
+            <p class="hero-value"><span class="cur">$</span>846,683</p>
+            <span class="missing-chip"><svg aria-hidden="true"><use href="#i-lock"/></svg>+ Sam, not shared</span>
+          </div>
+          <p class="muted mt-2 measure">Sam has stopped sharing their net worth, so there is no household total. This is everyone else: your accounts and the joint accounts.</p>
+          <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>Computed today, 6:00 AM. Past months leave Sam out too, so trends compare like with like.</p>
+        </div>
+        <div>
+          <h3 class="sm" style="color: var(--ink-2); font-weight: 500">What is included</h3>
+          <table class="table addup mt-2">
+            <caption class="vh">Parts of the household figure</caption>
+            <thead class="vh"><tr><th scope="col">Part</th><th scope="col" class="num">Amount</th></tr></thead>
+            <tbody>
+              <tr><th scope="row"><span class="who">Alex (you), excluding joint</span></th><td class="num">$611,295</td></tr>
+              <tr><th scope="row"><span class="who who-joint">Joint accounts</span></th><td class="num">$235,388</td></tr>
+              <tr><th scope="row"><span class="who who-2">Sam</span><span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared since today</span></th><td class="num priv">Not included</td></tr>
+              <tr class="total-row"><th scope="row">Known so far</th><td class="num">$846,683</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel mt-4" aria-labelledby="mem-h">
+    <div class="panel-head">
+      <h2 id="mem-h">Members</h2>
+    </div>
+    <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
+      <table class="table members">
+        <caption class="vh">Household members and joint accounts</caption>
+        <thead>
+          <tr><th scope="col">Member</th><th scope="col" class="col-hide-sm">Shares with the household</th><th scope="col" class="num">Net worth</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row"><a class="row member-link" href="../screens/me.html"><span class="avatar" aria-hidden="true">A</span><span><span class="primary">Alex</span> <span class="faint">(you)</span><span class="second">3 institutions, 5 accounts</span></span></a></th>
+            <td class="col-hide-sm"><span class="row wrap" style="gap: 6px"><span class="tag tag-shared">Net worth</span><span class="tag tag-shared">Spending</span><span class="tag tag-shared">Income</span></span></td>
+            <td class="num"><span class="primary">$611,295</span><span class="second">excluding joint</span></td>
+          </tr>
+          <tr>
+            <th scope="row"><a class="row member-link" href="../screens/member.html"><span class="avatar who-2" aria-hidden="true">S</span><span><span class="primary">Sam</span><span class="second">2 institutions, 4 accounts</span></span></a></th>
+            <td class="col-hide-sm"><span class="row wrap" style="gap: 6px"><span class="tag tag-shared">Spending</span><span class="tag tag-shared">Income</span></span></td>
+            <td class="num"><span class="priv-line" style="justify-content: flex-end"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</span></td>
+          </tr>
+          <tr>
+            <th scope="row"><a class="row member-link" href="../screens/net-worth.html#joint"><span class="avatar who-joint" aria-hidden="true">J</span><span><span class="primary">Joint accounts</span><span class="second">Alex and Sam, 2 accounts</span></span></a></th>
+            <td class="col-hide-sm"><span class="tag tag-joint">Full detail to both owners</span></td>
+            <td class="num"><span class="primary">$235,388</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel annot mt-8" aria-labelledby="d3-h">
+    <div class="panel-head">
+      <h2 id="d3-h">Design review, not product UI: two ways to draw decision 3</h2>
+      <p class="finding">Decision 3 was written as "a range" when a member withdraws. Firstmate amended it on 2026-10-18 to the known part, used above, because a range bounds the withheld figure from both sides. The range is kept here only for comparison.</p>
+    </div>
+    <div class="panel-body">
+      <div class="grid grid-2">
+        <div class="option-card is-rec">
+          <span class="tag tag-shared" style="width: fit-content">Decision 3 as amended, used above</span>
+          <p class="sm muted">Known part, with the gap attached</p>
+          <p class="ov">$846,683 <span class="missing-chip" style="vertical-align: 0.2em"><svg aria-hidden="true"><use href="#i-lock"/></svg>+ Sam</span></p>
+          <p class="sm muted">Reveals nothing about Sam. Cannot be mistaken for a total, because the missing part is attached to the number itself.</p>
+        </div>
+        <div class="option-card">
+          <span class="tag tag-outline" style="width: fit-content">As decision 3 was first written</span>
+          <p class="sm muted">A range</p>
+          <p class="ov">$1.1M&ndash;$1.4M</p>
+          <p class="sm muted">An honest range has to be computed from Sam's real figure. Subtract the known $846,683 and anyone learns Sam holds between about $250K and $550K: the private number, rounded. A range that does not come from Sam's figure is not honest.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+<!-- @tabbar active="household" -->
+<nav class="tabbar" aria-label="Primary">
+  <a href="../screens/household.html" aria-current="page"><svg aria-hidden="true"><use href="#i-home"/></svg>Household</a>
+  <a href="../screens/me.html"><svg aria-hidden="true"><use href="#i-user"/></svg>You</a>
+  <a href="../screens/review.html"><svg aria-hidden="true"><use href="#i-review"/></svg><span class="count" aria-hidden="true">23</span>Review<span class="vh">, 23 to review</span></a>
+  <a href="../screens/net-worth.html"><svg aria-hidden="true"><use href="#i-worth"/></svg>Net worth</a>
+  <a href="../screens/sharing.html"><svg aria-hidden="true"><use href="#i-gear"/></svg>Settings</a>
+</nav>
+<!-- /@tabbar -->
+</div>
+
+<section class="dnotes" id="design-notes" aria-labelledby="dn-h">
+  <div class="dnotes-in">
+    <h2 id="dn-h">Design notes</h2>
+    <ol>
+      <li><strong>Never a smaller number presented as complete.</strong> Decision 3's core rule. The label changes ("without Sam"), the missing part is attached to the hero as a hatched chip, and the reconciliation lists Sam as "not included".</li>
+      <li><strong>The composition bar is removed, not shrunk.</strong> A bar of the known parts would draw Alex as a bigger share of the household than they are.</li>
+      <li><strong>History is consistent.</strong> Withdrawing applies to past figures too, so the trend covers the same parts back to the start rather than showing a cliff on the day Sam withdrew.</li>
+      <li><strong>Withdrawing is never framed as wrong.</strong> Violet and a lock, not red and a warning: Sam used a setting as intended.</li>
+      <li><strong>The disagreement with decision 3 is drawn, not argued.</strong> Firstmate can overturn it in one line; nothing else on this page would change.</li>
+    </ol>
+  </div>
+</section>
+<script src="../design.js"></script>
+</body>
+</html>

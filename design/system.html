@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Design system - Hearth</title>
+<link rel="stylesheet" href="hearth.css">
+</head>
+<body>
+<!-- @sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M3.5 10.6 12 3.8l8.5 6.8V20a.9.9 0 0 1-.9.9H4.4a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 18.4c-1.9 0-3.1-1.3-3.1-3 0-1.9 1.6-2.7 2.2-4.6.2.9.9 1.5 1.5 1.9.5-.6.7-1.2.7-1.9 1.3 1 1.8 2.7 1.8 3.7 0 2.3-1.3 3.9-3.1 3.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.6 14.7c.6-.2 1.2-.3 1.9-.3 2.3 0 4 1.5 4.5 4.6"/></g></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></g></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5h4l1.5 2.5h5l1.5-2.5h4"/><path d="M5.6 6.2 4 13.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5.5l-1.6-7.3a1 1 0 0 0-1-.7H6.6a1 1 0 0 0-1 .7Z"/></g></symbol>
+    <symbol id="i-worth" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 7.7 16.3a2.9 2.9 0 0 1-4-4l2.6-2.6a2.9 2.9 0 0 1 3.4-.5"/><path d="m14.5 9.5 1.8-1.8a2.9 2.9 0 0 1 4 4l-2.6 2.6a2.9 2.9 0 0 1-3.4.5"/><path d="M4 4l2 2M18 18l2 2M9 3v2M15 21v-2"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></g></symbol>
+  </defs>
+</svg>
+<!-- /@sprite -->
+<a class="skip" href="#main">Skip to content</a>
+<!-- @dstrip name="Design system" viewer="none" index="index.html" notes="none" -->
+<div class="dstrip" role="note" aria-label="Design review">
+  <div class="dstrip-in">
+    <span><a href="index.html">Hearth design</a> / <span class="dname">Design system</span></span>
+    <span class="dspacer"></span>
+    <button type="button" data-theme-toggle>Theme: system</button>
+  </div>
+</div>
+<!-- /@dstrip -->
+<div class="doc">
+  <nav class="doc-toc" aria-label="On this page">
+    <p class="xs faint" style="text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500">Design system</p>
+    <ol role="list">
+      <li><a href="#principles">Principles</a></li>
+      <li><a href="#numbers">Numbers</a></li>
+      <li><a href="#type">Type</a></li>
+      <li><a href="#colour">Colour and contrast</a></li>
+      <li><a href="#gainloss">Gain and loss</a></li>
+      <li><a href="#absence">Absence</a></li>
+      <li><a href="#space">Space, radius, elevation</a></li>
+      <li><a href="#motion">Motion</a></li>
+      <li><a href="#a11y">Accessibility floor</a></li>
+      <li><a href="#components">Components</a></li>
+      <li><a href="#charts">Charts</a></li>
+    </ol>
+  </nav>
+
+<main id="main" class="doc-main">
+  <h1>Hearth design system</h1>
+  <p class="lede muted mt-2 measure">A financial tool a household reads often. Every value below is in <code>hearth.css</code>; this page gives the reason for each. Where a choice was close, the rejected option is named.</p>
+
+  <section class="doc-sec" id="principles" aria-labelledby="h-principles">
+    <h2 id="h-principles">Principles</h2>
+    <ol class="doc-list">
+      <li><strong>The number is the interface.</strong> Type, colour and layout exist to make figures legible and comparable. Decoration that does not help read a number is cut.</li>
+      <li><strong>One hero per screen.</strong> The figure that matters most is the only thing at display size, readable in a second. Everything else steps down.</li>
+      <li><strong>Precision matches use.</strong> A net worth is read in dollars; a transaction is reconciled in cents. Showing cents on a seven-figure total is noise that slows the eye.</li>
+      <li><strong>Never colour alone.</strong> Every meaning carried by colour is also carried by a sign, a glyph or a word.</li>
+      <li><strong>Every absence looks different.</strong> Withheld, not yet there, loading, missing history and broken are five different situations with five different looks.</li>
+      <li><strong>Privacy is shown, not implied.</strong> Every private section says so, and every withheld figure says who withheld it.</li>
+    </ol>
+  </section>
+
+  <section class="doc-sec" id="numbers" aria-labelledby="h-numbers">
+    <h2 id="h-numbers">Numbers</h2>
+    <p class="measure muted">Formatting is decided by what the reader does with the number, not by where the data came from.</p>
+    <div class="table-scroll mt-4" tabindex="0" role="region" aria-label="Number formatting table">
+    <table class="table doc-table">
+      <caption class="vh">Number formatting by context</caption>
+      <thead><tr><th scope="col">Context</th><th scope="col">Rule</th><th scope="col" class="num">Example</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Hero and summary totals</th><td>Whole dollars, proportional figures, currency sign set small</td><td class="num"><span class="doc-hero"><span class="cur">$</span>1,284,898</span></td></tr>
+        <tr><th scope="row">Balances, line items, reconciliations</th><td>Cents, tabular figures, right-aligned</td><td class="num">$12,480.16</td></tr>
+        <tr><th scope="row">Amounts in a column of amounts</th><td>Cents, no currency sign: the column header carries the unit and alignment stays clean</td><td class="num">&minus;128.40</td></tr>
+        <tr><th scope="row">Money in</th><td>Explicit plus sign, positive colour</td><td class="num amt amt-in">+3,299.60</td></tr>
+        <tr><th scope="row">Money out</th><td>True minus sign (U+2212), ink; never a hyphen, never parentheses</td><td class="num">&minus;84.12</td></tr>
+        <tr><th scope="row">Liabilities</th><td>Negative, with the word "owed" beneath in a list</td><td class="num">&minus;$3,140.22</td></tr>
+        <tr><th scope="row">Changes</th><td>Arrow, amount, and the period it covers</td><td class="num"><span class="delta is-good"><span class="arrow" aria-hidden="true">&#9650;</span> $18,412 <span class="ctx">since Oct 1</span></span></td></tr>
+        <tr><th scope="row">Chart axes</th><td>Compact, rounded to the gridline</td><td class="num">$1.25M &middot; $10K</td></tr>
+        <tr><th scope="row">Findings in prose</th><td>Exact to the dollar when the chart supports it</td><td class="num">$196 over typical</td></tr>
+        <tr><th scope="row">Units and prices</th><td>Units to 3 decimals, prices to 2</td><td class="num">1,284.301 &times; $98.42</td></tr>
+        <tr><th scope="row">Percentages</th><td>Whole numbers; one decimal only below 10%</td><td class="num">37% &middot; 1.5%</td></tr>
+        <tr><th scope="row">Dates</th><td>Relative when recent ("today, 6:00 AM"), otherwise "Oct 13"; year only when not this year</td><td class="num">Fri close &middot; Oct 31, 2025</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="measure muted mt-4">Rejected: abbreviating totals to "$1.28M". It reads quickly but hides the month-on-month change a household watches, which is usually in the thousands. Abbreviation is kept for chart axes, where the gridline does the work.</p>
+  </section>
+
+  <section class="doc-sec" id="type" aria-labelledby="h-type">
+    <h2 id="h-type">Type</h2>
+    <p class="measure muted">The platform's own sans (San Francisco, Segoe UI, Roboto). No web fonts: the app runs offline on the household machine, and system fonts have excellent tabular figures and a true minus. One family, three weights (400, 500, 600). Sizes are hand-set rather than a strict ratio, because the gaps that matter are between body, label and figure.</p>
+    <div class="table-scroll mt-4" tabindex="0" role="region" aria-label="Type scale table">
+    <table class="table doc-table">
+      <caption class="vh">Type scale</caption>
+      <thead><tr><th scope="col">Token</th><th scope="col">Size / line</th><th scope="col">Use</th><th scope="col">Specimen</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><code>--t-hero</code></th><td class="tnum">52 / 56, phone 40 / 44</td><td>The one hero figure</td><td><span style="font-size: 40px; line-height: 44px; font-weight: 600; letter-spacing: -0.03em">611,295</span></td></tr>
+        <tr><th scope="row"><code>--t-fig</code></th><td class="tnum">30 / 36, phone 26 / 32</td><td>Secondary figures</td><td><span style="font-size: 30px; line-height: 36px; font-weight: 600; letter-spacing: -0.02em">8,214</span></td></tr>
+        <tr><th scope="row"><code>--t-h1</code></th><td class="tnum">24 / 30</td><td>Page title</td><td><span style="font-size: 24px; font-weight: 600; letter-spacing: -0.015em">Household</span></td></tr>
+        <tr><th scope="row"><code>--t-h2</code></th><td class="tnum">18 / 24</td><td>Empty and zero states</td><td><span style="font-size: 18px; font-weight: 600">All caught up</span></td></tr>
+        <tr><th scope="row"><code>--t-h3</code></th><td class="tnum">15 / 20</td><td>Panel titles</td><td><span style="font-size: 15px; font-weight: 600">Where October went</span></td></tr>
+        <tr><th scope="row"><code>--t-lg</code></th><td class="tnum">16 / 24</td><td>Lead paragraphs, inputs (16px stops iOS zoom)</td><td><span style="font-size: 16px">Connect your banks</span></td></tr>
+        <tr><th scope="row"><code>--t-md</code></th><td class="tnum">14 / 20</td><td>Body and tables: the default</td><td><span>Corner Grocer</span></td></tr>
+        <tr><th scope="row"><code>--t-sm</code></th><td class="tnum">13 / 18</td><td>Secondary lines, findings</td><td><span class="sm muted">Groceries &middot; Everyday checking</span></td></tr>
+        <tr><th scope="row"><code>--t-xs</code></th><td class="tnum">12 / 16</td><td>Column headers, tags, axis labels; the minimum</td><td><span class="xs faint">Typical by the 18th</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="grid grid-2 mt-6">
+      <div class="doc-specimen">
+        <p class="xs faint">Hero: proportional figures</p>
+        <p class="doc-hero-big"><span class="cur">$</span>1,111,111</p>
+        <p class="sm muted">At display size, tabular figures leave visible gaps around narrow digits like 1. The hero never aligns with anything, so it gets proportional figures.</p>
+      </div>
+      <div class="doc-specimen">
+        <p class="xs faint">Columns: tabular figures</p>
+        <div class="tnum" style="text-align: right; font-size: 15px; line-height: 24px">111.11<br>888.88<br>&minus;1,204.50<br>+3,299.60</div>
+        <p class="sm muted">In a column every digit is the same width, so decimal points line up and magnitudes can be compared by eye.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="doc-sec" id="colour" aria-labelledby="h-colour">
+    <h2 id="h-colour">Colour and contrast</h2>
+    <p class="measure muted">Warm neutrals carry almost everything. Colour is reserved for meaning, and each meaning has exactly one hue. Blue means "you can act on this" and never encodes data. Dark mode is its own set of steps, chosen and measured separately, not an inversion. Ratios are WCAG 2.2 contrast against the named background; AA needs 4.5:1 for text and 3:1 for graphics and large text.</p>
+    <div class="table-scroll mt-4" tabindex="0" role="region" aria-label="Colour contrast table">
+    <table class="table doc-table contrast">
+      <caption class="vh">Colour tokens and their measured contrast</caption>
+      <thead><tr><th scope="col">Token</th><th scope="col">Use</th><th scope="col">On</th><th scope="col" class="num">Light</th><th scope="col" class="num">Dark</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><i class="sw" style="background: var(--ink)"></i><code>ink</code></th><td>Primary text</td><td>surface</td><td class="num">17.2</td><td class="num">14.4</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--ink-2)"></i><code>ink-2</code></th><td>Secondary text</td><td>surface</td><td class="num">8.2</td><td class="num">8.7</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--ink-3)"></i><code>ink-3</code></th><td>Tertiary text, the floor for any text</td><td>surface / page / sunk</td><td class="num">5.4 / 5.0 / 4.7</td><td class="num">5.9 / 6.5 / 5.3</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--accent)"></i><code>accent</code></th><td>Links, buttons, focus</td><td>surface</td><td class="num">6.9</td><td class="num">7.7</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--pos)"></i><code>pos</code></th><td>Gain, money in</td><td>surface / its tint</td><td class="num">6.1 / 5.4</td><td class="num">8.8 / 7.3</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--neg)"></i><code>neg</code></th><td>Loss, over typical, error</td><td>surface / its tint</td><td class="num">6.5 / 5.7</td><td class="num">7.7 / 6.9</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--warn)"></i><code>warn</code></th><td>Stale, expired, missing history</td><td>surface / its tint</td><td class="num">6.4 / 5.8</td><td class="num">9.3 / 7.9</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--priv)"></i><code>priv</code></th><td>Withheld by its owner</td><td>surface / its tint</td><td class="num">7.4 / 6.5</td><td class="num">8.2 / 7.2</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--control)"></i><code>control</code></th><td>Input, button and switch boundaries</td><td>surface</td><td class="num">3.8</td><td class="num">4.0</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--chart-muted)"></i><code>chart-muted</code></th><td>Secondary data marks</td><td>surface</td><td class="num">3.1</td><td class="num">3.1</td></tr>
+        <tr><th scope="row"><i class="sw" style="background: var(--line)"></i><code>line</code></th><td>Decorative separators only</td><td>surface</td><td class="num">1.3</td><td class="num">1.4</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="measure muted mt-4">Button text: white on accent 6.9:1; in dark mode, near-black on accent 8.1:1.</p>
+
+    <h3 class="mt-8">Identity</h3>
+    <p class="measure muted mt-1">Each member keeps one hue on every screen: avatar ring, composition bar, legend dot. The three hues were run through a colour-vision-deficiency validator against every pair, in both modes: worst pair &Delta;E 9.2 (deutan) light, 9.4 dark, against a target of 8. Joint ownership is neutral grey: it belongs to no one member, and it keeps the three validated hues for people.</p>
+    <div class="row wrap mt-4" style="gap: var(--s-6)">
+      <span class="who sm">Member 1, blue</span><span class="who who-2 sm">Member 2, orange</span><span class="who who-3 sm">Member 3, aqua</span><span class="who who-joint sm">Joint, neutral</span>
+    </div>
+    <p class="measure muted mt-4">Two limits, stated rather than hidden. Aqua is 2.8:1 on white, below the 3:1 graphics floor, so identity is always direct-labelled with the member's name and is never the only cue. A fourth member cannot get a fourth hue that passes the validator in both modes; they would get the neutral treatment with a label. See the weaknesses in <a href="rationale.md">rationale.md</a>.</p>
+    <p class="measure muted mt-4">Rejected: a green brand colour, as in the approved mock. Green is the colour of "money in"; making it also the colour of buttons and headers would make gains indistinguishable from chrome.</p>
+  </section>
+
+  <section class="doc-sec" id="gainloss" aria-labelledby="h-gainloss">
+    <h2 id="h-gainloss">Gain and loss</h2>
+    <p class="measure muted">The most important distinction in the product, so it is carried four ways and survives any one of them failing.</p>
+    <div class="grid grid-2 mt-4">
+      <div class="doc-specimen">
+        <p class="xs faint">In colour</p>
+        <ul class="list mt-2" role="list">
+          <li><span class="grow">Net worth</span><span class="delta is-good"><span class="arrow" aria-hidden="true">&#9650;</span><span class="vh">Up</span> $18,412 <span class="ctx">since Oct 1</span></span></li>
+          <li><span class="grow">Dining</span><span class="delta is-bad"><span class="arrow" aria-hidden="true">&#9650;</span><span class="vh">Up</span> $196 <span class="ctx">over typical</span></span></li>
+          <li><span class="grow">Payroll</span><span class="amt amt-in">+3,299.60</span></li>
+          <li><span class="grow">Corner Grocer</span><span class="amt">&minus;64.18</span></li>
+        </ul>
+      </div>
+      <div class="doc-specimen" style="filter: grayscale(1)">
+        <p class="xs faint">The same, with colour removed</p>
+        <ul class="list mt-2" role="list" aria-hidden="true">
+          <li><span class="grow">Net worth</span><span class="delta is-good"><span class="arrow">&#9650;</span> $18,412 <span class="ctx">since Oct 1</span></span></li>
+          <li><span class="grow">Dining</span><span class="delta is-bad"><span class="arrow">&#9650;</span> $196 <span class="ctx">over typical</span></span></li>
+          <li><span class="grow">Payroll</span><span class="amt amt-in">+3,299.60</span></li>
+          <li><span class="grow">Corner Grocer</span><span class="amt">&minus;64.18</span></li>
+        </ul>
+      </div>
+    </div>
+    <ol class="doc-list mt-4">
+      <li><strong>Sign:</strong> "+" for money in, a true minus for money out. Always present, so the number alone is unambiguous.</li>
+      <li><strong>Arrow:</strong> direction of change, &#9650; or &#9660;, announced to screen readers as "Up" or "Down".</li>
+      <li><strong>Words:</strong> every change names its comparison ("since Oct 1", "over typical"). "Up $196" on spending is bad news; the words say so.</li>
+      <li><strong>Colour last:</strong> green and red mean favourable and unfavourable, not up and down. Spending rising is red; net worth rising is green.</li>
+    </ol>
+    <p class="measure muted mt-4">Spending is never painted red by default. Most transactions are spending, so red everywhere would mean nothing and would make an ordinary grocery run look like an alarm.</p>
+  </section>
+
+  <section class="doc-sec" id="absence" aria-labelledby="h-absence">
+    <h2 id="h-absence">Absence</h2>
+    <p class="measure muted">A financial page is often defined by what it cannot show. Each kind of absence has its own look, so a reader never confuses "private" with "broken".</p>
+    <div class="grid grid-2 mt-4">
+      <div>
+        <p class="xs faint mb-2">Withheld by its owner: violet, hatched edge, a lock, who decided</p>
+        <div class="withheld compact"><span class="glyph" aria-hidden="true"><svg><use href="#i-lock"/></svg></span><p style="margin: 0">Sam's positions are private to Sam.</p></div>
+      </div>
+      <div>
+        <p class="xs faint mb-2">Not there yet: dashed grey, and the action that fills it</p>
+        <div class="empty" style="padding: var(--s-4)"><p class="sm" style="margin: 0">Connect a bank to get started</p></div>
+      </div>
+      <div>
+        <p class="xs faint mb-2">Loading: the shape of what is coming, a calm shimmer</p>
+        <div class="panel" style="padding: var(--s-4)"><span class="skel" style="height: 14px; width: 70%"></span><span class="skel mt-2" style="height: 14px; width: 45%"></span></div>
+      </div>
+      <div>
+        <p class="xs faint mb-2">Missing history or out of date: amber, a clock, the date it stops</p>
+        <div class="alert alert-warn"><svg aria-hidden="true"><use href="#i-clock"/></svg><div class="alert-body"><p style="margin: 0; color: var(--ink)">No price since Tue, Oct 13.</p></div></div>
+      </div>
+      <div>
+        <p class="xs faint mb-2">Broken: red rule, what happened, what to do</p>
+        <div class="alert alert-err"><svg aria-hidden="true"><use href="#i-error"/></svg><div class="alert-body"><p style="margin: 0; color: var(--ink)">Today's figures could not be computed.</p></div></div>
+      </div>
+      <div>
+        <p class="xs faint mb-2">Nothing to do: a positive outcome, not an empty box</p>
+        <div class="panel caught-up" style="padding: var(--s-4)"><span class="glyph" aria-hidden="true" style="width: 32px; height: 32px"><svg style="width: 16px; height: 16px"><use href="#i-check"/></svg></span><p style="margin: 0; font-weight: 600">All caught up</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="doc-sec" id="space" aria-labelledby="h-space">
+    <h2 id="h-space">Space, radius, elevation</h2>
+    <p class="measure muted"><strong>Space</strong> is a 4px grid: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. Panels pad 24 on desktop and 16 on a phone; table rows pad 12, which fits about fourteen transactions in a laptop viewport without feeling cramped.</p>
+    <div class="space-scale mt-4" aria-hidden="true">
+      <span style="width: 4px"></span><span style="width: 8px"></span><span style="width: 12px"></span><span style="width: 16px"></span><span style="width: 20px"></span><span style="width: 24px"></span><span style="width: 32px"></span><span style="width: 40px"></span><span style="width: 48px"></span><span style="width: 64px"></span>
+    </div>
+    <p class="measure muted mt-6"><strong>Radius</strong> has three steps: 6px for controls, 10px for panels, round for tags and avatars. Small enough to stay businesslike, large enough not to look like a spreadsheet.</p>
+    <p class="measure muted mt-4"><strong>Elevation</strong> is flat. Panels are separated by a 1px line on a slightly darker page, not by shadows; stacked shadows on every card are the most common way dashboards become muddy. Shadow is reserved for things that float: the sticky top bar's blur and chart tooltips.</p>
+    <div class="row wrap mt-4" style="gap: var(--s-4)">
+      <div class="panel" style="padding: var(--s-4); width: 180px"><p class="sm">Panel: line, no shadow</p></div>
+      <div style="padding: var(--s-4); width: 180px; background: var(--surface); border-radius: var(--r-sm); box-shadow: var(--e-2)"><p class="sm">Floating: tooltip</p></div>
+    </div>
+  </section>
+
+  <section class="doc-sec" id="motion" aria-labelledby="h-motion">
+    <h2 id="h-motion">Motion</h2>
+    <p class="measure muted">120ms for hover and focus, 180ms for switches and disclosures, one easing curve. Motion confirms that something responded; it never performs. Numbers never count up: an animated figure is unreadable for the second it matters most. Everything is cut to near zero for anyone who prefers reduced motion, including the loading shimmer.</p>
+  </section>
+
+  <section class="doc-sec" id="a11y" aria-labelledby="h-a11y">
+    <h2 id="h-a11y">Accessibility floor</h2>
+    <ul class="doc-list">
+      <li><strong>Contrast:</strong> every text pairing in the table above passes AA; the lowest text pairing is 4.7:1.</li>
+      <li><strong>Focus:</strong> one treatment everywhere, a 2px accent ring offset by 2px, shown for keyboard focus and never removed. Try Tab on any screen.</li>
+      <li><strong>Keyboard:</strong> everything is a real link, button, input, select or disclosure. Switches are checkboxes. A skip link leads every page.</li>
+      <li><strong>Semantics:</strong> tables are tables with captions, row headers and column headers; transaction days are row groups; charts are labelled images with a table twin one click away.</li>
+      <li><strong>Colour is never alone:</strong> signs, arrows, glyphs and words carry every state (see Gain and loss).</li>
+      <li><strong>Targets:</strong> 44px minimum on touch screens; 36px on desktop where a pointer is precise.</li>
+      <li><strong>Live regions:</strong> import progress and "saved" confirmations are announced politely; nothing interrupts.</li>
+    </ul>
+    <div class="row wrap mt-4" style="gap: var(--s-4)">
+      <button class="btn btn-primary" type="button">Focus me with Tab</button>
+      <button class="btn" type="button">Secondary</button>
+      <a href="#a11y">A link</a>
+    </div>
+  </section>
+
+  <section class="doc-sec" id="components" aria-labelledby="h-components">
+    <h2 id="h-components">Components</h2>
+    <h3 class="mt-4">Buttons</h3>
+    <p class="measure muted mt-1">One primary per view. Secondary is outlined; quiet is text-only for low-stakes actions. Disabled buttons keep readable text and say why nearby ("1 of 3 confirmed").</p>
+    <div class="row wrap mt-3">
+      <button class="btn btn-primary" type="button">Primary</button>
+      <button class="btn" type="button">Secondary</button>
+      <button class="btn btn-quiet" type="button">Quiet</button>
+      <button class="btn" type="button" disabled>Disabled</button>
+      <button class="btn btn-sm" type="button">Small</button>
+    </div>
+    <h3 class="mt-6">Tags</h3>
+    <p class="measure muted mt-1">Every tag pairs a hue with a glyph or a word that stands on its own.</p>
+    <div class="row wrap mt-3">
+      <span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Household sees</span>
+      <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+      <span class="tag tag-joint">Joint</span>
+      <span class="tag tag-review">To review</span>
+      <span class="tag tag-ok"><svg aria-hidden="true"><use href="#i-check"/></svg>730 days</span>
+      <span class="tag tag-warn"><svg aria-hidden="true"><use href="#i-warn"/></svg>90 days only</span>
+      <span class="tag tag-err"><svg aria-hidden="true"><use href="#i-error"/></svg>Failed</span>
+    </div>
+    <h3 class="mt-6">Switch</h3>
+    <p class="measure muted mt-1">A checkbox underneath, with its state written beside it. Position alone is not a state.</p>
+    <div class="row wrap mt-3" style="gap: var(--s-8)">
+      <label class="switch"><input type="checkbox" checked aria-label="Example, shared"><span class="track" aria-hidden="true"></span><span class="state" aria-hidden="true"></span></label>
+      <label class="switch"><input type="checkbox" aria-label="Example, not shared"><span class="track" aria-hidden="true"></span><span class="state" aria-hidden="true"></span></label>
+    </div>
+    <h3 class="mt-6">Fields</h3>
+    <div class="grid grid-2 mt-3">
+      <div class="field"><label for="ex1">Username</label><input class="input" id="ex1" value="alex"><p class="hint">What they type to sign in.</p></div>
+      <div class="field"><label for="ex2">Password</label><input class="input" id="ex2" type="password" aria-invalid="true" aria-describedby="ex2e"><p class="error" id="ex2e"><svg aria-hidden="true"><use href="#i-error"/></svg>That username and password don't match.</p></div>
+    </div>
+  </section>
+
+  <section class="doc-sec" id="charts" aria-labelledby="h-charts">
+    <h2 id="h-charts">Charts</h2>
+    <ul class="doc-list">
+      <li><strong>A chart must answer a question a household asks.</strong> "Are we on track this month?" (cumulative pace against a typical band). "Where did it go, and what is unusual?" (category bars with a typical tick). "Are we richer because we saved or because markets rose?" (saved and market, stacked). If no question, no chart.</li>
+      <li><strong>The finding is written above the chart</strong>, as a sentence with the number in it. The chart is the evidence.</li>
+      <li><strong>Now is ink; history is grey.</strong> The current period is the darkest mark; everything else recedes. No rainbow series.</li>
+      <li><strong>One axis.</strong> Two measures of different scale get two charts, never a second y-axis.</li>
+      <li><strong>Thin marks, quiet grid.</strong> 2px lines, bars no wider than 18px, solid hairline gridlines, direct labels on the one value that matters.</li>
+      <li><strong>Every chart has a table twin</strong> ("Show as a table") with the same numbers, for keyboards, screen readers and anyone who would rather read.</li>
+      <li><strong>Privacy reaches into charts.</strong> A member who shares a total but not its parts appears as a hatched, labelled row; a chart that cannot include someone says so in its legend.</li>
+      <li><strong>Rejected:</strong> donuts and pies (bad at comparing close values), sparklines without context, gauges and "financial health scores", and any chart that exists because dashboards have charts.</li>
+    </ul>
+  </section>
+</main>
+</div>
+<script src="design.js"></script>
+</body>
+</html>

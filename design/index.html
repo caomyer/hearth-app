@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hearth design</title>
+<link rel="stylesheet" href="hearth.css">
+</head>
+<body>
+<!-- @sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M3.5 10.6 12 3.8l8.5 6.8V20a.9.9 0 0 1-.9.9H4.4a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 18.4c-1.9 0-3.1-1.3-3.1-3 0-1.9 1.6-2.7 2.2-4.6.2.9.9 1.5 1.5 1.9.5-.6.7-1.2.7-1.9 1.3 1 1.8 2.7 1.8 3.7 0 2.3-1.3 3.9-3.1 3.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.6 14.7c.6-.2 1.2-.3 1.9-.3 2.3 0 4 1.5 4.5 4.6"/></g></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></g></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5h4l1.5 2.5h5l1.5-2.5h4"/><path d="M5.6 6.2 4 13.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5.5l-1.6-7.3a1 1 0 0 0-1-.7H6.6a1 1 0 0 0-1 .7Z"/></g></symbol>
+    <symbol id="i-worth" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 7.7 16.3a2.9 2.9 0 0 1-4-4l2.6-2.6a2.9 2.9 0 0 1 3.4-.5"/><path d="m14.5 9.5 1.8-1.8a2.9 2.9 0 0 1 4 4l-2.6 2.6a2.9 2.9 0 0 1-3.4.5"/><path d="M4 4l2 2M18 18l2 2M9 3v2M15 21v-2"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></g></symbol>
+  </defs>
+</svg>
+<!-- /@sprite -->
+<a class="skip" href="#main">Skip to content</a>
+<!-- @dstrip name="Index" viewer="none" index="index.html" notes="none" -->
+<div class="dstrip" role="note" aria-label="Design review">
+  <div class="dstrip-in">
+    <span><a href="index.html">Hearth design</a> / <span class="dname">Index</span></span>
+    <span class="dspacer"></span>
+    <button type="button" data-theme-toggle>Theme: system</button>
+  </div>
+</div>
+<!-- /@dstrip -->
+<main id="main" class="doc-index">
+  <div class="row" style="gap: var(--s-3)">
+    <svg aria-hidden="true" style="width: 32px; height: 32px"><use href="#i-mark"/></svg>
+    <h1>Hearth design</h1>
+  </div>
+  <p class="lede muted mt-2 measure">High-fidelity design for the household finance app. Every screen opens straight from disk: no build step, no server, no network. Every figure and name is invented.</p>
+  <p class="muted mt-2 measure">Each screen ends with its design notes. Use the theme switch in the dark strip to check light and dark. Narrow the window, or open on a phone, to see the phone layout.</p>
+
+  <div class="idx-top mt-6">
+    <a class="panel idx-card" href="system.html"><span class="idx-k">Design system</span><span class="sm muted">Type, number formatting, colour with measured contrast, gain and loss, the five kinds of absence, space, motion, the accessibility floor, components and chart rules.</span></a>
+    <a class="panel idx-card" href="rationale.md"><span class="idx-k">Rationale</span><span class="sm muted">What was chosen, what was rejected and why, where decisions were questioned, and the three weakest places in this design.</span></a>
+  </div>
+
+  <h2 class="idx-h">Screens</h2>
+  <p class="sm faint">Viewer is Alex, an admin, unless noted. Sam is the other member; Jordan is a new member joining.</p>
+  <ol class="idx-list" role="list">
+    <li><a href="screens/sign-in.html">Sign in</a><span>With the failed-attempt state below it.</span></li>
+    <li><a href="screens/onboarding-1-member.html">Onboarding 1: create the member</a><span>The admin's step: name, username, temporary password, role.</span></li>
+    <li><a href="screens/onboarding-2-connect.html">Onboarding 2: connect institutions</a><span>The 730-day request, coverage per bank, a bank that only gives 90 days.</span></li>
+    <li><a href="screens/onboarding-3-map.html">Onboarding 3: map accounts</a><span>Explicit confirmation per account, the one-word-apart warning, joint ownership.</span></li>
+    <li><a href="screens/onboarding-4-import.html">Onboarding 4: import and first review</a><span>Progress with counts, reconciliation, and a first review of over a thousand.</span></li>
+    <li><a href="screens/household.html">Household dashboard</a><span>Net worth, spending against typical, categories, members.</span></li>
+    <li><a href="screens/me.html">Your own dashboard</a><span>Every section labelled with who else can see it.</span></li>
+    <li><a href="screens/member.html">Sam, seen by Alex</a><span>Exactly what is withheld, by whom, and why; joint accounts in full.</span></li>
+    <li><a href="screens/review.html">Review queue, grouped</a><span>Grouped by the decision it needs, with reasons instead of scores.</span></li>
+    <li><a href="screens/net-worth.html">Net worth and positions</a><span>How the total adds up, saving versus market, prices with provenance.</span></li>
+    <li><a href="screens/sharing.html">Sharing settings</a><span>Six switches and a live preview of what Sam sees.</span></li>
+  </ol>
+
+  <h2 class="idx-h">States</h2>
+  <ol class="idx-list" role="list">
+    <li><a href="states/new-member.html">Empty: a new member, nothing connected</a><span>Jordan's first look at their own page.</span></li>
+    <li><a href="states/loading.html">Loading</a><span>Skeletons in the shape of the content; refresh holds the old figure.</span></li>
+    <li><a href="states/error.html">Error: today's recompute failed</a><span>A failed balance check, explained for a person and for the ledger.</span></li>
+    <li><a href="states/stale-price.html">A stale price</a><span>One holding without a quote for three trading days.</span></li>
+    <li><a href="states/connection-expired.html">An expired connection</a><span>Settings, Connections, with the app-wide banner.</span></li>
+    <li><a href="states/review-empty.html">Review queue with nothing waiting</a><span>All caught up, and the decisions you can still undo.</span></li>
+    <li><a href="states/sharing-withdrawn.html">A member has withdrawn sharing</a><span>The household total without Sam, and the decision 3 comparison.</span></li>
+  </ol>
+</main>
+<script src="design.js"></script>
+</body>
+</html>
