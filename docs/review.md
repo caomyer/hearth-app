@@ -79,13 +79,25 @@ A first import can be over a thousand rows in thirty-odd groups, most of them a 
 - **Ordered by any dimension**: group size, lowest confidence, largest amount, newest, account or suggested category.
   Lowest confidence and largest amount find real errors fastest.
   Confidence is shown as a band in words ("Low confidence", "Nothing suggested"), as the design asks, never as a percentage.
-- **Filtered** by account, suggested category or group.
-- **Honest progress**: how many rows remain and how much money they move, how many are reviewed of the total, and what the current filter leaves.
+- **Filtered** by account, suggested category or group, and **searched** by merchant or description, in any case, to find one particular row.
+- **Honest progress**: how many rows remain and how much money they move, how many are reviewed of the total, and what the current filter leaves, all of it only what the member can act on.
 
 The keyboard drives all of it (`static/review.js`), pressing the page's own controls so nothing depends on the script:
 `j`/`k` move between items, `a` accepts, `s` skips, `c` changes the category, `x` excludes, `u` undoes, `]`/`[` jump between groups or pages.
 On a group that is not one decision, `a` moves into its first row instead.
-After each decision the page returns to the next row, focused and marked.
+After each decision the page returns to the next row, focused and marked, clear of the sticky top bar; what the decision did, and its Undo, stay pinned in view at the foot of the window, since the next row can be a long way below the top of the page.
+
+A row offers only what the desk would do.
+A row with nothing proposed has nothing to accept, so its button saves the category typed.
+A row its bank counts in the balance it reports offers no Exclude, which the desk would refuse; on a household whose every account is anchored to its bank, that is every row.
+One side of a card payment whose other side hearth has not found (`docs/pairing.md`) has no suggestion that could be right, so it is not a guess to say yes to.
+It is never in what is left, nor in the badge, a reminder or the You page; it is counted apart, "Needs the other side", whatever the filter.
+What is known is said, and no more: if the other side is at a bank nobody connected, connecting it lets pairing settle the row by itself; otherwise the two sides may differ in timing or amount, and pairing records nothing about which.
+So each row keeps the controls the desk accepts: the box and Save, to book it to a category or to one of the member's own accounts no bank reports, and Exclude only where its bank does not count it.
+An account page's "To review" tag on such a row leads to that count, not to the top of the queue.
+Rows Plaid calls a transfer or a loan payment are different: pairing pairs only card payments, so connecting their other account settles nothing, and many (money sent to a person) a category settles, so they stay in what is left.
+
+Group names keep Plaid's abbreviations in capitals ("Bank fees: ATM fees"), and a category is named by its most specific part, so wages and interest read apart.
 
 `hearth demo --first-review` serves an invented household with two years of history, none of it reviewed: one member has about 1,150 rows in 34 groups, the size of a real first import.
 Exercising the queue at that size is what found that a one-key accept could settle an "Unsure" group of 212 guesses.

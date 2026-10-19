@@ -29,7 +29,8 @@ def chrome(
     """What every signed-in page shows around its content: the review badge and the viewer's
     own reminder and colour, and why today's figures are missing when they are."""
     desk = view.review_desk(RulingStore(conn), app.clock)
-    waiting = sum(1 for item in desk.items() if item.unreviewed)
+    # Only what is left: a row that needs its other side is counted apart, not a review due.
+    waiting = sum(1 for item in desk.items() if item.actionable)
     reminder = cadence.reminder(
         cadence.load(conn, session.member.id), waiting, desk.last_reviewed(), app.clock()
     )
@@ -82,7 +83,10 @@ def you(request: Request, app: App, conn: Conn, session: SignedIn, view: Viewing
         desk = view.review_desk(RulingStore(conn), app.clock)
         return {
             "view": me,
-            "groups": [g for g in desk.groups() if g.pending],
+            # Biggest first: a first import is sixty-odd groups, and the card names a few.
+            "groups": sorted(
+                (g for g in desk.groups() if g.pending), key=lambda g: (-g.pending, g.name)
+            ),
             **presenters.person_page(me),
         }
 

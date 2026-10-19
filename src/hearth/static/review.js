@@ -14,7 +14,7 @@
 (() => {
   "use strict";
 
-  const items = () => Array.from(document.querySelectorAll("[data-group], [data-row]"));
+  const items = () => Array.from(document.querySelectorAll("[data-group], [data-row]")).filter((el) => !el.closest("details:not([open])"));
   const groups = () => Array.from(document.querySelectorAll("[data-group]"));
   let current = null;
 

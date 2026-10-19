@@ -167,11 +167,31 @@ def first_day_steps(fresh: FirstDay) -> Iterator[Visit]:
     assert synced.status_code == 303
     until_transacted(fresh, PATHS["6616"])
     yield from walk(fresh, ARRIVED)
+    yield from decide(fresh, avery)
     fresh.plaid.institutions[QUARRY.id] = QUARRY
     fresh.link("avery", QUARRY.id)
     fresh.map(fresh.signed_in("avery"), {"8818": "Assets:Avery:Quarry:Brokerage"})
     until_booked(fresh, "Assets:Avery:Quarry:Brokerage")
     yield from walk(fresh, BROKERAGE)
+
+
+def decide(fresh: FirstDay, avery: TestClient) -> Iterator[Visit]:
+    """Avery makes a first decision from the review page, as a member does: the first group
+    with one suggestion, accepted with the form the page gave. The page it returns to, saying
+    what was done and offering to undo it, is read; so is every page after, on the next step,
+    with the decision among what Review says was decided."""
+    page = avery.get("/review").text
+    form = re.search(r'<form method="post" action="/review/groups/accept".*?</form>', page, re.S)
+    assert form is not None, "nothing to accept on the review page"
+    data: dict[str, list[str]] = {}
+    for name, value in re.findall(r'name="([^"]+)" value="([^"]*)"', form[0]):
+        data.setdefault(unescape(name), []).append(unescape(value))
+    response = avery.post("/review/groups/accept", data=data)
+    assert response.status_code == 303, response.text
+    location = response.headers["location"]
+    landed = avery.get(location).text
+    assert "Undo takes back exactly this decision" in landed
+    yield Visit("a first decision made", "avery", location, landed)
 
 
 def problems(visit: Visit) -> list[str]:

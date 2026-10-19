@@ -383,6 +383,12 @@ def test_each_row_is_flagged_against_what_its_category_proposes(filed: FirstDay)
             "Loan disbursements: other disbursement",
         ),
         ("OTHER_OTHER", UNRESOLVED, "Other"),
+        ("BANK_FEES_ATM_FEES", "Expenses:BankFees:ATMFees", "Bank fees: ATM fees"),
+        (
+            "ENTERTAINMENT_TV_AND_MOVIES",
+            "Expenses:Entertainment:TVAndMovies",
+            "Entertainment: TV and movies",
+        ),
         ("SOMETHING_PLAID_ADDS_LATER", UNRESOLVED, "Uncategorized"),
         ("FOOD_AND_DRINK_", UNRESOLVED, "Uncategorized"),
         (None, UNRESOLVED, "Uncategorized"),
@@ -449,6 +455,116 @@ def test_a_payment_to_a_card_nobody_connected_waits_as_a_transfer_pending(
     ]
     (item,) = [i for i in found.pile if i.review_id == entry.meta["review-id"]]
     assert item.proposed is None
+    assert item.transfer
+
+
+def test_review_counts_a_leg_that_needs_its_other_side_apart_from_what_is_left(
+    filed: FirstDay,
+) -> None:
+    """One side of a payment whose other side hearth has not found is not a guess to say yes
+    to: the queue counts it apart, says only what is known of why, and still offers what the
+    desk accepts; what is left, and the count on every page, is only the rest."""
+    avery = filed.signed_in("avery")
+    found = filed.books()
+    (leg,) = [i for i in found.pile if i.payee == "Payment to Fenwick card ending in 9090"]
+    actionable = sum(1 for i in found.pile if not i.transfer)
+
+    page = avery.get("/review").text
+    assert f'<p class="hero-value">{actionable:,}</p>' in page
+    assert f'aria-label="{actionable} to review"' in page
+    assert '<a href="#elsewhere">1 more</a> needs the other side.' in page
+    assert '<h2 id="ew-h">Needs the other side</h2>' in page
+    assert "If that side is at a bank you have not connected" in page
+    assert "may differ in timing or amount." in page
+    assert "the account the money went to or came from" not in page
+    row = _review_row(page, leg.review_id)
+    assert ">Save<" in row
+    assert "data-exclude" not in row  # its bank counts it
+    for path in ("/", "/you"):
+        assert f'aria-label="{actionable} to review"' in avery.get(path).text
+    rows = avery.get("/review?view=rows&q=fenwick").text
+    assert _review_row(rows, leg.review_id)  # still found, where it is counted
+
+
+def test_a_leg_that_needs_its_other_side_can_be_booked_and_leaves_the_count(
+    filed: FirstDay,
+) -> None:
+    avery = filed.signed_in("avery")
+    (leg,) = [i for i in filed.books().pile if i.payee == "Payment to Fenwick card ending in 9090"]
+    booked = avery.post(
+        "/review/rows/book",
+        data={"csrf": filed.csrf(avery), "review_id": leg.review_id, "account": "Expenses:Misc"},
+    )
+    assert booked.status_code == 303
+    after = avery.get("/review").text
+    assert '<h2 id="ew-h">Needs the other side</h2>' not in after
+    assert f'id="r-{leg.review_id}"' not in after
+
+
+def test_an_account_page_sends_a_leg_that_needs_its_other_side_to_where_it_is_counted(
+    filed: FirstDay,
+) -> None:
+    avery = filed.signed_in("avery")
+    found = filed.books()
+    (leg,) = [i for i in found.pile if i.payee == "Payment to Fenwick card ending in 9090"]
+    conn = filed.connect()
+    try:
+        (on,) = [a for a in accounts.all_accounts(conn) if a.ledger_account == leg.account]
+    finally:
+        conn.close()
+    page = avery.get(f"/accounts/{on.id}?month={leg.date:%Y-%m}").text
+    tags = re.findall(
+        r'<span class="primary">([^<]+)</span> <a class="tag tag-review" href="([^"]+)">', page
+    )
+    assert (leg.payee, "/review#elsewhere") in tags
+    assert {href for payee, href in tags if payee != leg.payee} == {"/review"}
+
+
+def test_you_names_the_biggest_few_groups_waiting_and_counts_the_rest(filed: FirstDay) -> None:
+    found = filed.books()
+    sizes = Counter(i.group for i in found.pile if not i.transfer)
+    assert len(sizes) > 5
+    card = re.search(
+        r'<section class="panel review-card".*?</section>',
+        filed.signed_in("avery").get("/you").text,
+        re.S,
+    )
+    assert card is not None
+    listed = re.findall(
+        r'<li><span class="grow">([^<]+)</span><span class="end tnum">([\d,]+)</span>', card[0]
+    )
+    assert [(unescape(name), int(n.replace(",", ""))) for name, n in listed] == [
+        (name, n) for name, n in sorted(sizes.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    ]
+    assert pairing.GROUP not in card[0]
+    assert f"And {len(sizes) - 5} more group" in card[0]
+
+
+def test_review_offers_no_exclude_on_a_row_its_bank_counts(filed: FirstDay) -> None:
+    """Every account here is the bank's balance, so the desk refuses to leave any row out; the
+    queue offers what it would refuse on none of them."""
+    avery = filed.signed_in("avery")
+    page = avery.get("/review?view=rows").text
+    rows = re.findall(r'<tr id="r-[^"]+" data-row.*?</tr>', page, flags=re.DOTALL)
+    assert rows
+    assert not [row for row in rows if "data-exclude" in row]
+    assert [row for row in rows if ">Accept<" in row]  # what it does offer is still there
+
+
+def test_review_finds_a_row_by_its_merchant_in_any_case(filed: FirstDay) -> None:
+    avery = filed.signed_in("avery")
+    page = avery.get("/review?view=rows&q=++LARKSPUR++grocer").text
+    rows = re.findall(r'<tr id="r-[^"]+" data-row.*?</tr>', page, flags=re.DOTALL)
+    assert len(rows) == 1
+    assert "Larkspur Grocer" in rows[0]
+    assert 'value="LARKSPUR grocer"' in page  # the search stays in its box, tidied
+    assert "matching &ldquo;LARKSPUR grocer&rdquo;" in page
+
+
+def _review_row(page: str, review_id: str) -> str:
+    found = re.search(rf'<tr id="r-{review_id}" data-row.*?</tr>', page, flags=re.DOTALL)
+    assert found is not None, review_id
+    return found[0]
 
 
 def test_a_card_connected_without_its_side_of_a_payment_leaves_the_payment_waiting(
@@ -464,6 +580,10 @@ def test_a_card_connected_without_its_side_of_a_payment_leaves_the_payment_waiti
     # The card's own feed sent no payment row for it, so its other side is still not in the
     # books: still a leg, never booked as spending.
     assert entry.postings[1].account == TRANSFER_PENDING
+    # Both sides' banks are connected now, so its row claims nothing about a connection.
+    (waiting,) = [i for i in found.pile if i.payee == leg.name]
+    row = _review_row(filed.signed_in("avery").get("/review").text, waiting.review_id)
+    assert "connected" not in row
 
 
 def test_once_the_card_and_its_side_are_connected_the_payment_is_one_transfer(

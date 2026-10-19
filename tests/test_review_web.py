@@ -325,6 +325,8 @@ def test_undo_takes_back_exactly_the_last_decision_and_says_what_it_covers(world
 
     page = casey.get(location).text
     assert "Undo takes back exactly this decision: 2 transactions in Kites" in page
+    # Pinned in view, as the page lands on the next item, often far below where it is written.
+    assert '<div class="alert alert-info rnotice" role="status">' in page
     ruling = re.search(r'name="ruling" value="(\d+)"', page)
     assert ruling is not None
 

@@ -124,13 +124,14 @@
       </div>
       <div class="panel-body">
         {% if review_count %}
-        <p class="fig-value tnum" style="margin-top: 0">{{ review_count }} <span class="lg" style="font-weight: 400; color: var(--ink-2); letter-spacing: 0">{{ "transaction" if review_count == 1 else "transactions" }}</span></p>
+        <p class="fig-value tnum" style="margin-top: 0">{{ "{:,}".format(review_count) }} <span class="lg" style="font-weight: 400; color: var(--ink-2); letter-spacing: 0">{{ "transaction" if review_count == 1 else "transactions" }}</span></p>
         <p class="muted mt-1">{{ plural(groups | length, "decision") }} {{ "settles" if groups | length == 1 else "settle" }} them.</p>
         <ul class="list mt-4" role="list">
-          {% for group in groups %}
-          <li><span class="grow">{{ group.name }}</span><span class="end tnum">{{ group.pending }}</span></li>
+          {% for group in groups[:5] %}
+          <li><span class="grow">{{ group.name }}</span><span class="end tnum">{{ "{:,}".format(group.pending) }}</span></li>
           {% endfor %}
         </ul>
+        {% if groups | length > 5 %}<p class="sm muted mt-2">And {{ plural(groups | length - 5, "more group") }}.</p>{% endif %}
         <p class="sm muted mt-4">{% if reminder.last_reviewed %}Last reviewed {{ when(reminder.last_reviewed, today) }}.{% else %}Not reviewed yet.{% endif %}{% if reminder.due %} <strong>Your {{ reminder.cadence.value }} review is due.</strong>{% endif %}</p>
         <a class="btn btn-primary btn-block mt-6" href="/review">Start reviewing<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
         {% else %}

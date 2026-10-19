@@ -8,7 +8,16 @@ from hearth.accounts import Account
 from hearth.review.decision import PROPOSAL_CHANGED, UNRULED, Decision, State
 from hearth.review.desk import ItemView
 from hearth.review.pile import PileItem
-from hearth.review.queue import PAGE_SIZE, Confidence, Filter, Order, confidence, queue
+from hearth.review.queue import (
+    PAGE_SIZE,
+    Confidence,
+    Filter,
+    Order,
+    Tally,
+    category_label,
+    confidence,
+    queue,
+)
 from tests.review.conftest import ALEX
 
 CHECKING = Account("a1", "Assets:Alex:Checking", "Alex checking", frozenset({ALEX}))
@@ -24,6 +33,7 @@ def row(
     score: str | None = "0.9",
     account: Account = CHECKING,
     decision: Decision = UNRULED,
+    transfer: bool = False,
 ) -> ItemView:
     item = PileItem(
         review_id=f"r{n:04d}",
@@ -38,6 +48,7 @@ def row(
         confidence=Decimal(score) if score else None,
         source=None,
         location="?",
+        transfer=transfer,
     )
     return ItemView(item, account.owners, decision, account)
 
@@ -122,3 +133,40 @@ def test_a_row_whose_suggestion_changed_since_it_was_accepted_is_counted_and_fir
 
     assert found.changed == 1
     assert found.rows[0].item.review_id == "r0002"
+
+
+def test_a_search_finds_rows_by_merchant_or_description_in_any_case() -> None:
+    rows = first_import()
+    described = replace(rows[0], item=replace(rows[0].item, payee=None, narration="Kite STRING"))
+    found = queue([*rows, described], Order.SIZE, Filter(text="kite string"))
+    assert [v.item.review_id for v in found.rows] == [described.item.review_id]
+    assert [v.item.review_id for v in queue(rows, Order.SIZE, Filter(text="PAYEE 1100")).rows] == [
+        "r1100"
+    ]
+    assert found.filter.active
+    assert found.remaining.rows == len(rows) - 10 + 1  # the search narrows what is shown only
+
+
+def test_a_row_that_needs_its_other_side_is_counted_apart_from_what_is_left() -> None:
+    """No suggestion is right for one side of a card payment whose other side hearth has not
+    found, so it is never in what is left, nor in any group or page, and always in its own
+    count, which no filter narrows."""
+    legs = [row(n, "Card payment", "300", None, None, transfer=True) for n in range(5000, 5003)]
+    rows = first_import()
+    found = queue([*rows, *legs], Order.SIZE, Filter())
+    assert found.remaining == queue(rows, Order.SIZE, Filter()).remaining
+    assert found.total == len(rows)
+    assert {v.item.review_id for v in found.rows}.isdisjoint(v.item.review_id for v in legs)
+    assert "Card payment" not in {g.name for g in found.groups}
+    assert found.waiting_elsewhere == Tally(3, Decimal(900))
+
+    narrowed = queue([*rows, *legs], Order.SIZE, Filter(text="payee 5001"))
+    assert narrowed.waiting_elsewhere == Tally(3, Decimal(900))
+    assert [v.item.review_id for v in narrowed.elsewhere_shown] == ["r5001"]
+
+
+def test_review_names_a_category_by_its_most_specific_part_so_kinds_of_income_read_apart() -> None:
+    assert category_label("Income:Wages") == "Wages"
+    assert category_label("Income:InterestEarned") == "Interest earned"
+    assert category_label("Expenses:BankFees:ATMFees") == "ATM fees"
+    assert category_label(None) == "Nothing suggested"

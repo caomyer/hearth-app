@@ -99,17 +99,24 @@ class Filter:
     category: str = ""
     """A suggested account, or `NOTHING_SUGGESTED`."""
     group: str = ""
+    text: str = ""
+    """Words the row's merchant or description contains, in any case."""
 
     def matches(self, view: ItemView) -> bool:
         return (
             (not self.account or (view.account is not None and view.account.id == self.account))
             and (not self.category or _category_key(view) == self.category)
             and (not self.group or view.item.group == self.group)
+            and (not self.text or self.text.casefold() in _described(view))
         )
 
     @property
     def active(self) -> bool:
-        return bool(self.account or self.category or self.group)
+        return bool(self.account or self.category or self.group or self.text)
+
+
+def _described(view: ItemView) -> str:
+    return f"{view.item.payee or ''}\n{view.item.narration}".casefold()
 
 
 NOTHING_SUGGESTED = "-"
@@ -208,7 +215,8 @@ class Queue:
     reviewed: int
     """Rows on the member's pile they or a co-owner have reviewed or rejected."""
     remaining: Tally
-    """Every unreviewed row on the member's pile, whatever the filter."""
+    """Every row waiting on the member, whatever the filter: what is left is only what they
+    can act on, so a row that needs its other side is counted apart (`elsewhere`)."""
     changed: int
     """Unreviewed rows that were accepted once and have since changed their suggestion."""
     revised: int
@@ -218,6 +226,21 @@ class Queue:
     categories: tuple[Choice, ...]
     decided: tuple[ItemView, ...] = field(default=())
     """The member's reviewed and rejected rows, most recently decided first."""
+    elsewhere: tuple[ItemView, ...] = field(default=())
+    """Rows that need their other side (`ItemView.needs_other_side`), newest first: counted
+    apart from what is left, whatever the filter. Hearth has not found the other side of these
+    payments; connecting the bank it is at settles a row when that is why, and otherwise the
+    two may differ in timing or amount. Each can still be saved to a spending or income
+    category, or to an account of the member's that no bank reports."""
+
+    @property
+    def waiting_elsewhere(self) -> Tally:
+        return Tally.of(self.elsewhere)
+
+    @property
+    def elsewhere_shown(self) -> tuple[ItemView, ...]:
+        """The rows that need their other side and pass the filter."""
+        return tuple(v for v in self.elsewhere if self.filter.matches(v))
 
     @property
     def rows(self) -> tuple[ItemView, ...]:
@@ -254,7 +277,8 @@ class Page:
 
 def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
     """The member's queue over `views`, all of them rows on their own desk."""
-    waiting = [v for v in views if v.decision.state is State.UNREVIEWED]
+    waiting = [v for v in views if v.actionable]
+    elsewhere = [v for v in views if v.needs_other_side]
     decided = [v for v in views if v.decision.state is not State.UNREVIEWED]
     by_group: dict[str, list[ItemView]] = {}
     for view in waiting:
@@ -281,12 +305,18 @@ def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
         decided=tuple(
             sorted(decided, key=lambda v: v.decision.ruling.id if v.decision.ruling else 0)[::-1]
         ),
+        elsewhere=tuple(sorted(elsewhere, key=_row_key(Order.DATE))),
     )
 
 
 def _category_label(view: ItemView) -> str:
-    proposed = view.item.proposed
-    return readable(proposed.rsplit(":", 1)[-1]) if proposed else "Nothing suggested"
+    return category_label(view.item.proposed)
+
+
+def category_label(account: str | None) -> str:
+    """A suggested or chosen account as review names it: its most specific part, so wages and
+    interest read apart, which on review is the whole point."""
+    return readable(account.rsplit(":", 1)[-1]) if account else "Nothing suggested"
 
 
 def _choices(

@@ -29,7 +29,15 @@ from hearth.review.desk import (
     NotTheirs,
     ReviewDesk,
 )
-from hearth.review.queue import NOTHING_SUGGESTED, ORDER_LABELS, Filter, Order, confidence, queue
+from hearth.review.queue import (
+    NOTHING_SUGGESTED,
+    ORDER_LABELS,
+    Filter,
+    Order,
+    category_label,
+    confidence,
+    queue,
+)
 from hearth.review.rulings import Action, Ruling, RulingStore
 from hearth.web.deps import Acting, App, Conn, SignedIn, Viewing
 from hearth.web.routes.pages import figures_page
@@ -100,6 +108,7 @@ class Where:
                 account=params.get("account", "")[:64],
                 category=params.get("category", "")[:200],
                 group=params.get("group", "")[:200],
+                text=" ".join(params.get("q", "").split())[:100],
             ),
             page=int(page) if page.isdigit() and 0 < int(page) < 10_000 else 1,
         )
@@ -111,6 +120,7 @@ class Where:
             "account": self.filter.account,
             "category": self.filter.category,
             "group": self.filter.group,
+            "q": self.filter.text,
             "page": str(self.page) if self.page > 1 else "",
         }
         return {key: value for key, value in found.items() if value}
@@ -180,6 +190,8 @@ def review(
             "group_preview": GROUP_PREVIEW,
             "nothing_suggested": NOTHING_SUGGESTED,
             "confidence": confidence,
+            "category_label": category_label,
+            "free": FREE,
             # Not "focus", which base.html takes as the narrow page without navigation.
             "landing": focus if focus and _ROW_ID.fullmatch(focus) else None,
             # Suggest only accounts from the viewer's own rows: nobody else's are named.

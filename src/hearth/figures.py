@@ -32,6 +32,7 @@ from hearth.reports.flows import (
     payers,
     spending_by_category,
 )
+from hearth.review.pile import TRANSFER_PENDING
 from hearth.valuation.networth import NetWorth
 
 TYPICAL_MONTHS = 6
@@ -265,6 +266,9 @@ class Line:
     amount: Decimal
     account: Account
     unreviewed: bool
+    needs_other_side: bool = False
+    """One side of a card payment whose other side is not found yet (`TRANSFER_PENDING`),
+    which review counts apart from what is left."""
 
 
 def lines(books: Books, accounts: Sequence[Account], start: date, end: date) -> list[Line]:
@@ -293,6 +297,8 @@ def lines(books: Books, accounts: Sequence[Account], start: date, end: date) -> 
                     amount=amount.number,
                     account=account,
                     unreviewed=entry.flag == "!",
+                    needs_other_side=entry.flag == "!"
+                    and any(p.account == TRANSFER_PENDING for p in entry.postings),
                 )
             )
     return sorted(found, key=lambda line: line.date, reverse=True)

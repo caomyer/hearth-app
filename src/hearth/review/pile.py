@@ -46,6 +46,9 @@ class PileItem:
     confidence: Decimal | None
     source: str | None
     location: str
+    transfer: bool = False
+    """One side of a transfer whose other side is not in the books (`TRANSFER_PENDING`): what
+    settles it is that other side arriving, not a category."""
 
     @property
     def says(self) -> str:
@@ -96,6 +99,7 @@ def read_pile(entries: Iterable[Directive]) -> list[PileItem]:
                 confidence=confidence if isinstance(confidence, Decimal) else None,
                 source=source if isinstance(source, str) else None,
                 location=where,
+                transfer=proposal.account == TRANSFER_PENDING,
             )
         )
     return items

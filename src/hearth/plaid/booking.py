@@ -226,11 +226,20 @@ def group(category: str | None) -> str:
     split = _split(category)
     if split is None:
         return UNCATEGORISED
-    primary, detail = (part.replace("_", " ").lower() for part in split)
+    primary, detail = (_words(part) for part in split)
     if detail.startswith(f"{primary} ") or detail == primary:
         detail = detail.removeprefix(primary).strip()
     named = f"{primary}: {detail}" if detail else primary
     return named[:1].upper() + named[1:]
+
+
+ABBREVIATIONS = frozenset({"ATM", "TV"})
+"""Words in Plaid's categories that read as letters, which stay capitals in a group's name:
+"Bank fees: ATM fees", not "atm fees"."""
+
+
+def _words(part: str) -> str:
+    return " ".join(w if w in ABBREVIATIONS else w.lower() for w in part.split("_"))
 
 
 def _split(category: str | None) -> tuple[str, str] | None:
@@ -244,7 +253,7 @@ def _split(category: str | None) -> tuple[str, str] | None:
 
 
 def _name(words: str) -> str:
-    return component(words.replace("_", " ").lower())
+    return component(_words(words))
 
 
 def _flagged(row: Transaction, item_id: str, account: str, against: str, group: str) -> Entry:

@@ -102,3 +102,33 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border: 1px soli
 /* A label stays level with its control when an error is shown beneath it. */
 .map-meta > .label { align-self: start; line-height: 34px; }
 .map [hidden] { display: none; }
+
+/* What a decision did stays in view wherever the page lands: after a decision the page returns
+   to the next group or row, often a long way down, so the outcome and its Undo are pinned to
+   the foot of the window, in the system's alert, lifted like its other floating surfaces. */
+.rnotice {
+  position: fixed; z-index: 30; bottom: var(--s-6); left: 50%; transform: translateX(-50%);
+  width: min(720px, calc(100% - 2 * var(--s-4)));
+  box-shadow: var(--e-2);
+}
+.page:has(.rnotice) { padding-bottom: calc(var(--s-16) + 160px); }
+
+/* The item the page lands on, or the keys move to, clears the sticky top bar above it and the
+   pinned outcome below it. */
+[data-row], [data-group] { scroll-margin-top: calc(56px + var(--s-4)); }
+.page:has(.rnotice) :is([data-row], [data-group]) { scroll-margin-bottom: 176px; }
+/* On a phone the primary navigation is a bar along the foot of the window: the outcome sits
+   just above it, and the page leaves room for both. */
+@media (max-width: 760px) {
+  .rnotice { bottom: calc(56px + env(safe-area-inset-bottom) + var(--s-3)); }
+  .page:has(.rnotice) { padding-bottom: calc(var(--s-10) + 56px + 220px); }
+  .page:has(.rnotice) :is([data-row], [data-group]) { scroll-margin-bottom: 296px; }
+}
+
+/* A group's figures on a phone: a long suggested category ("Online marketplaces") wraps in its
+   own column rather than pushing the page wider than the screen. */
+@media (max-width: 640px) {
+  .rgroup-figs { grid-template-columns: auto auto minmax(0, 1fr); }
+  .rgroup-figs > div:nth-child(3) dd { white-space: normal; }
+  .rfilter .field { max-width: none; }
+}

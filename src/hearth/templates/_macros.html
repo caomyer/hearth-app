@@ -128,7 +128,7 @@
     {% for group in days %}
     <tr class="day"><th scope="rowgroup" colspan="2">{{ group.day | full_day }}{% if group.spent %} <span class="num">{{ (-group.spent) | money }}</span>{% endif %}</th></tr>
     {% for line in group.lines %}
-    <tr><td><span class="primary">{{ line.payee }}</span>{% if line.unreviewed %} <a class="tag tag-review" href="/review">To review</a>{% endif %}<span class="second">{{ line.category | category }}{% if line.unreviewed %}, suggested{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}{% if line.narration %} &middot; {{ line.narration }}{% endif %}</span></td><td class="num amt{% if line.amount > 0 %} amt-in{% endif %}">{{ line.amount | amount }}</td></tr>
+    <tr><td><span class="primary">{{ line.payee }}</span>{% if line.unreviewed %} <a class="tag tag-review" href="/review{% if line.needs_other_side %}#elsewhere{% endif %}">To review</a>{% endif %}<span class="second">{{ line.category | category }}{% if line.unreviewed %}, suggested{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}{% if line.narration %} &middot; {{ line.narration }}{% endif %}</span></td><td class="num amt{% if line.amount > 0 %} amt-in{% endif %}">{{ line.amount | amount }}</td></tr>
     {% endfor %}
     {% endfor %}
   </tbody>

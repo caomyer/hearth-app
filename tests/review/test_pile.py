@@ -26,6 +26,7 @@ def test_a_row_with_nothing_proposed_has_no_proposal(pile: list[PileItem]) -> No
 
     assert unknown.proposed is None
     assert unknown.confidence is None
+    assert not unknown.transfer
 
 
 def test_one_side_of_a_transfer_waiting_for_the_other_has_no_proposal() -> None:
@@ -40,6 +41,8 @@ def test_one_side_of_a_transfer_waiting_for_the_other_has_no_proposal() -> None:
 
     # Accepting it as proposed must not settle it: only naming the other account does.
     assert leg.proposed is None
+    # And it is not a guess: what it waits on is its other side.
+    assert leg.transfer
 
 
 def test_booked_entries_are_not_on_the_pile() -> None:

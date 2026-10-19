@@ -87,10 +87,27 @@ class ItemView:
     decision: Decision
     account: Account | None
     """The household account the row is on; only ever one the member may review."""
+    bank_counts: bool = False
+    """Whether the row's bank counts it in the balance it reports, so it cannot be excluded
+    (`BanksRow`)."""
 
     @property
     def unreviewed(self) -> bool:
         return self.decision.state is State.UNREVIEWED
+
+    @property
+    def needs_other_side(self) -> bool:
+        """Whether it is one side of a card payment whose other side hearth has not found, so
+        it is not the member's to settle at a glance: if that side is at an account nobody
+        connected, connecting it lets pairing settle this one; otherwise the two may differ in
+        timing or amount. Either way the member can still save it to a spending or income
+        category, or to an account of theirs that no bank reports."""
+        return self.unreviewed and self.item.transfer
+
+    @property
+    def actionable(self) -> bool:
+        """Whether it is left for the member: unreviewed, and not one that needs its other side."""
+        return self.unreviewed and not self.item.transfer
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,7 +117,8 @@ class GroupView:
 
     @property
     def pending(self) -> int:
-        return sum(1 for view in self.items if view.unreviewed)
+        """Rows waiting on the member; a row that needs its other side is counted apart."""
+        return sum(1 for view in self.items if view.actionable)
 
 
 UNCERTAIN_GROUPS = frozenset(
@@ -359,6 +377,12 @@ class ReviewDesk:
         decisions = resolve(rows, self._accounts, self._rulings, self._may_review)
         account = _account(self._accounts)
         return [
-            ItemView(item, self._owners(item), decisions[item.review_id], account(item))
+            ItemView(
+                item,
+                self._owners(item),
+                decisions[item.review_id],
+                account(item),
+                bank_counts=item.account in self._banks,
+            )
             for item in rows
         ]
