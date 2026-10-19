@@ -301,34 +301,90 @@ def covers(books: Books, accounts: Sequence[Account], month: Month) -> bool:
     An account whose history starts after the month began leaves the month incomplete, and a
     figure for it must say so rather than look whole.
 
-    So does data that stops before the month is out: `accounts`, which are one part's, hold
-    the month only once one of them reaches past it, by the rule of `books.Reach.holds`. That
-    is decided by month alone, never by the day the data stops, which is transaction detail;
-    a month the ledger has not reached never reads as a month in which nothing happened. The
-    ledger cannot tell quiet from missing, so a quiet account, such as a brokerage that trades
-    once a quarter, leaves its months incomplete until it moves or carries a balance assertion
-    dated in a later month. Spending and income figures ask `flows_cover` instead, which
-    judges only the accounts that can move them. The remedy for quiet accounts is to take
-    freshness from each connection's last successful sync, which the Plaid connection work
-    tracks separately from the ledger.
+    So does data that stops before the month is out. `accounts`, which are one part's, hold
+    the month only once one of them is known to reach past it, by the rule of
+    `books.Reach.holds`, and once every account its connection vouches for (`books.vouched`)
+    is known to be current through it as well. An account is known through a month by its own
+    entries, or by a vouched connection having last synced successfully after the month (in
+    it, for this month). A card whose connection last worked in May therefore leaves May and
+    every month after it incomplete however current the part's other accounts are, while a
+    quiet card whose connection still works holds its months.
+
+    For an account its connection vouches for, its own entries are only those no other
+    connection booked (`books.account_reaches`, `books.account_ends`): statement and manual
+    entries count, but a payment booked through the checking account's feed does not. Coverage
+    asks whether this account's feed is known to be complete through a month, not whether the
+    books hold any entry on the account in it; that payment proves one transaction on the card
+    and nothing of the purchases the card's own feed did not deliver. Presence is not
+    completeness.
+
+    A connection vouches only for an account whose entries it booked, and today no entry in
+    the books derives from a connection: connected history waits in the feed store until the
+    import books it with its `plaid:<item_id>:...` source (`connections.plaid_source`). Until
+    then every account is judged as one no connection feeds, so a Plaid-fed account whose
+    ledger feed stopped while its connection keeps working still reads as covered by the
+    rule below. The rule above activates on its own once the import books such entries.
+
+    Accounts no connection vouches for, such as those a statement import brings in, are judged
+    together by the ledger alone, and the ledger cannot tell quiet from missing: one of them
+    that stopped while another in the same part carries on reads as complete. Judging each on
+    its own entries would be no better, as every quiet card would hold its part back. The
+    honest remedy is a balance assertion from each statement's close, which says the account
+    is whole through it whether or not anything moved.
+
+    Every rule here is decided by month alone, never by the day data stops or a connection
+    last synced, which are close to transaction detail; and it is the same for every viewer.
+    A month the ledger has not reached never reads as a month in which nothing happened.
+    Spending and income figures ask `flows_cover` instead, which judges only the accounts that
+    can move them.
     """
     first = date(month.year, month.month, 1)
     last = first.replace(day=calendar.monthrange(month.year, month.month)[1])
     by_account = {coverage.account: coverage for coverage in books.coverage}
-    open_in_month = False
+    opened: list[str] = []
     for account in accounts:
         coverage = by_account.get(account.ledger_account)
         if coverage is None or coverage.opened > last:
             continue
-        open_in_month = True
+        opened.append(account.ledger_account)
         expected_from = max(first, coverage.opened)
         if coverage.earliest is None or coverage.earliest > expected_from + QUIET_START:
             return False
-    return not open_in_month or any(
-        books.account_reaches[a.ledger_account].holds(month, books.month)
-        for a in accounts
-        if a.ledger_account in books.account_reaches
+    if not opened:
+        return True
+    return any(_known(books, a.ledger_account, month) for a in accounts) and all(
+        _known(books, account, month) for account in opened if account in books.synced
     )
+
+
+def _known(books: Books, account: str, month: Month) -> bool:
+    """Whether the account's own entries, or its vouched connection's last sync, hold `month`."""
+    reach = books.account_reaches.get(account)
+    if reach is not None and reach.holds(month, books.month):
+        return True
+    if account not in books.synced:
+        return False
+    synced = Month.of(books.synced[account])
+    return synced > month or synced == month == books.month
+
+
+def last_day(books: Books, accounts: Sequence[Account]) -> date | None:
+    """The last day the data behind `accounts`, one part's, is known through, by the rule
+    `covers` decides months by: the part's newest known day, held back to the day each account
+    its connection vouches for is known through. An account is known through its own last day
+    in the ledger, or its vouched connection's last sync if that is later; a vouched account's
+    own last day ignores entries another connection booked, as `covers` explains."""
+    ends = books.account_ends
+    known = {
+        account.ledger_account: max(
+            ends[account.ledger_account], books.synced.get(account.ledger_account, date.min)
+        )
+        for account in accounts
+        if account.ledger_account in ends
+    }
+    if not known:
+        return None
+    return min([max(known.values()), *(day for name, day in known.items() if name in books.synced)])
 
 
 def flows_cover(books: Books, accounts: Sequence[Account], month: Month) -> bool:

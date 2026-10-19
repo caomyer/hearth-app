@@ -63,7 +63,10 @@ The dashboards and review add five more decisions, each in `hearth.access` and a
 
 - A failed balance check names an account and amounts, so its detail is shown only to those who may see that account's balance; everyone else reads one sentence that names nothing.
   Beancount's own error messages are never passed on, because they name accounts and amounts.
-- A connection to an institution is its holder's alone, joint accounts included; the household learns only how many accounts are behind, never which or whose.
+- A connection to an institution is its holder's alone, joint accounts included.
+  Only its holder is told it stopped updating, and on which day.
+  When it stops, its accounts' data stops there too, which the figures say by the rule above for where data stops: the day to whoever may see the transactions of every part behind a figure, and to anyone else only the month, in the one fixed sentence every such figure carries.
+  There is no separate notice of how many accounts are behind or since when: a count and a day taken from connections would give away, whenever they changed, the day a member's connection stopped, which is close to the day their money last moved.
   One carve-out: for a ledger account the viewer co-owns, the mapping page shows that it is already fed by another connection, so it is not fed twice.
   The feeding member is never named and neither is the institution.
   On an account with exactly two owners, a co-owner who knows they did not connect it can infer that the other owner did.

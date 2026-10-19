@@ -1074,7 +1074,8 @@ def _follow(
     conn: sqlite3.Connection, feed_path: Path, setup: PlaidSetup, clock: Clock, item_id: str
 ) -> None:
     """Sync a working Item, and again after each of `check_waits` while Plaid has not sent all
-    its history. Each sync is a read like any other, refused unless approved."""
+    its history, telling `setup.synced` after each sync. Each sync is a read like any other,
+    refused unless approved."""
     registry = Registry(conn)
     waits = check_waits()
     while True:
@@ -1084,6 +1085,7 @@ def _follow(
         registry.next_check(item_id, None)
         with contextlib.suppress(SyncBusyError):
             _sync(conn, feed_path, setup, clock, item)
+        setup.synced()
         item = registry.item(item_id)
         if item is None or item.state is not ItemState.WORKING:
             return

@@ -33,6 +33,9 @@ class PlaidSetup:
     """The vault's master keys; the Keychain, opened only when a secret is first needed."""
     wait: Callable[[float], None] = field(default=time.sleep)
     """Waits so many seconds between asking Plaid again for history still arriving."""
+    synced: Callable[[], None] = field(default=lambda: None)
+    """Called after each sync made while history is still arriving, so whoever keeps figures
+    from connections takes each one in as it lands, not only when the history is complete."""
 
     @property
     def environments(self) -> tuple[Environment, ...]:

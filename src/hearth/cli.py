@@ -20,7 +20,7 @@ from beancount.core.data import Open
 from hearth import accounts, auth, books, db, demo, members
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
-from hearth.clock import system_clock
+from hearth.clock import Clock, system_clock
 from hearth.config import LEDGER_VARIABLE, Settings
 from hearth.disclosure import rulings_in
 from hearth.members import MemberRejectedError
@@ -138,27 +138,36 @@ def _run(
     bookkeeper = books.Bookkeeper(establish, system_clock)
     bookkeeper.recompute_daily()
     if plaid.approval.allows(Operation.READ):
-        _sync_daily(settings, plaid)
+        _sync_daily(settings, plaid, bookkeeper)
     app = create_app(settings, bookkeeper, plaid=plaid)
     uvicorn.run(app, host=host, port=port)
 
 
-def _sync_daily(settings: Settings, plaid: PlaidSetup) -> None:
+def _sync_daily(settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper) -> None:
     """Bring every working connection up to date at start-up and every morning, only when this
-    run was started with reading approved."""
+    run was started with reading approved (`sync_then_recompute`)."""
 
     def run() -> None:
         while True:
-            conn = db.connect(settings.database)
-            try:
-                sync_all(conn, settings.feed_database, plaid, system_clock)
-            except Exception:
-                _log.exception("the daily sync stopped")
-            finally:
-                conn.close()
+            sync_then_recompute(settings, plaid, bookkeeper, system_clock)
             threading.Event().wait(books.seconds_until(books.DAILY_AT, datetime.now()))
 
     threading.Thread(target=run, name="hearth-daily-sync", daemon=True).start()
+
+
+def sync_then_recompute(
+    settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper, clock: Clock
+) -> None:
+    """Sync every working connection, then recompute the books, which record how current each
+    connection is: the morning's recompute starts with the sync, so it may finish first."""
+    conn = db.connect(settings.database)
+    try:
+        sync_all(conn, settings.feed_database, plaid, clock)
+    except Exception:
+        _log.exception("the daily sync stopped")
+    finally:
+        conn.close()
+    bookkeeper.recompute()
 
 
 def _add_member(username: str, name: str, *, is_admin: bool) -> None:

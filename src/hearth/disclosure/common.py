@@ -115,11 +115,13 @@ class Worth:
 class DataEnds:
     """Where the data behind a figure stops.
 
-    A total is only as current as its stalest part. The day an account's money last moved is
-    transaction detail, so a viewer who may see the transactions of every part the figure adds
-    up is given `day`, the earliest last day among them, and `stalest`, that part, when they
-    may see its balances. Anyone else is given `month` alone: the earliest of the parts'
-    last months, with `day` and `stalest` None, as nothing on that path may depend on a day.
+    A total is only as current as its stalest part, and a part only as current as its
+    stalest connection (`figures.last_day`). The day an account's money last moved, and the
+    day a connection stopped bringing it in, are transaction detail, so a viewer who may see
+    the transactions of every part the figure adds up is given `day`, the earliest last day
+    among them, and `stalest`, that part, when they may see its balances. Anyone else is given
+    `month` alone: the earliest of the parts' last months, with `day` and `stalest` None, as
+    nothing on that path may depend on a day.
     """
 
     month: Month
@@ -227,12 +229,7 @@ class Household:
         return DataEnds(Month.of(day), day, self.part_ref(part) if named else None)
 
     def _last_day(self, part: Part) -> date | None:
-        days = [
-            self.books.account_ends[account.ledger_account]
-            for account in part.accounts
-            if account.ledger_account in self.books.account_ends
-        ]
-        return max(days, default=None)
+        return figures.last_day(self.books, part.accounts)
 
     def reaches(self, part: Part, valuation: NetWorth) -> bool:
         """Whether the ledger's history of the part reaches back to `valuation`'s month.

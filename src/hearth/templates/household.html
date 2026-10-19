@@ -40,7 +40,7 @@
               {{ delta(head.over_year, "in 12 months") }}
             </div>
             {% endif %}
-            {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on, head.ends) %}{% if lag %} {{ plural(lag.accounts, "account") }} not updated{% if lag.since %} since {{ lag.since | day }}{% endif %}.{% endif %}{% if head.is_partial %} Past months leave {{ head.without | names("name") }} out too, so trends compare like with like.{% else %} <a href="/net-worth">How it adds up</a>{% endif %}{% endcall %}
+            {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on, head.ends) %}{% if head.is_partial %} Past months leave {{ head.without | names("name") }} out too, so trends compare like with like.{% else %} <a href="/net-worth">How it adds up</a>{% endif %}{% endcall %}
           </div>
 
           {% if h.composition %}

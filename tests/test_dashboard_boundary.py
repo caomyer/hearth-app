@@ -75,7 +75,8 @@ def test_an_expired_connection_is_named_only_to_the_member_who_holds_it(
         client = world.signed_in(username)
         seen = everything(world, username) + client.get("/settings/connections").text
         assert "Zebrafinch" not in seen
-        assert "1 account not updated since Oct 9" in client.get("/").text
+        assert "not updated since" not in seen
+        assert "Oct 9" not in client.get("/").text
 
 
 def test_only_someone_who_holds_a_security_may_price_it_by_hand(world: World) -> None:

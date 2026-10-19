@@ -9,6 +9,10 @@ two owners, a co-owner who knows they did not connect it can infer that the othe
 That inference is accepted: both members own the account, and hiding the fed state would
 make the second owner re-link the same bank and spend one of the household's few
 connections to create the duplicate feed the refusal exists to prevent.
+
+What a connection brings in reaches the books through the import, which marks every entry it
+books from one with `plaid_source`. Only entries so marked are that connection's data in the
+books (`books.compute`), so a connection vouches for nothing the books do not hold.
 """
 
 from collections.abc import Mapping, Sequence
@@ -20,6 +24,24 @@ from typing import Protocol
 
 from hearth import db
 from hearth.members import MemberId
+
+PLAID = "plaid"
+"""The origin of every entry booked from a connection, as `reports.coverage` reads origins."""
+
+
+def plaid_source(item_id: str, transaction_id: str) -> str:
+    """The `source` metadata the import must write on an entry booked from Plaid Item
+    `item_id`'s transaction `transaction_id`: `plaid:<item_id>:<transaction id>`."""
+    return f"{PLAID}:{item_id}:{transaction_id}"
+
+
+def item_of(source: object) -> str | None:
+    """The Plaid Item an entry's `source` metadata says it was booked from, if any."""
+    if not isinstance(source, str):
+        return None
+    origin, _, rest = source.partition(":")
+    item_id, booked, _ = rest.partition(":")
+    return item_id if origin == PLAID and booked and item_id else None
 
 
 class State(StrEnum):
@@ -37,6 +59,8 @@ class Connection:
     state: State
     data_until: date | None
     """The last day the connection brought in; for an expired one, where its data stops."""
+    item_id: str | None = None
+    """The Plaid Item it is, which names the entries booked from it (`plaid_source`)."""
 
 
 class Connections(Protocol):
@@ -103,6 +127,7 @@ class RegisteredConnections:
                     if row["last_synced_at"]
                     else None
                 ),
+                item_id=row["item_id"],
             )
             for row in rows
         )

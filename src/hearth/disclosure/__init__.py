@@ -12,7 +12,7 @@ Anything that does not exist and anything the viewer may not see raise the same
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -20,7 +20,7 @@ from hearth import audit, members, sharing
 from hearth.accounts import Account, all_accounts
 from hearth.audit import EventKind
 from hearth.books import Books, Failure, Status
-from hearth.connections import Connection, Connections, State
+from hearth.connections import Connection, Connections
 from hearth.disclosure.common import IDENTITY_HUES, Household, MemberRef, PartRef, Worth
 from hearth.disclosure.gate import (
     WITHHELD,
@@ -73,7 +73,6 @@ __all__ = [
     "Disclosure",
     "FailureNotice",
     "HouseholdView",
-    "Lag",
     "MemberRef",
     "NetWorthView",
     "Pace",
@@ -120,12 +119,6 @@ class FailureNotice:
     summary: str
     showing_from: datetime | None
     detail: Disclosed[FailedCheck] | None
-
-
-@dataclass(frozen=True, slots=True)
-class Lag:
-    accounts: int
-    since: date | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,15 +233,6 @@ class Disclosure:
     def connections(self, known: Connections) -> list[Connection]:
         """The viewer's own connections. Nobody else's are ever listed (see ``access``)."""
         return [c for c in known.all() if self._gate.may_use_connection(c.member)]
-
-    def lag(self, known: Connections) -> Lag | None:
-        """That some account somewhere has stopped updating, and since when, without saying
-        whose or which: enough to read a total correctly, nothing about anyone's accounts."""
-        stopped = [c for c in known.all() if c.state is State.EXPIRED]
-        if not stopped:
-            return None
-        days = [c.data_until for c in stopped if c.data_until is not None]
-        return Lag(sum(len(c.ledger_accounts) for c in stopped), min(days, default=None))
 
     def preview(self) -> PersonView:
         """The viewer's own page as anyone else in the household sees it, given their choices."""

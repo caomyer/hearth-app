@@ -30,6 +30,7 @@ from beancount.core.interpolate import BalanceError
 
 from hearth import db
 from hearth.clock import Clock
+from hearth.connections import Connections, RegisteredConnections, item_of
 from hearth.months import Month
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.common import is_balance_sheet, root
@@ -84,6 +85,10 @@ class Books:
     """How far each balance-sheet account reaches in the ledger, by month (`account_reaches`)."""
     flowing: frozenset[str] = frozenset()
     """Balance-sheet accounts that can move a spending or income figure (`flowing`)."""
+    synced: dict[str, date] = field(default_factory=dict)
+    """Each ledger account its connection vouches for, with the day that connection last synced
+    successfully, as it stood at this recompute (`vouched`). It says the account is still
+    reporting, which the ledger cannot: `figures.covers` reads it."""
 
     @property
     def month(self) -> Month:
@@ -166,10 +171,16 @@ type Decide = Callable[[Sequence[PileItem]], Mapping[str, Decision]]
 
 
 def compute(
-    ledger: Sequence[Directive], lookup: PriceLookup, *, now: datetime, decide: Decide
+    ledger: Sequence[Directive],
+    lookup: PriceLookup,
+    *,
+    now: datetime,
+    decide: Decide,
+    synced: Mapping[str, tuple[str, date]] | None = None,
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
-    recent month end.
+    recent month end. `synced` is each fed ledger account's connection and its last successful
+    sync (`synced_through`).
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
@@ -180,6 +191,9 @@ def compute(
         if not check.agrees:
             raise LedgerError(f"A balance check failed on {check.date:%b} {check.date.day}.", check)
     today = now.date()
+    fed = synced or {}
+    vouches = vouched(entries, fed, today)
+    own = {account: fed[account][0] for account in vouches}
 
     def worth(day: date) -> NetWorth:
         return value_holdings(holdings_at(entries, day), lookup, as_of=day, currency=CURRENCY)
@@ -192,14 +206,57 @@ def compute(
         today=worth(today),
         month_ends=tuple(worth(day) for day in month_ends(today, HISTORY_MONTHS)),
         coverage=tuple(account_coverage(entries, as_of=today)),
-        account_ends=account_ends(entries, today),
-        account_reaches=account_reaches(entries, today),
+        account_ends=account_ends(entries, today, own),
+        account_reaches=account_reaches(entries, today, own),
         flowing=flowing(entries),
+        synced=vouches,
         pile=pile,
     )
 
 
-def account_ends(entries: Sequence[Directive], today: date) -> dict[str, date]:
+def synced_through(connections: Connections) -> dict[str, tuple[str, date]]:
+    """Each ledger account a connection feeds, with that connection's Plaid Item and last
+    successful sync.
+
+    An account fed by a connection that has never synced is left out, as nothing has come from
+    it yet. One ledger account is fed by one connection at most (``docs/connections.md``); were
+    there ever two, the fresher one is taken.
+    """
+    through: dict[str, tuple[str, date]] = {}
+    for connection in connections.all():
+        if connection.item_id is None or connection.data_until is None:
+            continue
+        for account in connection.ledger_accounts:
+            if account not in through or connection.data_until > through[account][1]:
+                through[account] = (connection.item_id, connection.data_until)
+    return through
+
+
+def vouched(
+    entries: Sequence[Directive], synced: Mapping[str, tuple[str, date]], today: date
+) -> dict[str, date]:
+    """Each fed account its connection's last sync vouches for, known through that sync day,
+    or `today` if earlier.
+
+    A sync vouches for an account only as far as the books hold that connection's data: its
+    newest entry on the account booked from the connection (`connections.plaid_source`) must
+    be on or before the sync. An account with no such entry is left out, so its connection
+    says nothing about it and the ledger alone judges it, as if it had no connection.
+    """
+    booked: dict[str, date] = {}
+    for account, entry in _account_entries(entries):
+        if account in synced and item_of((entry.meta or {}).get("source")) == synced[account][0]:
+            booked[account] = max(entry.date, booked.get(account, date.min))
+    return {
+        account: min(day, today)
+        for account, (_, day) in synced.items()
+        if account in booked and day >= booked[account]
+    }
+
+
+def account_ends(
+    entries: Sequence[Directive], today: date, own: Mapping[str, str] | None = None
+) -> dict[str, date]:
     """The last day the ledger knows about each balance-sheet account, or `today` if earlier.
 
     That is the account's newest transaction, or the day before its newest balance assertion,
@@ -207,9 +264,12 @@ def account_ends(entries: Sequence[Directive], today: date) -> dict[str, date]:
     a statement import closes each cycle that way. The ledger knows nothing about the days
     after: a statement import stops at its period's end, and a bank feed stops when it last
     ran. Accounts with neither are left out.
+
+    `own` is each account a connection vouches for, with that connection's Item: such an
+    account counts only entries no other connection booked (`_account_entries`).
     """
     ends: dict[str, date] = {}
-    for account, entry in _account_entries(entries):
+    for account, entry in _account_entries(entries, own):
         day = min(_known_through(entry), today)
         if day > ends.get(account, date.min):
             ends[account] = day
@@ -242,10 +302,13 @@ class Reach:
         )
 
 
-def account_reaches(entries: Sequence[Directive], today: date) -> dict[str, Reach]:
-    """Each balance-sheet account's `Reach`, counting an entry dated after `today` as today's."""
+def account_reaches(
+    entries: Sequence[Directive], today: date, own: Mapping[str, str] | None = None
+) -> dict[str, Reach]:
+    """Each balance-sheet account's `Reach`, counting an entry dated after `today` as today's,
+    and, for an account in `own`, only entries no other connection booked (`account_ends`)."""
     reaches: dict[str, Reach] = {}
-    for account, entry in _account_entries(entries):
+    for account, entry in _account_entries(entries, own):
         month = Month.of(min(entry.date, today))
         reach = reaches.get(account, Reach())
         if isinstance(entry, Transaction) and (
@@ -275,9 +338,15 @@ def flowing(entries: Sequence[Directive]) -> frozenset[str]:
 
 
 def _account_entries(
-    entries: Sequence[Directive],
+    entries: Sequence[Directive], own: Mapping[str, str] | None = None
 ) -> Iterator[tuple[str, Transaction | Balance]]:
-    """Each balance-sheet account with each transaction or balance assertion that names it."""
+    """Each balance-sheet account with each transaction or balance assertion that names it.
+
+    An account in `own`, which a connection vouches for, is not paired with an entry another
+    connection booked: a card payment arriving through the checking account's feed is one
+    transaction on the card, and says nothing of what the card's own feed has not delivered.
+    """
+    own = own or {}
     for entry in entries:
         if isinstance(entry, Transaction):
             accounts = {posting.account for posting in entry.postings}
@@ -285,9 +354,13 @@ def _account_entries(
             accounts = {entry.account}
         else:
             continue
+        booked = item_of((entry.meta or {}).get("source"))
         for account in accounts:
-            if is_balance_sheet(account):
-                yield account, entry
+            if not is_balance_sheet(account):
+                continue
+            if account in own and booked is not None and booked != own[account]:
+                continue
+            yield account, entry
 
 
 def _known_through(entry: Transaction | Balance) -> date:
@@ -419,9 +492,14 @@ def from_ledger(
     *,
     rulings: Rulings,
     sources: Sequence[str] = PRICE_SOURCES,
+    connections: Connections | None = None,
 ) -> Establish:
     """The recompute hearth runs: load the ledger file, lay the rulings over it, then value it
-    at stored prices."""
+    at stored prices, noting how current each connection that feeds it is.
+
+    `connections` are the Plaid connections registered in `database` unless given.
+    """
+    known = connections or RegisteredConnections(database)
 
     def establish(now: datetime) -> Books:
         if ledger is None:
@@ -430,7 +508,9 @@ def from_ledger(
         conn = db.connect(database)
         try:
             prices = stored_prices(PriceStore(conn), sources)
-            return compute(entries, prices, now=now, decide=rulings(conn))
+            return compute(
+                entries, prices, now=now, decide=rulings(conn), synced=synced_through(known)
+            )
         finally:
             conn.close()
 

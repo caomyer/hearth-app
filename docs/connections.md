@@ -128,5 +128,10 @@ The daily sync and `hearth plaid sync` also leave alone an Item whose history is
 
 - The import that turns fetched transactions and uploaded statements into ledger entries and review rows.
   Until it exists, connected history waits in the feed store; the import page says so.
+  Every entry it books from a connection must carry `source: "plaid:<item_id>:<transaction id>"` (`connections.plaid_source`): only such entries let a connection's last sync vouch for an account's coverage (`docs/real-ledger.md`).
+  The format is parsed (`connections.item_of`), not a loose convention, so write it only through `plaid_source`.
+  The import must also keep one invariant that nothing records today: a sync counts as booked only once every row it fetched is in the books.
+  Coverage takes a successful sync on or after an account's newest booked entry to mean the books hold everything the connection brought, so an import that books through May and then stalls while the Item keeps syncing would read as current through today on books that stop in May.
+  Book a sync's rows and mark it booked in one step, or have coverage read the last booked sync rather than the last successful one.
 - Bringing in investment holdings and activity.
 - Checking each bank's balance against the ledger once the import has booked the history.

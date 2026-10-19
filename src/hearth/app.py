@@ -3,6 +3,7 @@
 import os
 import threading
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import quote
 
@@ -77,7 +78,9 @@ def create_app(
         clock=clock,
         price_source=price_source or EodhdSource(os.environ.get(API_KEY_VARIABLE)),
         connections=connections or RegisteredConnections(settings.database),
-        plaid=plaid or PlaidSetup(),
+        # The books note how current each connection is (`books.synced_through`), so each sync
+        # recomputes them.
+        plaid=replace(plaid or PlaidSetup(), synced=bookkeeper.recompute),
         runner=runner or _in_background,
     )
 

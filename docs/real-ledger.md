@@ -59,10 +59,24 @@ Each figure's as-of line describes the data behind that figure, not the ledger a
 A viewer who may see the transactions of every part behind a figure is told the earliest last day once it is more than a week behind, naming the stalest member only when they may see that member's accounts.
 Anyone else always reads "The accounts behind this figure end in <month>.", since the day an account last moved is transaction detail (`docs/privacy-boundary.md`).
 
-A part reaches a month once any one of its accounts does.
-The ledger cannot tell a card with no activity from a card that stopped reporting, so an account lagging behind a current one in the same part is not detected, and its months read as complete.
-The remedy, for a Plaid-fed account, is to take coverage from the connection's last successful sync, which `hearth.plaid` records per Item (`last_synced_at`), independent of ledger entries.
-Coverage does not read it yet; until it does, keep each account's statements or feed current, or close it with a balance assertion.
+A part reaches a month once any one of its accounts is known to.
+The ledger cannot tell a card with no activity from a card that stopped reporting, so on its own it would let one current account make every account in its part look current.
+A connection can tell them apart, but only for data it brought into the books.
+An entry booked from a connection carries `source: "plaid:<item_id>:<transaction id>"` (`connections.plaid_source`), and a connection's last successful sync, as `hearth.plaid` records per Item (`last_synced_at`), vouches for an account only when the books hold such an entry from that Item on the account and the sync is on or after the newest of them (`books.vouched`).
+A vouched account is known through its last sync, which counts toward its part's reach, and it must also be current through the month itself: by its own entries, or by its connection having last synced after the month (in it, for this month).
+A vouched account's own entries are its statement, manual and own-connection entries, never another connection's (`books.account_reaches`, `books.account_ends`): a card payment booked through the checking account's feed proves one transaction on the card, not that the card's own feed is complete, because presence is not completeness.
+A card whose connection last worked in May therefore leaves May and every month after it incomplete however current the rest of its part is, and its part's data stops where the connection did.
+A quiet card whose connection still works holds its months, so cards with no activity for months never hold their member's figures back.
+The books note each connection's last successful sync when they are recomputed (`books.synced_through`); a sync recomputes them when it finishes, from a page or the morning's run, so the figures see it at once.
+Like everything else here, this is decided by month alone and is the same for every viewer.
+
+Today no entry in a real ledger derives from a connection, so no connection vouches for anything there, and a Plaid-fed account whose ledger feed has stopped while its connection keeps working still reads as covered by the ledger rule below.
+The cause is that connected data has not reached the books yet: it waits in the feed store until the import exists (`docs/connections.md`).
+The rule that closes it is in place and activates on its own once the import books rows with the `plaid:<item_id>:...` source; the demo books its bank-feed rows that way already, so it shows the rule at work.
+
+An account no connection vouches for, such as one a statement import brings in, is judged with its part by the ledger alone, and that limitation stays: one that stopped while another in its part carries on reads as complete.
+Judging each such account on its own entries would be worse, as every quiet card would hold its member's typical, pace and history back for good.
+The honest answer for a statement-fed account is a balance assertion at each statement's close, which says the account is whole through it whether or not anything moved; until the import writes one, keep each account's statements current, or close it with a balance assertion.
 
 **The ledger starts part way through each account's life.**
 An account opened years ago whose history in the ledger starts this January has no known value before then.

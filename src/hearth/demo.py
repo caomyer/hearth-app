@@ -25,6 +25,7 @@ from beancount.core.data import Transaction
 from hearth import accounts, auth, books, db, members, passwords
 from hearth.books import Status
 from hearth.config import Settings
+from hearth.connections import Connections, RegisteredConnections, plaid_source
 from hearth.disclosure import Disclosure
 from hearth.members import MemberId
 from hearth.plaid.client import Environment
@@ -54,8 +55,9 @@ SET_ASIDE_DAYS = 7
 FIRST_REVIEW_DAYS = 730
 """A first import's backfill: two years, none of it reviewed yet."""
 
-CARD_EXPIRED_DAYS_AGO = 5
-"""Avery's card connection stopped updating this long ago, so the demo shows that state."""
+CARD_EXPIRED_DAYS_AGO = 12
+"""Avery's card connection stopped updating this long ago, so the demo shows that state: more
+than a week (`books.BEHIND_AFTER`), so Avery's own figures say the day its data stops."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +156,7 @@ def seed(
             name=account.name,
             owners=[ids[owner] for owner in account.owners],
         )
-    today = now.date()
+    today = now.astimezone().date()
     history = FIRST_REVIEW_DAYS if first_review else HISTORY_DAYS
     prices = _prices(today, history)
     store = PriceStore(conn)
@@ -524,7 +526,8 @@ def connect(settings: Settings, setup: PlaidSetup, *, now: datetime) -> None:
             connector.confirm(chosen, near_seen=connector.mapping(chosen).near)
         avery = _seeded(conn, "avery")
         cedar = next(i for i in Registry(conn).items_of(avery.id) if i.institution == "Cedar Card")
-        stopped = now - timedelta(days=CARD_EXPIRED_DAYS_AGO)
+        stopped_on = now.astimezone().date() - timedelta(days=CARD_EXPIRED_DAYS_AGO)
+        stopped = datetime.combine(stopped_on, time(12)).astimezone()
         Registry(conn).synced(cedar.item_id, at=stopped, history=None)
         Registry(conn).set_state(
             cedar.item_id, ItemState.LOGIN_REQUIRED, problem="ITEM_LOGIN_REQUIRED"
@@ -533,6 +536,37 @@ def connect(settings: Settings, setup: PlaidSetup, *, now: datetime) -> None:
         setup.stand_in.require_login(cedar.item_id)
     finally:
         conn.close()
+    if settings.ledger is not None:
+        _book_from_connections(settings.ledger, RegisteredConnections(settings.database))
+
+
+def _book_from_connections(ledger: Path, connections: Connections) -> None:
+    """Mark the bank-feed entries on accounts a connection feeds as the import will book them,
+    with that connection's source (`connections.plaid_source`), so each connection vouches for
+    its accounts' coverage and a stopped one shows as data that stops."""
+    item_of_account = {
+        account: connection.item_id
+        for connection in connections.all()
+        if connection.item_id is not None
+        for account in connection.ledger_accounts
+    }
+    entries = ledger.read_text().split("\n\n")
+    for i, entry in enumerate(entries):
+        lines = entry.split("\n")
+        source = next(
+            (n for n, line in enumerate(lines) if line.startswith('  source: "bank-feed:')), None
+        )
+        fed = [
+            item_of_account[account]
+            for line in lines[1:]
+            if line.startswith("  ") and (account := line.split()[0]) in item_of_account
+        ]
+        if source is None or not fed:
+            continue
+        row = lines[source].removeprefix('  source: "bank-feed:').removesuffix('"')
+        lines[source] = f'  source: "{plaid_source(fed[0], f"demo-{row}")}"'
+        entries[i] = "\n".join(lines)
+    ledger.write_text("\n\n".join(entries))
 
 
 def _feeds(name: str, mask: str | None) -> str:

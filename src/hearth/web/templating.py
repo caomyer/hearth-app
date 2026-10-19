@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from markupsafe import Markup, escape
 
+from hearth.connections import PLAID
 from hearth.disclosure import Withheld
 from hearth.months import Month
 
@@ -127,6 +128,12 @@ def category(ledger_account: str | None) -> str:
     return ledger_account.rsplit(":", 1)[-1]
 
 
+def origin(value: str) -> str:
+    """Where a span of an account's history came from: "bank feed" for rows booked from a
+    connection, otherwise its origin as words ("bank-feed" is "bank feed")."""
+    return "bank feed" if value == PLAID else value.replace("-", " ")
+
+
 def plural(count: int, singular: str, plural_form: str | None = None) -> str:
     return f"{count} {singular if count == 1 else plural_form or singular + 's'}"
 
@@ -164,6 +171,7 @@ environment.filters.update(
     month_year=month_year,
     clock_time=clock_time,
     category=category,
+    origin=origin,
     names=names,
 )
 environment.globals.update(when=when, close=close, plural=plural, MINUS=MINUS)

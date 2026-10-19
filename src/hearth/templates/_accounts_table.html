@@ -18,7 +18,7 @@
         {% else %}
         Since {{ row.since | month_year }}
         {% if row.spans is not withheld and row.spans | length > 1 %}
-        {% for span in row.spans %}<span class="second">{{ span.origin | replace("-", " ") | capitalize }}: {{ span.earliest | day }} to {{ span.latest | day }}{% if span.earliest.year != span.latest.year %}, {{ span.latest.year }}{% endif %}</span>{% endfor %}
+        {% for span in row.spans %}<span class="second">{{ span.origin | origin | capitalize }}: {{ span.earliest | day }} to {{ span.latest | day }}{% if span.earliest.year != span.latest.year %}, {{ span.latest.year }}{% endif %}</span>{% endfor %}
         {% endif %}
         {% endif %}
       </td>

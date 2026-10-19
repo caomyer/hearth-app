@@ -26,7 +26,7 @@
         <p class="hero-value">{% if view.balance.is_floor %}<span class="sm muted">at least </span>{% endif %}{{ view.balance.value | hero }}</p>
         {% endif %}
         {% if a.spans is not withheld and a.spans %}
-        <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>History since {{ a.spans[0].earliest | year_day }}{% for span in a.spans %}; {{ span.origin | replace("-", " ") }} from {{ span.earliest | day }} to {{ span.latest | day }}{% endfor %}.</p>
+        <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>History since {{ a.spans[0].earliest | year_day }}{% for span in a.spans %}; {{ span.origin | origin }} from {{ span.earliest | day }} to {{ span.latest | day }}{% endfor %}.</p>
         {% endif %}
       </div>
     </div>

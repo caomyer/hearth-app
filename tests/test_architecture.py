@@ -43,7 +43,16 @@ LEDGER_READERS = (
 )
 """Modules that read household data. Pages get it only through hearth.disclosure."""
 
-RAW_BOOKS = ("entries", "positions", "month_ends", "pile", "coverage")
+RAW_BOOKS = (
+    "entries",
+    "positions",
+    "month_ends",
+    "pile",
+    "coverage",
+    "account_ends",
+    "account_reaches",
+    "synced",
+)
 """The books' raw contents. A page that names one of these is reading past disclosure."""
 
 

@@ -48,7 +48,8 @@ Spending bars for months the books do not fully hold are drawn in outline and la
 
 **Connections come from the Plaid connections hearth holds.**
 `hearth.connections` describes each member's connections and whether they still update, read from `hearth.plaid`'s registry (`docs/connections.md`).
-The demo connects its members through the stand-in for Plaid, with one card that wants its member to sign in again, so the state can be seen.
+How current each connection is decides which months its accounts' figures are complete for, and where their data stops (`docs/real-ledger.md`).
+The demo connects its members through the stand-in for Plaid, with one card that wants its member to sign in again, so the state can be seen: its accounts' bank-feed rows are booked from their connection, so that card's data stops on the day it stopped.
 
 **Review rows can be decided one at a time.**
 Groups with one suggestion are accepted in one decision, as designed.

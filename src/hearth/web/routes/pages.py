@@ -40,7 +40,6 @@ def chrome(
         "viewer_hue": presenters.hue_of(view, session.member),
         "notice": view.notice(),
         "expired": [c for c in view.connections(app.connections) if c.state == "expired"],
-        "lag": view.lag(app.connections),
         "status": view.status,
         "today": app.clock().astimezone().date(),
     }
