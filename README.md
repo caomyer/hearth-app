@@ -20,7 +20,7 @@ Every imported transaction is in the books at once, flagged until a member revie
 Members connect their institutions through Plaid, each through a Plaid account of their own by default, and hearth pulls two years of history into a staging store, checked per account for how much each bank actually sent ([docs/connections.md](docs/connections.md)).
 A household needs no ledger of its own: the accounts its members connect become the chart of accounts of books hearth keeps itself, written out on every recompute for anyone to open in fava ([docs/books.md](docs/books.md)).
 A bank's payment to a card the household also connects is paired from its two sides into one transfer, so the import can book it once and never as spending and income at once ([docs/pairing.md](docs/pairing.md)).
-Turning the connected history into entries in those books is the import's job, and comes next.
+Every posted transaction a connected bank sends is booked into those books, flagged until a member reviews it, and every connected account opens at the balance its bank reports, proved against that balance on every recompute ([docs/books.md](docs/books.md)).
 The calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md) and [docs/dashboards.md](docs/dashboards.md); `design/` holds the approved design.
 
 ## Development
@@ -45,6 +45,13 @@ A household that already keeps a beancount ledger may inherit it, read-only, and
 ```sh
 export HEARTH_LEDGER="$HOME/path/to/household.beancount"
 uv run hearth add-account <ledger account> --name "<name>" --owner <username>
+```
+
+A household that kept a ledger before connecting its banks can hold hearth's own books against it, account by account, at each statement's close or each month end ([docs/books.md](docs/books.md#checking-against-a-ledger-kept-before)).
+It reads both, writes nothing, and prints where they differ and which rows make the difference:
+
+```sh
+uv run hearth compare <ledger.beancount> --cycles <run.json> --monthly
 ```
 
 Hearth never writes an inherited ledger. It recomputes at start-up, every morning at 6:00 and on request, never on page load, and writes its books to `books.beancount` in its data directory each time.

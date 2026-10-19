@@ -43,14 +43,18 @@ class Settings:
 
     @classmethod
     def from_environment(cls) -> Settings:
-        default = Path.home() / ".local" / "share" / "hearth"
-        data_dir = Path(os.environ.get(DATA_DIR_VARIABLE, default)).expanduser()
         ledger = os.environ.get(LEDGER_VARIABLE)
         return cls.in_directory(
-            data_dir,
+            data_dir_from_environment(),
             secure_cookies=os.environ.get("HEARTH_HTTPS") == "1",
             ledger=Path(ledger).expanduser() if ledger else None,
         )
+
+
+def data_dir_from_environment() -> Path:
+    """Where the environment says hearth keeps its state, whether or not anything is there."""
+    default = Path.home() / ".local" / "share" / "hearth"
+    return Path(os.environ.get(DATA_DIR_VARIABLE, default)).expanduser()
 
 
 def _signing_key(data_dir: Path) -> bytes:

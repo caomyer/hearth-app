@@ -125,6 +125,36 @@ So coverage, how far an account reaches, which connection vouches for it, and th
 An account whose history has not arrived yet has its balance from the day it is filed, while its months still read as not known and spending is judged as though it might move (`books.awaiting`); its net worth line has today's point and no month end before it.
 An account whose complete history holds no transaction at all is the same: its balance is known, its months are not, as nothing yet says a quiet account was quiet rather than missing.
 
+## Checking against a ledger kept before
+
+A household that kept a ledger before it connected its banks holds the best test hearth's books will get.
+A ledger reconciled to the bank's statements says what each account held at each statement's close and what moved over each cycle, so where it and hearth's books disagree, hearth's books are wrong until shown otherwise.
+`hearth compare` holds them side by side (`hearth.comparison`):
+
+```sh
+uv run hearth compare <ledger.beancount> --cycles <run.json>   # at each statement cycle the import reconciled
+uv run hearth compare <ledger.beancount> --monthly             # at every month end both books reach
+uv run hearth compare <ledger.beancount> --account Liabilities:US:Bank:Card   # refused unless hearth's books open it
+```
+
+`--cycles` takes a beancount_nextgen import's `run.json` and compares at the close of every statement cycle it reconciled to the cent, and the day before each opens.
+Without it the comparison is monthly; `--monthly` adds month ends to the cycles.
+
+For each account both books hold, and each checkpoint both reach, it says whether they agree, or by how much they differ, and lists the rows that make the difference: rows one book holds and the other does not, and rows the two books date on either side of a checkpoint.
+A checkpoint whose whole difference is rows dated apart reads "agrees but for the day rows are dated": a ledger that books a card's charge on the day it was made, rather than the day it posted, differs from hearth that way across every month end.
+Two rows are read as one row dated apart only when they are for the same amount, at most a week apart, their narrations or payees share a word that is not one any bank row carries ("sale", "payment" and the like), and neither has another such partner as near; anything else is a row one book holds and the other does not.
+Balances are at the end of each day, in the ledger's sign.
+Hearth books a row on the day the bank posted it, as a statement counts it, so a ledger row is read on its `post-date` where it carries one.
+A ledger is read only over the days it holds every row of: a window built on the days rows were made holds rows posted after its last day, but not every row posted then, and lacks rows made before its first day and posted after it, so an account any of whose rows carries a `post-date` other than the day it was booked is read from a week after the later of its first booking and first posting, as a row kept from before the window, such as a reversal booked on the day of the charge it reverses, says nothing of the days before it.
+Monthly checkpoints are chosen only within what both books hold; a statement cycle's checkpoint outside it is listed as not compared, with why.
+Each account is read over its own rows, as each closes its statements on its own days, and over every statement cycle on it the import reconciled.
+Where either book does not say what an account held, as a ledger that starts part way through a card's life does not, only what moved is compared, never a sum of rows as though it were a balance.
+
+It reads and never writes.
+The books are computed from a copy of the household's two databases in a throwaway directory, exactly as a recompute computes them but with no ledger to inherit, so the comparison is of hearth's own books even for a household that inherits the ledger it is compared with.
+The ledger is read through the same read-only path as an inherited one, and the books file is not written.
+What it finds is printed to the terminal and is the household's: keep it out of the repository, its tests and its documents, like every other figure of theirs.
+
 ## What Plaid does not send
 
 An investment account opens like any other, but Plaid sends no investment transactions or holdings without its Investments product, which a connection has to have been granted and which is billed separately.

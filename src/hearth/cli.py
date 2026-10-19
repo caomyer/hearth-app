@@ -1,5 +1,5 @@
 """Command-line entry point: ``hearth serve``, ``hearth add-member``, ``hearth add-account``,
-``hearth accounts``, ``hearth plaid`` and ``hearth demo``.
+``hearth accounts``, ``hearth plaid``, ``hearth compare`` and ``hearth demo``.
 
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
 --approve-plaid OPERATION`` for the web pages, and ``--approved`` for each ``hearth plaid``
@@ -8,6 +8,7 @@ command that calls Plaid. Without it, they refuse before anything is sent.
 
 import argparse
 import logging
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -17,11 +18,11 @@ from pathlib import Path
 import uvicorn
 from beancount.core.data import Open
 
-from hearth import accounts, auth, books, db, demo, members
+from hearth import accounts, auth, books, comparison, db, demo, members
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
 from hearth.clock import Clock, system_clock
-from hearth.config import Settings
+from hearth.config import Settings, data_dir_from_environment
 from hearth.disclosure import rulings_in
 from hearth.members import MemberRejectedError
 from hearth.plaid import cli as plaid_cli
@@ -87,6 +88,33 @@ def main(argv: list[str] | None = None) -> None:
         "accounts", help="list the books' accounts and who owns each (never writes a ledger)"
     )
 
+    against = commands.add_parser(
+        "compare",
+        help="hold hearth's own books against a ledger the household kept before, account by"
+        " account (reads only, prints only)",
+    )
+    against.add_argument("ledger", type=Path, help="the ledger to compare with, read only")
+    against.add_argument(
+        "--cycles",
+        type=Path,
+        metavar="RUN_JSON",
+        help="a beancount_nextgen import's run.json: compare at the close of every statement"
+        " cycle it reconciled, and the day before each opens",
+    )
+    against.add_argument(
+        "--monthly",
+        action="store_true",
+        help="compare at every month end both books reach (the default without --cycles)",
+    )
+    against.add_argument(
+        "--account",
+        action="append",
+        default=[],
+        metavar="ACCOUNT",
+        help="narrow to an account under investigation, once a full run shows where the books"
+        " differ; give it once per account",
+    )
+
     try_it = commands.add_parser(
         "demo", help="serve an invented household from a throwaway directory"
     )
@@ -114,6 +142,13 @@ def main(argv: list[str] | None = None) -> None:
             _add_account(arguments.ledger_account, arguments.name, arguments.owner)
         case "accounts":
             _list_accounts()
+        case "compare":
+            _compare(
+                arguments.ledger,
+                arguments.cycles,
+                monthly=arguments.monthly or arguments.cycles is None,
+                accounts=arguments.account,
+            )
         case "demo":
             if arguments.from_zero:
                 _demo_from_zero(arguments.host, arguments.port)
@@ -255,6 +290,81 @@ def _list_accounts() -> None:
         account = claimed.get(ledger_account)
         owners = ", ".join(sorted(names[o] for o in account.owners)) if account else ""
         print(f"{ledger_account}  {account.name if account else '-'}  {owners or 'unclaimed'}")
+
+
+def _compare(ledger: Path, cycles: Path | None, *, monthly: bool, accounts: list[str]) -> None:
+    """Print how hearth's own books, as they would be with no ledger to inherit, compare with
+    `ledger` (``hearth.comparison``).
+
+    Nothing of the household's is written: the books are computed from a copy of its two
+    databases in a throwaway directory, the ledger is read through the read-only path, and
+    the books file is not written.
+    """
+    data_dir = data_dir_from_environment()
+    try:
+        steps = comparison.statement_cycles(cycles) if cycles else []
+        # Beancount reports a ledger it cannot open as an error in it, which names no cause.
+        ledger.open("rb").close()
+        theirs = books.load_entries(ledger)
+    except comparison.ComparisonError as error:
+        sys.exit(f"hearth: {error}")
+    except books.LedgerError as error:
+        sys.exit(f"hearth: {ledger}: {error.summary}")
+    except OSError as error:
+        sys.exit(f"hearth: {ledger} cannot be read: {error.strerror}.")
+    with tempfile.TemporaryDirectory(prefix="hearth-compare-") as directory:
+        snapshot = _snapshot(data_dir, Path(directory))
+        try:
+            household = books.household_entries(snapshot)
+            conn = db.connect(snapshot.database)
+            try:
+                ours = books.compute(
+                    household.entries,
+                    lambda symbol, day: None,
+                    now=system_clock(),
+                    decide=rulings_in(conn),
+                    unknown=household.unknown,
+                )
+            finally:
+                conn.close()
+        except books.LedgerError as error:
+            sys.exit(f"hearth: hearth's own books cannot be computed: {error.summary}")
+    try:
+        found = comparison.compare(
+            ours.entries,
+            theirs,
+            through=ours.as_of,
+            cycles=steps,
+            monthly=monthly,
+            accounts=accounts,
+        )
+    except comparison.ComparisonError as error:
+        sys.exit(f"hearth: {error}")
+    for line in comparison.describe(found, str(ledger)):
+        print(line)
+
+
+def _snapshot(data_dir: Path, directory: Path) -> Settings:
+    """Settings over a copy of the household's two databases in `data_dir` in `directory`,
+    with no ledger to inherit: what the household's own books are made of, opened read-only
+    and copied, so that nothing done with them can change the household's, nor anything be
+    made in `data_dir` where there is no household."""
+    snapshot = Settings.in_directory(directory)
+    copies = (snapshot.database, snapshot.feed_database)
+    for copy in copies:
+        if not (data_dir / copy.name).exists():
+            sys.exit(f"hearth: there is no household in {data_dir}: {copy.name} is missing.")
+    for copy in copies:
+        source = sqlite3.connect(f"{(data_dir / copy.name).as_uri()}?mode=ro", uri=True)
+        target = sqlite3.connect(copy)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()
+    db.initialise(snapshot.database)
+    feed.initialise(snapshot.feed_database)
+    return snapshot
 
 
 def _demo(host: str, port: int, *, first_review: bool = False) -> None:
