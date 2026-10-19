@@ -89,12 +89,21 @@
       <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>{% if f.owners | length > 1 %}Its owners only{% else %}Only you{% endif %}</span>
     </div>
     <div class="panel-body">
+      {% if f.reported_by %}
+      <p class="measure">The transactions in hearth add up to {{ "less" if f.difference > 0 else "more" }} than {{ f.reported_by }} says this account held. A difference like this is usually a transaction counted twice, such as one moved here in Review that its bank also sent, or one marked in Review as not a transaction that the bank did count.</p>
+      {% else %}
       <p class="measure">The ledger says this account held {{ "less" if f.difference > 0 else "more" }} than the statement says it does. A difference like this is usually one transaction that was not imported, or one that was booked twice.</p>
+      {% endif %}
       <dl class="err-facts mt-4">
         <div><dt>Account</dt><dd><code>{{ f.account }}</code></dd></div>
         {% if f.location %}<div><dt>Where</dt><dd><code>{{ f.location }}</code>, balance on {{ f.check.date | day }}</dd></div>{% endif %}
+        {% if f.reported_by %}
+        <div><dt>{{ f.reported_by }} says</dt><dd class="tnum">{{ f.check.asserted | money }} at the end of {{ f.as_of | day }}</dd></div>
+        <div><dt>Hearth adds up to</dt><dd class="tnum">{{ f.check.computed | money }}</dd></div>
+        {% else %}
         <div><dt>Statement says</dt><dd class="tnum">{{ f.check.asserted | money }}</dd></div>
         <div><dt>Ledger says</dt><dd class="tnum">{{ f.check.computed | money }}</dd></div>
+        {% endif %}
         <div><dt>Difference</dt><dd class="tnum" style="font-weight: 600">{{ (f.difference | abs) | money }}</dd></div>
       </dl>
       <div class="row wrap mt-6">
@@ -128,10 +137,12 @@
         {{ priced_from_note(w.moves_priced_from) }}
         {{ as_table("Monthly change in net worth, saved and market", ("Month", "Saved / market"), moves_rows) }}
       </figure>
-      {% elif not w.headline.is_known %}
-      <p class="muted">Not known yet: the change can be split once hearth has the history of every account behind it.</p>
-      {% else %}
+      {% elif not w.moves_cover %}
+      <p class="muted">{{ w.moves_leave_out | names("name") }} {{ "is" if w.moves_leave_out | length == 1 else "are" }} not included: you see a total, not its parts.</p>
+      {% elif w.moves_priced_from %}
       <p class="muted">There is not enough priced history yet to split the change into saving and the market.</p>
+      {% else %}
+      <p class="muted">Not known yet: the change can be split once hearth has the history of every account behind it.</p>
       {% endif %}
     </div>
   </section>

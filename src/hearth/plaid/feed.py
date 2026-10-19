@@ -456,6 +456,20 @@ class Feed:
             datetime.fromisoformat(row["recorded_at"]),
         )
 
+    def recorded_by(self, balance: Balance, item_id: str) -> Run | None:
+        """The run that recorded `balance`, an Item's: its latest run started by then. A run
+        records the balances before it stores any page."""
+        rows = self._db.execute("SELECT * FROM feed_run WHERE item_id = ?", (item_id,))
+        started = [
+            row for row in rows if datetime.fromisoformat(row["started_at"]) <= balance.recorded_at
+        ]
+        latest = max(
+            started,
+            key=lambda row: (datetime.fromisoformat(row["started_at"]), row["id"]),
+            default=None,
+        )
+        return _run(latest) if latest else None
+
     def held(self, account_id: str) -> Held:
         """Posted transactions held for the account. Pending ones may still change or vanish."""
         row = self._db.execute(

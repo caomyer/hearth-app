@@ -64,6 +64,9 @@ class Gate:
     def may_use_connection(self, holder: MemberId) -> bool:
         return access.may_use_connection(self.viewer, holder)
 
+    def may_see_why_unknown(self, owners: Collection[MemberId]) -> bool:
+        return access.may_see_why_unknown(self.viewer, owners)
+
     def may_use_credentials(self, owner: MemberId | None) -> bool:
         return access.may_use_credentials(self.viewer, owner)
 

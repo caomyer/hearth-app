@@ -77,6 +77,18 @@ def may_use_connection(viewer: Member, holder: MemberId) -> bool:
     return viewer.id == holder
 
 
+def may_see_why_unknown(viewer: Member, owners: Collection[MemberId]) -> bool:
+    """Whether ``viewer`` may be told why hearth does not know what an account ``owners`` own
+    holds: that its bank reported no balance, that a sync of it did not finish, that it was
+    connected again; or why the balance its bank reported is not what its transactions add
+    up to, and as of which day. Only an owner. Each is what a connection or a review did, and
+    a connection is its member's alone (``may_use_connection``), as is reviewing
+    (``may_review``); a member who shares their balances shares the figures, not the state of
+    what is behind them, so anyone else is told only that the balance is not known, or that
+    the figures wait on one member's records. What nobody owns, nobody is told about."""
+    return viewer.id in owners
+
+
 def may_use_credentials(viewer: Member, owner: MemberId | None) -> bool:
     """Whether ``viewer`` may link through a Plaid account, and see how much of it is left.
 

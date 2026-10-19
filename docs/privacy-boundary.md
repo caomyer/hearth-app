@@ -51,6 +51,10 @@ Its month is the earliest month any of the parts ends in, and nothing about it, 
 Which months count as complete is decided the same way, by month alone (`figures.covers`).
 An account's "Updated" day and the days each of its sources covers go with the transactions facet too; a viewer who sees only its balance reads the month its history starts.
 
+Why an account's balance is not known (its bank reported none, a sync of it did not finish, it was connected again) is what its connection did, and a connection is its member's alone.
+So only the account's owners are told why; anyone else who may see its balance reads that it is not known (`access.may_see_why_unknown`).
+The same holds when a balance its bank reported is not what its transactions add up to: the bank's figure, the day it covers and the difference go to the account's owners, who alone can review it, and everyone else reads that the figures wait on one member's records.
+
 ### Sharing a total means sharing when it changes
 
 A member who shares a total shares every value it takes.

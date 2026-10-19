@@ -40,7 +40,8 @@ from hearth.clock import Clock
 from hearth.config import Settings
 from hearth.connections import Connections, RegisteredConnections, item_of
 from hearth.months import Month
-from hearth.plaid import booking, feed
+from hearth.plaid import booking, feed, opening
+from hearth.plaid.opening import Unknown
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.common import is_balance_sheet, root
 from hearth.reports.coverage import AccountCoverage, account_coverage
@@ -102,16 +103,20 @@ class Books:
     successfully, as it stood at this recompute (`vouched`). It says the account is still
     reporting, which the ledger cannot: `figures.covers` reads it."""
     awaiting: frozenset[str] = frozenset()
-    """Accounts hearth opened for a connected bank account that the books hold nothing for
-    yet (`awaiting`): whatever the bank says, their balance is not known here, never zero."""
+    """Accounts hearth opened for a connected bank account whose history the books hold none
+    of yet (`awaiting`): nothing says yet what they spend, nor that they spent nothing."""
     unanchored: frozenset[str] = frozenset()
-    """Accounts hearth opened whose transactions the books hold, but not what the account held
-    before the first of them (`unanchored`): their balance is not known here either."""
+    """Accounts hearth opened that the books hold no balance for (`unanchored`): neither what
+    they held before their history nor what their bank says they hold. Their balance is not
+    known here, never the sum of their transactions, never zero."""
+    unknown: dict[str, Unknown] = field(default_factory=dict)
+    """Accounts hearth opened whose opening balance could not be derived from what their bank
+    reported, with why (``hearth.plaid.opening``). Each is `unanchored`."""
 
     @property
     def balance_unknown(self) -> frozenset[str]:
         """Every account whose balance the books do not know, whatever its bank says."""
-        return self.awaiting | self.unanchored
+        return self.unanchored
 
     @property
     def month(self) -> Month:
@@ -134,6 +139,8 @@ class Failure:
     summary: str
     disagreement: AssertionCheck | None = None
     location: str | None = None
+    reported_by: str | None = None
+    """The bank whose reported balance `disagreement` asserts, when a bank's it is."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,11 +160,14 @@ class LedgerError(Exception):
         summary: str,
         disagreement: AssertionCheck | None = None,
         location: str | None = None,
+        *,
+        reported_by: str | None = None,
     ) -> None:
         super().__init__(summary)
         self.summary = summary
         self.disagreement = disagreement
         self.location = location
+        self.reported_by = reported_by
 
 
 def load_entries(path: Path) -> tuple[Directive, ...]:
@@ -205,10 +215,12 @@ def compute(
     now: datetime,
     decide: Decide,
     synced: Mapping[str, tuple[str, date]] | None = None,
+    unknown: Mapping[str, Unknown] | None = None,
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
     recent month end. `synced` is each fed ledger account's connection and its last successful
-    sync (`synced_through`).
+    sync (`synced_through`); `unknown`, each account whose opening balance could not be
+    derived, with why.
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
@@ -217,11 +229,14 @@ def compute(
     entries = tuple(reviewed(ledger, decide(pile)))
     for check in check_balance_assertions(entries):
         if not check.agrees:
-            raise LedgerError(f"A balance check failed on {check.date:%b} {check.date.day}.", check)
+            raise _disagreement(entries, check)
     # The household's own day, as every page names it, not the day it already is in UTC.
     today = now.astimezone().date()
+    # What each account held before its history, and holds now by its bank's word, says
+    # nothing of which days the history covers.
+    history = tuple(e for e in entries if not opening.anchors(e))
     fed = synced or {}
-    vouches = vouched(entries, fed, today)
+    vouches = vouched(history, fed, today)
     own = {account: fed[account][0] for account in vouches}
 
     def worth(day: date) -> NetWorth:
@@ -234,15 +249,42 @@ def compute(
         entries=entries,
         today=worth(today),
         month_ends=tuple(worth(day) for day in month_ends(today, HISTORY_MONTHS)),
-        coverage=tuple(account_coverage(entries, as_of=today)),
-        account_ends=account_ends(entries, today, own),
-        account_reaches=account_reaches(entries, today, own),
+        coverage=tuple(account_coverage(history, as_of=today)),
+        account_ends=account_ends(history, today, own),
+        account_reaches=account_reaches(history, today, own),
         flowing=flowing(entries),
         synced=vouches,
-        awaiting=awaiting(entries, today),
-        unanchored=unanchored(entries, today),
+        # Plaid sends an investment account no transactions at all, so waiting on its
+        # history would leave every month's spending incomplete for good.
+        awaiting=awaiting(history, today)
+        - {a for a, why in (unknown or {}).items() if why is Unknown.INVESTMENT},
+        unanchored=unanchored(entries),
+        unknown=dict(unknown or {}),
         pile=pile,
     )
+
+
+def _disagreement(entries: Sequence[Directive], check: AssertionCheck) -> LedgerError:
+    """The failed check, saying whose balance it was: a statement's in the ledger, or one a
+    bank reported, which hearth derived an opening balance from (``hearth.plaid.opening``)."""
+    asserted = next(
+        (
+            e
+            for e in entries
+            if isinstance(e, Balance) and e.account == check.account and e.date == check.date
+        ),
+        None,
+    )
+    if asserted is not None and opening.anchors(asserted):
+        bank = str(asserted.meta["reported-by"])
+        day = check.date - timedelta(days=1)
+        return LedgerError(
+            f"The balance {bank} reported for {day:%b} {day.day} is not what its transactions"
+            " add up to.",
+            check,
+            reported_by=bank,
+        )
+    return LedgerError(f"A balance check failed on {check.date:%b} {check.date.day}.", check)
 
 
 def synced_through(connections: Connections) -> dict[str, tuple[str, date]]:
@@ -353,26 +395,30 @@ def account_reaches(
 
 
 def awaiting(entries: Sequence[Directive], today: date) -> frozenset[str]:
-    """Accounts hearth opened from a connection that reach no month: no transaction and no
-    balance assertion names them.
+    """Accounts hearth opened from a connection whose history the books hold none of: in
+    `entries`, the books' history, no transaction and no balance assertion names them.
 
-    Their bank has a balance; the books do not, until its history is booked, so any figure
-    that includes one is not known yet rather than counting it as zero. An inherited ledger's
-    own accounts keep beancount's meaning, where an account nothing has moved holds nothing.
+    Nothing says yet what one of them spends or earns, so a figure of spending or income is
+    judged as though it might (``figures.flows_cover``), and its months read as not known.
+    What it holds may be known all the same, from its bank (`unanchored`). An inherited
+    ledger's own accounts keep beancount's meaning, where an account nothing has moved holds
+    nothing.
     """
     return frozenset(_connected(entries) - account_reaches(entries, today).keys())
 
 
-def unanchored(entries: Sequence[Directive], today: date) -> frozenset[str]:
-    """Accounts hearth opened from a connection that have transactions but no anchor: nothing
-    in the books says what the account held, only how it moved.
+def unanchored(entries: Sequence[Directive]) -> frozenset[str]:
+    """Accounts hearth opened from a connection with no anchor: nothing in the books says what
+    the account held, at most how it moved.
 
     A connection sends a window of history, not the account's life, so its rows added up are
     what moved over the window, not the balance; read as one, a card owing thousands could show
     as owing nothing. An account is anchored by a balance assertion on it, a `pad` into it, or a
     transaction balancing it against equity outside ``Equity:Review``, as an opening balance
-    is: each says what it held. Until one does, its balance is not known, never the sum of its
-    rows. An inherited ledger's own accounts keep beancount's meaning, as in `awaiting`.
+    is: each says what it held. Hearth anchors each from the balance its bank reports
+    (``hearth.plaid.opening``); until one does, its balance is not known, never the sum of its
+    rows, nor zero. An inherited ledger's own accounts keep beancount's meaning, as in
+    `awaiting`.
     """
     anchored: set[str] = set()
     for entry in entries:
@@ -383,7 +429,7 @@ def unanchored(entries: Sequence[Directive], today: date) -> frozenset[str]:
             for p in entry.postings
         ):
             anchored.update(p.account for p in entry.postings)
-    return frozenset((_connected(entries) & account_reaches(entries, today).keys()) - anchored)
+    return frozenset(_connected(entries) - anchored)
 
 
 def _connected(entries: Sequence[Directive]) -> set[str]:
@@ -528,7 +574,9 @@ class Bookkeeper:
         try:
             books = self._establish(now)
         except LedgerError as error:
-            self._fail(Failure(now, error.summary, error.disagreement, error.location))
+            self._fail(
+                Failure(now, error.summary, error.disagreement, error.location, error.reported_by)
+            )
         except Exception:
             _log.exception("recompute failed")
             self._fail(Failure(now, "The recompute stopped on an unexpected error."))
@@ -599,11 +647,18 @@ def from_household(
         # Each sync is noted before the feed is read, never after: a sync that finishes in
         # between then vouches for rows the books hold, not for rows they do not hold yet.
         synced = synced_through(known)
-        entries = household_entries(settings)
+        household = household_entries(settings)
         conn = db.connect(settings.database)
         try:
             prices = stored_prices(PriceStore(conn), sources)
-            books = compute(entries, prices, now=now, decide=rulings(conn), synced=synced)
+            books = compute(
+                household.entries,
+                prices,
+                now=now,
+                decide=rulings(conn),
+                synced=synced,
+                unknown=household.unknown,
+            )
         finally:
             conn.close()
         written = ownbooks.render(ownbooks.own(books.entries), inherits=settings.ledger)
@@ -613,7 +668,16 @@ def from_household(
     return establish
 
 
-def household_entries(settings: Settings) -> tuple[Directive, ...]:
+@dataclass(frozen=True, slots=True)
+class Entries:
+    """The household's entries before any ruling, and each account hearth opened whose opening
+    balance could not be derived, with why (``hearth.plaid.opening``)."""
+
+    entries: tuple[Directive, ...]
+    unknown: Mapping[str, Unknown] = field(default_factory=dict)
+
+
+def household_entries(settings: Settings) -> Entries:
     """The household's entries before any ruling: hearth's own over the inherited ledger.
 
     Checked as beancount checks a file it loads, so the books written out load as cleanly as
@@ -628,11 +692,12 @@ def household_entries(settings: Settings) -> tuple[Directive, ...]:
     conn = db.connect(settings.database)
     try:
         with feed.Feed.open(settings.feed_database) as fed:
-            own = ownbooks.derive(conn, fed, opened=opened, since=since)
+            derived = ownbooks.derive(conn, fed, opened=opened, since=since)
     except booking.Refused as refused:
         raise LedgerError(str(refused)) from refused
     finally:
         conn.close()
+    own = derived.entries
     entries = tuple(sorted((*inherited, *own), key=entry_sortkey))
     if own:
         # Beancount checks a name's spelling only as it parses a file, which these never were.
@@ -644,4 +709,4 @@ def household_entries(settings: Settings) -> tuple[Directive, ...]:
                 f"Hearth's own books have {count} error{'s' if count > 1 else ''}"
                 " it will not serve figures past."
             )
-    return entries
+    return Entries(entries, derived.unknown)

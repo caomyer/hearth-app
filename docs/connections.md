@@ -133,7 +133,6 @@ The daily sync and `hearth plaid sync` also leave alone an Item whose history is
 ## What is not done yet
 
 - Booking uploaded statements: what a connection fetches is booked (`docs/books.md`), what a member uploads is kept but not yet read.
-- Opening balances, so that a connected account's balance is known rather than only how it moved.
 - Carrying an account an inherited ledger holds on from where that ledger stops: the import leaves such an account to the ledger.
 - Bringing in investment holdings and activity.
-- Checking each bank's balance against the ledger once the import has booked the history.
+- Reading an account its bank sent no transactions for in a complete history as quiet: its balance is known (`docs/books.md`), its months are not.

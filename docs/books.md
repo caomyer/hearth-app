@@ -19,7 +19,7 @@ A household that has connected nothing yet sees a page that says so and offers t
 Hearth derives its entries in memory on every recompute, from the app database and the feed store, as it lays review rulings over the ledger (`docs/review.md`).
 What Plaid sent lives in the feed store; what members decided lives in the app database; nothing is stored twice, so nothing can drift.
 
-Each confirmed account opens on the first day of the history its connection asked for, or on the earliest transaction Plaid sent for it if that is earlier.
+Each confirmed account opens on the first day of the history its connection asked for, or on the earliest transaction Plaid sent for it if that is earlier, or on its opening balance, the day before that transaction, if that is earlier still.
 An account fed by more than one connection, as when a bank is connected again, opens once, at the earliest of them.
 Who owns an account is never written into the books: ownership decides who may see what, so it stays in the app database (`docs/foundation-decisions.md`).
 
@@ -70,15 +70,60 @@ When the import books a transaction from a connection, its `source` metadata nam
 A transfer is one entry booked from two rows, so each of its postings carries its own row's `source` as well.
 Coverage parses that string to tell which connection vouches for which entries (`docs/connections.md`), so it is written in exactly that form.
 
-## Balances are not known yet
+## Opening balances
 
-A bank sends a window of history, not the account's life, so the rows added up are what moved over the window, not what the account holds: read as a balance, a card owing thousands could show as owing nothing.
-So an account hearth opened has no known balance until something in the books says what it held, a balance assertion or an opening balance against equity (`books.unanchored`).
-Until then every net worth figure that includes it reads "Not known yet", never a total of zero, and the month-end line is not drawn; spending and income are figures as soon as their months are covered.
-An account whose history has not arrived at all is the same, and its months read as incomplete too (`books.awaiting`).
-A viewer who sees only a member's total learns that it is not known, never which account holds it back.
-An inherited ledger's accounts keep beancount's meaning, where an account nothing has moved holds nothing.
-Opening balances, derived from the balance each bank reports less the history it sent, are what will make those figures real.
+A bank sends a window of history, not the account's life, so the rows added up are what moved over the window, not what the account holds: read as a balance, a card owing thousands could show as owing nothing, and net worth would be the window's change rather than the balance.
+With every sync the bank also reports what each account holds now, its current balance, which the feed keeps (`feed_balance`).
+Each recompute works out from it what every connected account held before its history (`hearth.plaid.opening`):
+
+```text
+opening = current balance - every posted row booked for the account, in the books' sign
+```
+
+It is booked as an opening entry against `Equity:Opening-Balances` on the day before the account's first row, or, while no row has arrived, on the day the balance was reported.
+The current balance itself is booked as a `balance` assertion on the day after the later of the day it was reported and the account's last row, as beancount reads an assertion as the balance at the start of its day.
+A card's balance is what is owed, so on a Liabilities account it is asserted negated, and a card in credit holds money.
+Both carry where they came from: `balance: "current"`, `reported-by` (the institution) and `reported-at` (when the sync recorded it); the opening's `source` is `plaid:<item id>:balance`.
+Like everything else hearth derives, they are worked out afresh on every recompute, from the newest balance.
+
+Plaid's current balance leaves pending transactions out, so the opening is worked out from posted rows alone, which are exactly the rows the books hold.
+That was measured on a real household, not taken from Plaid's documentation: across five cards and two deposit accounts, the balance worked out this way reproduced every statement balance of the last months to the cent with pending rows left out, and missed each card's by exactly its pending total with them in.
+Its two deposit accounts had nothing pending, so for them the data could not tell the two readings apart.
+
+### The proof
+
+The opening is worked out from the rows as the bank sent them; the books hold entries made of those rows by pairing, by a newer connection taking over from an older one, and by every ruling members make.
+Every recompute checks each assertion against those entries, exactly, to the cent (`books.compute`), and beancount checks it again when the books file is opened.
+Books that do not add up to what the bank says are wrong somewhere: the recompute keeps the previous books and says a balance check failed, through the same path as a statement's failed check (`docs/dashboards.md`).
+So Review never offers what would make that happen from an ordinary click: an account whose balance its bank reports is not a target a row can be moved to, and a row its bank counts cannot be marked as not a transaction (`hearth.review.desk`); each is refused with a sentence saying why.
+That holds too while the account's balance is not known only for a reason a later sync clears (`opening.PASSING`: no balance reported yet, an unfinished sync, another currency, a gap between connections), since a ruling made meanwhile would still be there when the assertion returns.
+What is inside such an account is the bank's to say; a move between two connected accounts needs no ruling, as pairing books it.
+An account kept by hand, which nothing asserts, still takes a moved row, and so does one whose balance is never its bank's to assert: an investment account, an account of another kind, or one that more than one bank account feeds.
+Should books still disagree, as with a ruling on record from before, the account's owners read the bank's figure, the books' figure and the difference, and anyone else reads only that the figures wait on one member's records.
+
+### What stays not known
+
+An opening that cannot be worked out is never guessed: the account's balance stays "Not known yet", counts towards "not known" in every total that includes it, and is never shown as zero or as a sum of its rows (`books.unanchored`).
+Its owners read why on its page; anyone else who sees its balance reads only that it is not known (`access.may_see_why_unknown`).
+The reasons (`opening.Unknown`):
+
+- An investment account: its balance is what its investments are worth, which no transaction Plaid sends moves (see below).
+  Nor does Plaid send it any transactions, so its spending is not waited on, and it is listed with investments.
+- An account of a kind whose balance is not plainly money held or owed: only deposit, credit and loan accounts are worked out.
+- More than one real bank account going to one account, as when a reissued card at another bank is filed into it: no one balance is its own.
+- No balance reported by the bank.
+- A sync that recorded the balance and then did not finish: the rows that balance counts may not all be in. The next sync that finishes puts it right.
+- A balance in another currency than the account's rows.
+- A bank connected again whose new history does not yet reach back to where the old connection stopped: the rows between them are missing until it does.
+
+An inherited ledger's accounts keep beancount's meaning, where an account nothing has moved holds nothing; hearth works out no opening for them.
+
+### Balances are not history
+
+An opening balance says what an account held before its history, and an assertion what its bank says it holds now; neither says which days the history covers.
+So coverage, how far an account reaches, which connection vouches for it, and the transactions a page lists all leave them out (`books.compute`, `figures`), and neither is ever money put in or taken out.
+An account whose history has not arrived yet has its balance from the day it is filed, while its months still read as not known and spending is judged as though it might move (`books.awaiting`); its net worth line has today's point and no month end before it.
+An account whose complete history holds no transaction at all is the same: its balance is known, its months are not, as nothing yet says a quiet account was quiet rather than missing.
 
 ## What Plaid does not send
 

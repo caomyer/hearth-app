@@ -28,6 +28,7 @@ from hearth.disclosure.household import CategoryPanel, category_panel
 from hearth.figures import Line, MonthFlows, Part
 from hearth.members import Member
 from hearth.months import Month
+from hearth.plaid.opening import Unknown
 from hearth.reports.common import root
 from hearth.reports.coverage import AccountCoverage, Span
 from hearth.sharing import DESCRIPTIONS, Facet, FacetDescription
@@ -46,10 +47,13 @@ class AccountRow:
     """The month the account's history in the ledger starts."""
     spans: Disclosed[tuple[Span, ...]]
     updated: Disclosed[date | None]
-    outside: bool = False
-    """Whether the books hold nothing of the account at all (`Household.outside`)."""
     """Each source's days and the account's last day are when its money moved, which is
     transaction detail, so they go with the transactions facet."""
+    outside: bool = False
+    """Whether the books hold nothing of the account at all (`Household.outside`)."""
+    awaiting: bool = False
+    """Whether the books hold none of its history yet (`books.awaiting`): its bank has not sent
+    it, which is not the same as there being none, whatever its balance."""
 
     @property
     def is_owed(self) -> bool:
@@ -263,10 +267,11 @@ def account_rows(h: Household, accounts: Sequence[Account]) -> tuple[AccountRow,
 
 def _account_row(h: Household, account: Account, coverage: AccountCoverage | None) -> AccountRow:
     positions = [p for p in h.books.today.positions if p.holding.account == account.ledger_account]
+    unknown = h.books.unknown.get(account.ledger_account)
     return AccountRow(
         id=account.id,
         name=account.name,
-        kind=_kind(account, positions, h.books.currency),
+        kind=_kind(account, positions, h.books.currency, unknown),
         owners=tuple(h.ref(m) for m in h.members if m.id in account.owners),
         value=Worth(
             sum((p.value for p in positions if p.value is not None), Decimal(0)),
@@ -282,13 +287,17 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
             Facet.TRANSACTIONS, account.owners, lambda: coverage.latest if coverage else None
         ),
         outside=account.ledger_account in h.outside,
+        awaiting=account.ledger_account in h.books.awaiting,
     )
 
 
-def _kind(account: Account, positions: Sequence[Valued], currency: str) -> str:
+def _kind(
+    account: Account, positions: Sequence[Valued], currency: str, unknown: Unknown | None
+) -> str:
     if root(account.ledger_account) == "Liabilities":
         return "Credit"
-    if any(p.holding.commodity != currency for p in positions):
+    # An investment account whose holdings are not in yet holds no position to tell it by.
+    if unknown is Unknown.INVESTMENT or any(p.holding.commodity != currency for p in positions):
         return "Investments"
     return "Cash"
 

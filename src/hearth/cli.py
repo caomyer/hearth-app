@@ -203,7 +203,7 @@ def _ledger_accounts(settings: Settings) -> list[str]:
     db.initialise(settings.database)
     feed.initialise(settings.feed_database)
     try:
-        entries = books.household_entries(settings)
+        entries = books.household_entries(settings).entries
     except books.LedgerError as error:
         sys.exit(f"hearth: {error.summary}")
     return sorted(

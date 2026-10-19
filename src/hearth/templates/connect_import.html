@@ -32,7 +32,7 @@
           <span class="st" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
           <div>
             <p style="font-weight: 500">Recorded today's balances from the banks</p>
-            <p class="sm faint">Kept as the banks sent them. No figure uses them yet.</p>
+            <p class="sm faint">Each account's balance is the one its bank reported, and what it held before its history is that balance less every transaction the bank sent.{% if imported.unbalanced %} {{ plural(imported.unbalanced, "account has", "accounts have") }} no balance yet; {{ "its" if imported.unbalanced == 1 else "each one's" }} own page says why.{% endif %}</p>
           </div>
           <span class="sm muted">{{ balances }} of {{ accounts }}</span>
         </li>
@@ -47,7 +47,7 @@
           <span class="st" aria-hidden="true"><svg><use href="#{{ 'i-refresh' if booking else 'i-check' if fetched else 'i-review' }}"/></svg></span>
           <div>
             <p style="font-weight: 500">{{ "Bringing them into your figures" if booking else "In your figures and in Review" if fetched else "Not in your figures yet" }}</p>
-            <p class="sm faint">{% if booking %}Hearth is adding up what arrived. This takes a moment.{% elif fetched %}Each transaction is in your spending and income once its bank has posted it, at its suggested category, and waits in Review until you check it. A payment from your bank account to your card counts once, as a move between them. Balances are not known yet: the banks sent how each account moved, not what it held before.{% else %}Nothing has arrived from these banks yet.{% endif %}{% if imported.inherited %} {{ plural(imported.inherited, "account goes", "accounts go") }} to {{ "an account" if imported.inherited == 1 else "accounts" }} your household's own records already hold, so Hearth leaves {{ "its" if imported.inherited == 1 else "their" }} transactions to those records.{% endif %}{% if imported.unmapped %} {{ plural(imported.unmapped, "account is", "accounts are") }} not confirmed yet, so {{ "it is" if imported.unmapped == 1 else "they are" }} left out.{% endif %}</p>
+            <p class="sm faint">{% if booking %}Hearth is adding up what arrived. This takes a moment.{% elif fetched %}Each transaction is in your spending and income once its bank has posted it, at its suggested category, and waits in Review until you check it. A payment from your bank account to your card counts once, as a move between them.{% else %}Nothing has arrived from these banks yet.{% endif %}{% if imported.inherited %} {{ plural(imported.inherited, "account goes", "accounts go") }} to {{ "an account" if imported.inherited == 1 else "accounts" }} your household's own records already hold, so Hearth leaves {{ "its" if imported.inherited == 1 else "their" }} transactions to those records.{% endif %}{% if imported.unmapped %} {{ plural(imported.unmapped, "account is", "accounts are") }} not confirmed yet, so {{ "it is" if imported.unmapped == 1 else "they are" }} left out.{% endif %}</p>
           </div>
         </li>
       </ol>

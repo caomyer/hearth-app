@@ -19,6 +19,7 @@ from hearth.disclosure.gate import Disclosed
 from hearth.disclosure.household import Headline, headline
 from hearth.figures import Part
 from hearth.months import Month
+from hearth.plaid.opening import anchors
 from hearth.reports.common import units
 from hearth.sharing import Facet
 from hearth.valuation.networth import Freshness, NetWorth, Valued
@@ -213,7 +214,8 @@ def _crossing(h: Household, accounts: frozenset[str], start: date, end: date) ->
     """Money in the household currency that moved into `accounts` from outside them, net."""
     total = Decimal(0)
     for entry in h.books.entries:
-        if not isinstance(entry, Transaction) or not start <= entry.date <= end:
+        # An opening balance is what an account already held, not money put in.
+        if not isinstance(entry, Transaction) or not start <= entry.date <= end or anchors(entry):
             continue
         inside = [p for p in entry.postings if p.account in accounts]
         if not inside or len(inside) == len(entry.postings):

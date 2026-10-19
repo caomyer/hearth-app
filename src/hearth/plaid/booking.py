@@ -34,8 +34,8 @@ one the ledger already holds a second time.
 
 import re
 import sqlite3
-from collections.abc import Collection
-from dataclasses import dataclass
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -88,10 +88,16 @@ TWICE = (
 @dataclass(frozen=True, slots=True)
 class Booked:
     """What the import booked: its entries, and the accounts they post to besides the ones
-    each connected account feeds, which the books must open."""
+    each connected account feeds, which the books must open.
+
+    `fed` is each ledger account the import feeds, with every connected account feeding it,
+    and `taken` the rows it booked for each, as the bank sent them: what an opening balance is
+    derived from (``hearth.plaid.opening``), apart from how the entries were made of them."""
 
     entries: tuple[Entry, ...]
     accounts: frozenset[str]
+    fed: Mapping[str, tuple[LinkedAccount, ...]] = field(default_factory=dict)
+    taken: Mapping[str, tuple[Transaction, ...]] = field(default_factory=dict)
 
 
 def book(conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()) -> Booked:
@@ -136,7 +142,14 @@ def book(conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()) 
                 )
             )
     accounts = {p.account for e in entries for p in e.postings} - {a for _, a in feeds.values()}
-    return Booked(tuple(entries), frozenset(accounts))
+    fed: dict[str, tuple[LinkedAccount, ...]] = {}
+    for linked, ledger_account in feeds.values():
+        fed[ledger_account] = (*fed.get(ledger_account, ()), linked)
+    taken: dict[str, tuple[Transaction, ...]] = dict.fromkeys(fed, ())
+    for row in rows:
+        ledger_account = feeds[row.account_id][1]
+        taken[ledger_account] = (*taken[ledger_account], row)
+    return Booked(tuple(entries), frozenset(accounts), fed, taken)
 
 
 def _gives_way(registry: Registry, feed: Feed) -> dict[str, date]:

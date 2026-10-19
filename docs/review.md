@@ -25,7 +25,8 @@ A member can:
 
 - **accept** one row, or a group, as suggested;
 - **book** one row against another account: any spending or income category, or one of their own accounts the books hold open on the row's day, never anyone else's, an account nobody connected, or equity, which are all refused alike so a refusal names nobody;
-- **exclude** one row: it is not a transaction, and books nothing.
+  never, either, one of their own accounts whose balance its bank reports, or will once a sync clears what keeps it unknown, which takes only its bank's rows, refused with a sentence saying so (`docs/books.md`);
+- **exclude** one row: it is not a transaction, and books nothing; never a row on an account whose balance its bank reports, or will once a sync clears what keeps it unknown, as the bank counts it.
 
 Rulings live in the app database (`review_rulings`, `review_ruling_rows`), append-only and keyed by review id, never by position in a file.
 They store who ruled, when, and why (an optional note), and never an amount: the ledger is the only place money is recorded.

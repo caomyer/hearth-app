@@ -21,7 +21,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from hearth.disclosure import Concealed
 from hearth.review import cadence
-from hearth.review.desk import FREE, NotOneDecision, NotTheirs, ReviewDesk
+from hearth.review.desk import (
+    FREE,
+    BanksAccount,
+    BanksRow,
+    NotOneDecision,
+    NotTheirs,
+    ReviewDesk,
+)
 from hearth.review.queue import NOTHING_SUGGESTED, ORDER_LABELS, Filter, Order, confidence, queue
 from hearth.review.rulings import Action, Ruling, RulingStore
 from hearth.web.deps import Acting, App, Conn, SignedIn, Viewing
@@ -48,6 +55,15 @@ OUTCOMES = {
     " category, like Expenses:Groceries, or move to one of your own accounts in hearth. An"
     " account hearth does not hold yet, such as a mortgage nobody has connected, cannot take it"
     " yet, so it stays waiting for now. That is not something you did wrong.",
+    "banks-account": "That transaction is still waiting. That account's balance is the one"
+    " its bank reports, so only the bank's own transactions go in it: moving this one there"
+    " would count money the bank says is not there. If it is a move between two accounts you"
+    " have connected, it counts once by itself when both banks have sent it; it can also go"
+    " to a spending or income category.",
+    "banks-row": "That transaction is still waiting. Its bank counts it in the balance it"
+    " reports for this account, so hearth cannot leave it out without disagreeing with the"
+    " bank. If the bank got it wrong, that is for the bank to put right; here it can go to"
+    " any spending or income category.",
     "reminder-saved": "Reminder saved.",
     "not-one-decision": "That group is not one kind of transaction, so it cannot be accepted"
     " all at once. Its transactions are waiting for a look one by one.",
@@ -253,6 +269,8 @@ def book_row(
         ruling = desk.set_account(review_id, chosen)
     except NotTheirs:
         return _to(where, "not-yours", review_id)
+    except BanksAccount:
+        return _to(where, "banks-account", review_id)
     except ValueError:
         return _to(where, "not-an-account", review_id)
     _ruled(app)
@@ -269,7 +287,10 @@ def reject_row(
     back: Annotated[str, Form()] = "",
     focus: Annotated[str, Form()] = "",
 ) -> RedirectResponse:
-    ruling = _desk(app, conn, view).reject(review_id)
+    try:
+        ruling = _desk(app, conn, view).reject(review_id)
+    except BanksRow:
+        return _to(_back(back), "banks-row", review_id)
     _ruled(app)
     return _to(_back(back), "rejected", focus, ruling)
 

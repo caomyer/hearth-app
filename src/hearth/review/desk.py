@@ -15,6 +15,18 @@ else, an equity account included, is refused with `NotTheirs`, which says the sa
 account is someone else's or nobody's, so the desk cannot be used to learn another member's
 account names.
 
+An account whose balance its bank reports is the bank's to fill, not a ruling's: the books
+assert that balance (``hearth.plaid.opening``), so a row moved into it, or one of its own rows
+ruled not a transaction, would leave the books disagreeing with the bank, and every member's
+figures would wait on it. That holds as much while the assertion waits on a sync that can
+clear it (``opening.PASSING``) as once it is in the books, since a ruling made meanwhile would
+be there when it is. So such an account, one of `banks`, is never a move target
+(`BanksAccount`), and its rows are never rejected (`BanksRow`); either refusal is about an
+account of the member's own, so it names nothing they could not see. A transfer between two
+connected accounts needs no ruling: pairing books it once. An account a household keeps by
+hand, or one whose balance is never its bank's to assert, such as an investment account,
+still takes a moved row.
+
 Every accept is bound to what its author was shown. A page sends back each row it showed with
 the account it proposed then, and the desk accepts a row only while it is still waiting and
 still proposes that account, so a proposal that changed between the page and the click is never
@@ -38,6 +50,8 @@ from hearth.review.rulings import Action, Covered, Ruling, RulingStore, Scope, c
 
 __all__ = [
     "Acceptance",
+    "BanksAccount",
+    "BanksRow",
     "Decision",
     "GroupView",
     "ItemView",
@@ -102,6 +116,22 @@ class NotTheirs(ValueError):  # noqa: N818 - it names a refusal, as Concealed do
 
     def __init__(self) -> None:
         super().__init__("a row moves only to a category or one of the member's own accounts")
+
+
+class BanksAccount(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
+    """An account of the member's own whose balance its bank reports: a row moved into it would
+    count money there the bank says is not."""
+
+    def __init__(self) -> None:
+        super().__init__("an account whose balance its bank reports takes only its bank's rows")
+
+
+class BanksRow(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
+    """A row on an account whose balance its bank reports: the bank counts it, so leaving it
+    out would make the books disagree with the bank."""
+
+    def __init__(self) -> None:
+        super().__init__("its bank counts this row in the balance it reports")
 
 
 class NotOneDecision(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
@@ -172,8 +202,10 @@ class ReviewDesk:
         opened: Opened,
         may_move_to: MayMoveTo,
         clock: Clock,
+        banks: Collection[str] = (),
     ) -> None:
         self._member = member
+        self._banks = frozenset(banks)
         self._movable = {
             account.ledger_account: opened[account.ledger_account]
             for account in accounts
@@ -257,18 +289,22 @@ class ReviewDesk:
     def set_account(self, review_id: str, account: str, note: str | None = None) -> Ruling:
         """Review one row against `account`, whatever its group was given: a category, or one
         of the member's own accounts the books hold open on the row's day (`NotTheirs`
-        otherwise)."""
+        otherwise) and whose balance no bank reports (`BanksAccount` otherwise)."""
         item = self._row(review_id)
         check_account(account)
         if account.split(":")[0] not in FREE:
             opens, closes = self._movable.get(account, (date.max, None))
             if not opens <= item.date <= (closes or date.max):
                 raise NotTheirs
+            if account in self._banks:
+                raise BanksAccount
         return self._record(Scope.ROW, None, Action.ACCOUNT, account, note, {review_id: None})
 
     def reject(self, review_id: str, note: str | None = None) -> Ruling:
-        """One row is not a transaction: book nothing for it."""
-        self._row(review_id)
+        """One row is not a transaction: book nothing for it; never a row its bank counts in
+        the balance it reports (`BanksRow`)."""
+        if self._row(review_id).account in self._banks:
+            raise BanksRow
         return self._record(Scope.ROW, None, Action.REJECT, None, note, {review_id: None})
 
     def _accept(

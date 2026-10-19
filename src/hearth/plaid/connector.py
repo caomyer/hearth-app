@@ -349,6 +349,9 @@ class ImportView:
     inherited: int = 0
     """Accounts that feed an account the household's own ledger holds, which keeps their
     transactions (``hearth.plaid.booking``)."""
+    unbalanced: int = 0
+    """Accounts feeding an account whose balance hearth does not know (``books.unanchored``):
+    each one's own page says why."""
 
     @property
     def total(self) -> int:
@@ -410,6 +413,7 @@ class Connector:
         clock: Clock,
         runner: Runner,
         inherited: Collection[str] = (),
+        unbalanced: Collection[str] = (),
     ) -> None:
         self._policy = policy
         self._viewer = policy.viewer
@@ -417,6 +421,7 @@ class Connector:
         self._accounts = list(accounts)
         self._ledger_accounts = frozenset(ledger_accounts)
         self._inherited = frozenset(inherited)
+        self._unbalanced = frozenset(unbalanced)
         self._db = conn
         self._database = database
         self._feed_path = feed_path
@@ -521,6 +526,9 @@ class Connector:
             started_at=min(starts, default=None),
             unmapped=sum(1 for i in found for a in i.item.accounts if not a.feeds),
             inherited=sum(1 for i in found for a in i.item.accounts if a.feeds in self._inherited),
+            unbalanced=sum(
+                1 for i in found for a in i.item.accounts if a.feeds in self._unbalanced
+            ),
         )
 
     # What the viewer does.

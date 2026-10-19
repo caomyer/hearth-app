@@ -24,8 +24,8 @@ import hashlib
 import logging
 import os
 import sqlite3
-from collections.abc import Collection, Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 
@@ -33,7 +33,7 @@ from beancount.core.data import Directive, Open, Transaction, new_metadata
 from beancount.parser import printer
 
 from hearth.accounts import all_accounts
-from hearth.plaid import booking
+from hearth.plaid import booking, opening
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
 from hearth.reports.common import is_balance_sheet
@@ -60,21 +60,31 @@ HEADER = """\
 _SIGNATURE = "; hearth wrote everything above; its sha256 is "
 
 
+@dataclass(frozen=True, slots=True)
+class Derived:
+    """Hearth's own entries, and each account whose opening balance could not be derived,
+    with why (``hearth.plaid.opening``)."""
+
+    entries: list[Directive]
+    unknown: Mapping[str, opening.Unknown] = field(default_factory=dict)
+
+
 def derive(
     conn: sqlite3.Connection,
     feed: Feed,
     *,
     opened: Collection[str] = (),
     since: date | None = None,
-) -> list[Directive]:
-    """Hearth's own entries: an `open` for each ledger account a confirmed mapping feeds, and
-    every transaction the import books for them (``hearth.plaid.booking``).
+) -> Derived:
+    """Hearth's own entries: an `open` for each ledger account a confirmed mapping feeds,
+    every transaction the import books for them (``hearth.plaid.booking``), and each one's
+    opening balance with the balance its bank reported (``hearth.plaid.opening``).
 
     Each is dated at the start of the history its connection asked for, or at the earliest
-    transaction Plaid sent for it if that is earlier, so every row it could ever book is on or
-    after the day it opens. A ledger account fed by more than one connection opens at the
-    earliest of them. Accounts in `opened`, which an inherited ledger opens already, are left
-    to it, with their transactions.
+    transaction Plaid sent for it if that is earlier, or on its opening balance if that is
+    earlier still, so every entry it could ever hold is on or after the day it opens. A ledger
+    account fed by more than one connection opens at the earliest of them. Accounts in
+    `opened`, which an inherited ledger opens already, are left to it, with their transactions.
 
     Every other account an entry names, and every category a member has reviewed a row as,
     opens on the first of those days, or on `since`, the inherited ledger's first day, when
@@ -82,7 +92,7 @@ def derive(
     """
     registry = Registry(conn)
     named = {account.id: account for account in all_accounts(conn)}
-    found: dict[str, Opening] = {}
+    found: dict[str, Opened] = {}
     for linked in registry.confirmed():
         account = named.get(linked.hearth_account or "")
         item = registry.item(linked.item_id)
@@ -92,19 +102,26 @@ def derive(
         earliest = feed.held(linked.account_id).earliest
         if earliest is not None and earliest < day:
             day = earliest
-        opening = Opening(account.ledger_account, day, account.name, item.institution, linked.mask)
-        known = found.get(opening.account)
-        if known is None or opening.day < known.day:
-            found[opening.account] = opening
+        start = Opened(account.ledger_account, day, account.name, item.institution, linked.mask)
+        known = found.get(start.account)
+        if known is None or start.day < known.day:
+            found[start.account] = start
     booked = booking.book(conn, feed, opened=opened)
+    openings = opening.derive(registry, feed, booked)
+    for anchor in openings.anchors:
+        if anchor.day < found[anchor.account].day:
+            found[anchor.account] = replace(found[anchor.account], day=anchor.day)
     first = min((o.day for o in found.values()), default=since)
-    extra = (booked.accounts | _ruled(conn)) - set(opened) - found.keys()
+    equity = {opening.EQUITY} if openings.anchors else set()
+    extra = (booked.accounts | equity | _ruled(conn)) - set(opened) - found.keys()
     ordered = sorted(found.values(), key=lambda o: (o.day, o.account))
     entries: list[Directive] = [o.entry(0) for o in ordered]
     if first is not None:
         entries += [Open(new_metadata(ORIGIN, 0), first, a, [], None) for a in sorted(extra)]
+    entries += [entry for anchor in openings.anchors for entry in anchor.entries()]
     entries += booked.entries
-    return [_filed(entry, lineno) for lineno, entry in enumerate(entries, start=1)]
+    filed = [_filed(entry, lineno) for lineno, entry in enumerate(entries, start=1)]
+    return Derived(filed, openings.unknown)
 
 
 def _ruled(conn: sqlite3.Connection) -> set[str]:
@@ -124,7 +141,7 @@ def _filed(entry: Directive, lineno: int) -> Directive:
 
 
 @dataclass(frozen=True, slots=True)
-class Opening:
+class Opened:
     account: str
     day: date
     name: str
@@ -158,14 +175,22 @@ def render(entries: Sequence[Directive], *, inherits: Path | None) -> str:
             "\n; Inherited: the household's own ledger, which hearth reads and never writes.\n"
             f"include {_quoted(str(inherits.resolve()))}\n"
         )
-    opens = [entry for entry in entries if not isinstance(entry, Transaction)]
-    booked = [entry for entry in entries if isinstance(entry, Transaction)]
+    anchors = [entry for entry in entries if opening.anchors(entry)]
+    opens = [e for e in entries if not isinstance(e, Transaction) and not opening.anchors(e)]
+    booked = [e for e in entries if isinstance(e, Transaction) and not opening.anchors(e)]
     if opens:
         parts.append(
             "\n; One account for each bank account a member connected, opened on the first day"
             "\n; of the history asked for, and each category the transactions below name.\n"
         )
         parts.extend(f"\n{printer.format_entry(entry)}" for entry in opens)
+    if anchors:
+        parts.append(
+            "\n; What each account held before the first transaction below, worked out from the"
+            "\n; balance its bank reported less every transaction it sent, and that balance, which"
+            "\n; beancount checks the transactions add up to.\n"
+        )
+        parts.extend(f"\n{printer.format_entry(entry)}" for entry in anchors)
     if booked:
         parts.append(
             "\n; Every transaction the banks sent. One marked ! is as hearth proposed it, and"

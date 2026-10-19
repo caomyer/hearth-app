@@ -22,6 +22,7 @@ from hearth.accounts import Account
 from hearth.books import Books
 from hearth.members import Member
 from hearth.months import Month
+from hearth.plaid.opening import anchors
 from hearth.reports.common import is_balance_sheet, root, units
 from hearth.reports.flows import (
     Flows,
@@ -162,8 +163,10 @@ def month_flows(
 
 
 def _transactions(books: Books, start: date, end: date) -> Iterable[Transaction]:
+    """Transactions from `start` to `end`: not an opening balance, which is what an account
+    held before its history, never something that happened (``hearth.plaid.opening``)."""
     for entry in books.entries:
-        if isinstance(entry, Transaction) and start <= entry.date <= end:
+        if isinstance(entry, Transaction) and start <= entry.date <= end and not anchors(entry):
             yield entry
 
 

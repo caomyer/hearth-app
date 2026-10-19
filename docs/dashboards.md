@@ -12,7 +12,8 @@ A recompute that cannot trust the ledger establishes nothing.
 Beancount reporting an error, or a balance assertion the postings do not reproduce, keeps the previous books on screen, labelled with their time, beside what went wrong.
 Before the first recompute finishes, pages show skeletons in the shape of what is coming and poll quietly until it lands.
 A household with no account in the books yet sees no figure at all on Household and Net worth, but a page that says nothing is connected and offers to connect a bank: a total over nothing is not a total of zero.
-A figure that includes an account with no history in the books yet reads "Not known yet" rather than counting it as zero (`docs/books.md`).
+A figure that includes an account whose balance the books do not hold reads "Not known yet" rather than counting it as zero (`docs/books.md`).
+A connected account's balance is what its bank reports from the day it is filed; while its history is still arriving, its months read as not known, its balance does not.
 
 Prices come from the stored price table (`docs/valuation.md`), from the source and from members who entered one by hand.
 A position with no price is never valued at zero: every total that includes it says "at least", and the gap is named.

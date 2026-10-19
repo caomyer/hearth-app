@@ -19,8 +19,9 @@ from beancount import loader
 from beancount.core.data import Directive, Open, Transaction
 
 from hearth import accounts, auth, books, db, ownbooks, sharing
+from hearth.disclosure import Disclosure
 from hearth.members import find
-from hearth.plaid import booking, feed
+from hearth.plaid import booking, feed, opening
 from hearth.plaid.client import BankAccount, Institution, SyncPage
 from hearth.plaid.client import Transaction as PlaidTransaction
 from hearth.plaid.feed import Feed
@@ -32,6 +33,8 @@ from tests.conftest import FakeClock, password_of
 from tests.firstday import (
     FIRST_DAY,
     PATHS,
+    SILENT,
+    ZERO,
     FirstDay,
     first_day,
     opens,
@@ -83,6 +86,7 @@ def test_the_empty_books_are_written_and_load_cleanly(fresh: FirstDay) -> None:
 def test_each_confirmed_account_opens_on_the_first_day_its_connection_asked_for(
     fresh: FirstDay,
 ) -> None:
+    fresh.plaid.slow_history = True
     fresh.link("avery", "ins_willowmere")
     fresh.map(fresh.signed_in("avery"), PATHS)
 
@@ -91,15 +95,29 @@ def test_each_confirmed_account_opens_on_the_first_day_its_connection_asked_for(
     assert {a: o.date for a, o in connected(found.entries).items()} == dict.fromkeys(
         PATHS.values(), FIRST_DAY
     )
+
+
+def test_an_account_opens_in_time_for_what_it_held_before_its_first_transaction(
+    fresh: FirstDay,
+) -> None:
+    """Every account but savings has a transaction on the first day asked for, and what it held
+    before that is its opening balance, the day before: each opens on that day instead.
+    Savings' first, its interest, is weeks later, so it opens on the first day asked for."""
+    fresh.link("avery", "ins_willowmere")
+    fresh.map(fresh.signed_in("avery"), PATHS)
+
+    found = until_transacted(fresh, PATHS["7717"])
+
+    before = FIRST_DAY - timedelta(days=1)
+    expected = dict.fromkeys(PATHS.values(), before) | {PATHS["7717"]: FIRST_DAY}
+    assert {a: o.date for a, o in connected(found.entries).items()} == expected
     entries, errors = written(fresh.settings)
     assert errors == []
-    assert {a: o.date for a, o in connected(entries).items()} == dict.fromkeys(
-        PATHS.values(), FIRST_DAY
-    )
+    assert {a: o.date for a, o in connected(entries).items()} == expected
     # The categories the transactions are proposed against open alongside, on the same day.
     others = {a: o.date for a, o in opens(entries).items() if a not in PATHS.values()}
     assert others
-    assert set(others.values()) == {FIRST_DAY}
+    assert set(others.values()) == {before}
     assert all(a.split(":")[0] in {"Expenses", "Income", "Equity"} for a in others)
     wren = opens(entries)[PATHS["1111"]]
     assert (wren.meta["name"], wren.meta["institution"], wren.meta["mask"]) == (
@@ -146,7 +164,7 @@ def test_ownership_never_reaches_the_file(fresh: FirstDay) -> None:
         assert set(entry.meta) - {"filename", "lineno"} == {"name", "institution", "mask"}
     for entry in opens(entries).values():
         assert set(entry.meta) - {"filename", "lineno"} <= {"name", "institution", "mask"}
-    booked = [e for e in entries if isinstance(e, Transaction)]
+    booked = [e for e in entries if isinstance(e, Transaction) and not opening.anchors(e)]
     assert booked
     for row in booked:
         assert set(row.meta) - {"filename", "lineno", "__tolerances__"} <= {
@@ -155,6 +173,16 @@ def test_ownership_never_reaches_the_file(fresh: FirstDay) -> None:
             "source",
         }
         assert all(set(p.meta or {}) <= {"filename", "lineno", "source"} for p in row.postings)
+    # An opening balance says where it came from: which balance, whose, and when; not whose.
+    anchors = [e for e in entries if opening.anchors(e)]
+    assert len(anchors) == 2 * len(PATHS)
+    for anchor in anchors:
+        assert set(anchor.meta) - {"filename", "lineno", "__tolerances__"} <= {
+            "balance",
+            "reported-by",
+            "reported-at",
+            "source",
+        }
 
 
 # Deriving the opens, against the app database and the feed directly.
@@ -238,7 +266,7 @@ def test_an_account_opens_before_an_older_transaction_the_bank_sent(
     older = FIRST_DAY - timedelta(days=3)
     _sent(store, "item-a", "acct-a", older)
 
-    assert {a: o.date for a, o in opens(ownbooks.derive(conn, store)).items()} == {
+    assert {a: o.date for a, o in opens(ownbooks.derive(conn, store).entries).items()} == {
         "Assets:Avery:Savings": older,
         UNRESOLVED: older,
     }
@@ -257,7 +285,7 @@ def test_an_account_fed_by_two_connections_opens_once_at_the_earliest(
         conn, "item-b", "acct-b", linked=household.NOW, feeds="Assets:Avery:Savings", mask="7718"
     )
 
-    assert [(a, o.date) for a, o in opens(ownbooks.derive(conn, store)).items()] == [
+    assert [(a, o.date) for a, o in opens(ownbooks.derive(conn, store).entries).items()] == [
         ("Assets:Avery:Savings", FIRST_DAY - timedelta(days=200))
     ]
 
@@ -280,7 +308,7 @@ def test_an_account_an_inherited_ledger_opens_is_left_to_it(
     conn, store = stores
     _connected(conn, "item-a", "acct-a", linked=household.NOW, feeds="Assets:Avery:Savings")
 
-    assert ownbooks.derive(conn, store, opened={"Assets:Avery:Savings"}) == []
+    assert ownbooks.derive(conn, store, opened={"Assets:Avery:Savings"}).entries == []
 
 
 def test_books_hearth_cannot_load_cleanly_are_refused_not_served(fresh: FirstDay) -> None:
@@ -336,7 +364,7 @@ def test_an_inherited_ledger_is_included_beneath_hearths_own_and_never_written(
     fresh.link("avery", "ins_willowmere")
     fresh.map(fresh.signed_in("avery"), {"7717": PATHS["7717"]})
 
-    found = until_booked(fresh, PATHS["7717"])
+    found = until_transacted(fresh, PATHS["7717"])
 
     entries, errors = written(fresh.settings)
     assert errors == []
@@ -407,16 +435,50 @@ def test_new_books_replace_the_old_file_without_keeping_a_copy(fresh: FirstDay) 
     assert names == ["books.beancount"]
 
 
-# An account with nothing in the books but its open has a balance nobody knows yet.
+# What an account holds is its bank's word; what it held before, and how it got there, is not
+# known until its history is in.
 
 
-def test_an_account_with_no_history_yet_is_not_known_never_zero(fresh: FirstDay) -> None:
+def test_an_account_with_no_history_yet_holds_what_its_bank_says_and_its_months_stay_unknown(
+    fresh: FirstDay,
+) -> None:
     fresh.plaid.slow_history = True
     fresh.link("avery", "ins_willowmere")
     fresh.map(fresh.signed_in("avery"), PATHS)
     found = until_booked(fresh, PATHS["7717"])
 
     assert found.awaiting == frozenset(PATHS.values())
+    assert found.unanchored == frozenset()
+    avery = fresh.signed_in("avery")
+    pages = {path: shown(avery.get(path).text) for path in ("/", "/you", "/net-worth")}
+    for where, page in pages.items():
+        assert "no balance in hearth yet" not in page, where
+        # What the bank says the seven accounts hold, cards owed.
+        assert "$12,771" in page, where
+        zeros = [m.start() for m in re.finditer(ZERO, page)]
+        assert zeros == [], (where, page[max(0, zeros[0] - 200) : zeros[0] + 80])
+    # How it moved is not known: no month reads as whole, and no month end is drawn, only today.
+    assert "History incomplete" in pages["/you"]
+    conn = fresh.connect()
+    try:
+        member = find(conn, "avery")
+        assert member is not None
+        household = Disclosure.load(conn, member, fresh.bookkeeper.status).household()
+    finally:
+        conn.close()
+    assert [point.day for point in household.history] == [found.as_of]
+
+
+def test_an_account_whose_bank_says_nothing_of_its_balance_is_not_known_never_zero(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    fresh = first_day(tmp_path, clock, institutions=(SILENT,))
+    fresh.link("avery", "ins_willowmere")
+    fresh.map(fresh.signed_in("avery"), PATHS)
+    found = until_transacted(fresh, PATHS["7717"])
+
+    assert found.unanchored == frozenset(PATHS.values())
+    assert set(found.unknown.values()) == {opening.Unknown.NO_BALANCE}
     avery, blake = fresh.signed_in("avery"), fresh.signed_in("blake")
     conn = fresh.connect()
     try:
@@ -434,11 +496,10 @@ def test_an_account_with_no_history_yet_is_not_known_never_zero(fresh: FirstDay)
     }
     for where, page in pages.items():
         assert "Not known yet" in page, where
-        # The bank has balances; the books have none of them, so no figure reads as zero.
-        zeros = [m.start() for m in re.finditer(r"\$\s*0(\.00)?\b", shown(page))]
+        # Two years of rows added up are what moved, never a balance, nor a zero.
+        zeros = [m.start() for m in re.finditer(ZERO, shown(page))]
         assert zeros == [], (where, shown(page)[max(0, zeros[0] - 200) : zeros[0] + 80])
-    assert "History incomplete" in pages["avery /you"]
-    # No month-end line either: its one point would be today, drawn at zero.
+    assert "Its bank has not said what it holds." in shown(pages["avery /accounts"])
     assert "The line appears once hearth has the history" in pages["avery /"]
     # Whoever sees only the total learns it is not known, not which account holds it back.
     for where in ("blake /", "blake /members/avery", "blake /net-worth"):
@@ -446,9 +507,39 @@ def test_an_account_with_no_history_yet_is_not_known_never_zero(fresh: FirstDay)
         assert PATHS["1111"] not in pages[where]
 
 
-def test_a_total_only_member_never_gives_away_how_many_accounts_they_connected(
-    fresh: FirstDay,
+def test_only_an_accounts_owners_are_told_why_its_balance_is_not_known(
+    tmp_path: Path, clock: FakeClock
 ) -> None:
+    """Why is what its connection did, which is its holder's alone; a member Avery shares
+    balances with sees only that the balance is not known."""
+    fresh = first_day(tmp_path, clock, institutions=(SILENT,))
+    conn = fresh.connect()
+    try:
+        sharing.choose(
+            conn, fresh.member_ids["avery"], Facet.ACCOUNT_BALANCES, shared=True, now=clock()
+        )
+    finally:
+        conn.close()
+    fresh.link("avery", "ins_willowmere")
+    fresh.map(fresh.signed_in("avery"), PATHS)
+    until_transacted(fresh, PATHS["7717"])
+    conn = fresh.connect()
+    try:
+        card = next(a.id for a in accounts.all_accounts(conn) if a.ledger_account == PATHS["1111"])
+    finally:
+        conn.close()
+
+    page = shown(fresh.signed_in("blake").get(f"/accounts/{card}").text)
+
+    assert "Not known yet." in page
+    assert "Its bank has not said" not in page
+    assert "This account is connected, but its balance is not in hearth yet." in page
+
+
+def test_a_total_only_member_never_gives_away_how_many_accounts_they_connected(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    fresh = first_day(tmp_path, clock, institutions=(SILENT,))
     conn = fresh.connect()
     try:
         sharing.choose(
@@ -475,7 +566,7 @@ def test_a_total_only_member_never_gives_away_how_many_accounts_they_connected(
 
 
 def test_an_account_is_known_once_the_books_hold_anything_for_it() -> None:
-    opened = ownbooks.Opening(PATHS["6616"], FIRST_DAY, "Checking", "Willowmere Trust", "6616")
+    opened = ownbooks.Opened(PATHS["6616"], FIRST_DAY, "Checking", "Willowmere Trust", "6616")
     others, errors, _ = loader.load_string(
         f"""
 2024-10-16 open Equity:Opening
@@ -487,7 +578,7 @@ def test_an_account_is_known_once_the_books_hold_anything_for_it() -> None:
     )
     assert errors == []
     others = [e for e in others if not isinstance(e, Open) or e.account != PATHS["6616"]]
-    saved = ownbooks.Opening(PATHS["7717"], FIRST_DAY, "Savings", "Willowmere Trust", "7717")
+    saved = ownbooks.Opened(PATHS["7717"], FIRST_DAY, "Savings", "Willowmere Trust", "7717")
 
     moved = books.awaiting([opened.entry(1), *others], date(2026, 10, 15))
     still = books.awaiting([opened.entry(1), saved.entry(2)], date(2026, 10, 15))

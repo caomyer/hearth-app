@@ -30,7 +30,7 @@ from hearth.connections import Connection, RegisteredConnections, item_of
 from hearth.disclosure import rulings_in
 from hearth.members import MemberId
 from hearth.months import Month
-from hearth.plaid import booking, pairing
+from hearth.plaid import booking, opening, pairing
 from hearth.plaid.client import SyncPage
 from hearth.plaid.client import Transaction as PlaidTransaction
 from hearth.plaid.connector import NEW
@@ -39,9 +39,10 @@ from hearth.plaid.feed import Feed, Outcome
 from hearth.plaid.registry import ItemState, Registry
 from hearth.review.ids import plaid_review_id, says
 from hearth.review.pile import TRANSFER_PENDING, UNRESOLVED
+from hearth.review.rulings import Action, RulingStore, Scope
 from tests import household
 from tests.conftest import FakeClock
-from tests.firstday import CARD, FirstDay, first_day, shown, written
+from tests.firstday import CARD, ZERO, FirstDay, first_day, shown, written
 
 PAID = date(2026, 9, 10)
 """The day the checking account paid the first card, which received it the day after."""
@@ -231,9 +232,7 @@ def until(fresh: FirstDay, holds: Callable[[Books], object]) -> Books:
 
 def _on(found: Books, account: str) -> list[Transaction]:
     return [
-        e
-        for e in found.entries
-        if isinstance(e, Transaction) and any(p.account == account for p in e.postings)
+        e for e in _transactions(found.entries) if any(p.account == account for p in e.postings)
     ]
 
 
@@ -256,7 +255,9 @@ def _source(posting: Posting) -> str:
 
 
 def _transactions(entries: tuple[Directive, ...] | list[Directive]) -> list[Transaction]:
-    return [e for e in entries if isinstance(e, Transaction)]
+    """The entries the import booked from the bank's rows: not the opening balances derived
+    beside them."""
+    return [e for e in entries if isinstance(e, Transaction) and not opening.anchors(e)]
 
 
 def _sources(entry: Transaction) -> set[str]:
@@ -521,15 +522,17 @@ def test_a_card_whose_connection_stopped_no_longer_claims_months_it_does_not_hol
     part look current. Fenwick's card stopped sending after May; the checking account is
     current; spending after May must read as incomplete, which it does only because the import
     names the connection each entry came from."""
+    filed.clock.now = datetime(2026, 6, 2, 12, tzinfo=UTC)
     filed.link("avery", "ins_fenwick")
     filed.map(filed.signed_in("avery"), {"9090": FENWICK})
     until(filed, lambda b: _on(b, FENWICK))
+    fenwick = _item(filed, "Fenwick Card")
+    filed.clock.now = household.NOW
+    filed.plaid.require_login(fenwick)
+    _sync(filed, fenwick)
     conn = filed.connect()
     try:
-        registry = Registry(conn)
-        fenwick = _item(filed, "Fenwick Card")
-        registry.synced(fenwick, at=datetime(2026, 6, 2, 12, tzinfo=UTC), history=None)
-        registry.set_state(fenwick, ItemState.LOGIN_REQUIRED, problem="ITEM_LOGIN_REQUIRED")
+        assert Registry(conn).item(fenwick).state is ItemState.LOGIN_REQUIRED  # type: ignore[union-attr]
         held = accounts.all_accounts(conn)
     finally:
         conn.close()
@@ -588,6 +591,28 @@ def _rule(fresh: FirstDay, review_id: str, account: str, *, shown: str = "") -> 
     assert "changed" not in response.headers["location"]
 
 
+def _reject(fresh: FirstDay, review_id: str) -> None:
+    avery = fresh.signed_in("avery")
+    response = avery.post(
+        "/review/rows/reject", data={"csrf": fresh.csrf(avery), "review_id": review_id}
+    )
+    assert response.status_code == 303
+
+
+def _held(found: Books, account: str) -> Decimal:
+    """What the books say `account` holds today."""
+    return sum(
+        (
+            _number(p)
+            for e in found.entries
+            if isinstance(e, Transaction)
+            for p in e.postings
+            if p.account == account and e.date <= found.as_of
+        ),
+        Decimal(0),
+    )
+
+
 def _opened(found: Books) -> set[str]:
     return {e.account for e in found.entries if isinstance(e, Open)}
 
@@ -635,29 +660,134 @@ def test_a_row_moves_to_nobody_elses_account_and_the_refusal_names_nobody(
     assert UNRESOLVED in {p.account for e in _transactions(entries) for p in e.postings}
 
 
-def test_a_row_moves_to_an_account_of_the_members_own(filed: FirstDay) -> None:
-    transfer = _row(filed, "Transfer to Hollins Savings", date(2026, 9, 14))
+HAND_KEPT = "Liabilities:Avery:Mortgage"
+"""A mortgage nobody connects, which the household keeps in a ledger of its own."""
+
+
+def test_a_row_moves_to_an_account_of_the_members_own(tmp_path: Path, clock: FakeClock) -> None:
+    """A transfer out of checking is the mortgage payment, and the mortgage is kept by hand:
+    nothing asserts its balance, so the row moves there and the books still agree with the
+    bank about checking."""
+    ledger = tmp_path / "household.beancount"
+    ledger.write_text(f'option "operating_currency" "USD"\n2024-01-01 open {HAND_KEPT}\n')
+    fresh = first_day(tmp_path, clock, institutions=(SHAPE,), inherits=ledger)
+    conn = fresh.connect()
+    try:
+        accounts.register(
+            conn, ledger_account=HAND_KEPT, name="Mortgage", owners=[fresh.member_ids["avery"]]
+        )
+    finally:
+        conn.close()
+    fresh.link("avery", "ins_willowmere")
+    fresh.map(fresh.signed_in("avery"), PATHS)
+    until(fresh, lambda b: _on(b, PATHS["6616"]))
+    transfer = _row(fresh, "Transfer to Hollins Savings", date(2026, 9, 14))
     review_id = plaid_review_id(transfer.transaction_id)
 
-    _rule(filed, review_id, PATHS["7717"])
+    _rule(fresh, review_id, HAND_KEPT)
     found = until(
-        filed,
+        fresh,
         lambda b: any(
             e.flag == "*" for e in _on(b, PATHS["6616"]) if e.meta.get("review-id") == review_id
         ),
     )
 
+    assert fresh.bookkeeper.status.failure is None
     (entry,) = [e for e in _on(found, PATHS["6616"]) if e.meta.get("review-id") == review_id]
-    assert entry.postings[1].account == PATHS["7717"]
-    _, errors = written(filed.settings)
+    assert entry.postings[1].account == HAND_KEPT
+    assert _held(found, HAND_KEPT) == Decimal(500)
+    assert _held(found, PATHS["6616"]) == Decimal(4130)
+    _, errors = written(fresh.settings)
     assert errors == []
+
+
+def test_a_row_never_moves_onto_an_account_whose_balance_its_bank_reports(
+    filed: FirstDay,
+) -> None:
+    """Savings is Avery's own and open, but its bank reports its balance: what is in it is the
+    bank's to say. Moving checking's transfer there would count $500 the bank says savings
+    never received, and stall every member's figures, so the desk refuses it and says why."""
+    transfer = _row(filed, "Transfer to Hollins Savings", date(2026, 9, 14))
+    before = filed.books()
+    avery = filed.signed_in("avery")
+
+    response = avery.post(
+        "/review/rows/book",
+        data={
+            "csrf": filed.csrf(avery),
+            "review_id": plaid_review_id(transfer.transaction_id),
+            "account": PATHS["7717"],
+        },
+    )
+
+    assert response.status_code == 303
+    assert "outcome=banks-account" in response.headers["location"]
+    assert "only the bank's own transactions go in it" in shown(
+        avery.get(response.headers["location"]).text
+    )
+    filed.bookkeeper.recompute(wait=True)
+    assert filed.bookkeeper.status.failure is None
+    assert filed.books().entries == before.entries
+    conn = filed.connect()
+    try:
+        assert RulingStore(conn).accounts() == set()
+    finally:
+        conn.close()
+
+
+def _on_record(fresh: FirstDay, review_id: str, action: Action, account: str | None) -> None:
+    """A ruling already on record, as one made before the desk refused it would be."""
+    (item,) = [i for i in fresh.books().pile if i.review_id == review_id]
+    conn = fresh.connect()
+    try:
+        RulingStore(conn).record(
+            member_id=fresh.member_ids["avery"],
+            scope=Scope.ROW,
+            group=None,
+            action=action,
+            account=account,
+            note=None,
+            rows={review_id: None},
+            says={review_id: item.says},
+            at=fresh.clock(),
+        )
+    finally:
+        conn.close()
+
+
+def test_a_ruling_on_record_that_moves_a_row_onto_a_banks_account_fails_the_balance_check(
+    filed: FirstDay,
+) -> None:
+    """Were such a ruling on record, the books would show savings holding $500 more than its
+    bank says: they are wrong, and the recompute says so rather than serve the figure."""
+    transfer = _row(filed, "Transfer to Hollins Savings", date(2026, 9, 14))
+    before = filed.books()
+
+    _on_record(filed, plaid_review_id(transfer.transaction_id), Action.ACCOUNT, PATHS["7717"])
+    filed.bookkeeper.recompute(wait=True)
+
+    status = filed.bookkeeper.status
+    assert status.books == before
+    assert status.failure is not None
+    check = status.failure.disagreement
+    assert check is not None
+    assert (check.account, check.asserted, check.computed) == (
+        PATHS["7717"],
+        Decimal(8800),
+        Decimal(9300),
+    )
+    page = shown(filed.signed_in("avery").get("/net-worth").text)
+    assert "add up to more than Willowmere Trust says this account held" in page
+    assert re.search(r"Willowmere Trust says\s*\$8,800\.00 at the end of Oct 15", page)
+    assert re.search(r"Hearth adds up to\s*\$9,300\.00", page)
+    assert "Today's figures are waiting on a fix" in shown(filed.signed_in("blake").get("/").text)
 
 
 @pytest.mark.parametrize(
     ("account", "says"),
     [
         ("Expenses:Household", "Saved under the category you chose."),
-        (PATHS["7717"], "Moved to the account of yours you chose."),
+        (PATHS["7717"], "only the bank's own transactions go in it"),
     ],
 )
 def test_the_page_says_where_a_row_went(filed: FirstDay, account: str, says: str) -> None:
@@ -1121,14 +1251,28 @@ def test_a_bank_connected_again_never_defaults_to_an_account_the_member_no_longe
 # What hearth does not know yet.
 
 
-def test_balances_stay_unknown_until_the_books_hold_what_each_account_started_with(
+REPORTED = {
+    "1111": Decimal("-0.50"),
+    "2212": Decimal(-18),
+    "3313": Decimal(-3),
+    "4414": Decimal(-4),
+    "5515": Decimal(-5),
+    "6616": Decimal(4130),
+    "7717": Decimal(8800),
+}
+"""What the bank says each account holds, in the books' sign: a card's balance is owed."""
+
+
+def test_each_account_holds_what_its_bank_says_once_its_opening_balance_is_in(
     filed: FirstDay,
 ) -> None:
     found = filed.books()
     avery, blake = filed.signed_in("avery"), filed.signed_in("blake")
 
-    assert found.awaiting == frozenset()
-    assert found.unanchored == frozenset(PATHS.values())
+    assert (found.awaiting, found.unanchored, found.unknown) == (frozenset(), frozenset(), {})
+    assert {PATHS[mask]: _held(found, PATHS[mask]) for mask in PATHS} == {
+        PATHS[mask]: held for mask, held in REPORTED.items()
+    }
     for where, page in {
         "avery /": avery.get("/").text,
         "avery /you": avery.get("/you").text,
@@ -1136,16 +1280,14 @@ def test_balances_stay_unknown_until_the_books_hold_what_each_account_started_wi
         "blake /net-worth": blake.get("/net-worth").text,
     }.items():
         text = shown(page)
-        assert "Not known yet" in text, where
-        assert "no balance in hearth yet" in text, where
-        # Two years of rows added up are what moved, never a balance, nor a zero.
-        zeros = [m.start() for m in re.finditer(r"\$\s*0(\.00)?\b", text)]
-        assert zeros == [], (where, text[max(0, zeros[0] - 300) : zeros[0] + 80])
-    assert "The line appears once hearth has the history" in avery.get("/").text
+        assert "Not known yet" not in text, where
+        assert "no balance in hearth yet" not in text, where
+        # The balance, not two years of rows added up.
+        assert "$12,900" in text, where
+    assert "$12,899.50" in shown(avery.get("/net-worth").text)
     # Spending is known: every row of the month is in, and this month is exactly typical.
     you = shown(avery.get("/you").text)
     assert "History incomplete" not in you
-    # The history is in, though the balance is not; and a category reads as words.
     assert "Not brought in yet" not in you
     assert re.search(r"Since\s+(Oct|Nov) 2024", you)
     assert "Gas and electricity" in you
@@ -1154,7 +1296,7 @@ def test_balances_stay_unknown_until_the_books_hold_what_each_account_started_wi
 
 
 def test_an_opening_balance_is_what_makes_a_balance_known() -> None:
-    opened = ownbooks.Opening(PATHS["6616"], date(2024, 10, 16), "Checking", "Willowmere", "6616")
+    opened = ownbooks.Opened(PATHS["6616"], date(2024, 10, 16), "Checking", "Willowmere", "6616")
     moved = Transaction(
         {"filename": "<test>", "lineno": 1},
         date(2026, 9, 1),
@@ -1175,14 +1317,13 @@ def test_an_opening_balance_is_what_makes_a_balance_known() -> None:
             ]
         )
 
-    today = date(2026, 10, 15)
     for other, anchors in (
         ("Income:Wages", False),
         (UNRESOLVED, False),
         (TRANSFER_PENDING, False),
         ("Equity:Opening-Balances", True),
     ):
-        found = books.unanchored([opened.entry(1), entry(other)], today)
+        found = books.unanchored([opened.entry(1), entry(other)])
         assert (PATHS["6616"] not in found) is anchors, other
 
 
@@ -1212,7 +1353,9 @@ def test_an_account_the_households_own_ledger_holds_is_left_to_it(filed: FirstDa
     conn = filed.connect()
     try:
         with Feed.open(filed.settings.feed_database) as feed:
-            derived = ownbooks.derive(conn, feed, opened={PATHS["6616"]}, since=date(2026, 1, 1))
+            derived = ownbooks.derive(
+                conn, feed, opened={PATHS["6616"]}, since=date(2026, 1, 1)
+            ).entries
     finally:
         conn.close()
 
@@ -1356,7 +1499,10 @@ def test_an_account_the_household_names_that_nothing_brings_in_is_not_known_neve
     you = shown(avery.get("/you").text)
     page = shown(avery.get(f"/accounts/{elsewhere.id}").text)
 
-    assert re.findall(r"\$\s*0(\.00)?\b", you) == []
+    assert re.findall(ZERO, you) == []
     assert "Not connected, nothing brought in" in you
     assert "Nothing of this account is in hearth: connect its bank to bring it in." in page
-    assert re.findall(r"\$\s*0(\.00)?\b", page) == []
+    assert re.findall(ZERO, page) == []
+    # Nor is a month with none of its transactions in hearth a month in which it had none.
+    assert "No transactions" not in page
+    assert "does not have all of this account's transactions for October 2026" in page

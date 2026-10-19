@@ -12,7 +12,7 @@ Anything that does not exist and anything the viewer may not see raise the same
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -104,10 +104,17 @@ class FailedCheck:
     owners: tuple[MemberRef, ...]
     check: AssertionCheck
     location: str | None
+    reported_by: str | None = None
+    """The bank whose reported balance failed, when it was a bank's, not a statement's."""
 
     @property
     def difference(self) -> Decimal:
         return self.check.asserted - self.check.computed
+
+    @property
+    def as_of(self) -> date:
+        """The last day the balance checked covers: a check is of the start of its day."""
+        return self.check.date - timedelta(days=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +147,9 @@ class AccountView:
     in it is a fact. It is decided by its transactions, so it goes with them."""
     outside: bool = False
     """Whether the books hold nothing of the account at all (`Household.outside`)."""
+    unknown: str | None = None
+    """Why its balance is not known, when the books say (``books.unknown``), told to its owners
+    alone (``access.may_see_why_unknown``)."""
 
 
 class Disclosure:
@@ -218,10 +228,18 @@ class Disclosure:
             days=self._gate.disclose(
                 Facet.TRANSACTIONS, account.owners, lambda: days(h, [account], month)
             ),
+            # An account the books hold nothing of has no history to be whole, not an empty one.
             covered=self._gate.disclose(
-                Facet.TRANSACTIONS, account.owners, lambda: covers(h.books, judged, month)
+                Facet.TRANSACTIONS,
+                account.owners,
+                lambda: account.ledger_account not in h.outside and covers(h.books, judged, month),
             ),
             outside=isinstance(row, AccountRow) and row.outside,
+            unknown=(
+                h.books.unknown.get(account.ledger_account)
+                if isinstance(row, AccountRow) and self._gate.may_see_why_unknown(account.owners)
+                else None
+            ),
         )
 
     def may_price(self, symbol: str) -> bool:
@@ -283,8 +301,9 @@ class Disclosure:
     def review_desk(self, rulings: RulingStore, clock: Clock) -> ReviewDesk:
         """The viewer's own review desk: the set-aside rows ``may_review`` gives them, which they
         may move to a category or to an account of their own that the books hold open."""
-        from beancount.core.data import Close, Open
+        from beancount.core.data import Balance, Close, Open
 
+        from hearth.plaid.opening import PASSING, anchors
         from hearth.review.desk import ReviewDesk
 
         books = self.books
@@ -300,6 +319,8 @@ class Disclosure:
                 e.account: (e.date, closes.get(e.account)) for e in entries if isinstance(e, Open)
             },
             may_move_to=self._gate.may_feed,
+            banks={e.account for e in entries if isinstance(e, Balance) and anchors(e)}
+            | {a for a, why in (books.unknown if books else {}).items() if why in PASSING},
             clock=clock,
         )
 
@@ -339,6 +360,7 @@ class Disclosure:
             clock=clock,
             runner=runner,
             inherited=ledger - own,
+            unbalanced=books.unanchored if books else (),
         )
 
     def _failed_check(self, failure: Failure) -> Disclosed[FailedCheck] | None:
@@ -347,6 +369,10 @@ class Disclosure:
             return None
         account = next((a for a in self._accounts if a.ledger_account == check.account), None)
         owners = account.owners if account else frozenset[MemberId]()
+        # A bank's balance failing says when its connection last synced and what a review of
+        # it did; only an owner can put it right, and only an owner is told.
+        if failure.reported_by is not None and not self._gate.may_see_why_unknown(owners):
+            return WITHHELD
         return self._gate.disclose(
             Facet.ACCOUNT_BALANCES,
             owners,
@@ -355,6 +381,7 @@ class Disclosure:
                 tuple(ref for m in self._members if m.id in owners if (ref := self._ref_for(m.id))),
                 check,
                 failure.location,
+                failure.reported_by,
             ),
         )
 

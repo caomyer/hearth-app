@@ -48,6 +48,16 @@ def plaid_source(item_id: str, transaction_id: str) -> str:
     return f"{PLAID}:{item_id}:{transaction_id}"
 
 
+BALANCE = "balance"
+
+
+def plaid_balance_source(item_id: str) -> str:
+    """The `source` of an opening balance derived from the balance Plaid Item `item_id`
+    reported (``hearth.plaid.opening``): `plaid:<item_id>:balance`, in the same format, so
+    `item_of` reads its Item as it reads a transaction's. No Plaid transaction id is ``balance``."""
+    return plaid_source(item_id, BALANCE)
+
+
 def item_of(source: object) -> str | None:
     """The Plaid Item an entry's `source` metadata says it was booked from, if any."""
     if not isinstance(source, str):

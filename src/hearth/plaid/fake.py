@@ -18,7 +18,7 @@ Every institution, account, payee and figure in it is invented.
 import json
 import secrets
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -52,7 +52,8 @@ class FakeAccount:
     mask: str
     type: str
     subtype: str
-    current: Decimal
+    current: Decimal | None
+    """What the account holds, or owes on a card, as Plaid reports it; Plaid may send none."""
     available: Decimal | None = None
     transactions: tuple[FakeTransaction, ...] | None = None
     """Exactly these, or, when None, an invented routine over the history the bank sends."""
@@ -177,6 +178,18 @@ class FakePlaid:
             raw["transaction_id"] = transaction_id
         item.log.append((kind, raw))
         return str(raw["transaction_id"])
+
+    def report(self, item_id: str, account: str, current: Decimal | None) -> None:
+        """Have the bank report `current` for one of an Item's accounts from now on, as it does
+        once a transaction posts."""
+        item = self._items[item_id]
+        item.institution = replace(
+            item.institution,
+            accounts=tuple(
+                replace(a, current=current) if a.key == account else a
+                for a in item.institution.accounts
+            ),
+        )
 
     def items(self) -> list[str]:
         return [item_id for item_id, item in self._items.items() if not item.removed]
@@ -411,13 +424,18 @@ def _primary(detailed: str) -> str:
 
 
 def _routine(account: FakeAccount, start: date, end: date) -> list[FakeTransaction]:
-    """An invented, steady routine: a payee every few days, and pay twice a month."""
+    """An invented, steady routine, in which money comes and goes as it does in a household:
+    a payee every few days on a checking account or a card, pay twice a month, rent, the
+    month's surplus moved to savings, a card paid off for what it was used for the month
+    before, and a savings account's interest. So an account's history adds up to about what
+    it holds, and what it held before the history is a plausible balance, not two years of
+    pay that was never spent."""
     found = []
     day = start
     index = 0
     while day <= end:
         name, category, amount = PAYEES[index % len(PAYEES)]
-        if account.type != "investment":
+        if account.type in {"depository", "credit"} and account.subtype != "savings":
             found.append(FakeTransaction(name, amount + Decimal(index % 7), day, category))
         if account.subtype == "checking" and day.day in {1, 15}:
             found.append(
@@ -425,7 +443,46 @@ def _routine(account: FakeAccount, start: date, end: date) -> list[FakeTransacti
             )
         day += timedelta(days=3)
         index += 1
-    return found
+    monthly = []
+    month = start.replace(day=1)
+    while month <= end:
+        within = [t for t in found if (t.day.year, t.day.month) == (month.year, month.month)]
+        monthly += [t for t in _monthly(account, month, within) if start <= t.day <= end]
+        month = (month + timedelta(days=32)).replace(day=1)
+    return sorted([*found, *monthly], key=lambda t: t.day)
+
+
+def _monthly(
+    account: FakeAccount, month: date, within: list[FakeTransaction]
+) -> list[FakeTransaction]:
+    """What the routine moves once a month, given the month's other rows."""
+    if account.subtype == "savings":
+        return [FakeTransaction("Interest", Decimal("-1.15"), month, "INCOME_INTEREST_EARNED")]
+    if account.subtype == "checking":
+        rent = Decimal("1850.00")
+        surplus = -sum((t.amount for t in within), Decimal(0)) - rent
+        moved = [
+            FakeTransaction(
+                "Hollins Lettings", rent, month.replace(day=2), "RENT_AND_UTILITIES_RENT"
+            )
+        ]
+        if surplus >= 100:
+            moved.append(
+                FakeTransaction(
+                    "Transfer to savings",
+                    (surplus // 100) * 100,
+                    month.replace(day=28),
+                    "TRANSFER_OUT_SAVINGS",
+                )
+            )
+        return moved
+    if account.type == "credit" and within:
+        spent = sum((t.amount for t in within), Decimal(0))
+        due = (month + timedelta(days=32)).replace(day=20)
+        return [
+            FakeTransaction("Payment Thank You", -spent, due, "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT")
+        ]
+    return []
 
 
 _STATUSES = ("HISTORICAL_UPDATE_COMPLETE", "INITIAL_UPDATE_COMPLETE", "NOT_READY")

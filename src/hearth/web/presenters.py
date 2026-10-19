@@ -143,10 +143,14 @@ def net_worth_page(view: NetWorthView, today: date) -> dict[str, object]:
     finding = None
     if moves:
         who = "your accounts" if len(view.moves_cover) == 1 else "the accounts you can see into"
-        finding = (
-            f"Over {len(moves)} months, {who} changed by {dollars(saved + market)}:"
-            f" {dollars(saved)} put in, {dollars(market)} from the market."
+        put = f"{dollars(abs(saved))} {'put in' if saved >= 0 else 'taken out'}"
+        priced = (
+            "none of it from the market"
+            if market == 0
+            else f"{dollars(abs(market))} {'from' if market > 0 else 'lost to'} the market"
         )
+        changed = dollars(saved + market)
+        finding = f"Over {len(moves)} months, {who} changed by {changed}: {put}, {priced}."
     return {
         "charts": net_worth_charts(view),
         "since": f"since {month:%b} 1",

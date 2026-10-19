@@ -6,7 +6,7 @@ import re
 import sqlite3
 import time
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from html import unescape
@@ -47,6 +47,10 @@ WILLOWMERE = FakeInstitution(
 )
 """Seven accounts from one invented bank: five cards it calls the same, told apart by mask."""
 
+SILENT = replace(WILLOWMERE, accounts=tuple(replace(a, current=None) for a in WILLOWMERE.accounts))
+"""The same bank, saying nothing of what any account holds, as Plaid may (its `current` is
+null): no balance hearth shows can come from it."""
+
 PATHS = {
     "1111": "Liabilities:Avery:Willowmere:Wren",
     "2212": "Liabilities:Avery:Willowmere:Finch",
@@ -57,6 +61,9 @@ PATHS = {
     "7717": "Assets:Avery:Willowmere:Savings",
 }
 """Where the member says each account goes, by its last digits."""
+
+ZERO = r"\$\s*0(?:\.00)?(?![.,]?\d)"
+"""A sum of zero as a page states it, "$0" or "$0.00", and not the start of "$0.50"."""
 
 FIRST_DAY = date(2024, 10, 16)
 """The first day of the 730 days of history asked for on Oct 15, 2026 (`household.NOW`)."""

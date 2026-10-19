@@ -8,19 +8,23 @@ fails it until it is taught to the walk, so whoever adds one reads it as a new h
 
 The steps: nobody has connected anything; Avery has connected a bank; Avery has filed its
 seven accounts, before the bank has sent any history; the bank's two years of history have
-arrived. Blake connects nothing throughout. Every value is invented.
+arrived; Avery has connected a brokerage too. Blake connects nothing throughout. Every value
+is invented.
 
-Once the history is in, spending and income are known, and a zero can be one: a day on which a
-covered account spent nothing, or a chart's axis. So on that step the charts, and the tables
-that read them out, are left out of the search for a stated zero, as they are for a reader
-(``tests.firstday.shown``); every other line of every page is still searched, and every word
-of every page, charts included, is still searched for bookkeeping. What stays unknown, the
-balances, the bank never sent, must still say so.
+From the moment the accounts are filed, what each holds is what the bank says, so net worth
+is a figure; how they moved is not known until the history arrives. Once it has, spending and
+income are known, and a zero can be one: a day on which a covered account spent nothing, or a
+chart's axis. So on those steps the charts, and the tables that read them out, are left out of
+the search for a stated zero, as they are for a reader (``tests.firstday.shown``); every other
+line of every page is still searched, and every word of every page, charts included, is still
+searched for bookkeeping. The brokerage's balance cannot be worked out from anything its bank
+sends, so Avery's figure is not known again, and must say so rather than read as zero.
 """
 
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 from html import unescape
 
 import pytest
@@ -28,9 +32,10 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from hearth import accounts
+from hearth.plaid.fake import FakeAccount, FakeInstitution
 from hearth.plaid.registry import Registry
 from hearth.web.routes import ROUTERS
-from tests.firstday import PATHS, FirstDay, until_booked, until_transacted
+from tests.firstday import PATHS, ZERO, FirstDay, until_booked, until_transacted
 
 NOT_WALKED = {
     "/healthz": "answers machines, not people",
@@ -38,8 +43,7 @@ NOT_WALKED = {
 """Pages the walk does not read, and why. Everything else is read at every step."""
 
 UNESTABLISHED = re.compile(
-    r"\$\s*0(\.00)?\b"
-    r"|\bNo (income|spending|transactions|change)\b"
+    ZERO + r"|\bNo (income|spending|transactions|change)\b"
     r"|\bNothing (paid in|spent|earned)\b"
     r"|\bnot enough priced history\b",
     re.IGNORECASE,
@@ -124,6 +128,26 @@ def _get(client: TestClient, fresh: FirstDay, route: str, path: str) -> str:
 
 
 ARRIVED = "its history arrived"
+BROKERAGE = "a brokerage connected"
+HISTORY_IN = (ARRIVED, BROKERAGE)
+"""Steps on which the history is in, so a chart's zero can be one."""
+
+QUARRY = FakeInstitution(
+    "ins_quarry",
+    "Quarry Brokerage",
+    (
+        FakeAccount(
+            "ira", "Individual account", "8818", "investment", "brokerage", Decimal("18452.30")
+        ),
+    ),
+)
+"""An invented brokerage, whose balance is what its investments are worth: no opening
+balance can be derived from it, so what Avery holds is not known again, never $0."""
+
+
+AVERYS = r"\$\s*12,771"
+"""Avery's net worth, as the bank's balances add up: what the seven accounts hold, less what
+the five cards owe, the headline rounding it to the dollar."""
 
 
 def first_day_steps(fresh: FirstDay) -> Iterator[Visit]:
@@ -143,13 +167,18 @@ def first_day_steps(fresh: FirstDay) -> Iterator[Visit]:
     assert synced.status_code == 303
     until_transacted(fresh, PATHS["6616"])
     yield from walk(fresh, ARRIVED)
+    fresh.plaid.institutions[QUARRY.id] = QUARRY
+    fresh.link("avery", QUARRY.id)
+    fresh.map(fresh.signed_in("avery"), {"8818": "Assets:Avery:Quarry:Brokerage"})
+    until_booked(fresh, "Assets:Avery:Quarry:Brokerage")
+    yield from walk(fresh, BROKERAGE)
 
 
 def problems(visit: Visit) -> list[str]:
     text = readable(visit.page)
     for name in NAMED.get(visit.path, ()):
         text = text.replace(name, "")
-    figures = readable(_without_charts(visit.page)) if visit.step == ARRIVED else text
+    figures = readable(_without_charts(visit.page)) if visit.step in HISTORY_IN else text
     found = [m.group(0) for m in UNESTABLISHED.finditer(figures)]
     found += [m.group(0) for m in VOCABULARY.finditer(text)]
     return found
@@ -185,25 +214,61 @@ def test_the_walk_reads_every_page_the_application_serves(visits: list[Visit]) -
 
 
 def test_a_first_day_explains_what_it_does_not_know(visits: list[Visit]) -> None:
-    """Not knowing must not read as broken: once Avery's accounts are filed, every page with
-    a figure says why it is not known and what fills it."""
+    """Not knowing must not read as broken: once Avery's accounts are filed, their balances
+    are what the bank says, and every page with a figure the bank's history decides says why
+    that one is not known yet and what fills it."""
     filed = {(v.viewer, v.path): readable(v.page) for v in visits if v.step == "its accounts filed"}
 
     for page in ("/", "/you", "/net-worth"):
-        assert "The figure appears once they are brought in" in filed[("avery", page)], page
+        assert re.search(AVERYS, filed[("avery", page)]), page
+        assert "no balance in hearth yet" not in filed[("avery", page)], page
     for page in ("/", "/net-worth", "/members/avery"):
-        assert "The figure appears once they are brought in" in filed[("blake", page)], page
+        assert re.search(AVERYS, filed[("blake", page)]), page
+    assert "History incomplete" in filed[("avery", "/you")]
+    assert (
+        "once hearth has the history of every account behind it" in filed[("avery", "/net-worth")]
+    )
+    assert "Not brought in yet" in filed[("avery", "/you")]
 
 
-def test_history_makes_spending_known_and_leaves_balances_unknown(visits: list[Visit]) -> None:
-    """The bank's history says how every account moved, not what any of them held before it:
-    spending is a figure from then on, and net worth still says why it is not one."""
+def test_history_makes_spending_known_and_balances_stay_what_the_bank_says(
+    visits: list[Visit],
+) -> None:
+    """The bank's history says how every account moved, and its balances what each holds: so
+    spending is a figure from then on, and net worth is the same figure it was, not what the
+    history adds up to."""
     arrived = {(v.viewer, v.path): readable(v.page) for v in visits if v.step == ARRIVED}
 
     for page in ("/", "/you", "/net-worth"):
-        assert "no balance in hearth yet" in arrived[("avery", page)], page
-        assert "The figure appears once they are brought in" in arrived[("avery", page)], page
+        assert re.search(AVERYS, arrived[("avery", page)]), page
+        assert "no balance in hearth yet" not in arrived[("avery", page)], page
     assert "History incomplete" not in arrived[("avery", "/you")]
+    # Avery holds nothing priced by a market: none of the change came from one, said in words.
+    assert "none of it from the market" in arrived[("avery", "/net-worth")]
     assert re.search(r"Spent, Oct 1.15\s*\$\s*[1-9]", arrived[("avery", "/")])
     assert "waiting in Review" in arrived[("avery", "/connect/import")]
     assert "In your figures and in Review" in arrived[("avery", "/connect/import")]
+    assert "is the one its bank reported" in arrived[("avery", "/connect/import")]
+
+
+def test_an_account_whose_balance_cannot_be_worked_out_stays_not_known_never_zero(
+    visits: list[Visit],
+) -> None:
+    """The brokerage's bank reports what its investments are worth, which no transaction it
+    sends adds up to: so Avery's figure is not known again, and its own page says why."""
+    brokerage = {(v.viewer, v.path): readable(v.page) for v in visits if v.step == BROKERAGE}
+
+    for page in ("/", "/you", "/net-worth"):
+        assert "no balance in hearth yet" in brokerage[("avery", page)], page
+        assert not re.search(AVERYS, brokerage[("avery", page)]), page
+    for page in ("/", "/net-worth", "/members/avery"):
+        assert "Not known yet" in brokerage[("blake", page)], page
+    # Plaid sends a brokerage no transactions, so waiting on them would never end: spending
+    # stays the figure it was, and the brokerage is listed as what it is.
+    assert "History incomplete" not in brokerage[("avery", "/you")]
+    assert re.search(r"Investments\s+Card 8818", brokerage[("avery", "/you")])
+    pages = [text for (viewer, _), text in brokerage.items() if viewer == "avery"]
+    assert any(
+        "What an investment account holds is what its investments are worth" in p for p in pages
+    )
+    assert "1 account has no balance yet" in brokerage[("avery", "/connect/import")]
