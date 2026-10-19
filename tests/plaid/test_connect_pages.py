@@ -277,7 +277,7 @@ def test_a_co_owner_is_shown_a_shared_account_is_fed_without_naming_whose_or_whi
 
     assert (
         '<option value="Assets:Zq:Joint" disabled>Assets:Zq:Joint'
-        " (already receives transactions from another connection)</option>"
+        " (another connected account already goes here)</option>"
     ) in page
     blakes = next(p for p in household.PLAID if p.username == "blake")
     for detail in (blakes.institution, blakes.checking, blakes.checking_mask, blakes.card):

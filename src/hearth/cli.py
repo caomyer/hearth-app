@@ -21,7 +21,7 @@ from hearth import accounts, auth, books, db, demo, members
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
 from hearth.clock import Clock, system_clock
-from hearth.config import LEDGER_VARIABLE, Settings
+from hearth.config import Settings
 from hearth.disclosure import rulings_in
 from hearth.members import MemberRejectedError
 from hearth.plaid import cli as plaid_cli
@@ -71,7 +71,8 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     claim = commands.add_parser(
-        "add-account", help="say who owns one of the ledger's accounts; nobody sees it until then"
+        "add-account",
+        help="say who owns one of an inherited ledger's accounts; nobody sees it until then",
     )
     claim.add_argument("ledger_account", help="as the ledger names it, e.g. Assets:Bank:Checking")
     claim.add_argument("--name", required=True, help="the name the household sees")
@@ -83,7 +84,7 @@ def main(argv: list[str] | None = None) -> None:
         help="a member who owns it; give it once per owner for a joint account",
     )
     commands.add_parser(
-        "accounts", help="list the ledger's accounts and who owns each (reads the ledger only)"
+        "accounts", help="list the books' accounts and who owns each (never writes a ledger)"
     )
 
     try_it = commands.add_parser(
@@ -94,6 +95,11 @@ def main(argv: list[str] | None = None) -> None:
         "--first-review",
         action="store_true",
         help="two years of history, none of it reviewed yet, as on the day of a first import",
+    )
+    try_it.add_argument(
+        "--from-zero",
+        action="store_true",
+        help="a household on its first day: members only, no ledger, banks to connect",
     )
 
     arguments = parser.parse_args(argv)
@@ -109,7 +115,10 @@ def main(argv: list[str] | None = None) -> None:
         case "accounts":
             _list_accounts()
         case "demo":
-            _demo(arguments.host, arguments.port, first_review=arguments.first_review)
+            if arguments.from_zero:
+                _demo_from_zero(arguments.host, arguments.port)
+            else:
+                _demo(arguments.host, arguments.port, first_review=arguments.first_review)
 
 
 def _add_address(parser: argparse.ArgumentParser) -> None:
@@ -122,24 +131,22 @@ def _serve(host: str, port: int, approval: Approval) -> None:
     approved = ", ".join(sorted(op.value for op in approval.operations)) or "none"
     print(f"Live Plaid calls approved for this run: {approved}.", flush=True)
     setup = PlaidSetup(approval=approval)
-    _run(
-        settings,
-        books.from_ledger(settings.ledger, settings.database, rulings=rulings_in),
-        host,
-        port,
-        setup,
-    )
+    _run(settings, books.from_household(settings, rulings=rulings_in), host, port, setup)
 
 
 def _run(
     settings: Settings, establish: books.Establish, host: str, port: int, plaid: PlaidSetup
 ) -> None:
-    """Serve, recomputing at start-up and then every morning (decision 6)."""
+    """Serve, recomputing at start-up and then every morning (decision 6).
+
+    The app is created first, as that brings both databases up to date, so the first
+    recompute and the first sync never find a database part way through being created.
+    """
     bookkeeper = books.Bookkeeper(establish, system_clock)
+    app = create_app(settings, bookkeeper, plaid=plaid)
     bookkeeper.recompute_daily()
     if plaid.approval.allows(Operation.READ):
         _sync_daily(settings, plaid, bookkeeper)
-    app = create_app(settings, bookkeeper, plaid=plaid)
     uvicorn.run(app, host=host, port=port)
 
 
@@ -191,11 +198,12 @@ def _add_member(username: str, name: str, *, is_admin: bool) -> None:
 
 
 def _ledger_accounts(settings: Settings) -> list[str]:
-    """The ledger's balance-sheet accounts, read through the same read-only path as serving."""
-    if settings.ledger is None:
-        sys.exit(f"hearth: set {LEDGER_VARIABLE} to the household's ledger first.")
+    """The books' balance-sheet accounts: hearth's own, and an inherited ledger's, read
+    through the same read-only path as serving."""
+    db.initialise(settings.database)
+    feed.initialise(settings.feed_database)
     try:
-        entries = books.load_entries(settings.ledger)
+        entries = books.household_entries(settings)
     except books.LedgerError as error:
         sys.exit(f"hearth: {error.summary}")
     return sorted(
@@ -208,7 +216,7 @@ def _ledger_accounts(settings: Settings) -> list[str]:
 def _add_account(ledger_account: str, name: str, usernames: list[str]) -> None:
     settings = Settings.from_environment()
     if ledger_account not in _ledger_accounts(settings):
-        sys.exit(f"hearth: the ledger opens no Assets or Liabilities account {ledger_account}.")
+        sys.exit(f"hearth: the books open no Assets or Liabilities account {ledger_account}.")
     db.initialise(settings.database)
     conn = db.connect(settings.database)
     try:
@@ -266,7 +274,23 @@ def _demo(host: str, port: int, *, first_review: bool = False) -> None:
         print("An invented household. Sign in as any of them:")
         for username, password in passwords.items():
             print(f"  {username:<8} {password}", flush=True)
-        establish = books.from_ledger(
-            ledger, settings.database, rulings=rulings_in, sources=(demo.PRICE_SOURCE,)
-        )
+        establish = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))
+        _run(settings, establish, host, port, setup)
+
+
+def _demo_from_zero(host: str, port: int) -> None:
+    with tempfile.TemporaryDirectory(prefix="hearth-demo-") as directory:
+        settings = Settings.in_directory(Path(directory))
+        db.initialise(settings.database)
+        conn = db.connect(settings.database)
+        try:
+            passwords = demo.seed_from_zero(conn, now=system_clock())
+        finally:
+            conn.close()
+        setup = demo.plaid_from_zero(lambda: system_clock().astimezone().date())
+        print("A household on its first day: no ledger, nothing connected. Sign in as:")
+        for username, password in passwords.items():
+            print(f"  {username:<8} {password}", flush=True)
+        print(f"Hearth writes its books to {settings.books_file}", flush=True)
+        establish = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))
         _run(settings, establish, host, port, setup)

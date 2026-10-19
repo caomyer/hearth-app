@@ -16,6 +16,7 @@ from hearth.config import Settings
 from hearth.disclosure import Disclosure, rulings_in
 from hearth.months import Month
 from hearth.plaid import feed
+from hearth.plaid.fake import DEMO_INSTITUTIONS
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
 
@@ -77,18 +78,19 @@ def test_the_demos_connected_banks_carry_the_history_and_balance_the_ledger_hold
 
 
 def test_the_first_review_demo_is_a_backfill_at_full_size(tmp_path: Path) -> None:
-    ledger, database = tmp_path / "household.beancount", tmp_path / "hearth.sqlite3"
-    db.initialise(database)
-    conn = db.connect(database)
+    ledger = tmp_path / "household.beancount"
+    settings = Settings.in_directory(tmp_path / "data", ledger=ledger)
+    db.initialise(settings.database)
+    conn = db.connect(settings.database)
     now = datetime(2026, 10, 18, 9, 0, tzinfo=UTC)
     try:
         demo.seed(conn, ledger, now=now, first_review=True)
     finally:
         conn.close()
 
-    found: Books = books.from_ledger(
-        ledger, database, rulings=rulings_in, sources=(demo.PRICE_SOURCE,)
-    )(now)
+    found: Books = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))(
+        now
+    )
 
     assert len(found.pile) > 1000
     assert len({item.group for item in found.pile}) > 15
@@ -145,9 +147,7 @@ def test_the_demos_connections_vouch_for_what_they_booked_and_its_stopped_card_s
     feed.initialise(settings.feed_database)
     demo.connect(settings, demo.plaid(lambda: now.date(), ledger), now=now)
 
-    found = books.from_ledger(
-        ledger, settings.database, rulings=rulings_in, sources=(demo.PRICE_SOURCE,)
-    )(now)
+    found = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))(now)
     today = min(now.astimezone().date(), now.date())
     stopped = now.astimezone().date() - timedelta(days=demo.CARD_EXPIRED_DAYS_AGO)
 
@@ -170,3 +170,26 @@ def test_the_demos_connections_vouch_for_what_they_booked_and_its_stopped_card_s
     assert own.day == stopped
     assert theirs is not None
     assert (theirs.month, theirs.day, theirs.stalest) == (Month.of(stopped), None, None)
+
+
+def test_the_from_zero_demo_is_a_household_with_members_and_nothing_else(tmp_path: Path) -> None:
+    now = datetime(2026, 10, 18, 9, 0, tzinfo=UTC)
+    settings = Settings.in_directory(tmp_path)
+    db.initialise(settings.database)
+    feed.initialise(settings.feed_database)
+    conn = db.connect(settings.database)
+    try:
+        passwords = demo.seed_from_zero(conn, now=now)
+        assert accounts.all_accounts(conn) == []
+        assert Registry(conn).all_items() == []
+    finally:
+        conn.close()
+
+    found = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))(now)
+
+    assert set(passwords) == {"avery", "blake"}
+    assert found.entries == ()
+    assert settings.books_file.exists()
+    stand_in = demo.plaid_from_zero(lambda: now.date()).stand_in
+    assert stand_in is not None
+    assert set(stand_in.institutions) == {i.id for i in DEMO_INSTITUTIONS}

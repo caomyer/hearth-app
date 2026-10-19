@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, as_table, priced_from_note %}
+{% from "_macros.html" import delta, hero_value, worth_amount, asof, failure_alert, private, as_table, priced_from_note %}
 {% set w = view %}
 {% set head = w.headline %}
 {% set books = status.books %}
@@ -17,12 +17,23 @@
   <div class="alert alert-info mb-4" role="status"><svg aria-hidden="true"><use href="#i-info"/></svg><div class="alert-body"><p style="color: var(--ink)">{{ message }}</p></div></div>
   {% endif %}
 
+  {% if not w.connected %}
+  {# Nothing in the household is in the books yet: no figure, rather than a net worth of zero. #}
+  <section class="empty empty-hero" aria-labelledby="e-h">
+    <span class="glyph" aria-hidden="true"><svg><use href="#i-link"/></svg></span>
+    <h2 id="e-h">Nothing to add up yet</h2>
+    <p>Net worth is what the household's connected accounts own minus what they owe. Once a member connects a bank and says where its accounts go, each one is here, with where its figure comes from.</p>
+    <div class="row wrap mt-4" style="justify-content: center">
+      <a class="btn btn-primary btn-lg" href="/connect"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect a bank</a>
+    </div>
+  </section>
+  {% else %}
   <section class="panel" aria-labelledby="hnw-h">
     <div class="panel-body" style="padding-top: var(--s-6)">
       <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
         <div class="hero">
           <h2 id="hnw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth{% if head.is_partial %}, without {{ head.without | names("name") }}{% endif %}</h2>
-          {{ hero_value(head.value, status, head.without, head.unpriced) }}
+          {{ hero_value(head.value, status, head.without, head.unpriced, head.awaiting) }}
           {% if not head.is_partial %}<div class="hero-meta">{{ delta(head.since_month_start, since) }}</div>{% endif %}
           <div class="recompute mt-4{% if status.recomputing %} recomputing{% endif %}">
             {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on, head.ends) %} Recomputes daily, never silently on page load.{% endcall %}
@@ -49,6 +60,8 @@
                   <span class="who{{ hue }}">{% if ref.is_joint %}Joint accounts{% if not ref.is_viewers %} of {{ ref.owners | names }}{% endif %}{% elif ref.is_viewers %}Your accounts, excluding joint{% else %}{{ ref.name }}, excluding joint{% endif %}</span>
                   {% if part.worth is withheld %}
                   <span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared with you</span>
+                  {% elif not part.worth.is_known %}
+                  <span class="second">{% if part.worth.awaiting is none %}Connected, figures not brought in yet{% else %}{{ plural(part.worth.awaiting, "account") }} connected, figures not brought in yet{% endif %}</span>
                   {% elif part.owned is not none and not ref.is_joint %}
                   <span class="second">{{ part.owned | money }} owned, {{ part.owed | money }} owed</span>
                   {% elif ref.is_joint and part.accounts is not none %}
@@ -57,10 +70,10 @@
                   <span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Total only, shared by {{ ref.owner_names }}</span>
                   {% endif %}
                 </th>
-                <td class="num{% if part.worth is withheld %} priv{% endif %}">{% if part.worth is withheld %}Not included{% else %}{% if part.worth.is_floor %}at least {% endif %}{{ part.worth.value | money }}{% endif %}</td>
+                <td class="num{% if part.worth is withheld %} priv{% endif %}">{% if part.worth is withheld %}Not included{% else %}{{ worth_amount(part.worth) }}{% endif %}</td>
               </tr>
               {% endfor %}
-              <tr class="total-row"><th scope="row">{% if head.is_partial %}Known so far{% else %}Household{% endif %}</th><td class="num">{% if head.is_floor %}at least {% endif %}{{ head.value | money }}</td></tr>
+              <tr class="total-row"><th scope="row">{% if head.is_partial %}Known so far{% else %}Household{% endif %}</th><td class="num">{% if not head.is_known %}Not known yet{% else %}{% if head.is_floor %}at least {% endif %}{{ head.value | money }}{% endif %}</td></tr>
             </tbody>
           </table>
         </div>
@@ -115,6 +128,8 @@
         {{ priced_from_note(w.moves_priced_from) }}
         {{ as_table("Monthly change in net worth, saved and market", ("Month", "Saved / market"), moves_rows) }}
       </figure>
+      {% elif not w.headline.is_known %}
+      <p class="muted">Not known yet: the change can be split once hearth has the history of every account behind it.</p>
       {% else %}
       <p class="muted">There is not enough priced history yet to split the change into saving and the market.</p>
       {% endif %}
@@ -218,4 +233,5 @@
       <span>Each price is stored with its source and time.{% if w.provenance.sources %} Source: {{ w.provenance.sources | join(", ") }}{% if w.provenance.fetched_at %}, fetched {{ when(w.provenance.fetched_at, today) }}{% endif %}.{% endif %}</span>
     </div>
   </section>
+  {% endif %}
 {% endblock %}

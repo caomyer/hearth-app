@@ -6,11 +6,11 @@ Runs on one machine. Each household member signs in with a username and password
 
 ## Principles
 
-**The ledger is the source of truth.** Every figure traces to a ledger entry. Nothing is a black box, and the numbers reconcile against real statements.
+**The ledger is the source of truth.** Every figure traces to a ledger entry, in a beancount file anyone can open and check. Nothing is a black box, and the numbers reconcile against real statements.
 
 **Privacy is a server-enforced boundary, not a display preference.** Data a viewer may not see is never rendered into a response. The application is server-rendered for exactly this reason: a leak would require actively rendering forbidden data, rather than merely forgetting a check.
 
-**Nothing is booked that nobody checked.** Automatic categorisation proposes; a person decides. Decisions are durable and keyed to a transaction's content, so re-importing never re-asks a settled question.
+**Nothing unchecked passes as checked.** Every transaction is in the books the moment it arrives, flagged until a person reviews it, and every total says how much rests on rows nobody has looked at. Automatic categorisation proposes; a person decides. Decisions are durable and keyed to a transaction's content, so re-importing never re-asks a settled question.
 
 ## Status
 
@@ -18,7 +18,8 @@ Early.
 Members, sign-in, sharing and the privacy boundary are in place ([docs/privacy-boundary.md](docs/privacy-boundary.md)), and so are the dashboards over the beancount ledger: the household, each member's own page, other members' shared pages, net worth with positions and price provenance, review, and sharing settings ([docs/dashboards.md](docs/dashboards.md)).
 Every imported transaction is in the books at once, flagged until a member reviews it, and every total says how much rests on unreviewed rows ([docs/review.md](docs/review.md)).
 Members connect their institutions through Plaid, each through a Plaid account of their own by default, and hearth pulls two years of history into a staging store, checked per account for how much each bank actually sent ([docs/connections.md](docs/connections.md)).
-Turning that history into ledger entries is the import's job, and comes next.
+A household needs no ledger of its own: the accounts its members connect become the chart of accounts of books hearth keeps itself, written out on every recompute for anyone to open in fava ([docs/books.md](docs/books.md)).
+Turning the connected history into entries in those books is the import's job, and comes next.
 The calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md) and [docs/dashboards.md](docs/dashboards.md); `design/` holds the approved design.
 
 ## Development
@@ -27,19 +28,25 @@ The calls made along the way are in [docs/foundation-decisions.md](docs/foundati
 uv sync
 uv run hearth demo          # an invented household in a throwaway directory
 uv run hearth demo --first-review  # the same, the day its two-year first import lands
+uv run hearth demo --from-zero     # a household on its first day: members, no ledger, banks to connect
 uv run pytest
 ```
 
-To run for real, create the first admin, point hearth at the household's ledger, say who owns each account, then serve on this machine only ([docs/real-ledger.md](docs/real-ledger.md)):
+To run for real, create the first admin and serve on this machine only; each member then connects their own banks from the site:
 
 ```sh
 uv run hearth add-member <username> --name "<name>" --admin
-export HEARTH_LEDGER="$HOME/path/to/household.beancount"
-uv run hearth add-account <ledger account> --name "<name>" --owner <username>
-uv run hearth serve
+uv run hearth serve --approve-plaid link --approve-plaid read
 ```
 
-Hearth only reads the ledger. It recomputes at start-up, every morning at 6:00 and on request, never on page load.
+A household that already keeps a beancount ledger may inherit it, read-only, and say who owns each of its accounts ([docs/real-ledger.md](docs/real-ledger.md)):
+
+```sh
+export HEARTH_LEDGER="$HOME/path/to/household.beancount"
+uv run hearth add-account <ledger account> --name "<name>" --owner <username>
+```
+
+Hearth never writes an inherited ledger. It recomputes at start-up, every morning at 6:00 and on request, never on page load, and writes its books to `books.beancount` in its data directory each time.
 
 No live Plaid call is made unless approved for this run, operation by operation:
 

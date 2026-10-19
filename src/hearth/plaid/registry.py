@@ -11,7 +11,7 @@ records holders and decides nothing about them.
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 
 from hearth.db import transaction
@@ -62,6 +62,11 @@ class Item:
     @property
     def active(self) -> bool:
         return self.state is not ItemState.REMOVED
+
+    @property
+    def requested_from(self) -> date:
+        """The first day of the history asked for when it was linked: its fetched window."""
+        return self.linked_at.astimezone().date() - timedelta(days=self.days_requested - 1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +202,14 @@ class Registry:
             "SELECT * FROM plaid_accounts WHERE account_id = ?", (account_id,)
         ).fetchone()
         return _account(row) if row else None
+
+    def confirmed(self) -> list[LinkedAccount]:
+        """Every account a member has confirmed a mapping for, removed connections' included:
+        what a connection brought in stays in the books after it is removed."""
+        rows = self._db.execute(
+            "SELECT * FROM plaid_accounts WHERE confirmed_at IS NOT NULL ORDER BY account_id"
+        )
+        return [_account(row) for row in rows]
 
     def feeding(self, hearth_account: str) -> list[LinkedAccount]:
         """Accounts of connections still active that feed `hearth_account`."""

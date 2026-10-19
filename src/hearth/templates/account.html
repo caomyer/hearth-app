@@ -23,7 +23,12 @@
         {% if view.balance is withheld %}
         <p class="mt-3">{{ private("Not shared with you") }}</p>
         {% else %}
+        {% if not view.balance.is_known %}
+        <p class="hero-value muted">&ndash;</p>
+        <p class="muted mt-2 measure">Not known yet. This account is connected, but its balance and transactions are not in hearth yet. The balance appears once they are brought in; until then there is none to show, not a balance of zero.</p>
+        {% else %}
         <p class="hero-value">{% if view.balance.is_floor %}<span class="sm muted">at least </span>{% endif %}{{ view.balance.value | hero }}</p>
+        {% endif %}
         {% endif %}
         {% if a.spans is not withheld and a.spans %}
         <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>History since {{ a.spans[0].earliest | year_day }}{% for span in a.spans %}; {{ span.origin | origin }} from {{ span.earliest | day }} to {{ span.latest | day }}{% endfor %}.</p>
@@ -41,6 +46,8 @@
       <p style="padding: var(--s-4) var(--s-6)">{{ private("The transactions in this account are not shared with you.") }}</p>
       {% elif view.days %}
       {{ day_table(view.days, "Transactions in " ~ a.name ~ ", newest first", show_account=false) }}
+      {% elif not view.covered %}
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">Not known yet: hearth does not have all of this account's transactions for {{ view.month.label }}. They appear here once they are in.</p>
       {% else %}
       <p class="muted" style="padding: var(--s-4) var(--s-6)">No transactions in {{ view.month.label }}.</p>
       {% endif %}

@@ -8,6 +8,10 @@ year, a fund whose price has gone stale, and transactions waiting for review.
 With `first_review`, it is the household on the day its first import lands instead: two years
 of history, every row of it unreviewed, grouped by merchant and kind as an import groups them,
 so the review queue can be tried at the size a real backfill has.
+
+`seed_from_zero` is a household on its first day instead, the one most households start as:
+members and nothing else, no ledger and no connections, and invented banks to connect, so the
+whole way in can be tried from the first sign-in.
 """
 
 import calendar
@@ -165,6 +169,36 @@ def seed(
     review_days = FIRST_REVIEW_DAYS if first_review else SET_ASIDE_DAYS
     ledger.write_text(_ledger(today, prices, history, review_days))
     return chosen
+
+
+FROM_ZERO = (
+    DemoMember("avery", "Avery", is_admin=True),
+    DemoMember("blake", "Blake", is_admin=False),
+)
+
+
+def seed_from_zero(conn: sqlite3.Connection, *, now: datetime) -> dict[str, str]:
+    """Create a household with members and nothing else, returning each one's password."""
+    chosen: dict[str, str] = {}
+    for demo in FROM_ZERO:
+        member, password = auth.create_member(
+            conn,
+            actor=None,
+            username=demo.username,
+            display_name=demo.display_name,
+            is_admin=demo.is_admin,
+            password=passwords.temporary_password(),
+            now=now,
+        )
+        chosen[member.username] = password
+    return chosen
+
+
+def plaid_from_zero(today: Callable[[], date]) -> PlaidSetup:
+    """The stand-in for Plaid with only the invented banks a member can try connecting."""
+    stand_in = FakePlaid(DEMO_INSTITUTIONS, today=today, accept_any_keys=True)
+    keys = DemoKeys()
+    return PlaidSetup(stand_in=stand_in, keys=lambda: keys, wait=lambda _seconds: None)
 
 
 def _prices(today: date, history: int) -> dict[str, dict[date, Decimal]]:

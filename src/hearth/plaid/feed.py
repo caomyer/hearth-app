@@ -194,12 +194,8 @@ class Coverage:
 def initialise(path: Path) -> None:
     conn = connect(path)
     try:
-        conn.execute("PRAGMA journal_mode = WAL")
-        (version,) = conn.execute("PRAGMA user_version").fetchone()
-        for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
-            with db.transaction(conn):
-                conn.executescript(script)
-                conn.execute(f"PRAGMA user_version = {number}")
+        db.use_wal(conn)
+        db.migrate(conn, MIGRATIONS)
     finally:
         conn.close()
 

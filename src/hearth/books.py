@@ -11,6 +11,10 @@ imported row is in them, a row nobody has checked still flagged `!` at its propo
 each figure can say how much of it rests on rows nobody has looked at. A ruling recomputes the
 books, so what a member decides shows in the figures within one recompute.
 
+The books are hearth's own (``hearth.ownbooks``), derived from what members connected and
+decided, laid over a ledger of the household's own only when there is one to inherit. Each
+recompute that succeeds writes them out to the books file, an output hearth never reads.
+
 Nothing here decides who may see what; pages reach the books only through
 ``hearth.disclosure``.
 """
@@ -25,13 +29,18 @@ from pathlib import Path
 from typing import Any
 
 from beancount import loader
-from beancount.core.data import Balance, Directive, Transaction
+from beancount.core.account import is_valid as is_valid_account
+from beancount.core.data import Balance, Directive, Open, Transaction, entry_sortkey
 from beancount.core.interpolate import BalanceError
+from beancount.ops import validation
+from beancount.parser import options
 
-from hearth import db
+from hearth import db, ownbooks
 from hearth.clock import Clock
+from hearth.config import Settings
 from hearth.connections import Connections, RegisteredConnections, item_of
 from hearth.months import Month
+from hearth.plaid import feed
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.common import is_balance_sheet, root
 from hearth.reports.coverage import AccountCoverage, account_coverage
@@ -89,6 +98,9 @@ class Books:
     """Each ledger account its connection vouches for, with the day that connection last synced
     successfully, as it stood at this recompute (`vouched`). It says the account is still
     reporting, which the ledger cannot: `figures.covers` reads it."""
+    awaiting: frozenset[str] = frozenset()
+    """Accounts hearth opened for a connected bank account that the books hold nothing for
+    yet (`awaiting`): whatever the bank says, their balance is not known here, never zero."""
 
     @property
     def month(self) -> Month:
@@ -96,7 +108,7 @@ class Books:
 
     def behind(self, day: date) -> bool:
         """Whether data ending on `day` stops long enough before the recompute to say so."""
-        return self.computed_at.date() - day > BEHIND_AFTER
+        return self.as_of - day > BEHIND_AFTER
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,7 +156,12 @@ def load_entries(path: Path) -> tuple[Directive, ...]:
     owners alone. Beancount's own messages name accounts and amounts, so no other error's
     message is ever passed on: only where it is, which is enough to find it.
     """
-    entries, errors, _ = _read(path)
+    entries, _ = _load(path)
+    return entries
+
+
+def _load(path: Path) -> tuple[tuple[Directive, ...], dict[str, Any]]:
+    entries, errors, options_map = _read(path)
     problems = [error for error in errors if not isinstance(error, BalanceError)]
     if problems:
         source = getattr(problems[0], "source", None) or {}
@@ -152,7 +169,7 @@ def load_entries(path: Path) -> tuple[Directive, ...]:
         count = len(problems)
         summary = f"The ledger has {count} error{'s' if count > 1 else ''} hearth cannot read past"
         raise LedgerError(f"{summary}{f', the first at {where}' if where else ''}.")
-    return tuple(entries)
+    return tuple(entries), options_map
 
 
 def _read(path: Path) -> tuple[list[Directive], list[Any], Any]:
@@ -190,7 +207,8 @@ def compute(
     for check in check_balance_assertions(entries):
         if not check.agrees:
             raise LedgerError(f"A balance check failed on {check.date:%b} {check.date.day}.", check)
-    today = now.date()
+    # The household's own day, as every page names it, not the day it already is in UTC.
+    today = now.astimezone().date()
     fed = synced or {}
     vouches = vouched(entries, fed, today)
     own = {account: fed[account][0] for account in vouches}
@@ -210,6 +228,7 @@ def compute(
         account_reaches=account_reaches(entries, today, own),
         flowing=flowing(entries),
         synced=vouches,
+        awaiting=awaiting(entries, today),
         pile=pile,
     )
 
@@ -319,6 +338,18 @@ def account_reaches(
             reach = Reach(reach.transacted, month)
         reaches[account] = reach
     return reaches
+
+
+def awaiting(entries: Sequence[Directive], today: date) -> frozenset[str]:
+    """Accounts hearth opened from a connection that reach no month: no transaction and no
+    balance assertion names them.
+
+    Their bank has a balance; the books do not, until its history is booked, so any figure
+    that includes one is not known yet rather than counting it as zero. An inherited ledger's
+    own accounts keep beancount's meaning, where an account nothing has moved holds nothing.
+    """
+    opened = {e.account for e in ownbooks.own(entries) if isinstance(e, Open)}
+    return frozenset(opened - account_reaches(entries, today).keys())
 
 
 def flowing(entries: Sequence[Directive]) -> frozenset[str]:
@@ -486,32 +517,65 @@ type Rulings = Callable[[sqlite3.Connection], Decide]
 """How the rulings recorded in a database decide review rows (``hearth.disclosure``)."""
 
 
-def from_ledger(
-    ledger: Path | None,
-    database: Path,
+def from_household(
+    settings: Settings,
     *,
     rulings: Rulings,
     sources: Sequence[str] = PRICE_SOURCES,
     connections: Connections | None = None,
 ) -> Establish:
-    """The recompute hearth runs: load the ledger file, lay the rulings over it, then value it
-    at stored prices, noting how current each connection that feeds it is.
+    """The recompute hearth runs: derive hearth's own entries, over the ledger it inherits if
+    there is one, lay the rulings over them and value them at stored prices, noting how current
+    each connection that feeds them is; then write the books out for a person to open
+    (``hearth.ownbooks``).
 
-    `connections` are the Plaid connections registered in `database` unless given.
+    `connections` are the Plaid connections registered in the app database unless given.
     """
-    known = connections or RegisteredConnections(database)
+    known = connections or RegisteredConnections(settings.database)
 
     def establish(now: datetime) -> Books:
-        if ledger is None:
-            raise LedgerError("No ledger is set. Set HEARTH_LEDGER to the household's ledger.")
-        entries = load_entries(ledger)
-        conn = db.connect(database)
+        entries = household_entries(settings)
+        conn = db.connect(settings.database)
         try:
             prices = stored_prices(PriceStore(conn), sources)
-            return compute(
+            books = compute(
                 entries, prices, now=now, decide=rulings(conn), synced=synced_through(known)
             )
         finally:
             conn.close()
+        written = ownbooks.render(ownbooks.own(books.entries), inherits=settings.ledger)
+        ownbooks.write(settings.books_file, written, now=now)
+        return books
 
     return establish
+
+
+def household_entries(settings: Settings) -> tuple[Directive, ...]:
+    """The household's entries before any ruling: hearth's own over the inherited ledger.
+
+    Checked as beancount checks a file it loads, so the books written out load as cleanly as
+    they were computed; hearth's entries that would not are refused, never served.
+    """
+    if settings.ledger is not None:
+        inherited, options_map = _load(settings.ledger)
+    else:
+        inherited, options_map = (), options.OPTIONS_DEFAULTS.copy()
+    opened = {e.account for e in inherited if isinstance(e, Open)}
+    conn = db.connect(settings.database)
+    try:
+        with feed.Feed.open(settings.feed_database) as fed:
+            own = ownbooks.derive(conn, fed, opened=opened)
+    finally:
+        conn.close()
+    entries = tuple(sorted((*inherited, *own), key=entry_sortkey))
+    if own:
+        # Beancount checks a name's spelling only as it parses a file, which these never were.
+        misnamed = [entry for entry in own if not is_valid_account(entry.account)]
+        problems = misnamed or validation.validate(list(entries), options_map)  # type: ignore[no-untyped-call]
+        if problems:
+            count = len(problems)
+            raise LedgerError(
+                f"Hearth's own books have {count} error{'s' if count > 1 else ''}"
+                " it will not serve figures past."
+            )
+    return entries

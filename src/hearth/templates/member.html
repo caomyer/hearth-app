@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, avatar, day_table, unreviewed_sub %}
+{% from "_macros.html" import delta, hero_value, worth_amount, asof, failure_alert, private, avatar, day_table, unreviewed_sub %}
 {% set m = view %}
 {% set name = m.member.display_name %}
 {% set books = status.books %}
@@ -32,7 +32,7 @@
           {% elif m.worth is withheld %}
           <p class="mt-3">{{ private("Not shared with you") }}</p>
           {% else %}
-          {{ hero_value(m.worth.value, status, (), m.worth.unpriced) }}
+          {{ hero_value(m.worth.value, status, (), m.worth.unpriced, m.worth.awaiting) }}
           <div class="hero-meta">{{ delta(m.change, since) if m.change is not withheld else "" }}</div>
           {% call asof(books, status, today, notice, 0, m.worth.unpriced, ends=m.ends) %} Excludes joint accounts{% if m.joint %}, shown below{% endif %}.{% endcall %}
           {% endif %}
@@ -43,6 +43,9 @@
             <p class="fig-label">{{ label }}, {{ month_abbr }} 1&ndash;{{ m.totals.to_day }}</p>
             {% if value is withheld %}
             <p class="fig-value">{{ private("Not shared") }}</p>
+            {% elif not m.connected %}
+            <p class="fig-value muted">&ndash;</p>
+            <p class="fig-sub">Nothing connected yet</p>
             {% elif not m.totals.covered %}
             <p class="fig-value muted">&ndash;</p>
             <p class="fig-sub">History incomplete</p>
@@ -155,10 +158,10 @@
           <tr>
             <th scope="row"><a class="primary" href="/accounts/{{ row.id }}">{{ row.name }}</a></th>
             <td class="col-hide-sm muted">{{ row.updated | day if row.updated is not withheld and row.updated else "" }}</td>
-            <td class="num"><span class="primary">{% if row.value.is_floor %}at least {% endif %}{{ row.value.value | money }}</span></td>
+            <td class="num"><span class="primary">{{ worth_amount(row.value) }}</span></td>
           </tr>
           {% endfor %}
-          <tr class="total-row"><th scope="row">Joint total</th><td class="col-hide-sm"></td><td class="num">{% if joint.total.is_floor %}at least {% endif %}{{ joint.total.value | money }}</td></tr>
+          <tr class="total-row"><th scope="row">Joint total</th><td class="col-hide-sm"></td><td class="num">{{ worth_amount(joint.total) }}</td></tr>
         </tbody>
       </table>
     </div>

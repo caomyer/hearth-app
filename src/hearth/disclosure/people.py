@@ -119,8 +119,12 @@ class PersonView:
         return tuple(description for description, shared in self.shares if not shared)
 
     @property
-    def joint_total(self) -> Decimal:
-        return sum((j.total.value for j in self.joint if isinstance(j.total, Worth)), Decimal(0))
+    def joint_total(self) -> Decimal | None:
+        """What the joint accounts the viewer sees add up to; None while one is not known."""
+        totals = [j.total for j in self.joint if isinstance(j.total, Worth)]
+        if not all(total.is_known for total in totals):
+            return None
+        return sum((total.value for total in totals), Decimal(0))
 
 
 def person(h: Household, username: str) -> PersonView:
@@ -265,6 +269,7 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
         value=Worth(
             sum((p.value for p in positions if p.value is not None), Decimal(0)),
             tuple(p.holding.commodity for p in positions if p.freshness is Freshness.UNPRICED),
+            1 if account.ledger_account in h.books.awaiting else 0,
         ),
         stale=any(p.freshness is Freshness.STALE for p in positions),
         since=Month.of(coverage.spans[0].earliest) if coverage and coverage.spans else None,

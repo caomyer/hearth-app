@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, asof, failure_alert, private, part_avatar, as_table, priced_from_note, unreviewed_sub, unreviewed_caveat %}
+{% from "_macros.html" import delta, hero_value, worth_amount, asof, failure_alert, private, part_avatar, as_table, priced_from_note, unreviewed_sub, unreviewed_caveat %}
 {% set h = household %}
 {% set head = h.headline %}
 {% set books = status.books %}
@@ -25,13 +25,25 @@
   </div>
   {% endif %}
 
+  {% if not h.connected %}
+  {# A household on its first day: nothing anyone could add up, so no figure at all, not a
+     figure of zero. #}
+  <section class="empty empty-hero" aria-labelledby="e-h">
+    <span class="glyph" aria-hidden="true"><svg><use href="#i-link"/></svg></span>
+    <h2 id="e-h">Nothing is connected yet</h2>
+    <p>The household's figures come from the banks its members connect, so there is nothing to add up yet. Connect yours to begin; each member connects their own, and what they choose to share shows here.</p>
+    <div class="row wrap mt-4" style="justify-content: center">
+      <a class="btn btn-primary btn-lg" href="/connect"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect a bank</a>
+    </div>
+  </section>
+  {% else %}
   <section class="panel" aria-labelledby="nw-h">
     <div class="panel-body" style="padding-top: var(--s-6)">
       <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
         <div>
           <div class="hero">
             <h2 id="nw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth{% if head.is_partial %}, without {{ head.without | names("name") }}{% endif %}</h2>
-            {{ hero_value(head.value, status, head.without, head.unpriced) }}
+            {{ hero_value(head.value, status, head.without, head.unpriced, head.awaiting) }}
             {% if head.is_partial %}
             <p class="muted mt-2 measure">{{ head.without | names("name") }} {{ "does" if head.without | length == 1 else "do" }} not share net worth with you, so there is no household total. This is everyone else.</p>
             {% else %}
@@ -71,14 +83,14 @@
               {% set hue = "" if row.part.hue == "who-1" else " " ~ row.part.hue %}
               <tr>
                 <th scope="row"><span class="who{{ hue }}">{{ row.part.name }}{% if row.part.is_viewers and not row.part.is_joint %} (you){% endif %}{% if not row.part.is_joint %}, excluding joint{% endif %}</span>{% if row.net_worth is withheld %}<span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared with you</span>{% endif %}</th>
-                <td class="num{% if row.net_worth is withheld %} priv{% endif %}">{% if row.net_worth is withheld %}Not included{% else %}{{ row.net_worth.value | dollars }}{% endif %}</td>
+                <td class="num{% if row.net_worth is withheld %} priv{% endif %}">{% if row.net_worth is withheld %}Not included{% else %}{{ worth_amount(row.net_worth, dollars_only=true) }}{% endif %}</td>
               </tr>
               {% endfor %}
-              <tr class="total-row"><th scope="row">Known so far</th><td class="num">{{ head.value | dollars }}</td></tr>
+              <tr class="total-row"><th scope="row">Known so far</th><td class="num">{{ head.value | dollars if head.is_known else "Not known yet" }}</td></tr>
             </tbody>
           </table>
         </div>
-        {% else %}
+        {% elif h.history %}
         <figure>
           <figcaption>
             <h3 id="nw-t" style="font-size: var(--t-sm); line-height: var(--lh-sm)">Net worth, end of each month</h3>
@@ -93,6 +105,11 @@
           {% endif %}
           {{ as_table("Household net worth at the end of each month", ("Month end", "Net worth"), history_rows) }}
         </figure>
+        {% else %}
+        <div>
+          <h3 class="sm" style="font-weight: 600">Net worth, end of each month</h3>
+          <p class="sm muted mt-2">The line appears once hearth has the history of every account behind it.</p>
+        </div>
         {% endif %}
       </div>
     </div>
@@ -103,7 +120,7 @@
     <section class="panel" aria-labelledby="sp-h">
       <div class="panel-head">
         <h2 id="sp-h">Spending by month</h2>
-        <p class="finding">{% if sp.covered %}{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% else %}The ledger does not reach far enough into {{ month_name }} to say what it has come to.{% endif %}{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
+        <p class="finding">{% if sp.covered %}{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% else %}Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.{% endif %}{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
       </div>
       <div class="panel-body">
         <div class="figs" style="margin-bottom: var(--s-5)">
@@ -130,12 +147,15 @@
             <p class="fig-value muted">&ndash;</p>
             {% if sp.saved_without %}
             <p class="fig-sub">{{ private("Not shared by " ~ (sp.saved_without | names("name"))) }}</p>
+            {% elif not sp.saved_covered %}
+            <p class="fig-sub">History incomplete</p>
             {% else %}
             <p class="fig-sub">No income that month</p>
             {% endif %}
             {% endif %}
           </div>
         </div>
+        {% if sp.charted %}
         <figure>
           <figcaption class="vh" id="sp-t">Household spending per month, {{ first_bar_label }} to {{ last_bar_label }}</figcaption>
           <div class="chart-wrap">
@@ -149,6 +169,9 @@
           </div>
           {{ as_table("Household spending per month", ("Month", "Spent"), spending_rows) }}
         </figure>
+        {% else %}
+        <p class="sm muted">The chart appears once hearth has a whole month of spending from every account behind it.</p>
+        {% endif %}
       </div>
       {% if sp.leaves_out_unassigned %}
       <div class="panel-foot"><span>Some spending went through accounts nobody has claimed, or several people's at once. It is in nobody's total, so it is not counted here.</span><a href="/settings/connections">Assign accounts</a></div>
@@ -204,6 +227,8 @@
     </section>
   </div>
 
+  {% endif %}
+
   <section class="panel mt-4" aria-labelledby="mem-h">
     <div class="panel-head">
       <h2 id="mem-h">Members</h2>
@@ -227,7 +252,7 @@
             <td class="num"><span class="priv-line" style="justify-content: flex-end"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</span></td>
             <td class="num col-hide-sm"></td>
             {% else %}
-            <td class="num"><span class="primary">{% if row.net_worth.is_floor %}at least {% endif %}{{ row.net_worth.value | dollars }}</span><span class="second">excluding joint</span></td>
+            <td class="num"><span class="primary">{{ worth_amount(row.net_worth, dollars_only=true) }}</span><span class="second">excluding joint</span></td>
             <td class="num col-hide-sm">{{ delta(row.change, "") if row.change is not withheld else "" }}</td>
             {% endif %}
           </tr>
@@ -240,7 +265,7 @@
             <td class="num"><span class="priv-line" style="justify-content: flex-end"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</span></td>
             <td class="num col-hide-sm"></td>
             {% else %}
-            <td class="num"><span class="primary">{% if row.net_worth.is_floor %}at least {% endif %}{{ row.net_worth.value | dollars }}</span></td>
+            <td class="num"><span class="primary">{{ worth_amount(row.net_worth, dollars_only=true) }}</span></td>
             <td class="num col-hide-sm">{{ delta(row.change, "") if row.change is not withheld else "" }}</td>
             {% endif %}
           </tr>

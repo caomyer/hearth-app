@@ -58,7 +58,7 @@ def household_page(view: HouseholdView) -> dict[str, object]:
 
 
 def household_charts(view: HouseholdView) -> dict[str, Markup]:
-    out = {"net_worth": _month_end_line(view, "nw-t")}
+    out = {"net_worth": _month_end_line(view, "nw-t")} if view.history else {}
     bars = view.spending.bars
     points = [
         charts.ChartPoint(

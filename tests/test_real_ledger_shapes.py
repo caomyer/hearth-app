@@ -229,7 +229,7 @@ def test_a_statement_closing_on_the_last_day_of_a_month_leaves_that_month_whole(
     assert "History incomplete" in page
     assert "Oct, to the 18th (history incomplete)" in page
     assert "October so far is" not in page
-    assert "The ledger does not reach far enough into October" in page
+    assert "hearth does not have all of October's transactions" in page
 
 
 def test_a_members_own_month_the_ledger_has_not_reached_is_never_a_real_nothing(
@@ -247,7 +247,7 @@ def test_a_members_own_month_the_ledger_has_not_reached_is_never_a_real_nothing(
     assert "History incomplete" in you
     assert "typical by the 18th" not in you
     assert "a typical October at this point" not in you
-    assert "The ledger does not reach far enough into October" in you
+    assert "hearth does not have all of October's transactions" in you
     assert "(today)" not in you
     assert 'id="pace-t"' not in you
     assert "No spending yet this month" not in you

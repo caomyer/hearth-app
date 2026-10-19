@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +26,9 @@ from hearth.vault.secret import Secret
 from hearth.web.deps import SESSION_COOKIE
 from tests import household
 from tests.vault.conftest import MemoryKeyStore
+
+if TYPE_CHECKING:
+    from tests.firstday import FirstDay
 
 
 class FakeClock:
@@ -75,7 +79,7 @@ class World:
     @property
     def bookkeeper_establish(self) -> books.Establish:
         """How this world's books are recomputed, for a bookkeeper of a test's own."""
-        return books.from_ledger(self.ledger, self.settings.database, rulings=rulings_in)
+        return books.from_household(self.settings, rulings=rulings_in)
 
     def connect(self) -> sqlite3.Connection:
         return db.connect(self.settings.database)
@@ -234,9 +238,7 @@ def world(tmp_path: Path, clock: FakeClock) -> World:
             store.record(Quote(symbol, day, price, "USD", "eodhd", "test", clock()))
     finally:
         conn.close()
-    bookkeeper = books.Bookkeeper(
-        books.from_ledger(ledger, settings.database, rulings=rulings_in), clock
-    )
+    bookkeeper = books.Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
     bookkeeper.recompute()
     assert bookkeeper.status.failure is None, bookkeeper.status.failure
     fake = FakePlaid(institutions(), today=lambda: clock().date())
@@ -264,3 +266,11 @@ def world(tmp_path: Path, clock: FakeClock) -> World:
         world.item_ids[p.username] = link(world, p.username, f"ins_{p.username}")
     waits.seconds.clear()
     return world
+
+
+@pytest.fixture
+def fresh(tmp_path: Path, clock: FakeClock) -> FirstDay:
+    """A household on its first day: members, no ledger, nothing connected (`tests.firstday`)."""
+    from tests.firstday import first_day
+
+    return first_day(tmp_path, clock)

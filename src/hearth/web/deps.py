@@ -136,7 +136,7 @@ def disclosure(app: App, conn: Conn, session: Annotated[Session, Depends(signed_
 def selected_month(app: App, month: str | None = None) -> Month:
     """The month asked for, or the current one. A malformed month is simply not there."""
     if month is None:
-        return Month.of(app.clock().date())
+        return Month.of(app.clock().astimezone().date())
     try:
         return Month.parse(month)
     except ValueError:

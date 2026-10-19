@@ -279,11 +279,14 @@ def test_an_account_carries_its_own_entries_past_where_its_connection_stopped(
     assert _covered(world, "casey")[-3:] == [(10, True), (11, False), (12, False)]
 
 
-def test_an_account_the_ledger_has_not_opened_holds_nothing_back(world: World) -> None:
+def test_an_account_filed_but_not_yet_booked_is_not_vouched_for_and_not_known_yet(
+    world: World,
+) -> None:
     """Casey's connection booked Casey's checking through Dec 2, and Casey files another of its
-    accounts into a new ledger account the books do not hold yet. That account holds nothing
-    the connection booked, so the connection says nothing about it, and nothing of it is in
-    any figure: it holds nothing back."""
+    accounts into a new ledger account. Hearth's books open it with nothing booked in it, so the
+    connection's sync vouches only for the checking account, and the new account, whose
+    balance the books do not hold, leaves Casey's months not known rather than whole
+    (`books.awaiting`)."""
     _everyone_else_current(world)
     _feed(world, "casey", "Capybara Current", "Assets:Zq:CaseyChecking")
     with world.connector("casey") as connector:
@@ -300,7 +303,8 @@ def test_an_account_the_ledger_has_not_opened_holds_nothing_back(world: World) -
     books = world.bookkeeper.status.books
     assert books is not None
     assert set(books.synced) == {"Assets:Zq:CaseyChecking"}
-    assert _covered(world, "casey")[-2:] == [(11, True), (12, True)]
+    assert books.awaiting == {new}
+    assert _covered(world, "casey")[-2:] == [(11, False), (12, False)]
     assert "only as current as that" not in world.signed_in("casey").get("/you").text
 
 
@@ -344,7 +348,7 @@ def test_anyone_else_reads_the_month_alone_and_no_lag_notice_at_all(world: World
 
 EXPIRED_HELP = (
     "An expired connection brings in nothing until you reconnect it; your figures carry on from"
-    " what is already in your books, and each says where the data behind it stops. Nobody else is"
+    " what hearth already has, and each says where the data behind it stops. Nobody else is"
     " told that a connection stopped or which one: members you share transactions with see where"
     " your accounts' data stops, and everyone else sees only the month."
 )
@@ -579,3 +583,47 @@ def test_a_payment_another_connection_booked_never_revives_a_stopped_card(
     ends = disclosure_for(world, "casey").you().ends
     assert ends is not None
     assert ends.day == date(2026, 10, 9)
+
+
+def test_a_quiet_account_in_a_current_part_has_no_transactions_this_month(world: World) -> None:
+    """Casey's card has nothing since Oct 3, but Casey's checking moved in November: the part
+    is current, so the card's empty November is a fact, not a gap."""
+    _moves(world, (date(2026, 11, 10), "Assets:Zq:CaseyChecking"))
+    _today(world, date(2026, 11, 20))
+    world.recompute()
+
+    page = world.signed_in("casey").get(f"/accounts/{world.account_ids['casey_card']}").text
+
+    assert f"No transactions in {Month(2026, 11).label}." in page
+    assert "Not known yet" not in page
+
+
+def test_a_newly_connected_account_leaves_a_quiet_siblings_month_known(world: World) -> None:
+    """Casey files a newly connected account beside the inherited ones; it has nothing in the
+    books yet. That says nothing of Casey's quiet card, whose empty November is still a fact,
+    while the new account's own page still says its month is not known."""
+    _moves(world, (date(2026, 11, 10), "Assets:Zq:CaseyChecking"))
+    with world.connector("casey") as connector:
+        row = next(r for r in connector.mapping().rows if r.account.name == "Chimera Credit")
+        new = next(t.ledger_account for t in row.targets if t.is_new)
+        connector.confirm(
+            [Mapping(row.account.account_id, NEW, row.chosen_owners, confirm=True, path=new)]
+        )
+    _today(world, date(2026, 11, 20))
+    world.recompute()
+    books = world.bookkeeper.status.books
+    assert books is not None
+    assert books.awaiting == {new}
+    casey = world.signed_in("casey")
+
+    card = casey.get(f"/accounts/{world.account_ids['casey_card']}").text
+    conn = world.connect()
+    try:
+        fresh = next(a.id for a in accounts.all_accounts(conn) if a.ledger_account == new)
+    finally:
+        conn.close()
+    connected = casey.get(f"/accounts/{fresh}").text
+
+    assert f"No transactions in {Month(2026, 11).label}." in card
+    assert "Not known yet" not in card
+    assert "Not known yet" in connected

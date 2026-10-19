@@ -16,12 +16,18 @@ class Settings:
     signing_key: bytes
     # Set when served over HTTPS, so the session cookie is never sent in clear.
     secure_cookies: bool = False
-    # The beancount ledger hearth reads every figure from. Never written to.
+    # A beancount ledger of the household's own, for hearth to inherit: optional, read and
+    # never written. Without one, hearth keeps the books itself (``hearth.ownbooks``).
     ledger: Path | None = None
 
     @property
     def database(self) -> Path:
         return self.data_dir / "hearth.sqlite3"
+
+    @property
+    def books_file(self) -> Path:
+        """The books as hearth keeps them, written on every recompute and never read back."""
+        return self.data_dir / "books.beancount"
 
     @property
     def feed_database(self) -> Path:

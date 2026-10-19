@@ -14,7 +14,8 @@
     <tr>
       <th scope="row"><a class="primary" href="/accounts/{{ row.id }}">{{ row.name }}</a>{% if row.owners | length > 1 %}<span class="second">{{ row.owners | names }}</span>{% endif %}</th>
       <td class="col-hide-sm muted">
-        {% if not row.since %}No transactions yet
+        {% if not row.value.is_known %}Not brought in yet
+        {% elif not row.since %}No transactions yet
         {% else %}
         Since {{ row.since | month_year }}
         {% if row.spans is not withheld and row.spans | length > 1 %}
@@ -24,7 +25,8 @@
       </td>
       <td class="col-hide-sm muted">{{ row.updated | day if row.updated is not withheld and row.updated else "" }}{% if row.stale %}<span class="second" style="color: var(--warn)">A price is stale</span>{% endif %}</td>
       <td class="num">
-        {% if row.value.is_floor %}<span class="primary">at least {{ row.value.value | money }}</span><span class="second" style="color: var(--warn)">{{ row.value.unpriced | join(", ") }} has no price</span>
+        {% if not row.value.is_known %}<span class="primary faint">Not known yet</span><span class="second">Connected, figures not brought in yet</span>
+        {% elif row.value.is_floor %}<span class="primary">at least {{ row.value.value | money }}</span><span class="second" style="color: var(--warn)">{{ row.value.unpriced | join(", ") }} has no price</span>
         {% else %}<span class="primary">{{ row.value.value | money }}</span>{% if row.is_owed %}<span class="second">owed</span>{% endif %}{% endif %}
       </td>
     </tr>
@@ -35,7 +37,7 @@
       <th scope="row">{{ total_label }}</th>
       <td class="col-hide-sm"></td>
       <td class="col-hide-sm"></td>
-      <td class="num">{{ accounts | sum(attribute="value.value") | money }}</td>
+      <td class="num">{% if accounts | rejectattr("value.is_known") | list %}Not known yet{% else %}{% if accounts | selectattr("value.is_floor") | list %}at least {% endif %}{{ accounts | sum(attribute="value.value") | money }}{% endif %}</td>
     </tr>
     {% endif %}
   </tbody>

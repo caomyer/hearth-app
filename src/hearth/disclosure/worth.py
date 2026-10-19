@@ -99,6 +99,11 @@ class NetWorthView:
     """What each visible security is called, from the ledger's commodity directives."""
 
     @property
+    def connected(self) -> bool:
+        """Whether anyone in the household has an account in the books yet."""
+        return bool(self.adds_up)
+
+    @property
     def stale(self) -> tuple[tuple[Holding, Position], ...]:
         return tuple(
             (h, p) for h in self.holdings for p in h.held if p.freshness is Freshness.STALE

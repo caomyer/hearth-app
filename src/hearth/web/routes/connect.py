@@ -469,6 +469,8 @@ async def confirm(
             new=NEW,
             problems=PROBLEMS,
         )
+    # Each mapped account is an account in hearth's own books, so they are recomputed.
+    app.bookkeeper.recompute_in_background()
     mapping = mine.mapping()
     if mapping.rows and mapping.confirmed == len(mapping.rows):
         return RedirectResponse("/connect/import", status_code=303)

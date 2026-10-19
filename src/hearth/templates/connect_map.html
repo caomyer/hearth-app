@@ -4,7 +4,7 @@
 {% include "_stepper.html" %}
 
   <h1>Check where each account goes</h1>
-  <p class="lede">Every bank account becomes an account in the household ledger. Confirm each one yourself; nothing is filed under a guess.</p>
+  <p class="lede">Every bank account becomes one of the household's accounts in hearth. Confirm each one yourself; nothing is filed under a guess.</p>
 
   {% include "_outcome.html" %}
 
@@ -13,7 +13,7 @@
     <svg aria-hidden="true"><use href="#i-warn"/></svg>
     <div class="alert-body">
       <p style="color: var(--ink); font-weight: 600">{{ "Two targets differ" if mapping.near | length == 1 else plural(mapping.near | length, "pair") ~ " of targets differ" }} by one word.</p>
-      <p>{% for a, b in mapping.near %}<code>{{ a }}</code> and <code>{{ b }}</code>{{ "; " if not loop.last else "." }}{% endfor %} A swap here would go unnoticed because both are real accounts. Check the balances below match the bank before you confirm.</p>
+      <p>{% for a, b in mapping.near %}<code>{{ a }}</code> and <code>{{ b }}</code>{{ "; " if not loop.last else "." }}{% endfor %} {% if mapping.near_are_new %}The names differ by one word, so check each account is going where you mean before you confirm.{% else %}A swap here would go unnoticed because both are real accounts. Check the balances below match the bank before you confirm.{% endif %}</p>
     </div>
   </div>
   {% endif %}
@@ -47,7 +47,7 @@
             {% if t.is_new %}
             <option value="{{ new }}"{% if t == row.chosen %} selected{% endif %}>New ledger account</option>
             {% else %}
-            <option value="{{ t.ledger_account }}"{% if t == row.chosen %} selected{% elif t.taken %} disabled{% endif %}>{{ t.ledger_account }}{% if t.taken %} (already receives transactions from another connection){% endif %}</option>
+            <option value="{{ t.ledger_account }}"{% if t == row.chosen %} selected{% elif t.taken %} disabled{% endif %}>{{ t.ledger_account }}{% if t.taken %} (another connected account already goes here){% endif %}</option>
             {% endif %}
             {% endfor %}
           </select>
@@ -59,9 +59,9 @@
           </div>
           {% endif %}
           <p class="xs faint mt-1" id="h-{{ n }}">
-            {%- if row.offers_new %}<span data-when-new{% if new_hidden %} hidden{% endif %}>Every report shows it by this name</span><span data-when-existing{% if not new_hidden %} hidden{% endif %}>Already in your books; its owners stay as they are</span>
-            {%- elif row.chosen.taken %}Already receives transactions from another connection
-            {%- else %}Already in your books; its owners stay as they are{% endif -%}
+            {%- if row.offers_new %}<span data-when-new{% if new_hidden %} hidden{% endif %}>The name hearth files this account under in the accounting file it keeps, which you can open to check any figure. The suggestion is fine to keep.</span><span data-when-existing{% if not new_hidden %} hidden{% endif %}>Already in hearth; its owners stay as they are</span>
+            {%- elif row.chosen.taken %}Another connected account already goes here
+            {%- else %}Already in hearth; its owners stay as they are{% endif -%}
           </p>
           {% set owner_hidden = row.offers_new and new_hidden %}
           <div class="map-meta"{% if row.offers_new %} data-when-new{% if new_hidden and not row.name_problem %} hidden{% endif %}{% endif %}>

@@ -1,11 +1,12 @@
-# Serving the household's own ledger
+# Inheriting the household's own ledger
 
-`hearth demo` serves an invented household.
-This is how to serve the real one, read-only, and what changes when the ledger is real.
+Hearth keeps the books itself, and a household with no ledger needs nothing here (`docs/books.md`).
+A household that already has a beancount ledger may inherit it instead: hearth reads it, read-only, and lays its own entries over it.
+This is how, and what changes when the ledger is real.
 
 ## Point hearth at the ledger
 
-Hearth reads one beancount file, named by `HEARTH_LEDGER`, and everything it includes.
+Hearth inherits one beancount file, named by `HEARTH_LEDGER`, and everything it includes.
 For a ledger built by beancount_nextgen's statement import, that file is the run's `check.beancount`, not `ledger.beancount`:
 `check.beancount` includes both the booked entries and `pending.beancount`, the rows the import set aside, which are what the review page lists.
 Pointing at `ledger.beancount` alone leaves the review queue empty and every balance short by whatever is pending.
@@ -20,25 +21,25 @@ Keep it apart from the ledger's data root, and outside any cloud-synced folder.
 
 ## Say who owns each account
 
-Nobody sees an account until it is claimed, so a freshly pointed hearth shows every member nothing.
+Nobody sees an inherited account until it is claimed, so a freshly pointed hearth shows every member nothing.
 Ownership lives in hearth's database, never in the ledger, because it decides who may see what.
 
 ```sh
 uv run hearth add-member <username> --name "<name>" --admin   # the first admin
 uv run hearth add-member <username> --name "<name>"           # each other member
-uv run hearth accounts                                        # every Assets and Liabilities account, and its owners
+uv run hearth accounts                                        # every Assets and Liabilities account in the books, and its owners
 uv run hearth add-account <ledger account> --name "<what the household calls it>" --owner <username>
 uv run hearth add-account <joint ledger account> --name "<name>" --owner <username> --owner <username>
 uv run hearth serve
 ```
 
-`add-account` refuses an account the ledger does not open, a member who does not exist, and an account already claimed: a claim is never silently reassigned.
+`add-account` refuses an account the books do not open, a member who does not exist, and an account already claimed: a claim is never silently reassigned.
 An account a member connects through Plaid instead can be filed into a new ledger account on the mapping page, which records the same name (`docs/connections.md`).
 Each claim is recorded in the activity log against every owner.
 
 ## Read-only, and how that is kept
 
-Hearth never writes to the ledger or the directory it lives in.
+Hearth never writes to the inherited ledger or the directory it lives in; what it writes is its own books file, in its data directory, which includes the ledger by path (`docs/books.md`).
 That includes a write beancount itself would make: its default loader keeps a `.<name>.picklecache` beside the ledger whenever a load takes over a second, and deletes one it finds stale.
 Hearth loads through beancount's uncached path instead, and `tests/test_books.py` holds it to that.
 

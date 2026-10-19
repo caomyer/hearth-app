@@ -318,6 +318,13 @@ class ToMap:
 class MappingView:
     rows: tuple[ToMap, ...]
     near: tuple[tuple[str, str], ...]
+    existing: frozenset[str] = frozenset()
+    """The ledger accounts the page offers that the books already have."""
+
+    @property
+    def near_are_new(self) -> bool:
+        """Whether every name a word apart is a new account, none of them already real."""
+        return not any(name in self.existing for pair in self.near for name in pair)
 
     @property
     def confirmed(self) -> int:
@@ -492,6 +499,7 @@ class Connector:
         return MappingView(
             rows=tuple(replace(row, near=row.chosen.ledger_account in flagged) for row in rows),
             near=tuple(near),
+            existing=frozenset(offered),
         )
 
     def import_view(self) -> ImportView:
@@ -805,7 +813,7 @@ class Connector:
         return item
 
     def _item_view(self, item: Item, feed: Feed) -> ItemView:
-        requested_from = item.linked_at.date() - timedelta(days=item.days_requested - 1)
+        requested_from = item.requested_from
         complete = item.history is History.COMPLETE
         uploads = dict(
             self._db.execute(

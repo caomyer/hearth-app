@@ -16,7 +16,7 @@
           <p class="label">What is kept</p>
           <ul class="sm muted mt-2" style="padding-left: 1.2em">
             <li>Every transaction already brought in{% if item.accounts %}: {% for a in item.accounts %}{{ "{:,}".format(a.coverage.held.transactions) }} for {{ a.kind | lower }}{% if a.mask %} &bull;&bull;&nbsp;{{ a.mask }}{% endif %}{{ ", " if not loop.last }}{% endfor %}{% endif %}. They are kept on this machine, not at Plaid.</li>
-            <li>Everything already in your ledger, and every review decision.</li>
+            <li>Every account it brought into hearth, and every review decision.</li>
             <li>Where each account was mapped, for when you connect again.</li>
           </ul>
         </div>

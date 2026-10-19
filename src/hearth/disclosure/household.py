@@ -49,6 +49,14 @@ class Headline:
     "except one" never says anything about positions their owner keeps private."""
     ends: DataEnds | None
     """Where the data behind the total stops, over the parts it adds up."""
+    awaiting: int | None = 0
+    """Accounts behind the total whose balance the books do not hold yet; while there are
+    any, the total is not known (`Worth.awaiting`). None when a part with some withholds
+    its count, so the total never sums a count the viewer may not see."""
+
+    @property
+    def is_known(self) -> bool:
+        return self.awaiting == 0
 
     @property
     def is_partial(self) -> bool:
@@ -93,13 +101,24 @@ class SpendingPanel:
     earned_without: tuple[PartRef, ...]
     earned_unreviewed: Unreviewed
     saved_rate: Decimal | None
+    """Last month's saving as a share of its income; None when there was no income, or when
+    whether there was is not known (`saved_covered`)."""
     saved_month: Month
     saved_without: tuple[PartRef, ...]
+    saved_covered: bool
+    """Whether last month is known in full for every part behind `saved_rate`, so that no
+    income in it is an established fact rather than history that has not come in."""
     bars: tuple[MonthBar, ...]
     typical: Decimal | None
     leaves_out_unassigned: bool
     """Some spending went through accounts nobody owns, or several owners at once. It is in
     no part, so it is not counted, and its amount is not shown: it may be anyone's."""
+
+    @property
+    def charted(self) -> bool:
+        """Whether any month is known in full. Until one is, a chart would draw months nobody
+        knows as months of nothing, so none is drawn."""
+        return any(bar.covered for bar in self.bars)
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +202,12 @@ class HouseholdView:
     members: tuple[MemberRow, ...]
     joint: tuple[MemberRow, ...]
 
+    @property
+    def connected(self) -> bool:
+        """Whether anyone in the household has an account in the books yet. Until someone
+        does, there is no figure to show: a total over nothing is not a total of zero."""
+        return any(row.connected for row in (*self.members, *self.joint))
+
 
 def household(h: Household) -> HouseholdView:
     parts = [part for part in h.parts if part.accounts]
@@ -199,6 +224,11 @@ def household(h: Household) -> HouseholdView:
     )
 
 
+def _awaiting(worths: Sequence[Worth]) -> int | None:
+    counts = [worth.awaiting for worth in worths]
+    return None if None in counts else sum(count for count in counts if count is not None)
+
+
 def headline(h: Household, parts: Sequence[Part]) -> Headline:
     """Household net worth over the parts whose net worth the viewer may see."""
     shown = [(part, h.disclosed_worth(part)) for part in parts]
@@ -206,6 +236,7 @@ def headline(h: Household, parts: Sequence[Part]) -> Headline:
     return Headline(
         ends=h.ends([part for part, _ in visible]),
         value=sum((worth.value for _, worth in visible), Decimal(0)),
+        awaiting=_awaiting([worth for _, worth in visible]),
         unpriced=tuple(
             f"{h.part_ref(part).name}: {missing}"
             for part, worth in visible
@@ -244,7 +275,7 @@ def _composition(h: Household, parts: Sequence[Part]) -> tuple[Slice, ...]:
     slices = []
     for part in parts:
         worth = h.disclosed_worth(part)
-        if not isinstance(worth, Worth) or worth.is_floor:
+        if not isinstance(worth, Worth) or worth.is_floor or not worth.is_known:
             return ()
         slices.append(Slice(h.part_ref(part), worth.value))
     return tuple(slices)
@@ -290,6 +321,7 @@ def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> Sp
     past = figures.past_months(month, 12)
     full = {m: figures.month_flows(h.books, h.ownership, m) for m in past}
     last = full[past[-1]]
+    saved_covered = _covers(h, savers, past[-1])
     earned_last = sum((last.earned(p.owners) for p in savers), Decimal(0))
     spent_last = sum((last.spent(p.owners) for p in savers), Decimal(0))
     bars = [
@@ -309,9 +341,12 @@ def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> Sp
         earned=_sum(this_month, earners, MonthFlows.earned),
         earned_without=earned_without,
         earned_unreviewed=_unreviewed(h, earners, this_month, MonthFlows.earned_unreviewed),
-        saved_rate=(earned_last - spent_last) / earned_last if earned_last > 0 else None,
+        saved_rate=(
+            (earned_last - spent_last) / earned_last if saved_covered and earned_last > 0 else None
+        ),
         saved_month=past[-1],
         saved_without=saved_without,
+        saved_covered=saved_covered,
         bars=tuple(bars),
         typical=figures.typical([bar.spent for bar in bars[:-1] if bar.covered]),
         leaves_out_unassigned=bool(this_month.spending.unattributed),

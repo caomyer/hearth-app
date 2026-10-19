@@ -79,6 +79,7 @@ Plaid prices positions for today only, so nothing here implies a price history.
 ## Mapping, confirmed
 
 Each account a connection reaches feeds exactly one ledger account, confirmed by its member, never inferred.
+A confirmed account is an account in hearth's own books from the next recompute, which confirming starts (`docs/books.md`).
 The choices are a new ledger account, owned by the member and any co-owners they pick, or an account they already own, whose owners stay as they are.
 A new account starts as a proposed ledger name the member can edit, with a name for the household that defaults to the institution's and the bank's names for it and is kept where `hearth add-account --name` keeps it.
 When the bank calls several of its accounts the same, such as several cards, the proposed ledger name and the default household name of each carry its last digits; an account called like no other keeps the plain name.
@@ -127,7 +128,7 @@ The daily sync and `hearth plaid sync` also leave alone an Item whose history is
 ## What is not done yet
 
 - The import that turns fetched transactions and uploaded statements into ledger entries and review rows.
-  Until it exists, connected history waits in the feed store; the import page says so.
+  Until it exists, connected history waits in the feed store, and each mapped account is in the books with nothing in it yet; the import page says so.
   Every entry it books from a connection must carry `source: "plaid:<item_id>:<transaction id>"` (`connections.plaid_source`): only such entries let a connection's last sync vouch for an account's coverage (`docs/real-ledger.md`).
   The format is parsed (`connections.item_of`), not a loose convention, so write it only through `plaid_source`.
   The import must also keep one invariant that nothing records today: a sync counts as booked only once every row it fetched is in the books.

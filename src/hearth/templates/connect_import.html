@@ -6,7 +6,7 @@
 
 <div{% if imported.running or imported.following %} hx-get="/connect/import" hx-trigger="every 3s" hx-select="#imp" hx-target="#imp" hx-swap="outerHTML"{% endif %}>
   <h1>Bringing in two years</h1>
-  <p class="lede">This takes a few minutes. Each bank's history is kept on this machine as it arrives, and nothing is booked until you review it.</p>
+  <p class="lede">This takes a few minutes. Each bank's history is kept on this machine as it arrives.</p>
 
   <section class="panel mt-6" aria-labelledby="imp-h" id="imp">
     <div class="panel-head">
@@ -29,7 +29,7 @@
           <span class="st" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
           <div>
             <p style="font-weight: 500">Recorded today's balances from the banks</p>
-            <p class="sm faint">Each one is checked against the ledger once the import has booked the history.</p>
+            <p class="sm faint">Kept as the banks sent them. No figure uses them yet.</p>
           </div>
           <span class="sm muted">{{ balances }} of {{ accounts }}</span>
         </li>
@@ -43,8 +43,8 @@
         <li>
           <span class="st" aria-hidden="true"><svg><use href="#i-review"/></svg></span>
           <div>
-            <p style="font-weight: 500">Waiting for the import</p>
-            <p class="sm faint">The import turns these transactions into ledger entries and sets each one aside for your review. Suggestions only: nothing is booked until you decide.{% if imported.unmapped %} {{ plural(imported.unmapped, "account is", "accounts are") }} not confirmed yet, so {{ "it is" if imported.unmapped == 1 else "they are" }} left out.{% endif %}</p>
+            <p style="font-weight: 500">Not in your figures yet</p>
+            <p class="sm faint">What these banks sent is kept on this machine, but it is not in your figures or in Review yet, so your accounts show as not known yet.{% if imported.unmapped %} {{ plural(imported.unmapped, "account is", "accounts are") }} not confirmed yet, so {{ "it is" if imported.unmapped == 1 else "they are" }} left out.{% endif %}</p>
           </div>
         </li>
       </ol>
@@ -57,9 +57,9 @@
       <h2 id="ho-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Your first review</h2>
       {% if review_count %}
       <p class="fig-value tnum">{{ "{:,}".format(review_count) }} <span class="lg" style="font-weight: 400; color: var(--ink-2); letter-spacing: 0">already waiting in Review</span></p>
-      <p class="muted mt-2 measure">From earlier imports. What these banks sent joins them once the import has run, grouped so that most groups are one decision: the same grocery store, your paycheck, the card payment.</p>
+      <p class="muted mt-2 measure">From before. What these banks sent is not among them yet.</p>
       {% else %}
-      <p class="muted mt-2 measure">Once the import has run, your transactions wait in Review, grouped so that most groups are one decision. Nothing from these banks is in your figures until then.</p>
+      <p class="muted mt-2 measure">Nothing from these banks is in Review yet. Transactions in your figures wait there, counted at their suggested category until you check them, grouped so that most groups are one decision.</p>
       {% endif %}
       <div class="row wrap mt-6">
         <a class="btn btn-primary btn-lg" href="/review">{{ "Start with the largest groups" if review_count else "Go to Review" }}<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>

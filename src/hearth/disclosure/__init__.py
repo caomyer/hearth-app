@@ -42,7 +42,7 @@ from hearth.disclosure.people import (
     person_of,
 )
 from hearth.disclosure.worth import NetWorthView, net_worth
-from hearth.figures import Pace
+from hearth.figures import Pace, covers
 from hearth.members import Member, MemberId
 from hearth.months import Month
 from hearth.reports.balances import AssertionCheck
@@ -135,6 +135,9 @@ class AccountView:
     balance: Disclosed[Worth]
     month: Month
     days: Disclosed[tuple[Day, ...]]
+    covered: Disclosed[bool]
+    """Whether the account's history is known in full for `month`, so that no transactions
+    in it is a fact. It is decided by its transactions, so it goes with them."""
 
 
 class Disclosure:
@@ -194,6 +197,12 @@ class Disclosure:
             Facet.ACCOUNT_BALANCES, account.owners, lambda: account_rows(h, [account])[0]
         )
         coverage = next((c for c in h.books.coverage if c.account == account.ledger_account), None)
+        # Judged with its part, as `covers` asks, so a quiet month is not read as a gap; but
+        # another account with no history yet says nothing of whether this one is whole.
+        part = next(p for p in h.parts if p.owners == account.owners)
+        judged = [
+            a for a in part.accounts if a == account or a.ledger_account not in h.books.awaiting
+        ]
         return AccountView(
             id=account.id,
             name=account.name,
@@ -206,6 +215,9 @@ class Disclosure:
             month=month,
             days=self._gate.disclose(
                 Facet.TRANSACTIONS, account.owners, lambda: days(h, [account], month)
+            ),
+            covered=self._gate.disclose(
+                Facet.TRANSACTIONS, account.owners, lambda: covers(h.books, judged, month)
             ),
         )
 

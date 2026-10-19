@@ -170,8 +170,8 @@ def test_an_account_is_claimed_once_and_never_reassigned(household: Path) -> Non
 @pytest.mark.parametrize(
     ("arguments", "refusal"),
     [
-        (["Assets:Zq:Typo", "--owner", "avery"], "the ledger opens no Assets or Liabilities"),
-        (["Expenses:Zq:Food", "--owner", "avery"], "the ledger opens no Assets or Liabilities"),
+        (["Assets:Zq:Typo", "--owner", "avery"], "the books open no Assets or Liabilities"),
+        (["Expenses:Zq:Food", "--owner", "avery"], "the books open no Assets or Liabilities"),
         (["Assets:Zq:Joint", "--owner", "nobody"], "there is no member nobody"),
     ],
 )
@@ -217,9 +217,15 @@ def test_claiming_reads_the_ledger_and_writes_nothing_beside_it(household: Path)
     assert sorted(path.name for path in folder.iterdir()) == before
 
 
-def test_claiming_needs_the_ledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_without_a_ledger_there_is_nothing_to_claim_and_no_file_to_ask_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setenv(DATA_DIR_VARIABLE, str(tmp_path))
     monkeypatch.delenv(LEDGER_VARIABLE, raising=False)
+    main(["add-member", "avery", "--name", "Avery", "--admin"])
+    capsys.readouterr()
 
-    with pytest.raises(SystemExit, match="hearth: set HEARTH_LEDGER"):
-        main(["accounts"])
+    main(["accounts"])
+    assert capsys.readouterr().out == ""
+    with pytest.raises(SystemExit, match="the books open no Assets or Liabilities account"):
+        main(["add-account", "Assets:Zq:Joint", "--name", "Joint", "--owner", "avery"])

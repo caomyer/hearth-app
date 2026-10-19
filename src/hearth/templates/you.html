@@ -33,7 +33,7 @@
   <section class="empty empty-hero" aria-labelledby="e-h">
     <span class="glyph" aria-hidden="true"><svg><use href="#i-link"/></svg></span>
     <h2 id="e-h">Connect a bank to get started</h2>
-    <p>Hearth reads two years of history from each bank you connect, checks the balances, and hands you a review. Your connections are yours alone.</p>
+    <p>Hearth asks each bank you connect for two years of history and keeps it on this machine, and each account it sends becomes one of your accounts here. Your connections are yours alone.</p>
     <div class="row wrap mt-4" style="justify-content: center">
       <a class="btn btn-primary btn-lg" href="/connect"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect a bank</a>
     </div>
@@ -85,11 +85,11 @@
             <h2 id="mynw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Your net worth, excluding joint</h2>
             {{ shared("Net worth total") }}
           </div>
-          {{ hero_value(me.worth.value, status, (), me.worth.unpriced) }}
+          {{ hero_value(me.worth.value, status, (), me.worth.unpriced, me.worth.awaiting) }}
           <div class="hero-meta">
             {{ delta(me.change, since) }}
           </div>
-          {% call asof(books, status, today, notice, 0, me.worth.unpriced, ends=me.ends) %}{% if me.joint %} Joint accounts ({{ me.joint_total | dollars }}), which you own with others, are counted once in the household total instead.{% endif %}{% endcall %}
+          {% call asof(books, status, today, notice, 0, me.worth.unpriced, ends=me.ends) %}{% if me.joint %} Joint accounts{% if me.joint_total is not none %} ({{ me.joint_total | dollars }}){% endif %}, which you own with others, are counted once in the household total instead.{% endif %}{% endcall %}
         </div>
         {% set totals = me.totals %}
         <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
@@ -148,7 +148,7 @@
         <h2 id="pace-h">{{ month_name }} spending, day by day</h2>
         {{ shared("Transactions") }}
         {% if not totals.covered %}
-        <p class="finding">The ledger does not reach far enough into {{ month_name }} to say what it has come to.</p>
+        <p class="finding">Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.</p>
         {% elif totals.over_typical is not none %}
         <p class="finding">You are <strong class="tnum">{{ (totals.over_typical | abs) | dollars }}</strong> {{ "above" if totals.over_typical > 0 else "below" }} a typical {{ month_name }} at this point.</p>
         {% elif me.pace.typical | length == 0 %}
@@ -246,6 +246,8 @@
     <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
       {% if me.days %}
       {{ day_table(me.days, "Your transactions, newest first, grouped by day") }}
+      {% elif not totals.covered %}
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">Not known yet: hearth does not have all of {{ month_name }}'s transactions for your accounts. They appear here once they are in.</p>
       {% else %}
       <p class="muted" style="padding: var(--s-4) var(--s-6)">No transactions yet this month.</p>
       {% endif %}

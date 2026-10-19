@@ -10,7 +10,8 @@ Schema changes are append-only migrations keyed by SQLite's ``user_version``.
 """
 
 import sqlite3
-from collections.abc import Iterator
+import time
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -261,11 +262,15 @@ MIGRATIONS: tuple[str, ...] = (
 )
 
 
+BUSY_FOR = 5.0
+"""How long a statement waits for another connection to let go, as `busy_timeout` says."""
+
+
 def connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path, autocommit=True, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute(f"PRAGMA busy_timeout = {int(BUSY_FOR * 1000)}")
     return conn
 
 
@@ -273,16 +278,42 @@ def initialise(path: Path) -> None:
     """Create the database if needed and bring its schema up to date."""
     conn = connect(path)
     try:
-        conn.execute("PRAGMA journal_mode = WAL")
+        use_wal(conn)
         migrate(conn)
     finally:
         conn.close()
 
 
-def migrate(conn: sqlite3.Connection) -> None:
-    (version,) = conn.execute("PRAGMA user_version").fetchone()
-    for number, script in enumerate(MIGRATIONS[version:], start=version + 1):
+def use_wal(conn: sqlite3.Connection) -> None:
+    """Put the database in write-ahead logging, waiting while another connection holds it.
+
+    Switching needs the database to itself, and SQLite answers "locked" at once rather than
+    wait as it does for other statements, so two processes starting on a new database would
+    otherwise fail one of them.
+    """
+    deadline = time.monotonic() + BUSY_FOR
+    while True:
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+        except sqlite3.OperationalError as error:
+            if "locked" not in str(error) or time.monotonic() > deadline:
+                raise
+            time.sleep(0.01)
+        else:
+            return
+
+
+def migrate(conn: sqlite3.Connection, migrations: Sequence[str] = MIGRATIONS) -> None:
+    """Apply each migration the database has not had, one transaction apiece.
+
+    The version is read inside each migration's transaction, so a process starting up beside
+    another, the server and a command run at the same moment, never applies one twice.
+    """
+    for number, script in enumerate(migrations, start=1):
         with transaction(conn):
+            (version,) = conn.execute("PRAGMA user_version").fetchone()
+            if version >= number:
+                continue
             conn.executescript(script)
             conn.execute(f"PRAGMA user_version = {number}")
 

@@ -96,7 +96,8 @@ Connecting institutions adds three more (`docs/connections.md`):
   Each module receives the gate and asks it before computing anything, so a figure the viewer may not see is never computed into a view.
   Withheld figures are the value-less `WITHHELD` sentinel.
 - Pages under `src/hearth/web/` render only the views `Disclosure` returns, and never touch the books' raw data.
-- Figures come from the books (`src/hearth/books.py`): the beancount ledger as loaded and valued by one recompute, daily and on request, never on page load.
+- Figures come from the books (`src/hearth/books.py`): hearth's own entries over any inherited ledger, as derived and valued by one recompute, daily and on request, never on page load.
+  The books file a recompute writes (`docs/books.md`) holds every member's accounts, so it stays in the data directory, readable by its owner alone, and carries no ownership.
 - Anything that does not exist and anything the viewer may not see raise the same `Concealed`, which renders one fixed not-found page.
   The answer depends on who is asking, never on what was asked for.
 

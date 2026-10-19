@@ -13,11 +13,18 @@
 {% endif %}
 {% endmacro %}
 
+{# A net worth figure in a table: "Not known yet" while an account in it has no history in
+   the books, a floor while a holding has no price, and the figure otherwise. #}
+{% macro worth_amount(w, dollars_only=false) %}{% if not w.is_known %}<span class="faint">Not known yet</span>{% else %}{% if w.is_floor %}at least {% endif %}{{ (w.value | dollars) if dollars_only else (w.value | money) }}{% endif %}{% endmacro %}
+
 {# The figure at display size, held and dimmed while it is being recomputed. What it leaves
    out is attached to the number itself, so it can never read as complete: violet and a lock
    for a part its owner withholds, amber and a clock for a price nobody has. #}
-{% macro hero_value(value, status, withheld=(), unpriced=()) %}
-{% if withheld or unpriced %}
+{% macro hero_value(value, status, withheld=(), unpriced=(), awaiting=0) %}
+{% if awaiting != 0 %}
+<p class="hero-value muted">&ndash;</p>
+<p class="muted mt-2 measure">Not known yet. {% if awaiting is none %}Some connected accounts have{% else %}{{ plural(awaiting, "connected account") }} {{ "has" if awaiting == 1 else "have" }}{% endif %} no balances or transactions in hearth yet. The figure appears once they are brought in; until then there is none to show, not a figure of zero.</p>
+{% elif withheld or unpriced %}
 <div class="hero-partial">
   <p class="hero-value{% if status.recomputing %} is-stale-hold{% endif %}">{{ value | hero }}</p>
   {% for part in withheld %}
@@ -42,7 +49,7 @@
 <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>Computed {{ when(books.computed_at, today) }}{% if price_day %}, with {{ price_day.strftime("%A") }}'s closing prices{% if stale %}, <a class="warn-link" href="/net-worth#stale">except {{ "one" if stale == 1 else stale }}</a>{% endif %}{% endif %}.{{ caller() if caller is defined else "" }}</p>
 {% endif %}
 {% if ends and ends.day %}
-<p class="asof asof-old mt-1"><svg aria-hidden="true"><use href="#i-clock"/></svg>{% if ends.stalest and ends.stalest.is_joint %}The joint accounts stop{% elif ends.stalest and ends.stalest.is_viewers %}Your accounts stop{% elif ends.stalest %}{{ ends.stalest.name }}’s accounts stop{% else %}The accounts behind this stop{% endif %} at {{ ends.day | day }}, so it is only as current as that. Nothing after it has been imported yet.</p>
+<p class="asof asof-old mt-1"><svg aria-hidden="true"><use href="#i-clock"/></svg>{% if ends.stalest and ends.stalest.is_joint %}The joint accounts stop{% elif ends.stalest and ends.stalest.is_viewers %}Your accounts stop{% elif ends.stalest %}{{ ends.stalest.name }}’s accounts stop{% else %}The accounts behind this stop{% endif %} at {{ ends.day | day }}, so it is only as current as that. Nothing after it has come in yet.</p>
 {% elif ends %}
 <p class="asof asof-old mt-1"><svg aria-hidden="true"><use href="#i-clock"/></svg>The accounts behind this figure end in {{ ends.month.label }}.</p>
 {% endif %}

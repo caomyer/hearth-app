@@ -5,12 +5,14 @@ This document records how they get their figures and every decision the design d
 
 ## Where the figures come from
 
-`hearth.books` recomputes the household's books from the beancount ledger at `HEARTH_LEDGER`: at start-up, every morning at 6:00, and when someone presses "Recompute now".
+`hearth.books` recomputes the household's books, hearth's own over a ledger it inherits if there is one (`docs/books.md`): at start-up, every morning at 6:00, when someone presses "Recompute now", and when a member confirms where a connected account goes.
 A page never recomputes, so every figure has an as-of time, which every page states.
 
 A recompute that cannot trust the ledger establishes nothing.
 Beancount reporting an error, or a balance assertion the postings do not reproduce, keeps the previous books on screen, labelled with their time, beside what went wrong.
 Before the first recompute finishes, pages show skeletons in the shape of what is coming and poll quietly until it lands.
+A household with no account in the books yet sees no figure at all on Household and Net worth, but a page that says nothing is connected and offers to connect a bank: a total over nothing is not a total of zero.
+A figure that includes an account with no history in the books yet reads "Not known yet" rather than counting it as zero (`docs/books.md`).
 
 Prices come from the stored price table (`docs/valuation.md`), from the source and from members who entered one by hand.
 A position with no price is never valued at zero: every total that includes it says "at least", and the gap is named.

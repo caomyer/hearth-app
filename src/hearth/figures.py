@@ -392,8 +392,11 @@ def flows_cover(books: Books, accounts: Sequence[Account], month: Month) -> bool
 
     An account that only ever takes transfers (`books.flowing`) adds nothing to spending or
     income, so its quiet months never leave such a figure incomplete; a quiet card still does.
+    So does an account with no history in the books yet (`books.awaiting`): nothing says yet
+    what it spends, so it is judged as one that might.
     """
-    return covers(books, [a for a in accounts if a.ledger_account in books.flowing], month)
+    judged = books.flowing | books.awaiting
+    return covers(books, [a for a in accounts if a.ledger_account in judged], month)
 
 
 FIXED_MONTHS = 3

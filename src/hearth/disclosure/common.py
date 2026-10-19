@@ -105,10 +105,19 @@ class Worth:
 
     value: Decimal
     unpriced: tuple[str, ...]
+    awaiting: int | None = 0
+    """Accounts in the figure whose balance the books do not hold yet (`books.awaiting`).
+    While there are any, the figure is not known: `value` counts them as nothing, so it is
+    never shown. None when there are some but the viewer may not see the part's balances,
+    as how many would say how many accounts its owners have."""
 
     @property
     def is_floor(self) -> bool:
         return bool(self.unpriced)
+
+    @property
+    def is_known(self) -> bool:
+        return self.awaiting == 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,7 +187,16 @@ class Household:
 
     def worth(self, valuation: NetWorth, part: Part) -> Worth:
         mine = figures.worth(valuation, part)
-        return Worth(mine.known_total, self.unpriced(mine, part))
+        awaiting: int | None = self.awaiting(part)
+        if awaiting and not self.gate.may(Facet.ACCOUNT_BALANCES, part.owners):
+            awaiting = None
+        return Worth(mine.known_total, self.unpriced(mine, part), awaiting)
+
+    def awaiting(self, part: Part) -> int:
+        """How many of the part's accounts the books hold nothing for yet. A count, never which:
+        that an account is empty says only that its history is not booked yet. The count is
+        released only with the part's balances (`worth`)."""
+        return sum(1 for a in part.accounts if a.ledger_account in self.books.awaiting)
 
     def unpriced(self, valuation: NetWorth, part: Part) -> tuple[str, ...]:
         """Name the unpriced positions, or only count them when holdings are not shown."""
@@ -201,7 +219,12 @@ class Household:
         def compute() -> Decimal | None:
             now = figures.worth(self.books.today, part)
             then = figures.worth(valuation, part)
-            if not now.complete or not then.complete or not self.reaches(part, valuation):
+            if (
+                not now.complete
+                or not then.complete
+                or self.awaiting(part)
+                or not self.reaches(part, valuation)
+            ):
                 return None
             return now.known_total - then.known_total
 
@@ -255,12 +278,13 @@ class Household:
         if self._priced(parts, self.books.today):
             unpriced = [i for i, v in enumerate(reached) if not self._priced(parts, v)]
             reached = reached[unpriced[-1] + 1 :] if unpriced else reached
-        return [*reached, self.books.today]
+        known = not any(self.awaiting(part) for part in parts)
+        return [*reached, *([self.books.today] if known else [])]
 
     def priced_from(self, parts: Sequence[Part]) -> date | None:
         """The day `history` starts on when it leaves out month ends for want of prices."""
-        history = self.history(parts)
-        if len(history) - 1 == len(self._reached(parts)):
+        history, reached = self.history(parts), self._reached(parts)
+        if not history or history[: len(reached)] == reached:
             return None
         return history[0].as_of
 

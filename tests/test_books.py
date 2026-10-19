@@ -3,6 +3,7 @@ one recompute at a time with none asked for ever dropped."""
 
 import threading
 import time
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -79,6 +80,28 @@ def test_figures_are_as_of_today_however_early_the_ledger_stops() -> None:
     assert computed.as_of == date(2026, 3, 1)
     assert computed.month_ends[-1].as_of == date(2026, 2, 28)
     assert computed.account_ends == {"Assets:Checking": date(2026, 1, 5)}
+
+
+@pytest.fixture
+def pacific(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Hearth's machine in a time zone hours behind UTC, as a household's evening is."""
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.mark.usefixtures("pacific")
+def test_the_books_are_as_of_the_households_own_day_not_greenwich() -> None:
+    # 6:43 in the evening of Oct 18 in the household, already Oct 19 in UTC.
+    evening = datetime(2026, 10, 19, 1, 43, tzinfo=UTC)
+
+    computed = _computed(evening)
+
+    assert computed.as_of == date(2026, 10, 18)
+    assert computed.month_ends[-1].as_of == date(2026, 9, 30)
+    assert not computed.behind(date(2026, 10, 11))
 
 
 def test_an_account_reaches_the_months_of_its_newest_entries_by_their_own_dates() -> None:

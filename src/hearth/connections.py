@@ -26,12 +26,25 @@ from hearth import db
 from hearth.members import MemberId
 
 PLAID = "plaid"
-"""The origin of every entry booked from a connection, as `reports.coverage` reads origins."""
+"""The origin of every entry booked from a connection: the first field of `plaid_source`,
+which is also how `reports.coverage` reads origins.
+
+The format `plaid:<item_id>:<transaction_id>` is a contract between the import that books
+Plaid transactions, which writes it, and coverage's rule that a connection vouches only for
+entries booked from it (`books.vouched`), which parses it back with `item_of`. The tests pin
+it, malformed input included, so neither side drifts.
+"""
 
 
 def plaid_source(item_id: str, transaction_id: str) -> str:
     """The `source` metadata the import must write on an entry booked from Plaid Item
-    `item_id`'s transaction `transaction_id`: `plaid:<item_id>:<transaction id>`."""
+    `item_id`'s transaction `transaction_id`: `plaid:<item_id>:<transaction id>`.
+
+    `item_of` parses it back, so one it could misread is refused: an empty id, or an Item id
+    with a colon, which would move where the Item id ends.
+    """
+    if not item_id or ":" in item_id or not transaction_id:
+        raise ValueError("a Plaid source needs an Item id without a colon and a transaction id")
     return f"{PLAID}:{item_id}:{transaction_id}"
 
 
@@ -40,8 +53,8 @@ def item_of(source: object) -> str | None:
     if not isinstance(source, str):
         return None
     origin, _, rest = source.partition(":")
-    item_id, booked, _ = rest.partition(":")
-    return item_id if origin == PLAID and booked and item_id else None
+    item_id, _, transaction_id = rest.partition(":")
+    return item_id if origin == PLAID and item_id and transaction_id else None
 
 
 class State(StrEnum):
