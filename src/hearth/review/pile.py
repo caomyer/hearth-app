@@ -3,7 +3,8 @@
 Every imported transaction is in the ledger. One nobody has checked is a `!` entry, as
 beancount_nextgen writes them, whose first posting is the bank's and whose second balances it
 against the proposed account, or against `Equity:Review:Unresolved` when nothing could be
-proposed. Metadata carries the row's `review-id`, `review-group`, `model-confidence` and
+proposed (`Equity:Review:TransferPending` for one side of a transfer whose other side is
+missing). Metadata carries the row's `review-id`, `review-group`, `model-confidence` and
 `source`. Together they are the pile: every row a member may review, whether or not anyone has.
 """
 
@@ -17,6 +18,14 @@ from beancount.core.data import Directive, Transaction
 
 UNRESOLVED = "Equity:Review:Unresolved"
 """Where a row sits when nothing could be proposed. Never an account anyone chose."""
+
+TRANSFER_PENDING = "Equity:Review:TransferPending"
+"""Where one side of a transfer sits while its other side is not in the books: a card payment
+whose bank row, or card row, nothing pairs with (``hearth.plaid.pairing``). Never an account
+anyone chose either, so accepting the row as proposed cannot settle it."""
+
+WAITING = frozenset({UNRESOLVED, TRANSFER_PENDING})
+"""The accounts a row balances against while it waits for a member to say where it belongs."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +85,7 @@ def read_pile(entries: Iterable[Directive]) -> list[PileItem]:
                 currency=units.currency,
                 payee=entry.payee,
                 narration=entry.narration or "",
-                proposed=None if proposal.account == UNRESOLVED else proposal.account,
+                proposed=None if proposal.account in WAITING else proposal.account,
                 confidence=confidence if isinstance(confidence, Decimal) else None,
                 source=source if isinstance(source, str) else None,
                 location=where,

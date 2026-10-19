@@ -28,6 +28,20 @@ def test_a_row_with_nothing_proposed_has_no_proposal(pile: list[PileItem]) -> No
     assert unknown.confidence is None
 
 
+def test_one_side_of_a_transfer_waiting_for_the_other_has_no_proposal() -> None:
+    entries, _, _ = loader.load_string(
+        "2026-01-01 open Assets:Bank\n2026-01-01 open Equity:Review:TransferPending\n"
+        '2026-01-02 ! "Payment to card ending in 1111"\n  review-id: "x000000001"\n'
+        '  review-group: "card-payment-unmatched"\n'
+        "  Assets:Bank  -50.00 USD\n  Equity:Review:TransferPending\n"
+    )
+
+    [leg] = read_pile(entries)
+
+    # Accepting it as proposed must not settle it: only naming the other account does.
+    assert leg.proposed is None
+
+
 def test_booked_entries_are_not_on_the_pile() -> None:
     entries, _, _ = loader.load_string(
         "2026-01-01 open Assets:Bank\n2026-01-01 open Expenses:Food\n"

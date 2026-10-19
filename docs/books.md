@@ -51,7 +51,8 @@ The books file includes the inherited ledger by its full path, so the file alone
 ## What the books hold so far
 
 Accounts only.
-Transactions are not booked yet: a payment from a bank account to a card arrives from both sides, and booking both before the import pairs them would count it twice, inflating spending and income together.
+Transactions are not booked yet.
+A payment from a bank account to a card arrives from both sides, and booking both would count it twice, inflating spending and income together; the import books each such pair once, as a transfer, and each side nothing pairs with against `Equity:Review:TransferPending` (`docs/pairing.md`).
 Until they are, an account hearth opened has nothing in the books but its `open`, so its balance is not known there, whatever its bank says.
 Every figure that includes such an account (`books.awaiting`) reads "Not known yet", never a total of zero: the account reaches no month, so spending and income read as incomplete too, and the month-end line is not drawn.
 A viewer who sees only a member's total learns that it is not known, never which account holds it back.

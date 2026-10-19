@@ -5,7 +5,7 @@ thing. Every value is invented."""
 import re
 import sqlite3
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -125,9 +125,10 @@ class FirstDay:
         finally:
             conn.close()
 
-    def map(self, client: TestClient, paths: dict[str, str]) -> None:
+    def map(self, client: TestClient, paths: dict[str, str], *, owner: str = "avery") -> None:
         """Say where each account goes on the mapping page, by its last digits, confirming
-        again with the page's warning about names a word apart in view, as a member does."""
+        again with the page's warning about names a word apart in view, as a member does.
+        `client` is signed in as `owner`, whose accounts they all become."""
         conn = self.connect()
         try:
             found = [
@@ -149,7 +150,7 @@ class FirstDay:
                 f"target-{account_id}": NEW,
                 f"path-{account_id}": path,
                 f"name-{account_id}": f"Card {mask}",
-                f"owners-{account_id}": str(self.member_ids["avery"]),
+                f"owners-{account_id}": str(self.member_ids[owner]),
                 f"confirm-{account_id}": "1",
             }
         response = client.post("/connect/map", data=data)
@@ -169,7 +170,13 @@ class FirstDay:
         return found
 
 
-def first_day(tmp_path: Path, clock: FakeClock, *, inherits: Path | None = None) -> FirstDay:
+def first_day(
+    tmp_path: Path,
+    clock: FakeClock,
+    *,
+    inherits: Path | None = None,
+    institutions: Sequence[FakeInstitution] = (WILLOWMERE,),
+) -> FirstDay:
     settings = Settings.in_directory(tmp_path / "data", ledger=inherits)
     db.initialise(settings.database)
     conn = db.connect(settings.database)
@@ -189,7 +196,7 @@ def first_day(tmp_path: Path, clock: FakeClock, *, inherits: Path | None = None)
     finally:
         conn.close()
     bookkeeper = Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
-    fake = FakePlaid([WILLOWMERE], today=lambda: clock().date())
+    fake = FakePlaid(institutions, today=lambda: clock().date())
     keys = MemoryKeyStore()
     setup = PlaidSetup(stand_in=fake, keys=lambda: keys, wait=Waits())
     app = create_app(

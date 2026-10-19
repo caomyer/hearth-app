@@ -7,8 +7,9 @@ review overlay lays rulings over the ledger: what Plaid sent lives in the feed, 
 decided lives in the app database, and nothing is stored twice, so nothing can drift.
 
 For now that is one ``open`` per mapped account, dated at the start of the history asked for.
-Transactions wait for card-payment pairing: booking a bank's payment to a card from both
-sides before then would count it twice, as spending and as income.
+Transactions wait for the import, which books a bank's payment to a card once, as the transfer
+``hearth.plaid.pairing`` pairs it into: booked from both sides it would count twice, as
+spending and as income.
 
 Every recompute also writes these entries to a beancount file, so every figure traces to an
 entry that exists, one a person can open in fava, query, diff and check against a statement.

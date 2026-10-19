@@ -211,6 +211,37 @@ class Registry:
         )
         return [_account(row) for row in rows]
 
+    def connected_twice(self) -> list[tuple[LinkedAccount, ...]]:
+        """Confirmed accounts that may be one real account reached through two Items: accounts
+        with the same last digits on two Items that may be at one institution. Two Items are
+        when both have Plaid's institution id and the ids are equal, or when either has none,
+        since a name may be a Link hint or the fallback; two different ids never are. A bank
+        connected again without removing the old connection leaves this, and so does one
+        removed and connected again, as `confirmed` keeps a removed connection's accounts.
+        Each group is the accounts sharing one mask so; none means none."""
+        rows = self._db.execute(
+            "SELECT a.*, i.institution_id AS at_id"
+            " FROM plaid_accounts a JOIN plaid_items i USING (item_id)"
+            " WHERE a.confirmed_at IS NOT NULL AND a.mask IS NOT NULL ORDER BY a.account_id"
+        )
+        by_mask: dict[str, list[tuple[LinkedAccount, str | None]]] = {}
+        for row in rows:
+            by_mask.setdefault(row["mask"], []).append((_account(row), row["at_id"]))
+        groups = []
+        for held in by_mask.values():
+            twice = tuple(
+                account
+                for account, at in held
+                if any(
+                    None in (at, other_at) or at == other_at
+                    for other, other_at in held
+                    if other.item_id != account.item_id
+                )
+            )
+            if twice:
+                groups.append(twice)
+        return groups
+
     def feeding(self, hearth_account: str) -> list[LinkedAccount]:
         """Accounts of connections still active that feed `hearth_account`."""
         rows = self._db.execute(

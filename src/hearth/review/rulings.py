@@ -18,7 +18,7 @@ from enum import StrEnum
 
 from hearth.db import transaction
 from hearth.members import MemberId
-from hearth.review.pile import UNRESOLVED
+from hearth.review.pile import WAITING
 
 # beancount's rule for an account name.
 ACCOUNT = re.compile(r"(Assets|Liabilities|Equity|Income|Expenses)(:[A-Z0-9][A-Za-z0-9-]*)+")
@@ -55,8 +55,8 @@ class Ruling:
 def check_account(account: str) -> None:
     if not ACCOUNT.fullmatch(account):
         raise ValueError(f"{account!r} is not a beancount account name")
-    if account == UNRESOLVED:
-        raise ValueError(f"{UNRESOLVED} is where an unruled row waits; name where it belongs")
+    if account in WAITING:
+        raise ValueError(f"{account} is where an unruled row waits; name where it belongs")
 
 
 class RulingStore:

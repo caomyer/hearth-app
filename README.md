@@ -19,6 +19,7 @@ Members, sign-in, sharing and the privacy boundary are in place ([docs/privacy-b
 Every imported transaction is in the books at once, flagged until a member reviews it, and every total says how much rests on unreviewed rows ([docs/review.md](docs/review.md)).
 Members connect their institutions through Plaid, each through a Plaid account of their own by default, and hearth pulls two years of history into a staging store, checked per account for how much each bank actually sent ([docs/connections.md](docs/connections.md)).
 A household needs no ledger of its own: the accounts its members connect become the chart of accounts of books hearth keeps itself, written out on every recompute for anyone to open in fava ([docs/books.md](docs/books.md)).
+A bank's payment to a card the household also connects is paired from its two sides into one transfer, so the import can book it once and never as spending and income at once ([docs/pairing.md](docs/pairing.md)).
 Turning the connected history into entries in those books is the import's job, and comes next.
 The calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md) and [docs/dashboards.md](docs/dashboards.md); `design/` holds the approved design.
 

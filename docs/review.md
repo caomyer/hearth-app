@@ -11,6 +11,8 @@ A figure built partly from unreviewed guesses is never presented as though a per
 ## The rows
 
 An import writes each row it is not sure of as a `!` entry with two postings: the bank's, and one balancing it against the proposed account, or against `Equity:Review:Unresolved` when nothing could be proposed.
+One side of a card payment whose other side is not in the books balances against `Equity:Review:TransferPending` instead (`docs/pairing.md`).
+Neither is a proposal: accepting such a row settles nothing, and no ruling may book a row against either.
 Metadata carries the row's `review-id`, `review-group`, `model-confidence` and `source`, as beancount_nextgen writes them.
 `pile.read_pile` reads them; a row without a review id or a group is refused, because a ruling on it could not be kept.
 

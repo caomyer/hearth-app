@@ -247,7 +247,11 @@ def test_either_owner_of_a_joint_account_can_rule_and_the_later_one_holds(
 
 @pytest.mark.parametrize(
     ("account", "complaint"),
-    [("expenses:gifts", "not a beancount account"), ("Equity:Review:Unresolved", "waits")],
+    [
+        ("expenses:gifts", "not a beancount account"),
+        ("Equity:Review:Unresolved", "waits"),
+        ("Equity:Review:TransferPending", "waits"),
+    ],
 )
 def test_a_row_must_be_booked_against_a_real_account(
     desk_for: DeskFactory, rulings: RulingStore, account: str, complaint: str

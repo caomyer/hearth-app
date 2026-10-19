@@ -40,6 +40,7 @@ LEDGER_READERS = (
     "hearth.review.pile",
     "hearth.plaid.feed",
     "hearth.plaid.registry",
+    "hearth.plaid.pairing",
 )
 """Modules that read household data. Pages get it only through hearth.disclosure."""
 
