@@ -259,6 +259,12 @@ MIGRATIONS: tuple[str, ...] = (
         uploaded_at TEXT NOT NULL
     ) STRICT;
     """,
+    """
+    -- What each row said when a ruling was made on it (hearth.review.ids.says), so a ruling
+    -- on a row its bank has since revised does not pass for one on the row as it is now.
+    -- A ruling made before this was recorded has none, and is bound to nothing more.
+    ALTER TABLE review_ruling_rows ADD COLUMN says TEXT;
+    """,
 )
 
 

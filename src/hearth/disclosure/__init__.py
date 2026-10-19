@@ -16,7 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from hearth import audit, members, sharing
+from hearth import audit, members, ownbooks, sharing
 from hearth.accounts import Account, all_accounts
 from hearth.audit import EventKind
 from hearth.books import Books, Failure, Status
@@ -138,6 +138,8 @@ class AccountView:
     covered: Disclosed[bool]
     """Whether the account's history is known in full for `month`, so that no transactions
     in it is a fact. It is decided by its transactions, so it goes with them."""
+    outside: bool = False
+    """Whether the books hold nothing of the account at all (`Household.outside`)."""
 
 
 class Disclosure:
@@ -219,6 +221,7 @@ class Disclosure:
             covered=self._gate.disclose(
                 Facet.TRANSACTIONS, account.owners, lambda: covers(h.books, judged, month)
             ),
+            outside=isinstance(row, AccountRow) and row.outside,
         )
 
     def may_price(self, symbol: str) -> bool:
@@ -278,15 +281,25 @@ class Disclosure:
         ]
 
     def review_desk(self, rulings: RulingStore, clock: Clock) -> ReviewDesk:
-        """The viewer's own review desk: the set-aside rows ``may_review`` gives them."""
+        """The viewer's own review desk: the set-aside rows ``may_review`` gives them, which they
+        may move to a category or to an account of their own that the books hold open."""
+        from beancount.core.data import Close, Open
+
         from hearth.review.desk import ReviewDesk
 
+        books = self.books
+        entries = books.entries if books else ()
+        closes = {e.account: e.date for e in entries if isinstance(e, Close)}
         return ReviewDesk(
             self._viewer.id,
-            pile=self.books.pile if self.books else (),
+            pile=books.pile if books else (),
             accounts=self._accounts,
             rulings=rulings,
             may_review=may_review,
+            opened={
+                e.account: (e.date, closes.get(e.account)) for e in entries if isinstance(e, Open)
+            },
+            may_move_to=self._gate.may_feed,
             clock=clock,
         )
 
@@ -308,6 +321,11 @@ class Disclosure:
 
         books = self.books
         ledger = {e.account for e in books.entries if isinstance(e, Open)} if books else set()
+        own = (
+            {e.account for e in ownbooks.own(books.entries) if isinstance(e, Open)}
+            if books
+            else set()
+        )
         return Connector(
             self._gate,
             household=self._members,
@@ -320,6 +338,7 @@ class Disclosure:
             setup=setup,
             clock=clock,
             runner=runner,
+            inherited=ledger - own,
         )
 
     def _failed_check(self, failure: Failure) -> Disclosed[FailedCheck] | None:

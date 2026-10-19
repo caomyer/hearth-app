@@ -1,8 +1,9 @@
 """What Plaid sent: every transaction and balance, kept as fetched, and a record of each sync.
 
 This is a staging store, deliberately apart from both the ledger and the app database. The
-ledger stays the one store of record: nothing here is booked, and the import pipeline turns
-these rows into ledger entries through the review queue, as it does a statement download.
+books stay the one record: nothing here is booked as it sits, and every recompute turns these
+rows into entries for the review queue (``hearth.plaid.booking``), so a row Plaid revises or
+withdraws here is booked as it now stands, or not at all.
 The app database holds no money at all, so the amounts and payees Plaid sends are kept in
 this file of their own, ``feed.sqlite3`` beside it.
 

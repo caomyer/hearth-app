@@ -45,21 +45,44 @@ Books that have not changed leave the file untouched, so a fava watching it relo
 
 A household with a ledger of its own sets `HEARTH_LEDGER` to it (`docs/real-ledger.md`).
 Hearth reads it and never writes it, or anything beside it.
-Hearth's own entries go on top of it: an account the inherited ledger already opens is left to it, and an account a member maps to a new name is opened by hearth.
+Hearth's own entries go on top of it: an account the inherited ledger already opens is left to it, transactions and all, and an account a member maps to a new name is opened by hearth.
+The import books nothing into an inherited account, since that would count every transaction the ledger already holds a second time; carrying an inherited account on from where its ledger stops is not done yet, and the import page says which accounts it leaves to the household's own records.
 The books file includes the inherited ledger by its full path, so the file alone holds the whole books.
 
-## What the books hold so far
+## What the books hold
 
-Accounts only.
-Transactions are not booked yet.
-A payment from a bank account to a card arrives from both sides, and booking both would count it twice, inflating spending and income together; the import books each such pair once, as a transfer, and each side nothing pairs with against `Equity:Review:TransferPending` (`docs/pairing.md`).
-Until they are, an account hearth opened has nothing in the books but its `open`, so its balance is not known there, whatever its bank says.
-Every figure that includes such an account (`books.awaiting`) reads "Not known yet", never a total of zero: the account reaches no month, so spending and income read as incomplete too, and the month-end line is not drawn.
-A viewer who sees only a member's total learns that it is not known, never which account holds it back.
-An inherited ledger's accounts keep beancount's meaning, where an account nothing has moved holds nothing.
-Opening balances, derived from the balance each bank reports less the history it sent, are what make those figures real.
+Every transaction a connected bank has posted, from the day its history starts (`hearth.plaid.booking`).
+Each recompute reads the feed afresh, so what is booked is always exactly what Plaid last sent: a row Plaid revises is booked as it now stands, and a row Plaid withdraws is not booked at all.
+Running it again never books anything twice.
 
-When the import books a transaction from a connection, its `source` metadata names the connection and the transaction, `plaid:<item id>:<transaction id>`.
+- A row is booked flagged `!`, against the account Plaid's category proposes (`INCOME_WAGES` is `Income:Wages`, `FOOD_AND_DRINK_COFFEE` is `Expenses:FoodAndDrink:Coffee`), and waits in Review (`docs/review.md`).
+  A transfer, a loan payment, or a category Plaid could not decide proposes nothing, and balances against `Equity:Review:Unresolved` until a member says where it went.
+- A payment from a bank account to a card the household also connects is booked once, as a transfer between the two, and marked `*`: both banks' own rows say it, and nothing in it is a guess (`docs/pairing.md`).
+  A side of a card payment nothing pairs with balances against `Equity:Review:TransferPending`, never as spending or income.
+- A pending row is not booked: it may still change or vanish, and its posted version would compete with it.
+- An account reached through two connections sends every row twice.
+  When older ones were removed, each connection stands for the account from the day its history starts, and every older one keeps only the days before the history of any connection linked after it starts, so removing a bank and connecting it again, however many times, books each transaction once.
+  Two working connections are refused: the recompute says that one must be removed in Settings, Connections, and removing it is the way out.
+
+Every category the entries name, and every category a member has reviewed a row as, opens beside the accounts, so the books file loads as it stands.
+
+When the import books a transaction from a connection, its `source` metadata names the connection and the transaction, `plaid:<item id>:<transaction id>`, written by `connections.plaid_source`.
+A transfer is one entry booked from two rows, so each of its postings carries its own row's `source` as well.
 Coverage parses that string to tell which connection vouches for which entries (`docs/connections.md`), so it is written in exactly that form.
 
-An investment account opens like any other, but Plaid sends no investment transactions or holdings without its Investments product, so a brokerage connected this way has no activity in the books.
+## Balances are not known yet
+
+A bank sends a window of history, not the account's life, so the rows added up are what moved over the window, not what the account holds: read as a balance, a card owing thousands could show as owing nothing.
+So an account hearth opened has no known balance until something in the books says what it held, a balance assertion or an opening balance against equity (`books.unanchored`).
+Until then every net worth figure that includes it reads "Not known yet", never a total of zero, and the month-end line is not drawn; spending and income are figures as soon as their months are covered.
+An account whose history has not arrived at all is the same, and its months read as incomplete too (`books.awaiting`).
+A viewer who sees only a member's total learns that it is not known, never which account holds it back.
+An inherited ledger's accounts keep beancount's meaning, where an account nothing has moved holds nothing.
+Opening balances, derived from the balance each bank reports less the history it sent, are what will make those figures real.
+
+## What Plaid does not send
+
+An investment account opens like any other, but Plaid sends no investment transactions or holdings without its Investments product, which a connection has to have been granted and which is billed separately.
+A brokerage connected without it has no buys, sells or dividends in the books.
+Nor is investment history a household once brought in from downloaded statements, which hearth's own books do not read.
+So books driven by Plaid alone hold no investment activity at all; the connect page says so for each such account rather than letting it read as empty.

@@ -13,7 +13,7 @@ from html import unescape
 from pathlib import Path
 
 from beancount import loader
-from beancount.core.data import BeancountError, Directive, Open
+from beancount.core.data import BeancountError, Directive, Open, Transaction
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -225,6 +225,20 @@ def until_booked(fresh: FirstDay, account: str) -> books.Books:
             return found
         time.sleep(0.01)
     raise AssertionError(f"{account} never reached the books")
+
+
+def until_transacted(fresh: FirstDay, account: str) -> books.Books:
+    """The books once a recompute started in the background holds transactions on `account`."""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        found = fresh.bookkeeper.status.books
+        if found is not None and any(
+            isinstance(e, Transaction) and any(p.account == account for p in e.postings)
+            for e in found.entries
+        ):
+            return found
+        time.sleep(0.01)
+    raise AssertionError(f"no transaction on {account} reached the books")
 
 
 def shown(page: str) -> str:

@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from hearth.disclosure import Concealed
 from hearth.review import cadence
-from hearth.review.desk import NotOneDecision, ReviewDesk
+from hearth.review.desk import FREE, NotOneDecision, NotTheirs, ReviewDesk
 from hearth.review.queue import NOTHING_SUGGESTED, ORDER_LABELS, Filter, Order, confidence, queue
 from hearth.review.rulings import Action, Ruling, RulingStore
 from hearth.web.deps import Acting, App, Conn, SignedIn, Viewing
@@ -37,12 +37,17 @@ GROUP_PREVIEW = 8
 
 OUTCOMES = {
     "accepted": "Accepted as suggested.",
-    "booked": "Booked to the category you chose.",
+    "booked": "Saved under the category you chose.",
+    "moved": "Moved to the account of yours you chose.",
     "rejected": "Marked as not a transaction. It books nothing.",
     "changed": "Some of those changed since the page showed them, so they were left waiting."
     " Here they are as they are now.",
     "not-an-account": "That row was not booked. Enter a full account name, like"
     " Expenses:Groceries.",
+    "not-yours": "That transaction is still waiting. It can go to a spending or income"
+    " category, like Expenses:Groceries, or move to one of your own accounts in hearth. An"
+    " account hearth does not hold yet, such as a mortgage nobody has connected, cannot take it"
+    " yet, so it stays waiting for now. That is not something you did wrong.",
     "reminder-saved": "Reminder saved.",
     "not-one-decision": "That group is not one kind of transaction, so it cannot be accepted"
     " all at once. Its transactions are waiting for a look one by one.",
@@ -50,7 +55,7 @@ OUTCOMES = {
 }
 """Fixed messages for what a review action did; the query names one, it never carries text."""
 
-UNDOABLE = frozenset({"accepted", "booked", "rejected", "changed"})
+UNDOABLE = frozenset({"accepted", "booked", "moved", "rejected", "changed"})
 """Outcomes that recorded a ruling the member may want to take straight back."""
 
 _ROW_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
@@ -159,7 +164,8 @@ def review(
             "group_preview": GROUP_PREVIEW,
             "nothing_suggested": NOTHING_SUGGESTED,
             "confidence": confidence,
-            "focus": focus if focus and _ROW_ID.fullmatch(focus) else None,
+            # Not "focus", which base.html takes as the narrow page without navigation.
+            "landing": focus if focus and _ROW_ID.fullmatch(focus) else None,
             # Suggest only accounts from the viewer's own rows: nobody else's are named.
             "categories": sorted(
                 {i.item.proposed for i in items if i.item.proposed}
@@ -245,10 +251,12 @@ def book_row(
         return _to(where, "accepted", focus, accepted.ruling)
     try:
         ruling = desk.set_account(review_id, chosen)
+    except NotTheirs:
+        return _to(where, "not-yours", review_id)
     except ValueError:
         return _to(where, "not-an-account", review_id)
     _ruled(app)
-    return _to(where, "booked", focus, ruling)
+    return _to(where, "booked" if chosen.split(":")[0] in FREE else "moved", focus, ruling)
 
 
 @router.post("/rows/reject")

@@ -9,22 +9,23 @@ seven accounts, five of them called the same thing. Every value is invented.
 import re
 import sqlite3
 import stat
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from beancount import loader
-from beancount.core.data import Open, Transaction
+from beancount.core.data import Directive, Open, Transaction
 
 from hearth import accounts, auth, books, db, ownbooks, sharing
 from hearth.members import find
-from hearth.plaid import feed
+from hearth.plaid import booking, feed
 from hearth.plaid.client import BankAccount, Institution, SyncPage
 from hearth.plaid.client import Transaction as PlaidTransaction
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
+from hearth.review.pile import UNRESOLVED
 from hearth.sharing import Facet
 from tests import household
 from tests.conftest import FakeClock, password_of
@@ -36,8 +37,15 @@ from tests.firstday import (
     opens,
     shown,
     until_booked,
+    until_transacted,
     written,
 )
+
+
+def connected(entries: Iterable[Directive]) -> dict[str, Open]:
+    """The opens of the accounts a member connected, which say which account they are."""
+    return {a: o for a, o in opens(entries).items() if "institution" in o.meta}
+
 
 # A household with nothing yet.
 
@@ -80,16 +88,19 @@ def test_each_confirmed_account_opens_on_the_first_day_its_connection_asked_for(
 
     found = until_booked(fresh, PATHS["7717"])
 
-    assert {a: o.date for a, o in opens(found.entries).items()} == dict.fromkeys(
+    assert {a: o.date for a, o in connected(found.entries).items()} == dict.fromkeys(
         PATHS.values(), FIRST_DAY
     )
     entries, errors = written(fresh.settings)
     assert errors == []
-    assert {a: o.date for a, o in opens(entries).items()} == dict.fromkeys(
+    assert {a: o.date for a, o in connected(entries).items()} == dict.fromkeys(
         PATHS.values(), FIRST_DAY
     )
-    # Nothing is booked yet: transactions wait for card-payment pairing.
-    assert not [e for e in entries if isinstance(e, Transaction)]
+    # The categories the transactions are proposed against open alongside, on the same day.
+    others = {a: o.date for a, o in opens(entries).items() if a not in PATHS.values()}
+    assert others
+    assert set(others.values()) == {FIRST_DAY}
+    assert all(a.split(":")[0] in {"Expenses", "Income", "Equity"} for a in others)
     wren = opens(entries)[PATHS["1111"]]
     assert (wren.meta["name"], wren.meta["institution"], wren.meta["mask"]) == (
         "Card 1111",
@@ -105,8 +116,13 @@ def test_an_account_nobody_has_confirmed_is_not_in_the_books(fresh: FirstDay) ->
 
     found = until_booked(fresh, PATHS["7717"])
 
-    assert set(opens(found.entries)) == set(chosen.values())
-    assert set(opens(written(fresh.settings)[0])) == set(chosen.values())
+    assert set(connected(found.entries)) == set(chosen.values())
+    assert set(connected(written(fresh.settings)[0])) == set(chosen.values())
+    assert not [
+        e
+        for e in found.entries
+        if isinstance(e, Transaction) and any(p.account == PATHS["5515"] for p in e.postings)
+    ]
 
 
 def test_the_household_pages_show_the_books_once_an_account_is_in_them(fresh: FirstDay) -> None:
@@ -125,8 +141,20 @@ def test_ownership_never_reaches_the_file(fresh: FirstDay) -> None:
     fresh.map(fresh.signed_in("avery"), PATHS)
     until_booked(fresh, PATHS["7717"])
 
-    for entry in opens(written(fresh.settings)[0]).values():
+    entries = written(fresh.settings)[0]
+    for entry in connected(entries).values():
         assert set(entry.meta) - {"filename", "lineno"} == {"name", "institution", "mask"}
+    for entry in opens(entries).values():
+        assert set(entry.meta) - {"filename", "lineno"} <= {"name", "institution", "mask"}
+    booked = [e for e in entries if isinstance(e, Transaction)]
+    assert booked
+    for row in booked:
+        assert set(row.meta) - {"filename", "lineno", "__tolerances__"} <= {
+            "review-id",
+            "review-group",
+            "source",
+        }
+        assert all(set(p.meta or {}) <= {"filename", "lineno", "source"} for p in row.postings)
 
 
 # Deriving the opens, against the app database and the feed directly.
@@ -160,7 +188,13 @@ def stores(tmp_path: Path) -> Iterator[tuple[sqlite3.Connection, Feed]]:
 
 
 def _connected(
-    conn: sqlite3.Connection, item_id: str, account_id: str, *, linked: datetime, feeds: str
+    conn: sqlite3.Connection,
+    item_id: str,
+    account_id: str,
+    *,
+    linked: datetime,
+    feeds: str,
+    mask: str = "7717",
 ) -> None:
     """An Item reaching one account, confirmed to feed the ledger account `feeds`."""
     registry = Registry(conn)
@@ -177,11 +211,7 @@ def _connected(
     )
     registry.record_accounts(
         item_id,
-        [
-            BankAccount(
-                account_id, "SAVINGS", None, "7717", "depository", "savings", None, None, None
-            )
-        ],
+        [BankAccount(account_id, "SAVINGS", None, mask, "depository", "savings", None, None, None)],
     )
     account = next((a for a in accounts.all_accounts(conn) if a.ledger_account == feeds), None)
     if account is None:
@@ -208,24 +238,40 @@ def test_an_account_opens_before_an_older_transaction_the_bank_sent(
     older = FIRST_DAY - timedelta(days=3)
     _sent(store, "item-a", "acct-a", older)
 
-    assert {o.account: o.date for o in ownbooks.derive(conn, store)} == {
-        "Assets:Avery:Savings": older
+    assert {a: o.date for a, o in opens(ownbooks.derive(conn, store)).items()} == {
+        "Assets:Avery:Savings": older,
+        UNRESOLVED: older,
     }
 
 
-def test_a_bank_connected_again_opens_its_account_once_at_the_earliest(
+def test_an_account_fed_by_two_connections_opens_once_at_the_earliest(
     stores: tuple[sqlite3.Connection, Feed],
 ) -> None:
     conn, store = stores
     earlier = household.NOW - timedelta(days=200)
     # Either connection may be met first; the earlier one comes first here, so a later one
-    # met after it cannot pass for the earliest.
+    # met after it cannot pass for the earliest. A card reissued under new digits is two
+    # accounts to Plaid, and one to the household.
     _connected(conn, "item-a", "acct-a", linked=earlier, feeds="Assets:Avery:Savings")
-    _connected(conn, "item-b", "acct-b", linked=household.NOW, feeds="Assets:Avery:Savings")
+    _connected(
+        conn, "item-b", "acct-b", linked=household.NOW, feeds="Assets:Avery:Savings", mask="7718"
+    )
 
-    assert [(o.account, o.date) for o in ownbooks.derive(conn, store)] == [
+    assert [(a, o.date) for a, o in opens(ownbooks.derive(conn, store)).items()] == [
         ("Assets:Avery:Savings", FIRST_DAY - timedelta(days=200))
     ]
+
+
+def test_a_bank_connected_again_books_nothing_until_one_connection_reaches_it(
+    stores: tuple[sqlite3.Connection, Feed],
+) -> None:
+    conn, store = stores
+    _connected(conn, "item-a", "acct-a", linked=household.NOW, feeds="Assets:Avery:Savings")
+    _connected(conn, "item-b", "acct-b", linked=household.NOW, feeds="Assets:Avery:Savings")
+    _sent(store, "item-a", "acct-a", FIRST_DAY)
+
+    with pytest.raises(booking.Refused, match="two working connections"):
+        ownbooks.derive(conn, store)
 
 
 def test_an_account_an_inherited_ledger_opens_is_left_to_it(
@@ -298,7 +344,11 @@ def test_an_inherited_ledger_is_included_beneath_hearths_own_and_never_written(
     assert opens(entries).keys() == opens(found.entries).keys()
     assert opens(entries)[PATHS["7717"]].date == FIRST_DAY
     assert opens(entries)["Assets:Avery:Willowmere:Checking"].date == date(2026, 1, 1)
-    assert len([e for e in entries if isinstance(e, Transaction)]) == 1
+    inherited = [e for e in entries if isinstance(e, Transaction) and e.payee == "Sorrel Bakery"]
+    assert len(inherited) == 1
+    assert {p.account for e in entries if isinstance(e, Transaction) for p in e.postings} >= {
+        PATHS["7717"]
+    }
     assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
 
 
@@ -361,6 +411,7 @@ def test_new_books_replace_the_old_file_without_keeping_a_copy(fresh: FirstDay) 
 
 
 def test_an_account_with_no_history_yet_is_not_known_never_zero(fresh: FirstDay) -> None:
+    fresh.plaid.slow_history = True
     fresh.link("avery", "ins_willowmere")
     fresh.map(fresh.signed_in("avery"), PATHS)
     found = until_booked(fresh, PATHS["7717"])
@@ -411,14 +462,14 @@ def test_a_total_only_member_never_gives_away_how_many_accounts_they_connected(
         conn.close()
     fresh.link("avery", "ins_willowmere")
     fresh.map(fresh.signed_in("avery"), PATHS)
-    until_booked(fresh, PATHS["7717"])
+    until_transacted(fresh, PATHS["7717"])
     avery, blake = fresh.signed_in("avery"), fresh.signed_in("blake")
 
-    assert "7 connected accounts have no balances" in shown(avery.get("/you").text)
+    assert "7 accounts have no balance" in shown(avery.get("/you").text)
     for path in ("/", "/net-worth", "/members/avery"):
         page = shown(blake.get(path).text)
         assert "Not known yet" in page, path
-        assert "Some connected accounts have no balances" in page, path
+        assert "Some accounts have no balance" in page, path
         counts = re.findall(r"\b\d+\s+(?:connected\s+)?accounts?\b", page)
         assert counts == [], (path, counts)
 

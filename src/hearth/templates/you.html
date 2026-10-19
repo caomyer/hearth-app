@@ -109,6 +109,7 @@
             {% if totals.covered %}
             <p class="fig-value">{{ totals.earned | hero }}</p>
             <p class="fig-sub">{% if totals.payments_in == 0 %}Nothing paid in yet{% else %}{{ plural(totals.payments_in, "payment") }} in{% endif %}</p>
+            {{ unreviewed_sub(totals.earned_unreviewed, "/review") }}
             {% else %}<p class="fig-value muted">&ndash;</p>
             <p class="fig-sub">History incomplete</p>{% endif %}
           </div>
@@ -150,7 +151,8 @@
         {% if not totals.covered %}
         <p class="finding">Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.</p>
         {% elif totals.over_typical is not none %}
-        <p class="finding">You are <strong class="tnum">{{ (totals.over_typical | abs) | dollars }}</strong> {{ "above" if totals.over_typical > 0 else "below" }} a typical {{ month_name }} at this point.</p>
+        {% set off = (totals.over_typical | abs) | dollars %}
+        <p class="finding">{% if off == "$0" %}You are right where a typical {{ month_name }} is at this point.{% else %}You are <strong class="tnum">{{ off }}</strong> {{ "above" if totals.over_typical > 0 else "below" }} a typical {{ month_name }} at this point.{% endif %}</p>
         {% elif me.pace.typical | length == 0 %}
         <p class="finding">There is not enough history yet to say what a typical month looks like.</p>
         {% endif %}

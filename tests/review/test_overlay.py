@@ -71,6 +71,7 @@ def test_a_ruling_by_someone_who_may_not_review_the_row_changes_nothing(
         account=None,
         note=None,
         rows={"p2p0000003": None},
+        says={"p2p0000003": next(i.says for i in pile if i.review_id == "p2p0000003")},
         at=datetime(2026, 2, 1, tzinfo=UTC),
     )
 

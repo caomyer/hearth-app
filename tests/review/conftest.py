@@ -8,6 +8,7 @@ from typing import Protocol
 
 import pytest
 from beancount import loader
+from beancount.core.data import Open
 
 from hearth import db
 from hearth.accounts import Account
@@ -89,6 +90,10 @@ PILE = """
 """
 
 
+OPENED = {e.account: (e.date, None) for e in loader.load_string(PILE)[0] if isinstance(e, Open)}
+"""Every account the books in `PILE` open."""
+
+
 def owners_only(member: MemberId, owners: Collection[MemberId]) -> bool:
     """The owner clause of hearth.access.may_see, which is what reviewing needs."""
     return member in owners
@@ -140,6 +145,8 @@ def desk_for(pile: list[PileItem], rulings: RulingStore, clock: FakeClock) -> De
             accounts=ACCOUNTS,
             rulings=rulings,
             may_review=owners_only,
+            opened=OPENED,
+            may_move_to=lambda owners: member in owners,
             clock=clock,
         )
 

@@ -92,6 +92,12 @@ class LinkedAccount:
         return self.type in {"credit", "loan"}
 
 
+def _one_institution(at: str | None, other_at: str | None) -> bool:
+    """Whether Items with these Plaid institution ids may be at one institution: equal ids, or
+    either has none, since a name may be a Link hint or the fallback."""
+    return None in (at, other_at) or at == other_at
+
+
 def _item(row: sqlite3.Row) -> Item:
     def when(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value) if value else None
@@ -233,7 +239,7 @@ class Registry:
                 account
                 for account, at in held
                 if any(
-                    None in (at, other_at) or at == other_at
+                    _one_institution(at, other_at)
                     for other, other_at in held
                     if other.item_id != account.item_id
                 )
@@ -241,6 +247,22 @@ class Registry:
             if twice:
                 groups.append(twice)
         return groups
+
+    def fed_before(self, account_id: str) -> list[LinkedAccount]:
+        """Confirmed accounts on its member's own removed connections that may be the same real
+        account as `account_id`, as `connected_twice` tells, the most recently linked first:
+        where it went before it was connected again. Nobody else's connections are looked at."""
+        rows = self._db.execute(
+            "SELECT a.*, i.institution_id AS at_id, o.institution_id AS other_at"
+            " FROM plaid_accounts this JOIN plaid_items o ON o.item_id = this.item_id"
+            " JOIN plaid_accounts a ON a.mask = this.mask AND a.item_id != this.item_id"
+            " JOIN plaid_items i ON i.item_id = a.item_id"
+            " WHERE this.account_id = ? AND a.confirmed_at IS NOT NULL"
+            " AND i.state = 'removed' AND i.member_id = o.member_id"
+            " ORDER BY i.linked_at DESC, a.account_id",
+            (account_id,),
+        )
+        return [_account(row) for row in rows if _one_institution(row["at_id"], row["other_at"])]
 
     def feeding(self, hearth_account: str) -> list[LinkedAccount]:
         """Accounts of connections still active that feed `hearth_account`."""

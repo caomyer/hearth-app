@@ -575,9 +575,13 @@ def connect(settings: Settings, setup: PlaidSetup, *, now: datetime) -> None:
 
 
 def _book_from_connections(ledger: Path, connections: Connections) -> None:
-    """Mark the bank-feed entries on accounts a connection feeds as the import will book them,
-    with that connection's source (`connections.plaid_source`), so each connection vouches for
-    its accounts' coverage and a stopped one shows as data that stops."""
+    """Mark the bank-feed entries on accounts a connection feeds with that connection's
+    source, as the import marks every entry it books (`connections.plaid_source`), so each
+    connection vouches for its accounts' coverage and a stopped one shows as data that stops.
+
+    The demo's ledger is the household's own, and the import leaves an inherited ledger's
+    accounts to it, so its connections bring nothing in themselves: these rows stand for what
+    they would have booked."""
     item_of_account = {
         account: connection.item_id
         for connection in connections.all()

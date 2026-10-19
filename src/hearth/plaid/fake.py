@@ -24,12 +24,12 @@ from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
 
-from hearth.plaid.client import DEMO_HOST, LOGIN_REQUIRED, MUTATED_DURING_PAGINATION
+from hearth.plaid.client import DEMO_HOST, LOGIN_REQUIRED, MUTATED_DURING_PAGINATION, PRIMARIES
 
 PAYEES = (
     ("Larkspur Grocer", "FOOD_AND_DRINK_GROCERIES", Decimal("64.20")),
     ("Tinderbox Coffee", "FOOD_AND_DRINK_COFFEE", Decimal("5.75")),
-    ("Quillfeather Books", "GENERAL_MERCHANDISE_BOOKSTORES_AND_NEWSSTANDS", Decimal("23.40")),
+    ("Quillfeather Stationers", "GENERAL_MERCHANDISE_OFFICE_SUPPLIES", Decimal("23.40")),
     ("Marrowbone Transit", "TRANSPORTATION_PUBLIC_TRANSIT", Decimal("2.90")),
     ("Bramble Pharmacy", "MEDICAL_PHARMACIES_AND_SUPPLEMENTS", Decimal("18.65")),
     ("Cobblestone Utilities", "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY", Decimal("92.10")),
@@ -160,10 +160,21 @@ class FakePlaid:
             item.log.extend(batch)
         item.arriving = []
 
-    def change(self, item_id: str, kind: str, transaction: FakeTransaction, account: str) -> str:
-        """Add a transaction to an Item's history, as a bank posting a new one would."""
+    def change(
+        self,
+        item_id: str,
+        kind: str,
+        transaction: FakeTransaction,
+        account: str,
+        *,
+        transaction_id: str | None = None,
+    ) -> str:
+        """Add a transaction to an Item's history, as a bank posting a new one would; or, with
+        the `transaction_id` of one it sent, revise ("modified") or withdraw ("removed") it."""
         item = self._items[item_id]
         raw = self._raw(item, account, transaction)
+        if transaction_id is not None:
+            raw["transaction_id"] = transaction_id
         item.log.append((kind, raw))
         return str(raw["transaction_id"])
 
@@ -384,13 +395,19 @@ class FakePlaid:
             "merchant_name": transaction.name,
             "original_description": transaction.name.upper(),
             "personal_finance_category": (
-                {"primary": transaction.category.split("_")[0], "detailed": transaction.category}
+                {"primary": _primary(transaction.category), "detailed": transaction.category}
                 if transaction.category
                 else None
             ),
             "pending": transaction.pending,
             "pending_transaction_id": None,
         }
+
+
+def _primary(detailed: str) -> str:
+    """The primary category Plaid sends beside a detailed one: ``FOOD_AND_DRINK`` for
+    ``FOOD_AND_DRINK_COFFEE``."""
+    return next((p for p in PRIMARIES if detailed.startswith(f"{p}_")), detailed)
 
 
 def _routine(account: FakeAccount, start: date, end: date) -> list[FakeTransaction]:

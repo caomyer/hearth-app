@@ -379,6 +379,8 @@ def remove(app: App, conn: Conn, session: Acting, view: Viewing, item_id: str) -
         connector(app, conn, view).remove(item_id)
     except Refused as refused:
         return _refused("/settings/connections", refused)
+    # Which connection stands for an account reached twice may have changed (booking).
+    app.bookkeeper.recompute_in_background()
     return _back("/settings/connections", "removed")
 
 

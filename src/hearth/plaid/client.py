@@ -156,6 +156,30 @@ class BankAccount:
     currency: str | None
 
 
+PRIMARIES = (
+    "INCOME",
+    "TRANSFER_IN",
+    "TRANSFER_OUT",
+    "LOAN_PAYMENTS",
+    "LOAN_DISBURSEMENTS",
+    "BANK_FEES",
+    "ENTERTAINMENT",
+    "FOOD_AND_DRINK",
+    "GENERAL_MERCHANDISE",
+    "HOME_IMPROVEMENT",
+    "MEDICAL",
+    "PERSONAL_CARE",
+    "GENERAL_SERVICES",
+    "GOVERNMENT_AND_NON_PROFIT",
+    "TRANSPORTATION",
+    "TRAVEL",
+    "RENT_AND_UTILITIES",
+    "OTHER",
+)
+"""Plaid's primary personal finance categories. A detailed category is its primary, an
+underscore, and the detail: ``FOOD_AND_DRINK_COFFEE``."""
+
+
 @dataclass(frozen=True, slots=True)
 class Transaction:
     transaction_id: str

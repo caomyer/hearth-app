@@ -61,7 +61,7 @@
                   {% if part.worth is withheld %}
                   <span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared with you</span>
                   {% elif not part.worth.is_known %}
-                  <span class="second">{% if part.worth.awaiting is none %}Connected, figures not brought in yet{% else %}{{ plural(part.worth.awaiting, "account") }} connected, figures not brought in yet{% endif %}</span>
+                  <span class="second">{% if part.worth.awaiting is none %}Balances not brought in yet{% else %}{{ plural(part.worth.awaiting, "account") }} without {{ "its balance" if part.worth.awaiting == 1 else "their balances" }} yet{% endif %}</span>
                   {% elif part.owned is not none and not ref.is_joint %}
                   <span class="second">{{ part.owned | money }} owned, {{ part.owed | money }} owed</span>
                   {% elif ref.is_joint and part.accounts is not none %}

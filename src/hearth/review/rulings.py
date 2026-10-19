@@ -4,8 +4,10 @@ The store is append-only: a ruling is never edited or deleted, and a later rulin
 earlier one on the same row by being later. Every ruling names the rows it covers by review id,
 a group ruling included, so it covers exactly the rows its author saw and nothing that arrives
 afterwards. An accept also records, row by row, the account each row proposed when it was
-accepted, so it books nothing the import proposes later. No amount is stored: the ledger is the
-only place money is recorded.
+accepted, so it books nothing the import proposes later. Every ruling records, row by row, what
+the row said when it was made (``hearth.review.ids.says``), so it decides nothing about a row
+its bank has since revised. No amount is stored: the ledger is the only place money is
+recorded.
 """
 
 import json
@@ -15,6 +17,7 @@ from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import NamedTuple
 
 from hearth.db import transaction
 from hearth.members import MemberId
@@ -52,6 +55,18 @@ class Ruling:
     at: datetime
 
 
+class Covered(NamedTuple):
+    """One row a ruling covers, as the ruling recorded it."""
+
+    review_id: str
+    ruling: Ruling
+    accepted: str | None
+    """The account the row proposed when it was accepted, for an accept."""
+    says: str | None
+    """What the row said when the ruling was made; None for a ruling recorded before that
+    was kept."""
+
+
 def check_account(account: str) -> None:
     if not ACCOUNT.fullmatch(account):
         raise ValueError(f"{account!r} is not a beancount account name")
@@ -75,9 +90,11 @@ class RulingStore:
         account: str | None,
         note: str | None,
         rows: Mapping[str, str | None],
+        says: Mapping[str, str],
         at: datetime,
     ) -> Ruling:
-        """Record a ruling covering `rows`: each review id, with the account it was accepted as."""
+        """Record a ruling covering `rows`: each review id, with the account it was accepted as
+        and what it said (`says`)."""
         if (scope is Scope.GROUP) != (group is not None):
             raise ValueError("a group is named exactly when the ruling is on a group")
         if (action is Action.ACCOUNT) != (account is not None):
@@ -86,6 +103,8 @@ class RulingStore:
             check_account(account)
         if not rows:
             raise ValueError("a ruling must cover at least one row")
+        if set(says) != set(rows):
+            raise ValueError("what each row says is recorded for exactly the rows ruled on")
         for accepted in rows.values():
             if (action is Action.ACCEPT) != (accepted is not None):
                 raise ValueError("a row's proposal is recorded exactly when the ruling accepts")
@@ -101,28 +120,41 @@ class RulingStore:
                 (member_id, scope, group, action, account, note, at.isoformat()),
             ).lastrowid
             self._db.executemany(
-                "INSERT INTO review_ruling_rows (ruling_id, review_id, account) VALUES (?, ?, ?)",
-                [(ruling_id, review_id, rows[review_id]) for review_id in sorted(rows)],
+                "INSERT INTO review_ruling_rows (ruling_id, review_id, account, says)"
+                " VALUES (?, ?, ?, ?)",
+                [
+                    (ruling_id, review_id, rows[review_id], says[review_id])
+                    for review_id in sorted(rows)
+                ],
             )
         if ruling_id is None:
             raise RuntimeError("the ruling was not recorded")
         return Ruling(ruling_id, member_id, scope, group, action, account, note, at)
 
-    def covering(self, review_ids: Collection[str]) -> Iterator[tuple[str, Ruling, str | None]]:
-        """Every ruling that covers one of `review_ids`, oldest first.
-
-        Each comes with the row it covers and, for an accept, the account that row was accepted as.
-        """
+    def covering(self, review_ids: Collection[str]) -> Iterator[Covered]:
+        """Every ruling that covers one of `review_ids`, oldest first, row by row."""
         rows = self._db.execute(
-            "SELECT r.review_id, r.account, s.id, s.member_id, s.scope, s.group_name, s.action,"
-            " s.account, s.note, s.at"
+            "SELECT r.review_id, r.account, r.says, s.id, s.member_id, s.scope, s.group_name,"
+            " s.action, s.account, s.note, s.at"
             " FROM review_ruling_rows AS r JOIN review_rulings AS s ON s.id = r.ruling_id"
             " WHERE r.review_id IN (SELECT value FROM json_each(?))"
             " ORDER BY s.id, r.review_id",
             (json.dumps(sorted(set(review_ids))),),
         )
-        for review_id, accepted, ruling_id, member, scope, group, action, account, note, at in rows:
-            yield (
+        for (
+            review_id,
+            accepted,
+            said,
+            ruling_id,
+            member,
+            scope,
+            group,
+            action,
+            account,
+            note,
+            at,
+        ) in rows:
+            yield Covered(
                 review_id,
                 Ruling(
                     ruling_id,
@@ -135,6 +167,7 @@ class RulingStore:
                     datetime.fromisoformat(at),
                 ),
                 accepted,
+                said,
             )
 
     def get(self, ruling_id: int) -> tuple[Ruling, list[str]] | None:
@@ -162,6 +195,14 @@ class RulingStore:
             datetime.fromisoformat(at),
         )
         return ruling, [row["review_id"] for row in rows]
+
+    def accounts(self) -> set[str]:
+        """Every account a ruling has booked a row against, whether or not it still decides
+        one."""
+        rows = self._db.execute(
+            "SELECT DISTINCT account FROM review_rulings WHERE account IS NOT NULL"
+        )
+        return {row["account"] for row in rows}
 
     def latest_by(self, member_id: MemberId) -> datetime | None:
         """When `member_id` last ruled, or `None` if they never have; taking a

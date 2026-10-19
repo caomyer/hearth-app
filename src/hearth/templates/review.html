@@ -14,7 +14,7 @@
 {% macro decide_row(row, next_id) %}
 {% set rid = row.item.review_id %}
 {% set what = row.item.payee or row.item.narration or "No description" %}
-<tr id="r-{{ rid }}" data-row{% if focus == rid %} data-focus{% endif %}>
+<tr id="r-{{ rid }}" data-row{% if landing == rid %} data-focus{% endif %}>
   <td class="col-hide-sm muted tnum">{{ row_day(row.item.date) }}</td>
   <td><span class="primary">{{ what }}</span>{{ reason(row) }}</td>
   <td class="num amt{% if row.item.amount > 0 %} amt-in{% endif %}">{{ row.item.amount | amount }}</td>
@@ -92,6 +92,9 @@
         {% if q.changed %}
         <p class="xs faint">{{ plural(q.changed, "row") }} came back because the suggestion changed after you accepted it.</p>
         {% endif %}
+        {% if q.revised %}
+        <p class="xs faint">{{ plural(q.revised, "row") }} came back because the bank changed {{ "it" if q.revised == 1 else "them" }} after {{ "it was" if q.revised == 1 else "they were" }} reviewed.</p>
+        {% endif %}
       </div>
     </div>
   </section>
@@ -166,7 +169,7 @@
   {% set suggested = group.suggested %}
   {% set acceptable = group.acceptable %}
   {% set gid = "g" ~ loop.index %}
-  <section class="panel rgroup mt-4" aria-labelledby="{{ gid }}-h" id="r-group-{{ loop.index }}" data-group{% if focus == "group-" ~ loop.index %} data-focus{% endif %}>
+  <section class="panel rgroup mt-4" aria-labelledby="{{ gid }}-h" id="r-group-{{ loop.index }}" data-group{% if landing == "group-" ~ loop.index %} data-focus{% endif %}>
     <div class="rgroup-head">
       <div class="rgroup-what">
         <h2 id="{{ gid }}-h">{{ group.name }}</h2>
@@ -221,7 +224,7 @@
       <div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next and previous {{ "transaction" if where.one_by_one else "group or transaction" }}</dd></div>
       <div><dt><kbd>a</kbd></dt><dd>Accept the focused transaction, or the whole focused group</dd></div>
       <div><dt><kbd>s</kbd></dt><dd>Skip: leave it waiting and move on</dd></div>
-      <div><dt><kbd>c</kbd></dt><dd>Change the category, then <kbd>Enter</kbd> to book it</dd></div>
+      <div><dt><kbd>c</kbd></dt><dd>Change the category, then <kbd>Enter</kbd> to save it</dd></div>
       <div><dt><kbd>x</kbd></dt><dd>Exclude: not a transaction</dd></div>
       <div><dt><kbd>]</kbd> <kbd>[</kbd></dt><dd>Next and previous group{% if where.one_by_one %} or page{% endif %}</dd></div>
       <div><dt><kbd>u</kbd></dt><dd>Undo the last decision</dd></div>

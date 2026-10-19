@@ -16,12 +16,15 @@ Neither is a proposal: accepting such a row settles nothing, and no ruling may b
 Metadata carries the row's `review-id`, `review-group`, `model-confidence` and `source`, as beancount_nextgen writes them.
 `pile.read_pile` reads them; a row without a review id or a group is refused, because a ruling on it could not be kept.
 
+A row hearth books from a connection (`hearth.plaid.booking`) is named by Plaid's transaction id (`ids.plaid_review_id`), which Plaid keeps when it revises the row, and grouped by Plaid's category, so every row in a group proposes the same account.
+Plaid rates its own category in words, which the feed does not keep yet, so such a row carries no `model-confidence` and reads "Suggested by a rule".
+
 ## Rulings, and how they reach the books
 
 A member can:
 
 - **accept** one row, or a group, as suggested;
-- **book** one row against another account;
+- **book** one row against another account: any spending or income category, or one of their own accounts the books hold open on the row's day, never anyone else's, an account nobody connected, or equity, which are all refused alike so a refusal names nobody;
 - **exclude** one row: it is not a transaction, and books nothing.
 
 Rulings live in the app database (`review_rulings`, `review_ruling_rows`), append-only and keyed by review id, never by position in a file.
@@ -37,11 +40,16 @@ Which ruling decides a row (`review.decision`):
 1. A ruling on the row itself wins over a ruling on its group.
    A row ruling that leaves the row unreviewed, a reopen or an accept whose proposal has since changed, wins only over earlier group rulings, so a later group accept still decides the row.
 2. Among rulings of the same kind, the later one wins, so a ruling is taken back by making another.
-3. An accept is bound to the proposal its author saw.
+3. Every ruling is bound to what its row said when it was made: which account, which day, how much (`ids.says`).
+   A bank revises transactions it sent, and a decision about a row as it was is not a decision about it as it is: a charge booked as groceries says nothing about the same charge at three times the amount.
+   Keeping the ruling would mark the revised row checked when nobody checked it, and dropping it would lose the decision without a word, so neither happens: the row is unreviewed again, at its proposal, and the queue says the bank changed it after it was reviewed.
+   The ruling stays on record.
+   A revision that only tidies the description or refines the category changes none of this; a changed category changes the proposal, which the next rule covers.
+4. An accept is bound to the proposal its author saw.
    It records, for each row, the account that row proposed when it was accepted, and holds only while the import still proposes that account.
    If a later import proposes something else, the row is unreviewed again, and the queue says its suggestion changed since it was accepted.
-4. An accept never covers a row the import proposed nothing for.
-5. A reopen takes a decision back: the rows it covers are unreviewed again.
+5. An accept never covers a row the import proposed nothing for.
+6. A reopen takes a decision back: the rows it covers are unreviewed again.
    Taking a decision back is not reviewing, so it does not move when the member last reviewed.
 
 Binding starts at the page.

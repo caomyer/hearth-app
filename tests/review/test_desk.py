@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from beancount import loader
@@ -6,7 +6,7 @@ from beancount import loader
 from hearth.accounts import Account
 from hearth.disclosure import Concealed
 from hearth.members import MemberId
-from hearth.review.desk import GroupView, NotOneDecision, State, resolve
+from hearth.review.desk import GroupView, NotOneDecision, NotTheirs, ReviewDesk, State, resolve
 from hearth.review.pile import PileItem, read_pile
 from hearth.review.rulings import Action, RulingStore, Scope
 from tests.conftest import FakeClock
@@ -14,6 +14,7 @@ from tests.review.conftest import (
     ACCOUNTS,
     ALEX,
     BLAIR,
+    OPENED,
     PILE,
     DeskFactory,
     accept_shown,
@@ -260,6 +261,73 @@ def test_a_row_must_be_booked_against_a_real_account(
         desk_for(ALEX).set_account("p2p0000001", account)
 
     assert list(rulings.covering({"p2p0000001"})) == []
+
+
+@pytest.mark.parametrize(
+    "account",
+    [
+        "Liabilities:Blair:Card",
+        "Liabilities:Mortgage",
+        "Assets:Unclaimed:Savings",
+        "Equity:Opening-Balances",
+    ],
+)
+def test_a_row_moves_to_no_account_but_the_members_own_and_says_the_same_for_each(
+    desk_for: DeskFactory, rulings: RulingStore, account: str
+) -> None:
+    """Someone else's account, one the books never opened, one nobody owns, and equity are
+    refused alike, so the refusal tells nothing about which of them an account is."""
+    with pytest.raises(NotTheirs) as refused:
+        desk_for(ALEX).set_account("p2p0000001", account)
+
+    assert str(refused.value) == str(NotTheirs())
+    assert list(rulings.covering({"p2p0000001"})) == []
+
+
+@pytest.mark.parametrize("account", ["Assets:Alex:Checking", "Assets:Joint:Checking"])
+def test_a_row_moves_to_an_account_the_member_owns(desk_for: DeskFactory, account: str) -> None:
+    desk_for(ALEX).set_account("p2p0000001", account)
+
+    assert desk_for(ALEX).item("p2p0000001").decision.account == account
+
+
+@pytest.mark.parametrize(
+    ("window", "moves"),
+    [
+        ((date(2026, 1, 21), None), False),
+        ((date(2025, 1, 1), date(2026, 1, 19)), False),
+        ((date(2026, 1, 20), date(2026, 1, 20)), True),
+        ((date(2025, 1, 1), None), True),
+    ],
+)
+def test_a_row_moves_to_an_own_account_only_while_the_books_hold_it_open(
+    pile: list[PileItem],
+    rulings: RulingStore,
+    clock: FakeClock,
+    window: tuple[date, date | None],
+    moves: bool,
+) -> None:
+    """The row is dated 20 January: an account opened after it, or closed before it, cannot
+    hold it, and is refused like any account that is not the member's."""
+    desk = ReviewDesk(
+        ALEX,
+        pile=pile,
+        accounts=ACCOUNTS,
+        rulings=rulings,
+        may_review=owners_only,
+        opened=OPENED | {"Assets:Alex:Checking": window},
+        may_move_to=lambda owners: ALEX in owners,
+        clock=clock,
+    )
+
+    if moves:
+        desk.set_account("p2p0000001", "Assets:Alex:Checking")
+        assert desk.item("p2p0000001").decision.account == "Assets:Alex:Checking"
+    else:
+        with pytest.raises(NotTheirs) as refused:
+            desk.set_account("p2p0000001", "Assets:Alex:Checking")
+        assert str(refused.value) == str(NotTheirs())
+        assert list(rulings.covering({"p2p0000001"})) == []
 
 
 def test_accepting_one_row_binds_it_to_the_proposal_it_was_shown_with(

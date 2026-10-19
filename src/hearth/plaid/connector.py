@@ -346,6 +346,9 @@ class ImportView:
     items: tuple[ImportItem, ...]
     started_at: datetime | None
     unmapped: int
+    inherited: int = 0
+    """Accounts that feed an account the household's own ledger holds, which keeps their
+    transactions (``hearth.plaid.booking``)."""
 
     @property
     def total(self) -> int:
@@ -406,12 +409,14 @@ class Connector:
         setup: PlaidSetup,
         clock: Clock,
         runner: Runner,
+        inherited: Collection[str] = (),
     ) -> None:
         self._policy = policy
         self._viewer = policy.viewer
         self._members = list(household)
         self._accounts = list(accounts)
         self._ledger_accounts = frozenset(ledger_accounts)
+        self._inherited = frozenset(inherited)
         self._db = conn
         self._database = database
         self._feed_path = feed_path
@@ -515,6 +520,7 @@ class Connector:
             items=tuple(found),
             started_at=min(starts, default=None),
             unmapped=sum(1 for i in found for a in i.item.accounts if not a.feeds),
+            inherited=sum(1 for i in found for a in i.item.accounts if a.feeds in self._inherited),
         )
 
     # What the viewer does.
@@ -904,8 +910,23 @@ class Connector:
             fresh = mapping.unused(proposal, taken, account.mask)
             proposals.append(fresh)
             targets = [Target(fresh, None), *existing]
-        chosen = targets[0]
-        choices = self._owner_choices(chosen)
+        # Connected again after it was removed: where it went before, if that is still one of
+        # the member's own accounts and nothing else feeds it, so its history stays in one.
+        before = (
+            next(
+                (
+                    t
+                    for fed in self._registry.fed_before(linked.account_id)
+                    for t in existing
+                    if t.account is not None and t.account.id == fed.hearth_account and not t.taken
+                ),
+                None,
+            )
+            if targets[0].is_new
+            else None
+        )
+        chosen = before or targets[0]
+        choices = self._owner_choices(targets[0])
         name = _called(item.institution, account)
         if name in called and account.mask:
             name += f" {account.mask}"

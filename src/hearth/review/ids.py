@@ -6,6 +6,11 @@ account, date, amount and whitespace-normalised description, never its position 
 Rows that say exactly the same thing are told apart by their order among themselves, the only
 thing that differs, so which of two identical rows carries which id cannot change what either
 books.
+
+A row Plaid sent is named by Plaid's own transaction id instead (`plaid_review_id`), which
+Plaid keeps when it revises the row. A ruling therefore follows the transaction through a
+revision, and is bound to what the row said when it was made (`says`), so a ruling on a row the
+bank has since changed is not silently kept (``hearth.review.decision``).
 """
 
 import hashlib
@@ -33,3 +38,22 @@ def review_ids(rows: Iterable[tuple[str, date, Decimal, str]]) -> list[str]:
     if len(set(ids)) != len(ids):
         raise ValueError("two different rows share a review id; lengthen the id")
     return ids
+
+
+def plaid_review_id(transaction_id: str) -> str:
+    """The review id of the row Plaid sent as `transaction_id`, whatever it says now."""
+    if not transaction_id:
+        raise ValueError("a Plaid row needs its transaction id")
+    content = ("plaid", transaction_id)
+    return hashlib.sha256("\x1f".join(content).encode()).hexdigest()[:ID_LENGTH]
+
+
+def says(account: str, day: date, amount: Decimal, currency: str) -> str:
+    """What a row says, as a ruling is bound to it: which account, which day, how much.
+
+    Kept with a ruling in place of the row's figures, which the app database never holds, as a
+    review id made from them is. A description Plaid tidies, or a category it refines, changes
+    none of it: those change the proposal, which binds an accept already.
+    """
+    content = (account, day.isoformat(), f"{amount.normalize():f}", currency)
+    return hashlib.sha256("\x1f".join(content).encode()).hexdigest()[:ID_LENGTH]

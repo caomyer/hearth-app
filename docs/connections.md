@@ -83,6 +83,8 @@ A confirmed account is an account in hearth's own books from the next recompute,
 The choices are a new ledger account, owned by the member and any co-owners they pick, or an account they already own, whose owners stay as they are.
 A new account starts as a proposed ledger name the member can edit, with a name for the household that defaults to the institution's and the bank's names for it and is kept where `hearth add-account --name` keeps it.
 When the bank calls several of its accounts the same, such as several cards, the proposed ledger name and the default household name of each carry its last digits; an account called like no other keeps the plain name.
+An account connected again after its member removed the connection it came through defaults to the account it fed before, so its history stays in one account (`Registry.fed_before`, which tells the same real account as `connected_twice` does and looks only at that member's own removed connections).
+It does so only while that account is still one of the member's own and no other connection feeds it; otherwise the proposal is a new account as usual, and the page says nothing of why.
 A typed ledger name must be a beancount account under `Assets` for a bank or investment account, or `Liabilities` for a card or loan, and must not be taken by another row on the page.
 A member cannot file into anyone else's account, nor claim an account already in the ledger that nobody owns, since either would hand over its history.
 So a typed name is only ever a new account: one the books already have, or one inside or above it, is refused with one answer, the same whoever owns it and whichever of the three it is, and the owners of a new account always include the member.
@@ -100,7 +102,10 @@ That inference is accepted: both members own the account, and hiding the fed sta
 When two of the targets on the page differ by a single word, such as `Assets:Bank:Checking` and `Assets:Bank:Joint:Checking`, the page names both before anything is confirmed, and puts each bank's balance beside its mapping, so a swap shows up as a number that does not belong.
 The check applies to what is sent, not only to what was proposed: when an account chosen from the list or a name typed makes a pair the page did not name, nothing is saved, the page comes back with the pair named and those rows unconfirmed, and the member confirms them again with the warning in view.
 A row that cannot be saved comes back the same way, marked, with everything the member typed kept.
-Only confirmed accounts are imported.
+Only confirmed accounts are imported, from the next recompute, which confirming starts (`docs/books.md`).
+What a connection brings in reaches the books only through `hearth.plaid.booking`, which marks every entry it books with `source: "plaid:<item_id>:<transaction id>"` (`connections.plaid_source`): only such entries let a connection's last sync vouch for an account's coverage (`docs/real-ledger.md`).
+The format is parsed (`connections.item_of`), not a loose convention, so it is written only through `plaid_source`.
+A sync counts as booked once every row it fetched is in the books: each recompute notes every connection's last successful sync before it reads the feed, so a sync that finishes in between vouches only for rows the books already hold, and the next recompute, which the sync starts, holds the rest.
 
 ## Re-sync
 
@@ -127,12 +132,8 @@ The daily sync and `hearth plaid sync` also leave alone an Item whose history is
 
 ## What is not done yet
 
-- The import that turns fetched transactions and uploaded statements into ledger entries and review rows.
-  Until it exists, connected history waits in the feed store, and each mapped account is in the books with nothing in it yet; the import page says so.
-  Every entry it books from a connection must carry `source: "plaid:<item_id>:<transaction id>"` (`connections.plaid_source`): only such entries let a connection's last sync vouch for an account's coverage (`docs/real-ledger.md`).
-  The format is parsed (`connections.item_of`), not a loose convention, so write it only through `plaid_source`.
-  The import must also keep one invariant that nothing records today: a sync counts as booked only once every row it fetched is in the books.
-  Coverage takes a successful sync on or after an account's newest booked entry to mean the books hold everything the connection brought, so an import that books through May and then stalls while the Item keeps syncing would read as current through today on books that stop in May.
-  Book a sync's rows and mark it booked in one step, or have coverage read the last booked sync rather than the last successful one.
+- Booking uploaded statements: what a connection fetches is booked (`docs/books.md`), what a member uploads is kept but not yet read.
+- Opening balances, so that a connected account's balance is known rather than only how it moved.
+- Carrying an account an inherited ledger holds on from where that ledger stops: the import leaves such an account to the ledger.
 - Bringing in investment holdings and activity.
 - Checking each bank's balance against the ledger once the import has booked the history.

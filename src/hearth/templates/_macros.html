@@ -23,7 +23,7 @@
 {% macro hero_value(value, status, withheld=(), unpriced=(), awaiting=0) %}
 {% if awaiting != 0 %}
 <p class="hero-value muted">&ndash;</p>
-<p class="muted mt-2 measure">Not known yet. {% if awaiting is none %}Some connected accounts have{% else %}{{ plural(awaiting, "connected account") }} {{ "has" if awaiting == 1 else "have" }}{% endif %} no balances or transactions in hearth yet. The figure appears once they are brought in; until then there is none to show, not a figure of zero.</p>
+<p class="muted mt-2 measure">Not known yet. {% if awaiting is none %}Some accounts have{% else %}{{ plural(awaiting, "account") }} {{ "has" if awaiting == 1 else "have" }}{% endif %} no balance in hearth yet. The figure appears once they are brought in; until then there is none to show, not a figure of zero.</p>
 {% elif withheld or unpriced %}
 <div class="hero-partial">
   <p class="hero-value{% if status.recomputing %} is-stale-hold{% endif %}">{{ value | hero }}</p>

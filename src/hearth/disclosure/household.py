@@ -25,6 +25,7 @@ from hearth.disclosure.common import (
 from hearth.disclosure.gate import Disclosed, Withheld
 from hearth.figures import MonthFlows, Part
 from hearth.months import Month
+from hearth.names import readable
 from hearth.reports.flows import Owners
 from hearth.sharing import DESCRIPTIONS, Facet
 from hearth.valuation.networth import NetWorth
@@ -113,12 +114,17 @@ class SpendingPanel:
     leaves_out_unassigned: bool
     """Some spending went through accounts nobody owns, or several owners at once. It is in
     no part, so it is not counted, and its amount is not shown: it may be anyone's."""
+    spent_counted: bool = True
+    """Whether any part behind `spent` has an account. When none has, the sum is of nothing
+    anybody connected, not a month in which nothing was spent, so it is not a figure."""
+    earned_counted: bool = True
+    """`spent_counted`, for `earned`."""
 
     @property
     def charted(self) -> bool:
         """Whether any month is known in full. Until one is, a chart would draw months nobody
-        knows as months of nothing, so none is drawn."""
-        return any(bar.covered for bar in self.bars)
+        knows as months of nothing, so none is drawn; nor while no account is behind it."""
+        return self.spent_counted and any(bar.covered for bar in self.bars)
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,6 +356,8 @@ def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> Sp
         bars=tuple(bars),
         typical=figures.typical([bar.spent for bar in bars[:-1] if bar.covered]),
         leaves_out_unassigned=bool(this_month.spending.unattributed),
+        spent_counted=any(part.accounts for part in spenders),
+        earned_counted=any(part.accounts for part in earners),
     )
 
 
@@ -485,7 +493,7 @@ def category_names(accounts: Sequence[str]) -> dict[str, str]:
                 break
         if name == [OTHER]:
             name = account.split(":")
-        names[account] = ": ".join(name)
+        names[account] = ": ".join(readable(part) for part in name)
     return names
 
 

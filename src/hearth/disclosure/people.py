@@ -46,6 +46,8 @@ class AccountRow:
     """The month the account's history in the ledger starts."""
     spans: Disclosed[tuple[Span, ...]]
     updated: Disclosed[date | None]
+    outside: bool = False
+    """Whether the books hold nothing of the account at all (`Household.outside`)."""
     """Each source's days and the account's last day are when its money moved, which is
     transaction detail, so they go with the transactions facet."""
 
@@ -269,7 +271,7 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
         value=Worth(
             sum((p.value for p in positions if p.value is not None), Decimal(0)),
             tuple(p.holding.commodity for p in positions if p.freshness is Freshness.UNPRICED),
-            1 if account.ledger_account in h.books.awaiting else 0,
+            1 if account.ledger_account in h.balance_unknown else 0,
         ),
         stale=any(p.freshness is Freshness.STALE for p in positions),
         since=Month.of(coverage.spans[0].earliest) if coverage and coverage.spans else None,
@@ -279,6 +281,7 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
         updated=h.gate.disclose(
             Facet.TRANSACTIONS, account.owners, lambda: coverage.latest if coverage else None
         ),
+        outside=account.ledger_account in h.outside,
     )
 
 

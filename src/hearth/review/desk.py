@@ -8,6 +8,13 @@ no longer decides that account's rows. A row on an account nobody owns is review
 A row the member may not review behaves exactly like a row that does not exist: both raise
 `Concealed`, so the desk never reveals what is on anyone else's pile, not even a count.
 
+A row may be moved to any spending or income category, but to a balance-sheet account only
+when the books hold it open on the row's day and the policy, handed over as
+`may_move_to(owners)` for the member at the desk, lets them feed it: one of their own. Anything
+else, an equity account included, is refused with `NotTheirs`, which says the same whether the
+account is someone else's or nobody's, so the desk cannot be used to learn another member's
+account names.
+
 Every accept is bound to what its author was shown. A page sends back each row it showed with
 the account it proposed then, and the desk accepts a row only while it is still waiting and
 still proposes that account, so a proposal that changed between the page and the click is never
@@ -19,7 +26,7 @@ the import had nothing to propose for is never covered.
 from collections import defaultdict
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from hearth.accounts import Account
 from hearth.clock import Clock
@@ -27,7 +34,7 @@ from hearth.disclosure import Concealed
 from hearth.members import MemberId
 from hearth.review.decision import Decision, State, decide
 from hearth.review.pile import PileItem
-from hearth.review.rulings import Action, Ruling, RulingStore, Scope, check_account
+from hearth.review.rulings import Action, Covered, Ruling, RulingStore, Scope, check_account
 
 __all__ = [
     "Acceptance",
@@ -35,6 +42,7 @@ __all__ = [
     "GroupView",
     "ItemView",
     "NotOneDecision",
+    "NotTheirs",
     "ReviewDesk",
     "State",
     "one_decision",
@@ -43,6 +51,19 @@ __all__ = [
 
 type MayReview = Callable[[MemberId, Collection[MemberId]], bool]
 """The access policy's answer to: may this member review rows on an account these own?"""
+
+type MayMoveTo = Callable[[Collection[MemberId]], bool]
+"""The access policy's answer to: may the member at the desk move a row into an account these
+own?"""
+
+FREE = frozenset({"Expenses", "Income"})
+"""Where any member may put a row: a category says what it was, not whose money it is."""
+
+HELD = frozenset({"Assets", "Liabilities"})
+"""Where a row may go only into an account of the member's own."""
+
+type Opened = Mapping[str, tuple[date, date | None]]
+"""Each account the books open, with the day it opens and the day it closes, if it does."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +93,15 @@ UNCERTAIN_GROUPS = frozenset(
     {"unsure", "unknown", "unknown-type", "uncategorized", "uncategorised", "other", "misc"}
 )
 """Group names an import gives rows it could not place: groups defined by being unsure."""
+
+
+class NotTheirs(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
+    """An account a member may not move a row to: not theirs, not open, or not a category.
+
+    One refusal for all of these, naming nobody."""
+
+    def __init__(self) -> None:
+        super().__init__("a row moves only to a category or one of the member's own accounts")
 
 
 class NotOneDecision(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
@@ -112,11 +142,11 @@ def resolve(
 ) -> dict[str, Decision]:
     """Every row's decision, for the books to lay over the ledger. Not for display to anyone."""
     owners = _owners(accounts)
-    applicable: defaultdict[str, list[tuple[Ruling, str | None]]] = defaultdict(list)
+    applicable: defaultdict[str, list[Covered]] = defaultdict(list)
     by_id = {item.review_id: item for item in pile}
-    for review_id, ruling, accepted in rulings.covering(by_id):
-        if may_review(ruling.member_id, owners(by_id[review_id])):
-            applicable[review_id].append((ruling, accepted))
+    for covered in rulings.covering(by_id):
+        if may_review(covered.ruling.member_id, owners(by_id[covered.review_id])):
+            applicable[covered.review_id].append(covered)
     return {item.review_id: decide(item, applicable[item.review_id]) for item in pile}
 
 
@@ -139,9 +169,18 @@ class ReviewDesk:
         accounts: Sequence[Account],
         rulings: RulingStore,
         may_review: MayReview,
+        opened: Opened,
+        may_move_to: MayMoveTo,
         clock: Clock,
     ) -> None:
         self._member = member
+        self._movable = {
+            account.ledger_account: opened[account.ledger_account]
+            for account in accounts
+            if account.ledger_account.split(":")[0] in HELD
+            and account.ledger_account in opened
+            and may_move_to(account.owners)
+        }
         self._owners = _owners(accounts)
         self._accounts = list(accounts)
         self._rulings = rulings
@@ -216,9 +255,15 @@ class ReviewDesk:
         )
 
     def set_account(self, review_id: str, account: str, note: str | None = None) -> Ruling:
-        """Review one row against `account`, whatever its group was given."""
-        self._row(review_id)
+        """Review one row against `account`, whatever its group was given: a category, or one
+        of the member's own accounts the books hold open on the row's day (`NotTheirs`
+        otherwise)."""
+        item = self._row(review_id)
         check_account(account)
+        if account.split(":")[0] not in FREE:
+            opens, closes = self._movable.get(account, (date.max, None))
+            if not opens <= item.date <= (closes or date.max):
+                raise NotTheirs
         return self._record(Scope.ROW, None, Action.ACCOUNT, account, note, {review_id: None})
 
     def reject(self, review_id: str, note: str | None = None) -> Ruling:
@@ -269,6 +314,7 @@ class ReviewDesk:
             account=account,
             note=note,
             rows=rows,
+            says={review_id: self._mine[review_id].says for review_id in rows},
             at=self._clock(),
         )
 

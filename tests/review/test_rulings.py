@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from hearth.review.rulings import Action, RulingStore, Scope
+from hearth.review.rulings import Action, Covered, RulingStore, Scope
 from tests.review.conftest import ALEX
 
 AT = datetime(2026, 2, 1, 9, 0, tzinfo=UTC)
@@ -16,6 +16,7 @@ VALID: dict[str, Any] = {
     "account": None,
     "note": None,
     "rows": {"p2p0000001": None},
+    "says": {"p2p0000001": "0f3a9c2e71"},
     "at": AT,
 }
 
@@ -28,7 +29,9 @@ VALID: dict[str, Any] = {
         ({"action": Action.ACCOUNT}, "account is named exactly"),
         ({"account": "Expenses:Gifts"}, "account is named exactly"),
         ({"action": Action.ACCOUNT, "account": "Gifts"}, "not a beancount account"),
-        ({"rows": {}}, "at least one row"),
+        ({"rows": {}, "says": {}}, "at least one row"),
+        ({"says": {}}, "what each row says"),
+        ({"says": {"p2p0000001": "0f3a9c2e71", "p2p0000002": "5b1d0e8a44"}}, "what each row says"),
         ({"action": Action.ACCEPT}, "proposal is recorded exactly"),
         ({"rows": {"p2p0000001": "Expenses:Gifts"}}, "proposal is recorded exactly"),
         ({"action": Action.ACCEPT, "rows": {"p2p0000001": "gifts"}}, "not a beancount account"),
@@ -60,9 +63,9 @@ def test_the_store_keeps_every_ruling_and_returns_them_oldest_first(
     )
 
     assert list(rulings.covering({"p2p0000001"})) == [
-        ("p2p0000001", first, None),
-        ("p2p0000001", second, None),
-        ("p2p0000001", accepted, "Expenses:Gifts"),
+        Covered("p2p0000001", first, None, "0f3a9c2e71"),
+        Covered("p2p0000001", second, None, "0f3a9c2e71"),
+        Covered("p2p0000001", accepted, "Expenses:Gifts", "0f3a9c2e71"),
     ]
     assert list(rulings.covering({"other00001"})) == []
 

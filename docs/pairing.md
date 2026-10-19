@@ -6,7 +6,7 @@ Booked as two of them, the payment would be spending on one side and income on t
 It is one transfer between two balance-sheet accounts.
 `hearth.plaid.pairing` finds the two rows so the import books the payment once, as that transfer.
 
-Pairing is the step before the import, and books nothing itself.
+Pairing is the import's first step, and books nothing itself; the import (`hearth.plaid.booking`) books each pair once, as a transfer marked `*`, since both banks' rows say it and nothing in it is a guess, and each unpaired leg flagged for review.
 `pairing.staged(conn, rows)` pairs the posted rows it is given that are on accounts a member has mapped into the books, and `Pairing.of(transaction_id)` tells the import, for each row, the pair it is in, the unpaired leg it is, or that it is neither.
 The import reads the rows from the feed and takes each transaction once before it calls `staged` (see [An account connected twice](#an-account-connected-twice)).
 `Pairing` also counts its pairs, its unpaired legs, and how many of those were in a tie (`Pairing.tied`).
@@ -80,5 +80,8 @@ Two Items whose ids differ are never reported, whatever their names.
 Names are not compared, because an Item without an id may carry a hint from Link or the fallback name "Your bank".
 A missed duplicate would book a duplicated feed, while an extra report only asks the import to look, so an Item without an id counts as possibly at any institution.
 It covers both ways in, since either leaves two confirmed Items over one real account.
-The import must check it before pairing, and decides what to do when it reports anything.
+The import checks it before pairing (`hearth.plaid.booking`).
+Where removed connections and a working one reach the same account, each stands for it from the day its history starts, and an older one's rows count only before the history of any connection linked after it starts, which nothing else holds: so removing a bank and connecting it again, however many times, books each transaction once.
+The working connection counts as the newest; of removed ones, the one linked later is newer.
+Two working connections reaching one account are refused, and the recompute says so: no new transactions are brought in until one of them is removed in Settings, Connections, after which the rule above applies.
 Like the rest of the registry, it is for the import pipeline only, and pages may not reach it.

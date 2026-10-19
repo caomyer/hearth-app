@@ -7,7 +7,15 @@ vocabulary to understand. The walk reaches every page the application serves: a 
 fails it until it is taught to the walk, so whoever adds one reads it as a new household would.
 
 The steps: nobody has connected anything; Avery has connected a bank; Avery has filed its
-seven accounts. Blake connects nothing throughout. Every value is invented.
+seven accounts, before the bank has sent any history; the bank's two years of history have
+arrived. Blake connects nothing throughout. Every value is invented.
+
+Once the history is in, spending and income are known, and a zero can be one: a day on which a
+covered account spent nothing, or a chart's axis. So on that step the charts, and the tables
+that read them out, are left out of the search for a stated zero, as they are for a reader
+(``tests.firstday.shown``); every other line of every page is still searched, and every word
+of every page, charts included, is still searched for bookkeeping. What stays unknown, the
+balances, the bank never sent, must still say so.
 """
 
 import re
@@ -22,7 +30,7 @@ from fastapi.testclient import TestClient
 from hearth import accounts
 from hearth.plaid.registry import Registry
 from hearth.web.routes import ROUTERS
-from tests.firstday import PATHS, FirstDay, until_booked
+from tests.firstday import PATHS, FirstDay, until_booked, until_transacted
 
 NOT_WALKED = {
     "/healthz": "answers machines, not people",
@@ -115,22 +123,41 @@ def _get(client: TestClient, fresh: FirstDay, route: str, path: str) -> str:
     return response.text
 
 
+ARRIVED = "its history arrived"
+
+
 def first_day_steps(fresh: FirstDay) -> Iterator[Visit]:
     yield from walk(fresh, "nothing connected")
-    fresh.link("avery", "ins_willowmere")
+    # The bank prepares its history after linking, as a real one does: none of it has come
+    # when the accounts are filed.
+    fresh.plaid.slow_history = True
+    item_id = fresh.link("avery", "ins_willowmere")
     yield from walk(fresh, "a bank connected")
     fresh.map(fresh.signed_in("avery"), PATHS)
     until_booked(fresh, PATHS["7717"])
     yield from walk(fresh, "its accounts filed")
+    fresh.plaid.slow_history = False
+    fresh.plaid.history_ready(item_id)
+    avery = fresh.signed_in("avery")
+    synced = avery.post(f"/connect/items/{item_id}/sync", data={"csrf": fresh.csrf(avery)})
+    assert synced.status_code == 303
+    until_transacted(fresh, PATHS["6616"])
+    yield from walk(fresh, ARRIVED)
 
 
 def problems(visit: Visit) -> list[str]:
     text = readable(visit.page)
     for name in NAMED.get(visit.path, ()):
         text = text.replace(name, "")
-    found = [m.group(0) for m in UNESTABLISHED.finditer(text)]
+    figures = readable(_without_charts(visit.page)) if visit.step == ARRIVED else text
+    found = [m.group(0) for m in UNESTABLISHED.finditer(figures)]
     found += [m.group(0) for m in VOCABULARY.finditer(text)]
     return found
+
+
+def _without_charts(page: str) -> str:
+    """A page without its charts and the tables that read them out (``firstday.shown``)."""
+    return re.sub(r"<svg.*?</svg>|<details.*?</details>", "", page, flags=re.DOTALL)
 
 
 @pytest.fixture
@@ -166,3 +193,17 @@ def test_a_first_day_explains_what_it_does_not_know(visits: list[Visit]) -> None
         assert "The figure appears once they are brought in" in filed[("avery", page)], page
     for page in ("/", "/net-worth", "/members/avery"):
         assert "The figure appears once they are brought in" in filed[("blake", page)], page
+
+
+def test_history_makes_spending_known_and_leaves_balances_unknown(visits: list[Visit]) -> None:
+    """The bank's history says how every account moved, not what any of them held before it:
+    spending is a figure from then on, and net worth still says why it is not one."""
+    arrived = {(v.viewer, v.path): readable(v.page) for v in visits if v.step == ARRIVED}
+
+    for page in ("/", "/you", "/net-worth"):
+        assert "no balance in hearth yet" in arrived[("avery", page)], page
+        assert "The figure appears once they are brought in" in arrived[("avery", page)], page
+    assert "History incomplete" not in arrived[("avery", "/you")]
+    assert re.search(r"Spent, Oct 1.15\s*\$\s*[1-9]", arrived[("avery", "/")])
+    assert "waiting in Review" in arrived[("avery", "/connect/import")]
+    assert "In your figures and in Review" in arrived[("avery", "/connect/import")]

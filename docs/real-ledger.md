@@ -71,9 +71,9 @@ A quiet card whose connection still works holds its months, so cards with no act
 The books note each connection's last successful sync when they are recomputed (`books.synced_through`); a sync recomputes them when it finishes, from a page or the morning's run, so the figures see it at once.
 Like everything else here, this is decided by month alone and is the same for every viewer.
 
-Today no entry in a real ledger derives from a connection, so no connection vouches for anything there, and a Plaid-fed account whose ledger feed has stopped while its connection keeps working still reads as covered by the ledger rule below.
-The cause is that connected data has not reached the books yet: it waits in the feed store until the import exists (`docs/connections.md`).
-The rule that closes it is in place and activates on its own once the import books rows with the `plaid:<item_id>:...` source; the demo books its bank-feed rows that way already, so it shows the rule at work.
+Every entry the import books from a connection carries that source (`docs/books.md`), so an account hearth opened for a connection is vouched for by it from the first recompute after its history arrives.
+An account an inherited ledger opens is left to that ledger, and the import books nothing into it, so its connection vouches for nothing there: a Plaid-fed account whose ledger has stopped while its connection keeps working still reads as covered by the ledger rule below, until carrying an inherited account on from its ledger is built.
+The demo marks its ledger's bank-feed rows with the source the import writes, so it shows the rule at work on an inherited ledger too.
 
 An account no connection vouches for, such as one a statement import brings in, is judged with its part by the ledger alone, and that limitation stays: one that stopped while another in its part carries on reads as complete.
 Judging each such account on its own entries would be worse, as every quiet card would hold its member's typical, pace and history back for good.

@@ -88,6 +88,15 @@ Connecting institutions adds three more (`docs/connections.md`):
   A proposal can therefore meet an account the member cannot see and be refused on submit, like any typed name; the member edits the field.
 - The residue (hearth-nameprobe-1, open for the captain): a name a member types and submits may be refused as unavailable, which tells them something is at, under or above that name and nothing else.
 
+The import adds two more (`docs/books.md`, `docs/pairing.md`):
+
+- A payment from one account to a card the household also connects is booked once, as a transfer marked `*`, never as a `!` row waiting for review.
+  This is deliberate, and must not be "fixed" to `!` for consistency with every other imported row.
+  The two accounts may be two members', and a review row belongs to the first account's owners: as `!`, it would show one member the other member's card account name as its suggestion in Review, and a ruling one member made on it would move the other member's card.
+  Both banks' own rows say the transfer happened, so nothing in it is a guess for anyone to correct.
+- That transfer says only "Card payment".
+  It is one entry on both accounts, so it repeats neither bank's own description, which is that account's transaction detail.
+
 ## Where it is enforced
 
 - `src/hearth/access.py` holds the rules.

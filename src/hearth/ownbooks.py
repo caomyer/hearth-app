@@ -6,10 +6,12 @@ them in memory on every recompute, from the app database and the feed store, the
 review overlay lays rulings over the ledger: what Plaid sent lives in the feed, what members
 decided lives in the app database, and nothing is stored twice, so nothing can drift.
 
-For now that is one ``open`` per mapped account, dated at the start of the history asked for.
-Transactions wait for the import, which books a bank's payment to a card once, as the transfer
-``hearth.plaid.pairing`` pairs it into: booked from both sides it would count twice, as
-spending and as income.
+That is one ``open`` per mapped account, dated at the start of the history asked for, and
+every posted transaction Plaid sent for those accounts, as the import books it
+(``hearth.plaid.booking``): flagged until a member reviews it, against the account Plaid's
+category proposes, and a bank's payment to a card once, as the transfer ``hearth.plaid.pairing``
+pairs it into. Every other account those entries name, and every category a member has
+reviewed a row as, is opened alongside, so the file loads as it stands.
 
 Every recompute also writes these entries to a beancount file, so every figure traces to an
 entry that exists, one a person can open in fava, query, diff and check against a statement.
@@ -27,12 +29,16 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from beancount.core.data import Directive, Open, new_metadata
+from beancount.core.data import Directive, Open, Transaction, new_metadata
 from beancount.parser import printer
 
 from hearth.accounts import all_accounts
+from hearth.plaid import booking
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
+from hearth.reports.common import is_balance_sheet
+from hearth.review.pile import WAITING
+from hearth.review.rulings import RulingStore
 
 _log = logging.getLogger(__name__)
 
@@ -54,14 +60,25 @@ HEADER = """\
 _SIGNATURE = "; hearth wrote everything above; its sha256 is "
 
 
-def derive(conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()) -> list[Open]:
-    """Hearth's own entries: an `open` for each ledger account a confirmed mapping feeds.
+def derive(
+    conn: sqlite3.Connection,
+    feed: Feed,
+    *,
+    opened: Collection[str] = (),
+    since: date | None = None,
+) -> list[Directive]:
+    """Hearth's own entries: an `open` for each ledger account a confirmed mapping feeds, and
+    every transaction the import books for them (``hearth.plaid.booking``).
 
     Each is dated at the start of the history its connection asked for, or at the earliest
     transaction Plaid sent for it if that is earlier, so every row it could ever book is on or
-    after the day it opens. A ledger account fed by more than one connection, as when a bank
-    is connected again, opens at the earliest of them. Accounts in `opened`, which an
-    inherited ledger opens already, are left to it.
+    after the day it opens. A ledger account fed by more than one connection opens at the
+    earliest of them. Accounts in `opened`, which an inherited ledger opens already, are left
+    to it, with their transactions.
+
+    Every other account an entry names, and every category a member has reviewed a row as,
+    opens on the first of those days, or on `since`, the inherited ledger's first day, when
+    hearth opens none of its own. Raises ``booking.Refused`` when the feed cannot be booked.
     """
     registry = Registry(conn)
     named = {account.id: account for account in all_accounts(conn)}
@@ -79,8 +96,31 @@ def derive(conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()
         known = found.get(opening.account)
         if known is None or opening.day < known.day:
             found[opening.account] = opening
+    booked = booking.book(conn, feed, opened=opened)
+    first = min((o.day for o in found.values()), default=since)
+    extra = (booked.accounts | _ruled(conn)) - set(opened) - found.keys()
     ordered = sorted(found.values(), key=lambda o: (o.day, o.account))
-    return [o.entry(lineno) for lineno, o in enumerate(ordered, start=1)]
+    entries: list[Directive] = [o.entry(0) for o in ordered]
+    if first is not None:
+        entries += [Open(new_metadata(ORIGIN, 0), first, a, [], None) for a in sorted(extra)]
+    entries += booked.entries
+    return [_filed(entry, lineno) for lineno, entry in enumerate(entries, start=1)]
+
+
+def _ruled(conn: sqlite3.Connection) -> set[str]:
+    """The categories members have reviewed rows as: what a ruling books a row against, once
+    the books lay it over the row. A balance-sheet account is one the household names itself,
+    and opens as an account of its own; hearth does not open one because a ruling named it."""
+    return {
+        account
+        for account in RulingStore(conn).accounts()
+        if not is_balance_sheet(account) and account not in WAITING
+    }
+
+
+def _filed(entry: Directive, lineno: int) -> Directive:
+    """`entry` as one of the entries hearth derives, at its place among them."""
+    return entry._replace(meta={**entry.meta, "filename": ORIGIN, "lineno": lineno})
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,12 +158,21 @@ def render(entries: Sequence[Directive], *, inherits: Path | None) -> str:
             "\n; Inherited: the household's own ledger, which hearth reads and never writes.\n"
             f"include {_quoted(str(inherits.resolve()))}\n"
         )
-    if entries:
+    opens = [entry for entry in entries if not isinstance(entry, Transaction)]
+    booked = [entry for entry in entries if isinstance(entry, Transaction)]
+    if opens:
         parts.append(
             "\n; One account for each bank account a member connected, opened on the first day"
-            "\n; of the history asked for.\n"
+            "\n; of the history asked for, and each category the transactions below name.\n"
         )
-        parts.extend(f"\n{printer.format_entry(entry)}" for entry in entries)
+        parts.extend(f"\n{printer.format_entry(entry)}" for entry in opens)
+    if booked:
+        parts.append(
+            "\n; Every transaction the banks sent. One marked ! is as hearth proposed it, and"
+            "\n; nobody has reviewed it yet; one marked * a member reviewed, or is a payment"
+            "\n; from a bank account to a card, which both of them sent.\n"
+        )
+        parts.extend(f"\n{printer.format_entry(entry)}" for entry in booked)
     return "".join(parts)
 
 

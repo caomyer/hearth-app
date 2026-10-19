@@ -16,6 +16,8 @@ from decimal import Decimal
 from beancount.core.amount import Amount
 from beancount.core.data import Directive, Transaction
 
+from hearth.review import ids
+
 UNRESOLVED = "Equity:Review:Unresolved"
 """Where a row sits when nothing could be proposed. Never an account anyone chose."""
 
@@ -44,6 +46,11 @@ class PileItem:
     confidence: Decimal | None
     source: str | None
     location: str
+
+    @property
+    def says(self) -> str:
+        """What the row says, as a ruling on it is bound to it (`ids.says`)."""
+        return ids.says(self.account, self.date, self.amount, self.currency)
 
 
 def _location(entry: Transaction) -> str:

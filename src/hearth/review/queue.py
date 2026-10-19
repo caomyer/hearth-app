@@ -17,7 +17,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from hearth.review.decision import PROPOSAL_CHANGED, State
+from hearth.names import readable
+from hearth.review.decision import PROPOSAL_CHANGED, REVISED, State
 from hearth.review.desk import ItemView, one_decision
 
 PAGE_SIZE = 50
@@ -67,11 +68,14 @@ class Confidence(StrEnum):
     HIGH = "Confident"
     UNSCORED = "Suggested by a rule"
     CHANGED = "Suggestion changed since you accepted it"
+    REVISED = "Changed by the bank since it was reviewed"
 
 
 def confidence(view: ItemView) -> Confidence:
     if view.decision.reason == PROPOSAL_CHANGED:
         return Confidence.CHANGED
+    if view.decision.reason == REVISED:
+        return Confidence.REVISED
     if view.item.proposed is None:
         return Confidence.NONE
     score = view.item.confidence
@@ -174,6 +178,7 @@ class QueueGroup:
 
 
 _CONFIDENCE_RANK = [
+    Confidence.REVISED,
     Confidence.CHANGED,
     Confidence.NONE,
     Confidence.LOW,
@@ -206,6 +211,8 @@ class Queue:
     """Every unreviewed row on the member's pile, whatever the filter."""
     changed: int
     """Unreviewed rows that were accepted once and have since changed their suggestion."""
+    revised: int
+    """Unreviewed rows that were reviewed once and that their bank has since changed."""
     oldest: date | None
     accounts: tuple[Choice, ...]
     categories: tuple[Choice, ...]
@@ -267,6 +274,7 @@ def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
         reviewed=len(decided),
         remaining=Tally.of(waiting),
         changed=sum(1 for v in waiting if v.decision.reason == PROPOSAL_CHANGED),
+        revised=sum(1 for v in waiting if v.decision.reason == REVISED),
         oldest=min((v.item.date for v in waiting), default=None),
         accounts=_choices(waiting, lambda v: (v.account.id, v.account.name) if v.account else None),
         categories=_choices(waiting, lambda v: (_category_key(v), _category_label(v))),
@@ -278,7 +286,7 @@ def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
 
 def _category_label(view: ItemView) -> str:
     proposed = view.item.proposed
-    return proposed.rsplit(":", 1)[-1] if proposed else "Nothing suggested"
+    return readable(proposed.rsplit(":", 1)[-1]) if proposed else "Nothing suggested"
 
 
 def _choices(

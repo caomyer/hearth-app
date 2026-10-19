@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
+from beancount.core.data import Open
+
 from hearth import figures
 from hearth.accounts import Account
 from hearth.books import Books
@@ -106,7 +108,7 @@ class Worth:
     value: Decimal
     unpriced: tuple[str, ...]
     awaiting: int | None = 0
-    """Accounts in the figure whose balance the books do not hold yet (`books.awaiting`).
+    """Accounts in the figure whose balance the books do not hold yet (`books.balance_unknown`).
     While there are any, the figure is not known: `value` counts them as nothing, so it is
     never shown. None when there are some but the viewer may not see the part's balances,
     as how many would say how many accounts its owners have."""
@@ -148,6 +150,10 @@ class Household:
     parts: tuple[Part, ...]
     ownership: OwnersOf
     books: Books
+    outside: frozenset[str] = frozenset()
+    """Accounts the household names that the books hold nothing of, not even an `open`: one
+    claimed from a ledger it no longer inherits, or never connected. Their balance is not
+    known here, never zero."""
 
     @classmethod
     def of(
@@ -160,7 +166,16 @@ class Household:
             parts=tuple(figures.parts(members, accounts)),
             ownership=figures.ownership(accounts),
             books=books,
+            outside=frozenset(
+                {a.ledger_account for a in accounts}
+                - {e.account for e in books.entries if isinstance(e, Open)}
+            ),
         )
+
+    @property
+    def balance_unknown(self) -> frozenset[str]:
+        """Every account the household names whose balance the books do not know."""
+        return self.books.balance_unknown | self.outside
 
     @property
     def viewer(self) -> Member:
@@ -193,10 +208,10 @@ class Household:
         return Worth(mine.known_total, self.unpriced(mine, part), awaiting)
 
     def awaiting(self, part: Part) -> int:
-        """How many of the part's accounts the books hold nothing for yet. A count, never which:
-        that an account is empty says only that its history is not booked yet. The count is
-        released only with the part's balances (`worth`)."""
-        return sum(1 for a in part.accounts if a.ledger_account in self.books.awaiting)
+        """How many of the part's accounts the books do not know the balance of yet. A count,
+        never which: it says only that an account's history, or the balance it started from, is
+        not in the books yet. The count is released only with the part's balances (`worth`)."""
+        return sum(1 for a in part.accounts if a.ledger_account in self.balance_unknown)
 
     def unpriced(self, valuation: NetWorth, part: Part) -> tuple[str, ...]:
         """Name the unpriced positions, or only count them when holdings are not shown."""
@@ -289,7 +304,13 @@ class Household:
         return history[0].as_of
 
     def _reached(self, parts: Sequence[Part]) -> list[NetWorth]:
-        """Month ends after the first of `parts`' accounts opened, that the ledger reaches."""
+        """Month ends after the first of `parts`' accounts opened, that the ledger reaches.
+
+        None while an account's history is in the books without the balance it started from
+        (`books.unanchored`): every month end would be what it moved since, not what it held.
+        """
+        if any(a.ledger_account in self.books.unanchored for p in parts for a in p.accounts):
+            return []
         opened = {c.account: c.opened for c in self.books.coverage}
         days = [
             opened[a.ledger_account]

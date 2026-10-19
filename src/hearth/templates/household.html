@@ -120,23 +120,25 @@
     <section class="panel" aria-labelledby="sp-h">
       <div class="panel-head">
         <h2 id="sp-h">Spending by month</h2>
-        <p class="finding">{% if sp.covered %}{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% else %}Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.{% endif %}{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
+        <p class="finding">{% if not sp.spent_counted %}Not known yet: nothing behind this figure that you can see is connected.{% elif sp.covered %}{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% else %}Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.{% endif %}{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
       </div>
       <div class="panel-body">
         <div class="figs" style="margin-bottom: var(--s-5)">
           <div>
             <p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
-            {% if sp.covered %}<p class="fig-value">{{ sp.spent | hero }}</p>{% else %}<p class="fig-value muted">&ndash;</p>
+            {% if not sp.spent_counted %}<p class="fig-value muted">&ndash;</p>
+            {% elif sp.covered %}<p class="fig-value">{{ sp.spent | hero }}</p>{% else %}<p class="fig-value muted">&ndash;</p>
             <p class="fig-sub">History incomplete</p>{% endif %}
             {% if sp.spent_without %}<p class="fig-sub">{{ private("Without " ~ (sp.spent_without | names("name"))) }}</p>{% endif %}
-            {% if sp.covered %}{{ unreviewed_sub(sp.spent_unreviewed) }}{% endif %}
+            {% if sp.covered and sp.spent_counted %}{{ unreviewed_sub(sp.spent_unreviewed) }}{% endif %}
           </div>
           <div>
             <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
-            {% if sp.covered %}<p class="fig-value">{{ sp.earned | hero }}</p>{% else %}<p class="fig-value muted">&ndash;</p>
+            {% if not sp.earned_counted %}<p class="fig-value muted">&ndash;</p>
+            {% elif sp.covered %}<p class="fig-value">{{ sp.earned | hero }}</p>{% else %}<p class="fig-value muted">&ndash;</p>
             <p class="fig-sub">History incomplete</p>{% endif %}
             {% if sp.earned_without %}<p class="fig-sub">{{ private("Without " ~ (sp.earned_without | names("name"))) }}</p>{% endif %}
-            {% if sp.covered %}{{ unreviewed_sub(sp.earned_unreviewed) }}{% endif %}
+            {% if sp.covered and sp.earned_counted %}{{ unreviewed_sub(sp.earned_unreviewed) }}{% endif %}
           </div>
           <div>
             <p class="fig-label">Saved in {{ saved_month_name }}</p>

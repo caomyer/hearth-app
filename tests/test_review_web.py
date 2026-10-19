@@ -81,6 +81,16 @@ def test_an_unreviewed_spending_total_says_how_much_rests_on_unreviewed_rows(
     assert '<span class="tnum">$40</span> not yet reviewed' in casey
 
 
+def test_an_unreviewed_income_total_says_how_much_rests_on_unreviewed_rows(
+    world: World,
+) -> None:
+    add_rows(world, ("casey-row-9", "Stipend", "75.00", "Income:Curlew"))
+
+    casey = world.signed_in("casey").get("/you").text
+
+    assert '<span class="tnum">$75</span> not yet reviewed' in casey
+
+
 def test_accepting_with_a_suggestion_that_changed_since_the_page_leaves_it_waiting(
     world: World,
 ) -> None:
@@ -189,7 +199,12 @@ def test_after_a_decision_the_queue_resumes_at_the_next_row(world: World) -> Non
         location
         == "/review?view=rows&order=amount&outcome=accepted&undo=1&focus=casey-row-1#r-casey-row-1"
     )
-    assert 'id="r-casey-row-1" data-row data-focus' in casey.get(location).text
+    page = casey.get(location).text
+    assert 'id="r-casey-row-1" data-row data-focus' in page
+    # Still the full page, with its navigation and width, not the narrow one-task page whose
+    # width squeezes the table to a word a line.
+    assert '<main id="main" class="page">' in page
+    assert '<nav class="nav" aria-label="Primary">' in page
 
 
 def test_a_review_falls_due_on_the_members_own_cadence_and_nobody_elses(world: World) -> None:

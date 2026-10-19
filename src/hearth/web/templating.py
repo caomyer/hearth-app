@@ -18,6 +18,7 @@ from markupsafe import Markup, escape
 from hearth.connections import PLAID
 from hearth.disclosure import Withheld
 from hearth.months import Month
+from hearth.names import readable
 
 _CENT = Decimal("0.01")
 _DOLLAR = Decimal(1)
@@ -125,7 +126,7 @@ def category(ledger_account: str | None) -> str:
         return "Transfer"
     if ledger_account.startswith("Income:"):
         return "Income"
-    return ledger_account.rsplit(":", 1)[-1]
+    return readable(ledger_account.rsplit(":", 1)[-1])
 
 
 def origin(value: str) -> str:

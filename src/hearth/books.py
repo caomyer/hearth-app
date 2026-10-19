@@ -30,7 +30,7 @@ from typing import Any
 
 from beancount import loader
 from beancount.core.account import is_valid as is_valid_account
-from beancount.core.data import Balance, Directive, Open, Transaction, entry_sortkey
+from beancount.core.data import Balance, Directive, Open, Pad, Transaction, entry_sortkey
 from beancount.core.interpolate import BalanceError
 from beancount.ops import validation
 from beancount.parser import options
@@ -40,7 +40,7 @@ from hearth.clock import Clock
 from hearth.config import Settings
 from hearth.connections import Connections, RegisteredConnections, item_of
 from hearth.months import Month
-from hearth.plaid import feed
+from hearth.plaid import booking, feed
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.common import is_balance_sheet, root
 from hearth.reports.coverage import AccountCoverage, account_coverage
@@ -58,6 +58,9 @@ _log = logging.getLogger(__name__)
 CURRENCY = "USD"
 HISTORY_MONTHS = 12
 DAILY_AT = time(6, 0)
+
+REVIEW_EQUITY = "Equity:Review:"
+"""Where a row waits for review (``hearth.review.pile.WAITING``): never what an account held."""
 
 BEHIND_AFTER = timedelta(days=7)
 """A ledger a few days short is a feed that has not caught up; a week short is worth saying."""
@@ -101,6 +104,14 @@ class Books:
     awaiting: frozenset[str] = frozenset()
     """Accounts hearth opened for a connected bank account that the books hold nothing for
     yet (`awaiting`): whatever the bank says, their balance is not known here, never zero."""
+    unanchored: frozenset[str] = frozenset()
+    """Accounts hearth opened whose transactions the books hold, but not what the account held
+    before the first of them (`unanchored`): their balance is not known here either."""
+
+    @property
+    def balance_unknown(self) -> frozenset[str]:
+        """Every account whose balance the books do not know, whatever its bank says."""
+        return self.awaiting | self.unanchored
 
     @property
     def month(self) -> Month:
@@ -229,6 +240,7 @@ def compute(
         flowing=flowing(entries),
         synced=vouches,
         awaiting=awaiting(entries, today),
+        unanchored=unanchored(entries, today),
         pile=pile,
     )
 
@@ -263,8 +275,8 @@ def vouched(
     says nothing about it and the ledger alone judges it, as if it had no connection.
     """
     booked: dict[str, date] = {}
-    for account, entry in _account_entries(entries):
-        if account in synced and item_of((entry.meta or {}).get("source")) == synced[account][0]:
+    for account, entry, source in _account_entries(entries):
+        if account in synced and item_of(source) == synced[account][0]:
             booked[account] = max(entry.date, booked.get(account, date.min))
     return {
         account: min(day, today)
@@ -288,7 +300,7 @@ def account_ends(
     account counts only entries no other connection booked (`_account_entries`).
     """
     ends: dict[str, date] = {}
-    for account, entry in _account_entries(entries, own):
+    for account, entry, _ in _account_entries(entries, own):
         day = min(_known_through(entry), today)
         if day > ends.get(account, date.min):
             ends[account] = day
@@ -327,7 +339,7 @@ def account_reaches(
     """Each balance-sheet account's `Reach`, counting an entry dated after `today` as today's,
     and, for an account in `own`, only entries no other connection booked (`account_ends`)."""
     reaches: dict[str, Reach] = {}
-    for account, entry in _account_entries(entries, own):
+    for account, entry, _ in _account_entries(entries, own):
         month = Month.of(min(entry.date, today))
         reach = reaches.get(account, Reach())
         if isinstance(entry, Transaction) and (
@@ -348,8 +360,40 @@ def awaiting(entries: Sequence[Directive], today: date) -> frozenset[str]:
     that includes one is not known yet rather than counting it as zero. An inherited ledger's
     own accounts keep beancount's meaning, where an account nothing has moved holds nothing.
     """
-    opened = {e.account for e in ownbooks.own(entries) if isinstance(e, Open)}
-    return frozenset(opened - account_reaches(entries, today).keys())
+    return frozenset(_connected(entries) - account_reaches(entries, today).keys())
+
+
+def unanchored(entries: Sequence[Directive], today: date) -> frozenset[str]:
+    """Accounts hearth opened from a connection that have transactions but no anchor: nothing
+    in the books says what the account held, only how it moved.
+
+    A connection sends a window of history, not the account's life, so its rows added up are
+    what moved over the window, not the balance; read as one, a card owing thousands could show
+    as owing nothing. An account is anchored by a balance assertion on it, a `pad` into it, or a
+    transaction balancing it against equity outside ``Equity:Review``, as an opening balance
+    is: each says what it held. Until one does, its balance is not known, never the sum of its
+    rows. An inherited ledger's own accounts keep beancount's meaning, as in `awaiting`.
+    """
+    anchored: set[str] = set()
+    for entry in entries:
+        if isinstance(entry, Balance | Pad):
+            anchored.add(entry.account)
+        elif isinstance(entry, Transaction) and any(
+            root(p.account) == "Equity" and not p.account.startswith(REVIEW_EQUITY)
+            for p in entry.postings
+        ):
+            anchored.update(p.account for p in entry.postings)
+    return frozenset((_connected(entries) & account_reaches(entries, today).keys()) - anchored)
+
+
+def _connected(entries: Sequence[Directive]) -> set[str]:
+    """The balance-sheet accounts hearth opened, one for each account a member connected; not
+    the categories it opens beside them."""
+    return {
+        e.account
+        for e in ownbooks.own(entries)
+        if isinstance(e, Open) and is_balance_sheet(e.account)
+    }
 
 
 def flowing(entries: Sequence[Directive]) -> frozenset[str]:
@@ -370,8 +414,13 @@ def flowing(entries: Sequence[Directive]) -> frozenset[str]:
 
 def _account_entries(
     entries: Sequence[Directive], own: Mapping[str, str] | None = None
-) -> Iterator[tuple[str, Transaction | Balance]]:
-    """Each balance-sheet account with each transaction or balance assertion that names it.
+) -> Iterator[tuple[str, Transaction | Balance, object]]:
+    """Each balance-sheet account with each transaction or balance assertion that names it,
+    and the `source` its side of the entry was booked from.
+
+    That is the posting's own `source`, where it has one, else the entry's: a payment from a
+    bank account to a card is one entry booked from two connections' rows, one for each side
+    (``hearth.plaid.booking``).
 
     An account in `own`, which a connection vouches for, is not paired with an entry another
     connection booked: a card payment arriving through the checking account's feed is one
@@ -379,19 +428,22 @@ def _account_entries(
     """
     own = own or {}
     for entry in entries:
+        found: dict[str, object] = {}
+        source = (entry.meta or {}).get("source")
         if isinstance(entry, Transaction):
-            accounts = {posting.account for posting in entry.postings}
+            for posting in entry.postings:
+                found.setdefault(posting.account, (posting.meta or {}).get("source", source))
         elif isinstance(entry, Balance):
-            accounts = {entry.account}
+            found[entry.account] = source
         else:
             continue
-        booked = item_of((entry.meta or {}).get("source"))
-        for account in accounts:
+        for account, booked_from in found.items():
             if not is_balance_sheet(account):
                 continue
+            booked = item_of(booked_from)
             if account in own and booked is not None and booked != own[account]:
                 continue
-            yield account, entry
+            yield account, entry, booked_from
 
 
 def _known_through(entry: Transaction | Balance) -> date:
@@ -410,6 +462,13 @@ def _set_aside(entry: Directive) -> bool:
         and isinstance(entry.meta, dict)
         and "review-id" in entry.meta
     )
+
+
+def _names(entry: Directive) -> list[str]:
+    """Every account an entry hearth derived names."""
+    if isinstance(entry, Transaction):
+        return [posting.account for posting in entry.postings]
+    return [entry.account] if isinstance(entry, Open) else []
 
 
 def month_ends(today: date, count: int) -> list[date]:
@@ -477,6 +536,9 @@ class Bookkeeper:
             self._state = Status(books, None, recomputing=False)
 
     def recompute_in_background(self) -> None:
+        """Recompute in a thread of its own; the status says so from the moment it is asked
+        for, so a page served before the thread starts does not read as up to date."""
+        self._state = Status(self._state.books, self._state.failure, recomputing=True)
         threading.Thread(target=self.recompute, name="hearth-recompute", daemon=True).start()
 
     def recompute_daily(self, at: time = DAILY_AT) -> None:
@@ -534,13 +596,14 @@ def from_household(
     known = connections or RegisteredConnections(settings.database)
 
     def establish(now: datetime) -> Books:
+        # Each sync is noted before the feed is read, never after: a sync that finishes in
+        # between then vouches for rows the books hold, not for rows they do not hold yet.
+        synced = synced_through(known)
         entries = household_entries(settings)
         conn = db.connect(settings.database)
         try:
             prices = stored_prices(PriceStore(conn), sources)
-            books = compute(
-                entries, prices, now=now, decide=rulings(conn), synced=synced_through(known)
-            )
+            books = compute(entries, prices, now=now, decide=rulings(conn), synced=synced)
         finally:
             conn.close()
         written = ownbooks.render(ownbooks.own(books.entries), inherits=settings.ledger)
@@ -561,16 +624,19 @@ def household_entries(settings: Settings) -> tuple[Directive, ...]:
     else:
         inherited, options_map = (), options.OPTIONS_DEFAULTS.copy()
     opened = {e.account for e in inherited if isinstance(e, Open)}
+    since = min((e.date for e in inherited), default=None)
     conn = db.connect(settings.database)
     try:
         with feed.Feed.open(settings.feed_database) as fed:
-            own = ownbooks.derive(conn, fed, opened=opened)
+            own = ownbooks.derive(conn, fed, opened=opened, since=since)
+    except booking.Refused as refused:
+        raise LedgerError(str(refused)) from refused
     finally:
         conn.close()
     entries = tuple(sorted((*inherited, *own), key=entry_sortkey))
     if own:
         # Beancount checks a name's spelling only as it parses a file, which these never were.
-        misnamed = [entry for entry in own if not is_valid_account(entry.account)]
+        misnamed = sorted({n for entry in own for n in _names(entry) if not is_valid_account(n)})
         problems = misnamed or validation.validate(list(entries), options_map)  # type: ignore[no-untyped-call]
         if problems:
             count = len(problems)

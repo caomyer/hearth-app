@@ -318,12 +318,11 @@ def covers(books: Books, accounts: Sequence[Account], month: Month) -> bool:
     and nothing of the purchases the card's own feed did not deliver. Presence is not
     completeness.
 
-    A connection vouches only for an account whose entries it booked, and today no entry in
-    the books derives from a connection: connected history waits in the feed store until the
-    import books it with its `plaid:<item_id>:...` source (`connections.plaid_source`). Until
-    then every account is judged as one no connection feeds, so a Plaid-fed account whose
-    ledger feed stopped while its connection keeps working still reads as covered by the
-    rule below. The rule above activates on its own once the import books such entries.
+    A connection vouches only for an account whose entries it booked, which the import marks
+    with their `plaid:<item_id>:...` source (`connections.plaid_source`). It books everything
+    a connection sent into the accounts hearth opened for it, so those are judged by their
+    connection; an account an inherited ledger holds gets nothing from the import, so it is
+    judged by the rule below, as one no connection feeds.
 
     Accounts no connection vouches for, such as those a statement import brings in, are judged
     together by the ledger alone, and the ledger cannot tell quiet from missing: one of them
