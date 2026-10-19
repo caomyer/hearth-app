@@ -79,8 +79,16 @@ Plaid prices positions for today only, so nothing here implies a price history.
 ## Mapping, confirmed
 
 Each account a connection reaches feeds exactly one ledger account, confirmed by its member, never inferred.
-The choices are a proposed new ledger account, owned by the member and any co-owners they pick, or an account they already own, whose owners stay as they are.
+The choices are a new ledger account, owned by the member and any co-owners they pick, or an account they already own, whose owners stay as they are.
+A new account starts as a proposed ledger name the member can edit, with a name for the household that defaults to the institution's and the bank's names for it and is kept where `hearth add-account --name` keeps it.
+When the bank calls several of its accounts the same, such as several cards, the proposed ledger name and the default household name of each carry its last digits; an account called like no other keeps the plain name.
+A typed ledger name must be a beancount account under `Assets` for a bank or investment account, or `Liabilities` for a card or loan, and must not be taken by another row on the page.
 A member cannot file into anyone else's account, nor claim an account already in the ledger that nobody owns, since either would hand over its history.
+So a typed name is only ever a new account: one the books already have, or one inside or above it, is refused with one answer, the same whoever owns it and whichever of the three it is, and the owners of a new account always include the member.
+That answer says something is at, under or above the name and nothing else; `docs/privacy-boundary.md` states that residue and the open question about it (hearth-nameprobe-1).
+The proposal is built only from the accounts the member may see, so it says nothing of anyone else's names; when it meets one they cannot see, it is refused on submit like a typed name and the member edits it.
+Two rows on the page cannot go to the same account, nor name new accounts one inside the other.
+A household name is given only to a new account: a confirmed row going to an account already in the books, with a name typed that is not the one proposed, comes back held for the member to clear it, never renaming the account and never dropping what they typed.
 One ledger account is fed by one connection at most, or every transaction would be imported twice.
 An account the member co-owns that another connection already feeds is offered disabled, marked "already receives transactions from another connection", and confirming into it anyway is refused.
 For a ledger account you co-own, you may see that it is already fed by another connection.
@@ -89,6 +97,8 @@ On an account with exactly two owners, a co-owner who knows they did not connect
 That inference is accepted: both members own the account, and hiding the fed state would make the second owner re-link the same bank and spend one of the household's few connections to create the duplicate feed this refusal exists to prevent.
 
 When two of the targets on the page differ by a single word, such as `Assets:Bank:Checking` and `Assets:Bank:Joint:Checking`, the page names both before anything is confirmed, and puts each bank's balance beside its mapping, so a swap shows up as a number that does not belong.
+The check applies to what is sent, not only to what was proposed: when an account chosen from the list or a name typed makes a pair the page did not name, nothing is saved, the page comes back with the pair named and those rows unconfirmed, and the member confirms them again with the warning in view.
+A row that cannot be saved comes back the same way, marked, with everything the member typed kept.
 Only confirmed accounts are imported.
 
 ## Re-sync

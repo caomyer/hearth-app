@@ -17,8 +17,9 @@ import logging
 import secrets
 import sqlite3
 import threading
-from collections.abc import Callable, Collection, Sequence
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Callable, Collection, Iterable, Sequence
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
@@ -36,6 +37,7 @@ from hearth.plaid.approval import ApprovalRequired, Operation
 from hearth.plaid.client import Environment, Institution, PlaidError, PlaidRejectedError
 from hearth.plaid.credentials import Capacity, CredentialSet, CredentialStore
 from hearth.plaid.feed import Balance, Coverage, Feed, Outcome, Run
+from hearth.plaid.mapping import Problem
 from hearth.plaid.owner import is_alive
 from hearth.plaid.registry import History, Item, ItemState, Registry
 from hearth.plaid.setup import DAYS_REQUESTED, PlaidSetup
@@ -48,6 +50,10 @@ _log = logging.getLogger(__name__)
 STATEMENT_MAX_BYTES = 5 * 1024 * 1024
 STATEMENTS_DIR = "statements"
 MAX_INSTITUTION_NAME = 80
+MAX_ACCOUNT_NAME = 80
+
+NEW = "new"
+"""The target a mapping sends for a new ledger account, whose name comes in its own field."""
 
 type Runner = Callable[[Callable[[], None]], None]
 """Runs work after the response is sent: a thread in the app, at once in tests."""
@@ -84,7 +90,6 @@ class Refusal(StrEnum):
     CREDENTIALS_IN_USE = "credentials-in-use"
     NOT_UNDERSTOOD = "not-understood"
     TARGET_TAKEN = "target-taken"
-    TARGET_TWICE = "target-twice"
     STATEMENT_UNREADABLE = "statement-unreadable"
 
 
@@ -94,6 +99,25 @@ class Refused(Exception):  # noqa: N818 - it names an outcome, not a fault
         self.reason = reason
         self.plaid_code = plaid_code
         """Plaid's own error code, when Plaid refused: safe to show, and what to look up."""
+
+
+class Hold(StrEnum):
+    """Why nothing on a mapping form was saved, though the member can put it right on the page."""
+
+    PROBLEMS = "fix-marked"
+    """A confirmed row names a new account that cannot be used, or a target another row has."""
+    NEAR = "near-unseen"
+    """What was chosen puts two targets a word apart that the page the member confirmed on did
+    not name."""
+
+
+class Held(Exception):  # noqa: N818 - it names an outcome, not a fault
+    """Nothing was saved. `view` is the form as it was sent, with what needs another look."""
+
+    def __init__(self, reason: Hold, view: MappingView) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
+        self.view = view
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +183,11 @@ class ItemView:
     @property
     def needs_login(self) -> bool:
         return self.state is ItemState.LOGIN_REQUIRED
+
+    @property
+    def short_name(self) -> str:
+        """The institution's first word, as a list of its accounts names it."""
+        return self.institution.partition(" ")[0]
 
     @property
     def short(self) -> tuple[AccountView, ...]:
@@ -249,12 +278,40 @@ class ToMap:
     account: AccountView
     institution: str
     targets: tuple[Target, ...]
+    """What it may go to: first a new ledger account, unless it is filed already, then the
+    member's own accounts of its kind."""
     chosen: Target
     owner_choices: tuple[OwnerChoice, ...]
+    """Who may own a new ledger account, or the fixed owners of the account it is filed in."""
     chosen_owners: str
     confirmed: bool
     near: bool
     """Its target is one word away from another target on the page."""
+    name: str
+    """What the household calls a new ledger account, as `hearth add-account --name` sets it."""
+    default_name: str
+    """The name a new ledger account is given when the member leaves it empty: what the
+    institution and the bank call it, with its last digits when another account here would
+    be called the same."""
+    problem: Problem | None = None
+
+    @property
+    def offers_new(self) -> bool:
+        return self.targets[0].is_new
+
+    @property
+    def path_problem(self) -> Problem | None:
+        return None if self.problem in _NAME_PROBLEMS else self.problem
+
+    @property
+    def name_problem(self) -> Problem | None:
+        return self.problem if self.problem in _NAME_PROBLEMS else None
+
+    def owners(self) -> frozenset[MemberId] | None:
+        """Who owns what it is going to, or None when the form named nobody it offered."""
+        if self.chosen.account is not None:
+            return self.chosen.account.owners
+        return next((c.owners for c in self.owner_choices if c.key == self.chosen_owners), None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -305,6 +362,12 @@ class ImportView:
         """When hearth next asks for history still arriving, if it is still asking."""
         return min((i.item.next_check_at for i in self.items if i.item.next_check_at), default=None)
 
+    @property
+    def alike(self) -> set[tuple[str, str]]:
+        """The (bank, kind) labels more than one account here would share, such as a bank's
+        several cards, which are told apart by their last digits."""
+        return _twice((i.item.short_name, a.kind) for i in self.items for a in i.item.accounts)
+
 
 @dataclass(frozen=True, slots=True)
 class Mapping:
@@ -312,8 +375,11 @@ class Mapping:
 
     account_id: str
     target: str
+    """An account the row offered, by its ledger name, or `NEW` for the one named in `path`."""
     owners: str
     confirm: bool
+    path: str = ""
+    name: str = ""
 
 
 class Connector:
@@ -379,31 +445,52 @@ class Connector:
         with Feed.open(self._feed_path) as feed:
             return self._item_view(found, feed)
 
-    def mapping(self) -> MappingView:
+    def mapping(self, drafts: Sequence[Mapping] = ()) -> MappingView:
+        """The mapping form, as hearth proposes it or, given `drafts`, as the member sent it.
+
+        A drafted row whose target the row did not offer keeps what hearth proposed: `confirm`
+        refuses such a form before it is drafted.
+        """
         with Feed.open(self._feed_path) as feed:
             items = [(item, self._item_view(item, feed)) for item in self._items()]
+        drafted = {draft.account_id: draft for draft in drafts}
         proposals: list[str] = []
         rows: list[ToMap] = []
         for item, view in items:
+            # A bank's accounts that would be proposed the same name, such as several cards it
+            # calls alike, are each proposed with their last digits from the start.
+            alike = _twice(self._proposal(item, account) for account in view.accounts)
+            called = _twice(_called(item.institution, account) for account in view.accounts)
             for account in view.accounts:
-                rows.append(self._to_map(item, account, proposals))
+                row = self._to_map(item, account, proposals, alike, called)
+                draft = drafted.get(account.account_id)
+                rows.append(self._drafted(row, draft) if draft else row)
+        confirmed = [row for row in rows if row.confirmed]
+        crowded = {
+            row.account.account_id
+            for row in confirmed
+            for other in confirmed
+            if other is not row
+            and (
+                other.chosen.ledger_account == row.chosen.ledger_account
+                or (
+                    row.chosen.is_new
+                    and other.chosen.is_new
+                    and mapping.in_use(row.chosen.ledger_account, [other.chosen.ledger_account])
+                )
+            )
+        }
+        rows = [
+            replace(row, problem=row.problem or Problem.TWICE)
+            if row.account.account_id in crowded
+            else row
+            for row in rows
+        ]
         offered = {t.ledger_account for row in rows for t in row.targets if not t.is_new}
         near = mapping.near_pairs([row.chosen.ledger_account for row in rows], offered)
         flagged = {name for pair in near for name in pair}
         return MappingView(
-            rows=tuple(
-                ToMap(
-                    row.account,
-                    row.institution,
-                    row.targets,
-                    row.chosen,
-                    row.owner_choices,
-                    row.chosen_owners,
-                    row.confirmed,
-                    near=row.chosen.ledger_account in flagged,
-                )
-                for row in rows
-            ),
+            rows=tuple(replace(row, near=row.chosen.ledger_account in flagged) for row in rows),
             near=tuple(near),
         )
 
@@ -567,56 +654,67 @@ class Connector:
         self._vault().delete(self._viewer.id, item.item_id)
         self._registry.remove(item.item_id, at=self._clock())
 
-    def confirm(self, submitted: Sequence[Mapping]) -> int:
+    def confirm(
+        self, submitted: Sequence[Mapping], *, near_seen: Collection[tuple[str, str]] = ()
+    ) -> int:
         """Record each mapping the member confirmed. Returns how many were recorded.
 
-        A target must be one the page offered: a new ledger account, which the member and the
-        co-owners they chose will own, or an account the member already owns, whose owners
-        stay as they are. One ledger account is fed by one connection at most, or every
-        transaction would be imported twice.
+        A target must be one the page offered: a new ledger account, named by the member and
+        owned by them and the co-owners they chose, or an account the member already owns,
+        whose owners stay as they are. A typed name is only ever a new account; one the books
+        have, whoever owns it, is refused (``hearth.plaid.mapping``). One ledger account is fed
+        by one connection at most, or every transaction would be imported twice.
+
+        Nothing is saved while a confirmed row needs another look, or while what was chosen
+        puts two targets a word apart that are not among `near_seen`, the pairs the page the
+        member confirmed on named. Either raises `Held` with the form as it was sent.
         """
-        view = self.mapping()
-        rows = {row.account.account_id: row for row in view.rows}
-        chosen: list[tuple[ToMap, Target, frozenset[MemberId]]] = []
+        rows = {row.account.account_id: row for row in self.mapping().rows}
         for entry in submitted:
             row = rows.get(entry.account_id)
             if row is None:
                 raise Concealed
-            if not entry.confirm:
-                continue
-            target = next((t for t in row.targets if t.ledger_account == entry.target), None)
-            if target is None:
+            if entry.confirm and not _understood(row, entry):
                 raise Refused(Refusal.NOT_UNDERSTOOD)
-            # An account already in the books keeps its owners; a new one is owned by the set
-            # the member chose, which always includes them.
-            owners = (
-                target.account.owners
-                if target.account is not None
-                else next(
-                    (c.owners for c in self._owner_choices(target) if c.key == entry.owners), None
-                )
-            )
-            if owners is None:
-                raise Refused(Refusal.NOT_UNDERSTOOD)
-            if not self._policy.may_feed(owners):
-                raise Refused(Refusal.NOT_UNDERSTOOD)
-            chosen.append((row, target, owners))
-        names = [target.ledger_account for _, target, _ in chosen]
-        if len(set(names)) != len(names):
-            raise Refused(Refusal.TARGET_TWICE)
-        if any(target.taken for _, target, _ in chosen):
+        view = self.mapping(submitted)
+        sent = {entry.account_id for entry in submitted if entry.confirm}
+        chosen = [row for row in view.rows if row.account.account_id in sent]
+        seen = {frozenset(pair) for pair in near_seen}
+        unseen = {name for pair in view.near if frozenset(pair) not in seen for name in pair}
+        # Each row a new warning touches is confirmed again, with the warning in view, whatever
+        # else holds the form.
+        again = replace(
+            view,
+            rows=tuple(
+                replace(row, confirmed=False)
+                if row.confirmed and row.chosen.ledger_account in unseen
+                else row
+                for row in view.rows
+            ),
+        )
+        if any(row.problem for row in chosen):
+            raise Held(Hold.PROBLEMS, again)
+        if any(row.chosen.ledger_account in unseen for row in chosen):
+            raise Held(Hold.NEAR, again)
+        if any(row.chosen.taken for row in chosen):
             raise Refused(Refusal.TARGET_TAKEN)
-        for row, target, owners in chosen:
-            account = target.account or hearth_accounts.register(
+        owned: list[tuple[ToMap, frozenset[MemberId]]] = []
+        for row in chosen:
+            owners = row.owners()
+            if owners is None or not self._policy.may_feed(owners):
+                raise Refused(Refusal.NOT_UNDERSTOOD)
+            owned.append((row, owners))
+        for row, owners in owned:
+            account = row.chosen.account or hearth_accounts.register(
                 self._db,
-                ledger_account=target.ledger_account,
-                name=f"{row.institution} {row.account.name}",
+                ledger_account=row.chosen.ledger_account,
+                name=_account_name(row.name) or row.default_name,
                 owners=owners,
             )
             self._registry.confirm(
                 row.account.account_id, account.id, by=self._viewer.id, now=self._clock()
             )
-        return len(chosen)
+        return len(owned)
 
     def upload_statement(self, account_id: str, filename: str, data: bytes) -> None:
         """Keep a statement file for the import, to fill history a bank did not send."""
@@ -757,7 +855,14 @@ class Connector:
             next_check_at=item.next_check_at if following else None,
         )
 
-    def _to_map(self, item: Item, account: AccountView, proposals: list[str]) -> ToMap:
+    def _to_map(
+        self,
+        item: Item,
+        account: AccountView,
+        proposals: list[str],
+        alike: Collection[str],
+        called: Collection[str],
+    ) -> ToMap:
         linked = self._registry.account(account.account_id)
         assert linked is not None  # noqa: S101 - the view was built from this account
         root = "Liabilities" if account.is_credit else "Assets"
@@ -782,25 +887,20 @@ class Connector:
             targets = sorted(existing, key=lambda t: t.account != current)
         else:
             taken = {
-                *self._ledger_accounts,
-                *(a.ledger_account for a in self._accounts),
+                *(a.ledger_account for a in self._accounts if self._policy.may_feed(a.owners)),
                 *proposals,
             }
-            fresh = mapping.unused(
-                mapping.proposed(
-                    credit=account.is_credit,
-                    member=self._viewer.display_name,
-                    institution=item.institution,
-                    name=account.name,
-                    subtype=account.subtype,
-                ),
-                taken,
-                account.mask,
-            )
+            proposal = self._proposal(item, account)
+            if proposal in alike and account.mask:
+                proposal += mapping.component(account.mask)
+            fresh = mapping.unused(proposal, taken, account.mask)
             proposals.append(fresh)
             targets = [Target(fresh, None), *existing]
         chosen = targets[0]
         choices = self._owner_choices(chosen)
+        name = _called(item.institution, account)
+        if name in called and account.mask:
+            name += f" {account.mask}"
         return ToMap(
             account=account,
             institution=item.institution,
@@ -810,7 +910,56 @@ class Connector:
             chosen_owners=choices[0].key,
             confirmed=linked.confirmed_at is not None,
             near=False,
+            name=name,
+            default_name=name,
         )
+
+    def _proposal(self, item: Item, account: AccountView) -> str:
+        return mapping.proposed(
+            credit=account.is_credit,
+            member=self._viewer.display_name,
+            institution=item.institution,
+            name=account.name,
+            subtype=account.subtype,
+        )
+
+    def _drafted(self, row: ToMap, draft: Mapping) -> ToMap:
+        """`row` as the member sent it, with what is wrong with it if they confirmed it."""
+        if draft.target == NEW and row.offers_new:
+            path = draft.path.strip()
+            new = Target(path, None)
+            problem = mapping.check_new(
+                path,
+                credit=row.account.is_credit,
+                existing={*self._ledger_accounts, *(a.ledger_account for a in self._accounts)},
+            )
+            drafted = replace(
+                row,
+                targets=(new, *row.targets[1:]),
+                chosen=new,
+                chosen_owners=draft.owners
+                if any(c.key == draft.owners for c in row.owner_choices)
+                else row.chosen_owners,
+                name=draft.name,
+                problem=problem,
+            )
+            if drafted.problem is None and len(_account_name(draft.name)) > MAX_ACCOUNT_NAME:
+                drafted = replace(drafted, problem=Problem.NAME_TOO_LONG)
+        else:
+            target = next(
+                (t for t in row.targets if not t.is_new and t.ledger_account == draft.target),
+                row.chosen,
+            )
+            typed = _account_name(draft.name)
+            drafted = replace(
+                row,
+                chosen=target,
+                name=draft.name or row.name,
+                problem=Problem.NAME_NOT_NEW
+                if draft.confirm and typed and typed != row.default_name
+                else None,
+            )
+        return replace(drafted, confirmed=draft.confirm)
 
     def _owner_choices(self, target: Target) -> tuple[OwnerChoice, ...]:
         """Who owns the target: fixed for an account that exists, any set including the
@@ -977,6 +1126,33 @@ def sync_all(
         except Exception:
             _log.exception("could not sync a connection")
     return done
+
+
+def _understood(row: ToMap, entry: Mapping) -> bool:
+    """Whether a confirmed row names something its row offered: a new ledger account with an
+    owner choice the row offered, or one of the accounts listed for it."""
+    if entry.target == NEW:
+        return row.offers_new and any(c.key == entry.owners for c in row.owner_choices)
+    return any(not t.is_new and t.ledger_account == entry.target for t in row.targets)
+
+
+_NAME_PROBLEMS = frozenset({Problem.NAME_TOO_LONG, Problem.NAME_NOT_NEW})
+"""What is wrong with the name a row was given, rather than with where it goes."""
+
+
+def _twice[T](names: Iterable[T]) -> set[T]:
+    """The names that come more than once."""
+    return {name for name, count in Counter(names).items() if count > 1}
+
+
+def _called(institution: str, account: AccountView) -> str:
+    """What the institution and the bank call an account, together."""
+    return f"{institution} {account.name}"
+
+
+def _account_name(text: str) -> str:
+    """What a member typed to call an account: printable and trimmed."""
+    return "".join(ch for ch in text if ch.isprintable()).strip()
 
 
 def _institution_name(text: str) -> str:

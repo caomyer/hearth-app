@@ -17,7 +17,17 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from hearth.plaid.client import Environment
-from hearth.plaid.connector import Connector, LinkStart, Mapping, Refusal, Refused
+from hearth.plaid.connector import (
+    NEW,
+    Connector,
+    Held,
+    Hold,
+    LinkStart,
+    Mapping,
+    Refusal,
+    Refused,
+)
+from hearth.plaid.mapping import Problem
 from hearth.plaid.setup import DAYS_REQUESTED
 from hearth.vault.secret import Secret
 from hearth.web.deps import Acting, App, Conn, Session, SignedIn, Viewing
@@ -62,16 +72,34 @@ OUTCOMES = {
     Refusal.TARGET_TAKEN.value: "That ledger account already receives transactions from another"
     " connection. One account can be fed by one connection, or every transaction would be"
     " imported twice.",
-    Refusal.TARGET_TWICE.value: "Two accounts were sent to the same ledger account. Each needs"
-    " its own.",
     Refusal.STATEMENT_UNREADABLE.value: "That file could not be kept. Upload a CSV statement of"
     " up to 5 MB.",
+    Hold.PROBLEMS.value: "Nothing was saved yet. Put the marked accounts right, then start the"
+    " import again.",
+    Hold.NEAR.value: "Nothing was saved yet. What you chose puts two targets one word apart."
+    " Check them against the bank's balances, then confirm them again.",
 }
 """Fixed messages for what a step did; the query names one, it never carries text."""
 
+PROBLEMS = {
+    Problem.MISSING: "Name the new ledger account.",
+    Problem.MALFORMED: "Use names joined by colons, each starting with a capital letter or a"
+    " digit, then only letters, digits and hyphens.",
+    Problem.UNDER_ASSETS: "A bank or investment account goes under Assets.",
+    Problem.UNDER_LIABILITIES: "A card or loan goes under Liabilities.",
+    Problem.IN_USE: "That name is not available: the books already use it, or a name inside or"
+    " above it. Choose another, or pick one of your accounts from the list.",
+    Problem.TWICE: "Another account on this page goes here too, or inside or above it. Each"
+    " needs its own.",
+    Problem.NAME_TOO_LONG: "Keep the name to 80 characters or fewer.",
+    Problem.NAME_NOT_NEW: "A name is given only to a new ledger account; one already in your"
+    " books keeps its own. Clear it, or choose New ledger account.",
+}
+"""Fixed messages for what is wrong with one row of the mapping form."""
+
 
 def is_problem(outcome: str | None) -> bool:
-    return outcome in {r.value for r in Refusal}
+    return outcome in {r.value for r in Refusal} | {h.value for h in Hold}
 
 
 _PLAID_CODE = re.compile(r"[A-Z][A-Z0-9_]{2,63}")
@@ -113,12 +141,15 @@ def _page(
     template: str,
     outcome: str | None,
     code: str | None,
+    *,
+    status_code: int = 200,
     **context: Any,
 ) -> HTMLResponse:
     message, plaid_code = message_for(outcome, code)
     return render(
         request,
         template,
+        status_code=status_code,
         **chrome(app, conn, session, view),
         focus=True,
         message=message,
@@ -390,13 +421,15 @@ def map_page(
         code,
         step=3,
         mapping=mine.mapping(),
+        new=NEW,
+        problems=PROBLEMS,
     )
 
 
 @router.post("/map")
 async def confirm(
     request: Request, app: App, conn: Conn, session: Acting, view: Viewing
-) -> RedirectResponse:
+) -> Response:
     form = await request.form()
     ids = [str(v) for v in form.getlist("account")]
     submitted = [
@@ -405,14 +438,37 @@ async def confirm(
             target=str(form.get(f"target-{account_id}", "")),
             owners=str(form.get(f"owners-{account_id}", "")),
             confirm=form.get(f"confirm-{account_id}") == "1",
+            path=str(form.get(f"path-{account_id}", "")),
+            name=str(form.get(f"name-{account_id}", "")),
         )
         for account_id in ids
     ]
+    # The pairs a word apart that the page named, each sent as "one other".
+    near_seen = [
+        (one, other) for v in form.getlist("near") for one, _, other in [str(v).partition(" ")]
+    ]
     mine = connector(app, conn, view)
     try:
-        mine.confirm(submitted)
+        mine.confirm(submitted, near_seen=near_seen)
     except Refused as refused:
         return _refused("/connect/map", refused)
+    except Held as held:
+        # Shown again as it was sent, so nothing the member typed is lost.
+        return _page(
+            request,
+            app,
+            conn,
+            session,
+            view,
+            "connect_map.html",
+            held.reason.value,
+            None,
+            status_code=400,
+            step=3,
+            mapping=held.view,
+            new=NEW,
+            problems=PROBLEMS,
+        )
     mapping = mine.mapping()
     if mapping.rows and mapping.confirmed == len(mapping.rows):
         return RedirectResponse("/connect/import", status_code=303)

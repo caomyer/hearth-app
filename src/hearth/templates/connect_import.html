@@ -19,7 +19,7 @@
           <span class="st" aria-hidden="true"><svg><use href="#{{ 'i-refresh' if imported.running else 'i-check' }}"/></svg></span>
           <div>
             <p style="font-weight: 500">{{ "Fetching history" if imported.running else "Fetched history" }}</p>
-            <p class="sm faint">{% for i in imported.items %}{% for a in i.item.accounts %}{{ i.item.institution.partition(" ")[0] }} {{ a.kind }} {% if a.is_investment and not a.coverage.held.transactions %}today's balance only{% else %}{{ "{:,}".format(a.coverage.held.transactions) }}{% if a.coverage.complete and a.coverage.is_short and a.coverage.days %} ({{ a.coverage.days }} days){% endif %}{% endif %}{{ " &middot; " | safe if not loop.last }}{% endfor %}{{ " &middot; " | safe if not loop.last }}{% else %}Nothing connected yet.{% endfor %}</p>
+            <p class="sm faint">{% for i in imported.items %}{% for a in i.item.accounts %}{{ i.item.short_name }} {{ a.kind }}{% if a.mask and (i.item.short_name, a.kind) in imported.alike %} &bull;&bull;&nbsp;{{ a.mask }}{% endif %}: {% if a.is_investment and not a.coverage.held.transactions %}today's balance only{% else %}{{ "{:,}".format(a.coverage.held.transactions) }}{% if a.coverage.complete and a.coverage.is_short and a.coverage.days %} ({{ a.coverage.days }} days){% endif %}{% endif %}{{ " &middot; " | safe if not loop.last }}{% endfor %}{{ " &middot; " | safe if not loop.last }}{% else %}Nothing connected yet.{% endfor %}</p>
           </div>
           <span class="tnum sm muted">{{ "{:,}".format(imported.total) }}</span>
         </li>

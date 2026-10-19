@@ -21,6 +21,7 @@
   {% if mapping.rows %}
   <form class="mt-6" method="post" action="/connect/map" id="map-form">
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    {% for a, b in mapping.near %}<input type="hidden" name="near" value="{{ a }} {{ b }}">{% endfor %}
     <div class="maps">
       {% for row in mapping.rows %}
       {% set a = row.account %}
@@ -37,16 +38,42 @@
         </div>
         <div class="map-arrow" aria-hidden="true"><svg><use href="#i-arrow"/></svg></div>
         <div class="map-to">
-          <label class="label" for="t-{{ loop.index }}">Ledger account</label>
-          <select class="select mt-1" id="t-{{ loop.index }}" name="target-{{ a.account_id }}">
+          {% set n = loop.index %}
+          {% set new_hidden = not row.chosen.is_new %}
+          <label class="label" for="t-{{ n }}">Ledger account</label>
+          {% set elsewhere = row.path_problem and not row.chosen.is_new %}
+          <select class="select mt-1" id="t-{{ n }}" name="target-{{ a.account_id }}"{% if row.offers_new %} data-target{% endif %}{% if elsewhere %} aria-invalid="true" aria-describedby="x-{{ n }}"{% endif %}>
             {% for t in row.targets %}
+            {% if t.is_new %}
+            <option value="{{ new }}"{% if t == row.chosen %} selected{% endif %}>New ledger account</option>
+            {% else %}
             <option value="{{ t.ledger_account }}"{% if t == row.chosen %} selected{% elif t.taken %} disabled{% endif %}>{{ t.ledger_account }}{% if t.taken %} (already receives transactions from another connection){% endif %}</option>
+            {% endif %}
             {% endfor %}
           </select>
-          <p class="xs faint mt-1">{% if row.chosen.is_new %}New ledger account{% elif row.chosen.taken %}Already receives transactions from another connection{% else %}Already in your books; its owners stay as they are{% endif %}</p>
-          <div class="map-meta">
-            <label class="label" for="o-{{ loop.index }}">Owner</label>
-            <select class="select" id="o-{{ loop.index }}" name="owners-{{ a.account_id }}">
+          {% if elsewhere %}<p class="error" id="x-{{ n }}"{% if row.offers_new %} data-when-existing{% endif %}><svg aria-hidden="true"><use href="#i-error"/></svg><span>{{ problems[row.path_problem] }}</span></p>{% endif %}
+          {% if row.offers_new %}
+          <div class="field map-path mt-2" data-when-new{% if new_hidden %} hidden{% endif %}>
+            <input class="input mono-input" id="p-{{ n }}" name="path-{{ a.account_id }}" value="{{ row.targets[0].ledger_account }}" aria-label="New ledger account" aria-describedby="h-{{ n }}{% if row.path_problem and row.chosen.is_new %} e-{{ n }}{% endif %}"{% if row.path_problem and row.chosen.is_new %} aria-invalid="true"{% endif %} autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200">
+            {% if row.path_problem and row.chosen.is_new %}<p class="error" id="e-{{ n }}"><svg aria-hidden="true"><use href="#i-error"/></svg><span>{{ problems[row.path_problem] }}</span></p>{% endif %}
+          </div>
+          {% endif %}
+          <p class="xs faint mt-1" id="h-{{ n }}">
+            {%- if row.offers_new %}<span data-when-new{% if new_hidden %} hidden{% endif %}>Every report shows it by this name</span><span data-when-existing{% if not new_hidden %} hidden{% endif %}>Already in your books; its owners stay as they are</span>
+            {%- elif row.chosen.taken %}Already receives transactions from another connection
+            {%- else %}Already in your books; its owners stay as they are{% endif -%}
+          </p>
+          {% set owner_hidden = row.offers_new and new_hidden %}
+          <div class="map-meta"{% if row.offers_new %} data-when-new{% if new_hidden and not row.name_problem %} hidden{% endif %}{% endif %}>
+            {% if row.offers_new or row.name_problem %}
+            <label class="label" for="n-{{ n }}">Name</label>
+            <div class="field">
+              <input class="input" id="n-{{ n }}" name="name-{{ a.account_id }}" value="{{ row.name }}" placeholder="{{ row.default_name }}" autocomplete="off"{% if row.name_problem %} aria-invalid="true" aria-describedby="m-{{ n }}"{% endif %}>
+              {% if row.name_problem %}<p class="error" id="m-{{ n }}"><svg aria-hidden="true"><use href="#i-error"/></svg><span>{{ problems[row.name_problem] }}</span></p>{% endif %}
+            </div>
+            {% endif %}
+            <label class="label" for="o-{{ n }}"{% if row.offers_new %} data-when-new{% if owner_hidden %} hidden{% endif %}{% endif %}>Owner</label>
+            <select class="select" id="o-{{ n }}" name="owners-{{ a.account_id }}"{% if row.offers_new %} data-when-new{% if owner_hidden %} hidden{% endif %}{% endif %}>
               {% for c in row.owner_choices %}
               <option value="{{ c.key }}"{% if c.key == row.chosen_owners %} selected{% endif %}>{{ c.label }}</option>
               {% endfor %}
@@ -75,4 +102,5 @@
     </div>
     {% endif %}
   </div>
+  <script src="/static/connect.js" defer></script>
 {% endblock %}

@@ -92,3 +92,13 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border: 1px soli
 .btn-danger { background: var(--surface); border-color: var(--neg); color: var(--neg); }
 .btn-danger:hover { background: var(--neg-bg); color: var(--neg); }
 .btn-danger[disabled] { border-color: var(--line-strong); color: var(--ink-3); }
+
+/* A mapping row that names its new ledger account: the name in the select's own monospace size,
+   and the household's name for it the height of the owner picker beside it, both in the small
+   size so a default name keeps the last digits that tell alike accounts apart in view. What a new
+   account alone needs stays hidden while an existing one is chosen, whatever display it has. */
+.map-path .input { font-size: var(--t-sm); }
+.map-meta .input, .map-meta .select { height: 34px; font-size: var(--t-sm); }
+/* A label stays level with its control when an error is shown beneath it. */
+.map-meta > .label { align-self: start; line-height: 34px; }
+.map [hidden] { display: none; }

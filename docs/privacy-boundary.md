@@ -80,7 +80,10 @@ Connecting institutions adds three more (`docs/connections.md`):
   The household's Plaid account is open to every member to choose, and choosing it shows how many of its connections are left, never whose the others are.
 - Only an admin enters or replaces the household's Plaid account.
 - A member files a connection's account only into an account they own, or a new one they will own.
-  A ledger account's name is shown only to its owners, on the mapping page.
+  A ledger account's name is shown only to its owners, on the mapping page, with one residue below.
+- The ledger account hearth proposes for a new account is computed only from the accounts the member may see, so it discloses nothing and is not part of the residue.
+  A proposal can therefore meet an account the member cannot see and be refused on submit, like any typed name; the member edits the field.
+- The residue (hearth-nameprobe-1, open for the captain): a name a member types and submits may be refused as unavailable, which tells them something is at, under or above that name and nothing else.
 
 ## Where it is enforced
 

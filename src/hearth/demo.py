@@ -515,13 +515,13 @@ def connect(settings: Settings, setup: PlaidSetup, *, now: datetime) -> None:
                 token = setup.stand_in.public_token(start.link_token, bank)
                 connector.finish_link(Secret(token), "")
             rows = connector.mapping().rows
-            connector.confirm(
-                [
-                    Mapping(row.account.account_id, feeds, row.chosen_owners, confirm=True)
-                    for row in rows
-                    for feeds in [_feeds(row.account.name, row.account.mask)]
-                ]
-            )
+            chosen = [
+                Mapping(row.account.account_id, feeds, row.chosen_owners, confirm=True)
+                for row in rows
+                for feeds in [_feeds(row.account.name, row.account.mask)]
+            ]
+            # As a member does: confirmed with the warning about names a word apart in view.
+            connector.confirm(chosen, near_seen=connector.mapping(chosen).near)
         avery = _seeded(conn, "avery")
         cedar = next(i for i in Registry(conn).items_of(avery.id) if i.institution == "Cedar Card")
         stopped = now - timedelta(days=CARD_EXPIRED_DAYS_AGO)

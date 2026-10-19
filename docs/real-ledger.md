@@ -33,6 +33,7 @@ uv run hearth serve
 ```
 
 `add-account` refuses an account the ledger does not open, a member who does not exist, and an account already claimed: a claim is never silently reassigned.
+An account a member connects through Plaid instead can be filed into a new ledger account on the mapping page, which records the same name (`docs/connections.md`).
 Each claim is recorded in the activity log against every owner.
 
 ## Read-only, and how that is kept
