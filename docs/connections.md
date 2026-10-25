@@ -88,7 +88,7 @@ It does so only while that account is still one of the member's own and no other
 A typed ledger name must be a beancount account under `Assets` for a bank or investment account, or `Liabilities` for a card or loan, and must not be taken by another row on the page.
 A member cannot file into anyone else's account, nor claim an account already in the ledger that nobody owns, since either would hand over its history.
 So a typed name is only ever a new account: one the books already have, or one inside or above it, is refused with one answer, the same whoever owns it and whichever of the three it is, and the owners of a new account always include the member.
-That answer says something is at, under or above the name and nothing else; `docs/privacy-boundary.md` states that residue and the open question about it (hearth-nameprobe-1).
+That answer says something is at, under or above the name and nothing else; `docs/privacy-boundary.md` states that residue and why it is accepted.
 The proposal is built only from the accounts the member may see, so it says nothing of anyone else's names; when it meets one they cannot see, it is refused on submit like a typed name and the member edits it.
 Two rows on the page cannot go to the same account, nor name new accounts one inside the other.
 A household name is given only to a new account: a confirmed row going to an account already in the books, with a name typed that is not the one proposed, comes back held for the member to clear it, never renaming the account and never dropping what they typed.

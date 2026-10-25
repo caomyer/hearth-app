@@ -90,7 +90,9 @@ Connecting institutions adds three more (`docs/connections.md`):
   A ledger account's name is shown only to its owners, on the mapping page, with one residue below.
 - The ledger account hearth proposes for a new account is computed only from the accounts the member may see, so it discloses nothing and is not part of the residue.
   A proposal can therefore meet an account the member cannot see and be refused on submit, like any typed name; the member edits the field.
-- The residue (hearth-nameprobe-1, open for the captain): a name a member types and submits may be refused as unavailable, which tells them something is at, under or above that name and nothing else.
+- The residue, accepted on 2026-10-24: a name a member types and submits may be refused as unavailable, which tells them something is at, under or above that name and nothing else.
+  It is accepted because beancount's account names are one namespace, so a taken name must be refused, and the check must consult accounts the member cannot see, or a member could create a name that makes the ledger invalid.
+  The declined alternative was namespacing every new account under its member, which closes the probe but breaks inheriting an existing ledger's chart of accounts.
 
 The import adds two more (`docs/books.md`, `docs/pairing.md`):
 

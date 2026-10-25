@@ -99,6 +99,15 @@ Each of these is flagged here so firstmate can overturn it in one line.
    A single payment's day and amount is an individual transaction, and typical by a date reads off when money went out, which the category facet promises not to show.
    They now appear only for parts whose transactions the viewer can see; anyone else sees each category's amount so far, a fixed bill included as an ordinary row.
 
+8. **Money hearth sees one side of: a proposal, not yet approved.**
+   A transfer whose other side is at a bank not connected, a loan, or a person used to have no honest answer in Review: a category counted it as spending, and every other door was refused.
+   The proposal names the other side once, as an account hearth does not see, someone else, or someone in the household; see `screens/where-it-went.html`.
+   It is asked after the import, inside step 4, because only then can hearth show the transfers instead of asking the member to remember their accounts.
+   A member's net worth then shows the known part, labelled with what it leaves out, with a dashed grey chip: the "not there yet" absence, deliberately not the violet of "withheld", since nobody withheld anything.
+   Today one unknown balance turns the whole figure into "Not known yet"; that stays for an account about to sync, and the known part is used only for accounts hearth will never be told the balance of.
+   No balance is asked for when an account is named, because a typed balance goes stale the next day and hearth cannot see it change.
+   The full plan, with what each choice does to net worth, is `money-between-accounts.md`.
+
 ## The three places this design is still weakest
 
 1. **"Typical" is doing a lot of work on a baseline nobody has validated.**

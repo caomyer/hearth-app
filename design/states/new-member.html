@@ -77,10 +77,9 @@
   <section class="empty empty-hero" aria-labelledby="e-h">
     <span class="glyph" aria-hidden="true"><svg><use href="#i-link"/></svg></span>
     <h2 id="e-h">Connect a bank to get started</h2>
-    <p>Hearth reads two years of history from each bank you connect, checks the balances, and hands you a review. Your connections are yours alone.</p>
+    <p>Hearth asks each bank you connect for two years of history, opens each account at the balance its bank reports, and puts every transaction in your figures for you to review. Your connections are yours alone.</p>
     <div class="row wrap mt-4" style="justify-content: center">
       <a class="btn btn-primary btn-lg" href="../screens/onboarding-2-connect.html"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect a bank</a>
-      <a class="btn btn-lg" href="#"><svg aria-hidden="true"><use href="#i-upload"/></svg>Import CSV statements</a>
     </div>
   </section>
 
@@ -94,11 +93,11 @@
     <div class="empty empty-tile">
       <h3>This month</h3>
       <p class="sm">Spending against your typical month, and where it went.</p>
-      <span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Totals only</span>
+      <span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Spending total only</span>
     </div>
     <div class="empty empty-tile">
       <h3>Accounts and transactions</h3>
-      <p class="sm">Every account and every transaction, after you review them.</p>
+      <p class="sm">Every account and every transaction, in your figures as it arrives. You check them in Review.</p>
       <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
     </div>
   </div>
@@ -125,7 +124,7 @@
   <div class="dnotes-in">
     <h2 id="dn-h">Design notes</h2>
     <ol>
-      <li><strong>An empty page is an introduction, not an apology.</strong> One action, said plainly, with the alternative (CSV) beside it for banks that cannot connect.</li>
+      <li><strong>An empty page is an introduction, not an apology.</strong> One action, said plainly. A bank that cannot be connected is named later, from the transfers that went to it (<a href="../screens/where-it-went.html">Where did it go?</a>), so there is no second button here promising an import that does not exist.</li>
       <li><strong>The outline of what is coming.</strong> Three dashed tiles name the sections that will appear and, before there is any data, who will be able to see each one.</li>
       <li><strong>Dashed and grey means "not there yet".</strong> It is deliberately unlike the violet hatch for "withheld" and the amber for "missing history", so the three absences are never confused.</li>
       <li><strong>The household sees a state, not a zero.</strong> A new member's net worth is unknown, not $0, so it is never added to the household total as zero.</li>

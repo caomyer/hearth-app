@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Where did it go? - Review - Hearth</title>
+<link rel="stylesheet" href="../hearth.css">
+</head>
+<body>
+<!-- @sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M3.5 10.6 12 3.8l8.5 6.8V20a.9.9 0 0 1-.9.9H4.4a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 18.4c-1.9 0-3.1-1.3-3.1-3 0-1.9 1.6-2.7 2.2-4.6.2.9.9 1.5 1.5 1.9.5-.6.7-1.2.7-1.9 1.3 1 1.8 2.7 1.8 3.7 0 2.3-1.3 3.9-3.1 3.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.6 14.7c.6-.2 1.2-.3 1.9-.3 2.3 0 4 1.5 4.5 4.6"/></g></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></g></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5h4l1.5 2.5h5l1.5-2.5h4"/><path d="M5.6 6.2 4 13.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5.5l-1.6-7.3a1 1 0 0 0-1-.7H6.6a1 1 0 0 0-1 .7Z"/></g></symbol>
+    <symbol id="i-worth" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 7.7 16.3a2.9 2.9 0 0 1-4-4l2.6-2.6a2.9 2.9 0 0 1 3.4-.5"/><path d="m14.5 9.5 1.8-1.8a2.9 2.9 0 0 1 4 4l-2.6 2.6a2.9 2.9 0 0 1-3.4.5"/><path d="M4 4l2 2M18 18l2 2M9 3v2M15 21v-2"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></g></symbol>
+  </defs>
+</svg>
+<!-- /@sprite -->
+<a class="skip" href="#main">Skip to content</a>
+<!-- @dstrip name="Review: money hearth sees one side of" -->
+<div class="dstrip" role="note" aria-label="Design review">
+  <div class="dstrip-in">
+    <span><a href="../index.html">Hearth design</a> / <span class="dname">Review: money hearth sees one side of</span></span>
+    <span>Viewer: Jordan, after the first import</span>
+    <span class="dspacer"></span>
+    <a href="#design-notes">Design notes</a>
+    <button type="button" data-theme-toggle>Theme: system</button>
+  </div>
+</div>
+<!-- /@dstrip -->
+<div class="app">
+<!-- @top active="review" -->
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="../screens/household.html"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="../screens/household.html">Household</a>
+      <a href="../screens/me.html">You</a>
+      <a href="../screens/review.html" aria-current="page">Review <span class="count" aria-label="1,467 to review">1,467</span></a>
+      <a href="../screens/net-worth.html">Net worth</a>
+      <a href="../screens/sharing.html">Settings</a>
+    </nav>
+    <div class="topbar-end">
+      <a class="me-chip" href="../screens/sharing.html"><span class="me-name">Jordan</span><span class="avatar" aria-hidden="true">J</span><span class="vh">Signed in as Jordan. Account settings</span></a>
+    </div>
+  </div>
+</header>
+<!-- /@top -->
+<main id="main" class="page">
+<nav class="crumbs" aria-label="Breadcrumb"><a href="review.html">Review</a> <span aria-hidden="true">/</span> <span aria-current="page">Where did it go?</span></nav>
+  <div class="page-head">
+    <div>
+      <h1>Where did it go?</h1>
+      <p class="sub measure">Hearth sees one side of these: money left one of your connected accounts, or arrived in one, and the other account is not connected. Say once what is on the other side, and every transaction like it follows.</p>
+    </div>
+  </div>
+
+  <section class="panel" aria-labelledby="os-h">
+    <div class="panel-body review-summary" style="padding-top: var(--s-6)">
+      <div class="hero">
+        <h2 id="os-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Seen from one side</h2>
+        <p class="hero-value">59</p>
+        <p class="muted"><span class="tnum">$22,936.40</span> moved, in 3 groups and a tie. None of it is spending or income until you say.</p>
+      </div>
+      <div class="review-bulk">
+        <p class="sm"><svg aria-hidden="true" style="width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; color: var(--pos)"><use href="#i-check"/></svg><span class="tnum">21</span> moves between your connected accounts matched</p>
+        <p class="xs faint">Each counted once. Nothing to do for them.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel mt-4" aria-labelledby="done-h">
+    <div class="panel-body row between wrap" style="gap: var(--s-3)">
+      <div class="row" style="gap: var(--s-3); align-items: flex-start">
+        <svg aria-hidden="true" style="width: 18px; height: 18px; color: var(--pos); flex: none; margin-top: 2px"><use href="#i-check"/></svg>
+        <div>
+          <h2 id="done-h" style="font-size: var(--t-md); line-height: var(--lh-md)">Card payments hearth could not match</h2>
+          <p class="sm muted">3 payments into Pinecone Card, <span class="tnum">$2,140.00</span>: paid from <strong style="font-weight: 500">Bramblewood checking</strong>, an account hearth does not see.</p>
+        </div>
+      </div>
+      <div class="row" style="gap: var(--s-2)">
+        <a class="btn btn-sm btn-quiet" href="#">Change one</a>
+        <button class="btn btn-sm" type="button">Undo 3</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel rgroup mt-4" aria-labelledby="g1-h">
+    <div class="rgroup-head">
+      <div class="rgroup-what">
+        <h2 id="g1-h">Online transfer to SAV ...0417</h2>
+        <p class="muted">Out of Lakeside Checking, the same description each month.</p>
+      </div>
+      <dl class="rgroup-figs">
+        <div><dt>Transactions</dt><dd class="tnum">22</dd></div>
+        <div><dt>Total</dt><dd class="tnum">&minus;$11,000.00</dd></div>
+        <div><dt>Since</dt><dd>Nov 2024</dd></div>
+      </dl>
+      <div class="rgroup-act"></div>
+    </div>
+    <div class="panel-body" style="border-top: 1px solid var(--line)">
+      <div class="sides" aria-hidden="true">
+        <div class="side"><span class="primary">Lakeside Checking</span><span class="second">&bull;&bull;&nbsp;5521 &middot; connected</span></div>
+        <div class="via"><svg><use href="#i-arrow"/></svg></div>
+        <div class="side is-unseen"><span class="primary">Bramblewood savings</span><span class="second">&bull;&bull;&nbsp;0417 &middot; hearth does not see it</span></div>
+      </div>
+      <form class="mt-6" action="#">
+        <fieldset class="role">
+          <legend class="label">Where did it go?</legend>
+          <label class="role-opt">
+            <input type="radio" name="g1" checked>
+            <span class="grow" style="min-width: 0">
+              <span style="font-weight: 500">An account of mine that hearth does not see</span>
+              <span class="sm faint" style="display: block">A bank you have not connected, cannot, or would rather not. Not spending: your money just moved.</span>
+              <span class="row wrap mt-2" style="gap: var(--s-2)">
+                <label class="vh" for="g1-acct">Which account</label>
+                <select class="select" id="g1-acct" style="max-width: 320px"><option>Bramblewood savings, new</option><option>Bramblewood checking</option><option>Name another account&hellip;</option></select>
+                <a class="sm" href="add-account.html">Change its details</a>
+              </span>
+            </span>
+          </label>
+          <label class="role-opt">
+            <input type="radio" name="g1">
+            <span><span style="font-weight: 500">Someone else</span><span class="sm faint" style="display: block">A person or a business. It was spending, and you choose what for.</span></span>
+          </label>
+          <label class="role-opt">
+            <input type="radio" name="g1">
+            <span><span style="font-weight: 500">Someone in this household</span><span class="sm faint" style="display: block">Money moved between members. Not spending, and nobody's account is named.</span></span>
+          </label>
+        </fieldset>
+        <div class="row between wrap mt-6" style="gap: var(--s-3)">
+          <p class="sm faint measure">The next transfer to SAV ...0417 will be suggested here too, waiting for your yes.</p>
+          <button class="btn btn-primary" type="button">Save for all 22</button>
+        </div>
+      </form>
+    </div>
+    <details class="rgroup-items">
+      <summary>Show the 22 transactions</summary>
+      <table class="table">
+        <caption class="vh">Transfers out of Lakeside Checking to SAV ...0417</caption>
+        <thead><tr><th scope="col" class="col-hide-sm">Date</th><th scope="col">Description</th><th scope="col" class="num">Amount</th></tr></thead>
+        <tbody>
+          <tr><td class="col-hide-sm muted tnum">Oct 1</td><td>Online transfer to SAV ...0417</td><td class="num amt">&minus;500.00</td></tr>
+          <tr><td class="col-hide-sm muted tnum">Sep 1</td><td>Online transfer to SAV ...0417</td><td class="num amt">&minus;500.00</td></tr>
+          <tr><td class="col-hide-sm muted tnum">Aug 1</td><td>Online transfer to SAV ...0417</td><td class="num amt">&minus;500.00</td></tr>
+        </tbody>
+      </table>
+    </details>
+  </section>
+
+  <section class="panel rgroup mt-4" aria-labelledby="g2-h">
+    <div class="rgroup-head">
+      <div class="rgroup-what">
+        <h2 id="g2-h">Ashgrove Auto Loan</h2>
+        <p class="muted">A loan payment out of Lakeside Checking every month.</p>
+      </div>
+      <dl class="rgroup-figs">
+        <div><dt>Transactions</dt><dd class="tnum">24</dd></div>
+        <div><dt>Total</dt><dd class="tnum">&minus;$9,902.40</dd></div>
+        <div><dt>Since</dt><dd>Oct 2024</dd></div>
+      </dl>
+      <div class="rgroup-act"></div>
+    </div>
+    <div class="panel-body" style="border-top: 1px solid var(--line)">
+      <form action="#">
+        <fieldset class="role">
+          <legend class="label">What is it paying?</legend>
+          <label class="role-opt">
+            <input type="radio" name="g2" checked>
+            <span class="grow" style="min-width: 0">
+              <span style="font-weight: 500">A loan of mine that hearth does not see</span>
+              <span class="sm faint" style="display: block">What you still owe is not known to hearth, so your net worth will say it leaves this loan out.</span>
+              <span class="row wrap mt-2" style="gap: var(--s-2)">
+                <label class="vh" for="g2-acct">Which loan</label>
+                <select class="select" id="g2-acct" style="max-width: 320px"><option>Ashgrove car loan, new</option><option>Name another loan&hellip;</option></select>
+              </span>
+            </span>
+          </label>
+          <label class="role-opt">
+            <input type="radio" name="g2">
+            <span><span style="font-weight: 500">A bill</span><span class="sm faint" style="display: block">Something you pay for, not something you owe. It was spending, and you choose what for.</span></span>
+          </label>
+        </fieldset>
+        <div class="row between wrap mt-6" style="gap: var(--s-3)">
+          <p class="sm faint measure">Each payment goes to the loan whole. Part of it is interest, which hearth cannot split out yet, so interest is not in your spending.</p>
+          <button class="btn btn-primary" type="button">Save for all 24</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel rgroup mt-4" aria-labelledby="g3-h">
+    <div class="rgroup-head">
+      <div class="rgroup-what">
+        <h2 id="g3-h">Zelle from people</h2>
+        <p class="muted">Into Lakeside Checking, from 4 different names.</p>
+      </div>
+      <dl class="rgroup-figs">
+        <div><dt>Transactions</dt><dd class="tnum">12</dd></div>
+        <div><dt>Total</dt><dd class="tnum amt-in">+$1,784.00</dd></div>
+        <div><dt>Since</dt><dd>Jan 2025</dd></div>
+      </dl>
+      <div class="rgroup-act"></div>
+    </div>
+    <div class="panel-body" style="border-top: 1px solid var(--line)">
+      <form action="#">
+        <fieldset class="role">
+          <legend class="label">Where did it come from?</legend>
+          <label class="role-opt">
+            <input type="radio" name="g3" checked>
+            <span class="grow" style="min-width: 0">
+              <span style="font-weight: 500">Someone else</span>
+              <span class="sm faint" style="display: block">Income, or someone paying you back. You choose which.</span>
+              <span class="row wrap mt-2" style="gap: var(--s-2)">
+                <label class="vh" for="g3-cat">Category</label>
+                <select class="select" id="g3-cat" style="max-width: 320px"><option>Paid back</option><option>Gifts received</option><option>Other income</option></select>
+              </span>
+            </span>
+          </label>
+          <label class="role-opt">
+            <input type="radio" name="g3">
+            <span><span style="font-weight: 500">An account of mine that hearth does not see</span><span class="sm faint" style="display: block">You moved your own money in.</span></span>
+          </label>
+          <label class="role-opt">
+            <input type="radio" name="g3">
+            <span><span style="font-weight: 500">Someone in this household</span><span class="sm faint" style="display: block">Money moved between members. Not income.</span></span>
+          </label>
+        </fieldset>
+        <div class="row between wrap mt-6" style="gap: var(--s-3)">
+          <p class="sm faint measure">Four names, one answer. If they were not all the same kind of thing, review them one by one.</p>
+          <div class="row" style="gap: var(--s-2)">
+            <a class="btn btn-quiet" href="review.html">One by one</a>
+            <button class="btn btn-primary" type="button">Save for all 12</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel mt-4" aria-labelledby="tie-h">
+    <div class="panel-head">
+      <h2 id="tie-h">Which is the other side?</h2>
+      <span class="sm faint">Between your own accounts</span>
+    </div>
+    <div class="panel-body">
+      <p class="muted measure">Two transfers into Lakeside Savings match this one equally well, so hearth did not guess.</p>
+      <div class="sides mt-4" aria-hidden="true">
+        <div class="side"><span class="primary">Lakeside Checking <span class="amt tnum" style="float: right">&minus;250.00</span></span><span class="second">Mar 3 &middot; Transfer to SAV ...5538</span></div>
+        <div class="via"><svg><use href="#i-arrow"/></svg></div>
+        <div class="side"><span class="primary">Lakeside Savings <span class="amt tnum" style="float: right">+250.00</span></span><span class="second">Mar 2 or Mar 4?</span></div>
+      </div>
+      <form class="mt-4" action="#">
+        <fieldset class="role">
+          <legend class="vh">Choose the other side of the Mar 3 transfer</legend>
+          <label class="role-opt">
+            <input type="radio" name="tie" checked>
+            <span class="row between" style="flex: 1; gap: var(--s-3)"><span><span style="font-weight: 500">Mar 2</span><span class="sm faint" style="display: block">Transfer from CHK ...5521</span></span><span class="amt tnum">+250.00</span></span>
+          </label>
+          <label class="role-opt">
+            <input type="radio" name="tie">
+            <span class="row between" style="flex: 1; gap: var(--s-3)"><span><span style="font-weight: 500">Mar 4</span><span class="sm faint" style="display: block">Transfer from CHK ...5521</span></span><span class="amt tnum">+250.00</span></span>
+          </label>
+        </fieldset>
+        <div class="row between wrap mt-4" style="gap: var(--s-3)">
+          <p class="sm faint measure">The one you do not choose waits for its own other side.</p>
+          <button class="btn btn-primary" type="button">Count as one move</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="panel mt-4" aria-labelledby="eff-h">
+    <div class="panel-head">
+      <h2 id="eff-h">What this does to your figures</h2>
+      <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+    </div>
+    <div class="panel-body">
+      <ul class="list" role="list">
+        <li><span class="grow"><span style="font-weight: 500">Spending and income</span><span class="sm faint" style="display: block">A move to an account of yours, or between members, is neither. Only "someone else" counts.</span></span></li>
+        <li><span class="grow"><span style="font-weight: 500">Net worth</span><span class="sm faint" style="display: block">An account hearth does not see is left out, and the figure says so: "without Bramblewood savings". Hearth never adds up what moved into it as if it were a balance.</span></span></li>
+        <li><span class="grow"><span style="font-weight: 500">If you connect it later</span><span class="sm faint" style="display: block">Hearth checks what you said here against the bank's own records, counts each move once, and brings back anything the bank does not show.</span></span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+<!-- @tabbar active="review" -->
+<nav class="tabbar" aria-label="Primary">
+  <a href="../screens/household.html"><svg aria-hidden="true"><use href="#i-home"/></svg>Household</a>
+  <a href="../screens/me.html"><svg aria-hidden="true"><use href="#i-user"/></svg>You</a>
+  <a href="../screens/review.html" aria-current="page"><svg aria-hidden="true"><use href="#i-review"/></svg><span class="count" aria-hidden="true">1,467</span>Review<span class="vh">, 1,467 to review</span></a>
+  <a href="../screens/net-worth.html"><svg aria-hidden="true"><use href="#i-worth"/></svg>Net worth</a>
+  <a href="../screens/sharing.html"><svg aria-hidden="true"><use href="#i-gear"/></svg>Settings</a>
+</nav>
+<!-- /@tabbar -->
+</div>
+
+<section class="dnotes" id="design-notes" aria-labelledby="dn-h">
+  <div class="dnotes-in">
+    <h2 id="dn-h">Design notes</h2>
+    <ol>
+<li><strong>One question, asked of the evidence.</strong> Each group is rows that went to the same place, so "where did it go?" is answered once for 22 transfers, not 22 times. The page never asks the member to list their accounts from memory.</li>
+      <li><strong>The answers are kinds of place, not ledger names.</strong> "An account of mine", "someone else", "someone in this household". Each says in its second line what it does to spending, because that is what people worry a transfer will do.</li>
+      <li><strong>The unseen side is drawn dashed.</strong> The two-sided strip shows the account hearth sees as a solid box and the other side as a dashed one: grey and dashed is the design's "not there yet", never the violet of "withheld".</li>
+      <li><strong>Matched moves are counted, not listed.</strong> 21 transfers between connected accounts need nothing from anyone, so they are one line in the summary.</li>
+      <li><strong>A settled group shrinks to one line with its Undo</strong>, so the page reads as progress and a wrong answer is one click from undone.</li>
+      <li><strong>A tie is a question, not a guess.</strong> When two rows match equally well, both are shown with their dates, and only between the member's own accounts. A row on another member's account is never offered, not even as a count.</li>
+      <li><strong>The loan says what it cannot do.</strong> Interest is inside each payment and hearth cannot split it yet; the page says so beside the button rather than in a help page.</li>
+      <li><strong>On a phone</strong> the two sides stack, the arrow turns down, and each answer is a full-width card.</li>
+    </ol>
+  </div>
+</section>
+<script src="../design.js"></script>
+</body>
+</html>

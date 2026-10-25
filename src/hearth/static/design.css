@@ -474,6 +474,28 @@ a.tag-review:hover { color: var(--accent-hover); box-shadow: inset 0 0 0 1px cur
   border: 1px solid color-mix(in srgb, var(--priv) 22%, transparent);
 }
 .missing-chip svg { width: 14px; height: 14px; }
+/* Left out because hearth does not see it: the "not there yet" absence, dashed and grey, never the violet of withheld. */
+.unseen-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 var(--s-3);
+  border-radius: var(--r-sm); font-weight: 600; color: var(--ink-2); font-size: var(--t-md); white-space: nowrap; align-self: center;
+  border: 1.5px dashed var(--line-strong); background: transparent; text-decoration: none;
+}
+.unseen-chip svg { width: 14px; height: 14px; }
+a.unseen-chip:hover { color: var(--ink); border-color: var(--ink-3); }
+.tag-unseen { background: transparent; box-shadow: none; border: 1px dashed var(--line-strong); color: var(--ink-2); }
+/* The two sides of a move: the side hearth sees, solid; the side it does not, dashed. */
+.sides { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--s-3); align-items: stretch; }
+.sides .side { border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s-3) var(--s-4); background: var(--surface); min-width: 0; }
+.sides .side.is-unseen { border: 1.5px dashed var(--line-strong); background: transparent; color: var(--ink-2); }
+.sides .side .primary { display: block; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.sides .side.is-unseen .primary { color: var(--ink-2); }
+.sides .side .second { display: block; font-size: var(--t-sm); color: var(--ink-3); }
+.sides .via { display: grid; place-items: center; color: var(--ink-3); }
+.sides .via svg { width: 18px; height: 18px; }
+@media (max-width: 640px) {
+  .sides { grid-template-columns: minmax(0, 1fr); }
+  .sides .via svg { transform: rotate(90deg); }
+}
 .annot { border: 1.5px dashed var(--ink-3); background: transparent; }
 .option-card { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-5); display: grid; gap: var(--s-2); align-content: start; }
 .option-card.is-rec { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }

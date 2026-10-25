@@ -63,7 +63,7 @@
 <!-- /@inc -->
 
   <h1>Bringing in two years</h1>
-  <p class="lede">This takes a few minutes. You can start reviewing as soon as the first groups are ready; the rest join the queue as they finish.</p>
+  <p class="lede">Done. Everything the banks sent is in your figures, and waits in Review until you check it.</p>
 
   <section class="panel mt-6" aria-labelledby="imp-h">
     <div class="panel-head">
@@ -83,31 +83,62 @@
         <li class="is-done">
           <span class="st" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
           <div>
-            <p style="font-weight: 500">Checked balances against the banks</p>
-            <p class="sm faint">All 3 accounts match to the cent.</p>
+            <p style="font-weight: 500">Recorded today's balances from the banks</p>
+            <p class="sm faint">Each account's balance is the one its bank reports, and what it held before its history is that balance less every transaction the bank sent.</p>
           </div>
           <span class="sm muted">3 of 3</span>
         </li>
-        <li class="is-now">
-          <span class="st" aria-hidden="true"><svg><use href="#i-refresh"/></svg></span>
+        <li class="is-done">
+          <span class="st" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
           <div>
-            <p style="font-weight: 500">Suggesting categories</p>
-            <p class="sm faint">Suggestions only. Nothing is booked until you review it.</p>
-            <div class="meter" role="progressbar" aria-label="Suggesting categories" aria-valuemin="0" aria-valuemax="1512" aria-valuenow="1118" aria-valuetext="1,118 of 1,512"><span style="width: 73.9%"></span></div>
+            <p style="font-weight: 500">Matched moves between your accounts</p>
+            <p class="sm faint">Transfers from checking to savings, and payments from checking to your card. Each is counted once, as a move, never as spending.</p>
           </div>
-          <span class="tnum sm muted">1,118 of 1,512</span>
+          <span class="tnum sm muted">21</span>
+        </li>
+        <li class="is-done">
+          <span class="st" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
+          <div>
+            <p style="font-weight: 500">In your figures and in Review</p>
+            <p class="sm faint">Each transaction counts at its suggested category until you check it.</p>
+          </div>
+          <span class="tnum sm muted">1,470</span>
         </li>
       </ol>
+    </div>
+  </section>
+
+  <section class="panel mt-4" aria-labelledby="os-h">
+    <div class="panel-head">
+      <h2 id="os-h">Money hearth sees one side of</h2>
+      <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+    </div>
+    <div class="panel-body">
+      <p class="muted measure">These went to, or came from, somewhere that is not connected: another bank, a loan, a person. Hearth will not guess which. Tell it once, and every transaction like them follows.</p>
+      <ul class="list mt-4" role="list">
+        <li><span class="grow">Payments into Pinecone Card <span class="faint">&middot; from an account that is not connected</span></span><span class="end tnum">3</span></li>
+        <li><span class="grow">Online transfer to SAV ...0417 <span class="faint">&middot; out of checking, monthly</span></span><span class="end tnum">22</span></li>
+        <li><span class="grow">Ashgrove Auto Loan <span class="faint">&middot; a loan payment, monthly</span></span><span class="end tnum">24</span></li>
+        <li><span class="grow">Zelle from people <span class="faint">&middot; into checking</span></span><span class="end tnum">12</span></li>
+        <li><span class="grow">A transfer that matches two others equally well</span><span class="end tnum">1</span></li>
+      </ul>
+      <div class="row wrap mt-6">
+        <a class="btn btn-primary" href="where-it-went.html">Tell hearth where it went<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="btn" href="onboarding-2-connect.html"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect another bank</a>
+      </div>
+    </div>
+    <div class="panel-foot">
+      <span>Until you say, they count as neither spending nor income. A few minutes here makes your first review smaller: the next transfer to SAV ...0417 arrives already knowing where it goes.</span>
     </div>
   </section>
 
   <section class="panel mt-4 handover" aria-labelledby="ho-h">
     <div class="panel-body" style="padding-top: var(--s-6)">
       <h2 id="ho-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Your first review</h2>
-      <p class="fig-value tnum">1,118 <span class="lg" style="font-weight: 400; color: var(--ink-2); letter-spacing: 0">ready, in 34 groups</span></p>
-      <p class="muted mt-2 measure">Most groups are one decision. The 8 largest cover 812 transactions: the same grocery store, your paycheck, the card payment, and so on. Start there and the queue shrinks fast.</p>
+      <p class="fig-value tnum">1,408 <span class="lg" style="font-weight: 400; color: var(--ink-2); letter-spacing: 0">ready, in 34 groups</span></p>
+      <p class="muted mt-2 measure">Most groups are one decision. The 8 largest cover 812 transactions: the same grocery store, your paycheck, and so on. Start there and the queue shrinks fast.</p>
       <div class="row wrap mt-6">
-        <a class="btn btn-primary btn-lg" href="review.html">Start with the largest groups<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        <a class="btn btn-lg" href="review.html">Start with the largest groups<svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
         <a class="btn btn-quiet" href="sharing.html">First, choose what the household sees</a>
       </div>
     </div>
@@ -119,10 +150,13 @@
     <h2 id="dn-h">Design notes</h2>
     <ol>
       <li><strong>Progress says what is happening and how much is left</strong>, in counts people can sanity-check, not a spinner. Each step's result stays on screen when it finishes.</li>
-      <li><strong>Reconciliation is a visible step.</strong> "All 3 accounts match to the cent" is the moment a new member learns why they should trust the numbers.</li>
+      <li><strong>Balances are a visible step.</strong> Every account opens at the balance its bank reports, and the books are checked against it; this is the moment a new member learns why they should trust the numbers.</li>
       <li><strong>The handover is honest about scale.</strong> Two years is over a thousand transactions. The page says so, and shows why it is not as bad as it sounds: grouped, the largest eight groups are most of it.</li>
-      <li><strong>Reviewing starts before the import ends.</strong> Waiting is the worst part of onboarding; there is no reason to make anyone watch a bar.</li>
+      <li><strong>Reviewing can start before the import ends.</strong> Waiting is the worst part of onboarding; there is no reason to make anyone watch a bar. This mock shows the import finished, the moment the one-sided rows are known.</li>
       <li><strong>Sharing is offered here</strong>, as the quiet second action, because this is the first moment the member has data the household could see.</li>
+      <li><strong>Where money went is asked here, not earlier, and not as a step of its own.</strong> Before the import hearth has nothing to show, so "which other accounts do you have?" would be a questionnaire answered from memory. After it, hearth asks about the actual transfers, grouped, which takes seconds. A member with nothing one-sided never sees the panel, which is why it is part of this step rather than a fifth one that is often empty.</li>
+      <li><strong>It comes before the review, as the primary action.</strong> Naming the other side first turns 62 rows into 5 answers and teaches every later transfer where it goes, so the review that follows is smaller. "Connect another bank" sits beside it for the member who realises they would rather connect that bank now.</li>
+      <li><strong>Matched moves are a step result, not a task.</strong> Transfers between connected accounts, and card payments, are counted once by hearth itself; the step says so in a count.</li>
     </ol>
   </div>
 </section>

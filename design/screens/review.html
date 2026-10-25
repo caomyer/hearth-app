@@ -67,7 +67,7 @@
   <div class="page-head">
     <div>
       <h1>Review</h1>
-      <p class="sub measure">Nothing is booked until someone checks it. Your decisions are remembered by each transaction's content, so a re-import never asks twice.</p>
+      <p class="sub measure">Check what your banks sent, and correct it. Until you check a transaction it counts at its suggested category, and every total that leans on it says so. Your decisions are remembered by each transaction's content, so a re-import never asks twice.</p>
     </div>
   </div>
 
@@ -76,7 +76,8 @@
       <div class="hero">
         <h2 id="rq-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Waiting for you</h2>
         <p class="hero-value">23</p>
-        <p class="muted"><span class="tnum">&minus;$2,704.20</span> across 4 groups. Oldest from Sep 1.</p>
+        <p class="muted"><span class="tnum">&minus;$1,076.60</span> across 4 groups. Oldest from Sep 1.</p>
+        <p class="sm mt-2"><a href="where-it-went.html">2 more need to know where the money went</a> <span class="faint">&middot; counted apart</span></p>
       </div>
       <div class="review-bulk">
         <button class="btn" type="button">Accept all 21 suggestions</button>
@@ -122,13 +123,13 @@
   <section class="panel rgroup mt-4" aria-labelledby="g2-h">
     <div class="rgroup-head">
       <div class="rgroup-what">
-        <h2 id="g2-h">Transfers to joint checking</h2>
-        <p class="muted">The same destination account each time. Moves money; not spending.</p>
+        <h2 id="g2-h">Groceries</h2>
+        <p class="muted">Same stores you have booked as Groceries before.</p>
       </div>
       <dl class="rgroup-figs">
         <div><dt>Transactions</dt><dd class="tnum">4</dd></div>
-        <div><dt>Total</dt><dd class="tnum">&minus;$1,840.00</dd></div>
-        <div><dt>Suggested</dt><dd>Transfer</dd></div>
+        <div><dt>Total</dt><dd class="tnum">&minus;$212.40</dd></div>
+        <div><dt>Suggested</dt><dd>Groceries</dd></div>
       </dl>
       <div class="rgroup-act">
         <button class="btn btn-primary" type="button">Accept 4</button>
@@ -137,18 +138,17 @@
     <details class="rgroup-items">
       <summary>Show the 4 transactions</summary>
       <table class="table">
-        <caption class="vh">Transfers awaiting review</caption>
-        <thead><tr><th scope="col" class="col-hide-sm">Date</th><th scope="col">Description</th><th scope="col" class="num">Amount</th></tr></thead>
+        <caption class="vh">Groceries awaiting review</caption>
+        <thead><tr><th scope="col" class="col-hide-sm">Date</th><th scope="col">Merchant</th><th scope="col" class="num">Amount</th></tr></thead>
         <tbody>
-          <tr><td class="col-hide-sm muted tnum">Oct 15</td><td>Transfer to joint checking</td><td class="num amt">&minus;460.00</td></tr>
-          <tr><td class="col-hide-sm muted tnum">Oct 1</td><td>Transfer to joint checking</td><td class="num amt">&minus;460.00</td></tr>
-          <tr><td class="col-hide-sm muted tnum">Sep 15</td><td>Transfer to joint checking</td><td class="num amt">&minus;460.00</td></tr>
-          <tr><td class="col-hide-sm muted tnum">Sep 1</td><td>Transfer to joint checking</td><td class="num amt">&minus;460.00</td></tr>
+          <tr><td class="col-hide-sm muted tnum">Oct 14</td><td>Corner Grocer</td><td class="num amt">&minus;51.09</td></tr>
+          <tr><td class="col-hide-sm muted tnum">Oct 8</td><td>Harvest Market</td><td class="num amt">&minus;58.86</td></tr>
+          <tr><td class="col-hide-sm muted tnum">Oct 2</td><td>Corner Grocer</td><td class="num amt">&minus;63.98</td></tr>
+          <tr><td class="col-hide-sm muted tnum">Sep 29</td><td>Corner Grocer</td><td class="num amt">&minus;38.47</td></tr>
         </tbody>
       </table>
     </details>
   </section>
-
   <section class="panel rgroup mt-4" aria-labelledby="g3-h">
     <div class="rgroup-head">
       <div class="rgroup-what">
@@ -316,6 +316,7 @@
       <li><strong>Accept-all is secondary and states its scope.</strong> It is a deliberate bulk decision, so it says exactly how many it books and which it leaves open, and it is not the loudest button on the page.</li>
       <li><strong>Auto-accept is gone.</strong> Decision 5 takes it out of the MVP. The reminder stays, with a sentence saying nothing books itself.</li>
       <li><strong>Accept stays disabled until a category is chosen</strong> for the rows with nothing to suggest. On a phone each row stacks: merchant and amount, then the category and the button.</li>
+      <li><strong>Transfers between the member's own connected accounts are not here.</strong> Hearth matches them and counts each once, as it does card payments. Money hearth sees only one side of is counted apart, with a link to <a href="where-it-went.html">Where did it go?</a>, because it needs a different question from "is this category right?".</li>
     </ol>
   </div>
 </section>

@@ -11,3 +11,4 @@ Every figure and name is invented.
 - `rationale.md` covers what was chosen and rejected, where the design departs from the approved behaviour, and the three places it is still weakest.
 - `hearth.css` holds every token and component; `design.js` adds chart tooltips and a light and dark switch for review.
 - `screens/` holds the eleven MVP screens; `states/` holds the seven states.
+- Money between accounts, a proposal for review, adds `screens/where-it-went.html`, `screens/add-account.html`, `states/not-connected-account.html` and `states/connected-later.html`, and changes onboarding steps 2 and 4; `money-between-accounts.md` is the plan behind it.
