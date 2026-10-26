@@ -131,7 +131,7 @@ Each recompute opens it with its name, institution and last digits, and `seen: "
 Those rows are what moved, not what it holds: interest, and anything spent from it, never reach hearth.
 So its balance is never read from them, and never asked for:
 
-- `books.unseen` names every such account; each is `unanchored`, as its balance is not known, and none is `awaiting`, so no spending figure waits on history that will never arrive.
+- `books.unseen` names every such account, and every claimed one nothing holds (below); a named one is `unanchored`, as its balance is not known, and none is `awaiting`, so no spending figure waits on history that will never arrive.
 - No valuation holds a figure for it (`books.compute`), so no total can add it in by mistake.
 - A total that includes one says it leaves it out: "$48,210 without 2 accounts hearth does not see", the known part, drawn with the dashed grey "not there yet" chip, never "not known yet", which is for a balance about to arrive and would make a member's net worth unknown for good.
   The history chart draws the accounts hearth sees, and says it is without the rest.
@@ -141,7 +141,14 @@ So its balance is never read from them, and never asked for:
 
 Summing the moves into an account instead would make its balance the sum of what moved into it: in an invented household of a real one's shape, about −$118k for two years of card payments made from a checking account nobody connected, and net worth would fall by that, which is a lie.
 
-Connecting the bank later is not done yet: the mapping page does not offer a named account as where a connected account goes, since what members moved into it would then count a second time beside the bank's own rows.
+An account the household claimed that nothing holds is the same fact through an older door: one claimed from a ledger hearth no longer inherits, which no connection feeds and nobody named.
+Its balance is never told either, so it is in `books.unseen` and every total leaves it out and says so, exactly as for a named account (`ownbooks.Derived.unfed`).
+It differs only in how it is held: nothing opens it, so no row can be moved into it, and its own page says so and offers no moves.
+So connecting its bank later counts nothing twice, and the mapping page still offers it as where a connected account goes; once connected, it is opened and anchored like any other, and "without" drops it.
+
+"Not known yet" is kept for an account about to arrive: a connected account whose balance is not in yet, or any account registered since the books were last computed, such as one whose connection has just been filed (`Household.arriving`), which the recompute that follows brings in, connected or unseen.
+
+Connecting the bank later is not done yet for a named account: the mapping page does not offer a named account as where a connected account goes, since what members moved into it would then count a second time beside the bank's own rows.
 What it will need is kept: every ruling that moved a row onto the account names it, and each row's review id leads back to the feed row it was booked from, with its day and amount (`RulingStore.ruled_onto`).
 
 ### Balances are not history
@@ -208,4 +215,4 @@ The anchor claims nothing about any earlier day.
 Plaid gives holdings and prices for today only and no trades, so the books hold nothing in the account before the day it was reported, and no month that ended earlier is whole for its value (`books.positioned`, `figures.covers`).
 Net worth is therefore a total from that day, and no history is drawn through a part that holds a brokerage: an earlier month end would value it as empty, or as its cash alone, which nobody said.
 That is a question of value alone: what its rows say was spent or earned is judged by its history, as any account's is (`figures.flows_cover`).
-A member whose accounts are all brokerages has no spending or income anyone established, so those read as not known on their page and add nothing to the household's for anyone who may see that member's balances; to anyone else they read as not known, since what kind an account is goes with its balance (`docs/privacy-boundary.md`).
+A member whose accounts are all brokerages, or brokerages and accounts hearth does not see, has no spending or income anyone established, so those read as not known on their page and add nothing to the household's for anyone who may see that member's balances; to anyone else they read as not known, since what kind an account is goes with its balance (`docs/privacy-boundary.md`).

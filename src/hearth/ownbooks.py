@@ -17,6 +17,11 @@ An account a member names rather than connects (``hearth.accounts.name_account``
 marked `seen: "moves-only"`: hearth sees only the rows members move into it from their
 connected accounts, so nothing in the books says what it holds (``books.unseen``).
 
+An account the household claimed that no ledger and no connection holds, as one claimed from
+a ledger hearth no longer inherits is, opens nowhere: nothing can say what it holds, and
+nothing is moved into it, so a bank connected to it later counts nothing twice. It is one
+hearth does not see all the same (``books.unseen``), as a named account is.
+
 A brokerage account holds what its brokerage last said it holds, as of the day it said it
 (``hearth.plaid.opening``), and each security held is declared with what it is called. Plaid
 sends no trades, so no transaction ever moves a security: the books say what is held, never
@@ -72,11 +77,15 @@ _SIGNATURE = "; hearth wrote everything above; its sha256 is "
 @dataclass(frozen=True, slots=True)
 class Derived:
     """Hearth's own entries, each account whose opening balance could not be derived, with
-    why, and each account a brokerage account feeds (``hearth.plaid.opening``)."""
+    why, each account a brokerage account feeds (``hearth.plaid.opening``), and each account
+    the household holds that no entry opens (`unfed`)."""
 
     entries: list[Directive]
     unknown: Mapping[str, opening.Unknown] = field(default_factory=dict)
     invested: frozenset[str] = frozenset()
+    unfed: frozenset[str] = frozenset()
+    """Accounts the household claimed that neither the inherited ledger nor hearth opens: no
+    connection feeds them and nobody named them, so hearth is never told what they hold."""
 
 
 def derive(
@@ -103,8 +112,9 @@ def derive(
     opens on the first of those days, or on `since`, the inherited ledger's first day, when
     hearth opens none of its own. Every account a member named (`Unseen`) opens on the
     earliest of the first row ruled onto it and the household's first day of history, so a
-    ruling is never refused for a day before it opened. Raises ``booking.Refused`` when the
-    feed cannot be booked.
+    ruling is never refused for a day before it opened. Every other account the household
+    holds opens nowhere (`Derived.unfed`). Raises ``booking.Refused`` when the feed cannot be
+    booked.
     """
     registry = Registry(conn)
     named = {account.id: account for account in all_accounts(conn)}
@@ -141,7 +151,9 @@ def derive(
     entries += [entry for anchor in openings.anchors for entry in anchor.entries()]
     entries += booked.entries
     filed = [_filed(entry, lineno) for lineno, entry in enumerate(entries, start=1)]
-    return Derived(filed, openings.unknown, openings.invested)
+    held = set(opened) | {e.account for e in entries if isinstance(e, Open)}
+    unfed = frozenset(a.ledger_account for a in named.values() if a.ledger_account not in held)
+    return Derived(filed, openings.unknown, openings.invested, unfed)
 
 
 def _securities(openings: opening.Openings, declared: Collection[str]) -> list[Commodity]:

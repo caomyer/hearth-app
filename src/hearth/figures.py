@@ -476,12 +476,13 @@ def flows_cover(books: Books, accounts: Sequence[Account], month: Month) -> bool
     So does an account with no history in the books yet (`books.awaiting`): nothing says yet
     what it spends, so it is judged as one that might.
 
-    Accounts that are all brokerages (`books.invested`) cover no month at all: Plaid sends a
-    brokerage no transactions, so nothing says what they spent or earned, and a figure of
-    nothing would be one nobody established.
+    Accounts that are all brokerages (`books.invested`), or all ones hearth does not see
+    (`books.unseen`), cover no month at all: Plaid sends a brokerage no transactions, and
+    hearth is told nothing of an account it does not see, so nothing says what they spent or
+    earned, and a figure of nothing would be one nobody established.
     """
     seen = [a for a in accounts if a.ledger_account not in books.unseen]
-    if seen and all(a.ledger_account in books.invested for a in seen):
+    if all(a.ledger_account in books.invested for a in seen):
         return False
     judged = books.flowing | books.awaiting
     return _history_covers(books, [a for a in accounts if a.ledger_account in judged], month)

@@ -157,14 +157,14 @@ class AccountView:
     covered: Disclosed[bool]
     """Whether the account's history is known in full for `month`, so that no transactions
     in it is a fact. It is decided by its transactions, so it goes with them."""
-    outside: bool = False
-    """Whether the books hold nothing of the account at all (`Household.outside`)."""
+    arriving: bool = False
+    """Whether the books have not caught up with the account yet (`Household.arriving`)."""
     unknown: str | None = None
     """Why its balance is not known, when the books say (``books.unknown``), told to its owners
     alone (``access.may_see_why_unknown``)."""
     unseen: UnseenAccount | None = None
-    """What else there is to say of an account a member named that hearth does not see
-    (`books.unseen`); None for any other account."""
+    """What else there is to say of an account hearth does not see (`books.unseen`); None for
+    any other account."""
     priced: date | None = None
     """For a brokerage account whose balance the viewer may see, the day of the newest price
     its holdings are valued at."""
@@ -180,6 +180,10 @@ class UnseenAccount:
     mask: str | None
     ledger_account: str | None
     """Its ledger name, shown to its owners alone, who move money into it."""
+    takes_moves: bool
+    """Whether members may say money went to it or came from it: one a member named. One
+    claimed that nothing opens takes none (``ownbooks.Derived.unfed``), so a bank connected to
+    it later counts nothing twice; until then nothing of it reaches hearth."""
     moves: Disclosed[Moves]
     """What hearth has seen move into and out of it, which goes with its transactions."""
     said: Mapping[str, datetime] = field(default_factory=dict)
@@ -283,13 +287,13 @@ class Disclosure:
             days=self._gate.disclose(
                 Facet.TRANSACTIONS, account.owners, lambda: days(h, [account], month)
             ),
-            # An account the books hold nothing of has no history to be whole, not an empty one.
+            # An account the books hold nothing of yet has no history to be whole, not an empty one.
             covered=self._gate.disclose(
                 Facet.TRANSACTIONS,
                 account.owners,
-                lambda: account.ledger_account not in h.outside and covers(h.books, judged, month),
+                lambda: account.ledger_account not in h.arriving and covers(h.books, judged, month),
             ),
-            outside=isinstance(row, AccountRow) and row.outside,
+            arriving=isinstance(row, AccountRow) and row.arriving,
             unknown=(
                 h.books.unknown.get(account.ledger_account)
                 if isinstance(row, AccountRow) and self._gate.may_see_why_unknown(account.owners)
@@ -337,7 +341,10 @@ class Disclosure:
             kind=named.kind.label if named else None,
             where=named.institution if named else None,
             mask=named.mask if named else None,
-            ledger_account=account.ledger_account if self._gate.may_feed(account.owners) else None,
+            ledger_account=(
+                account.ledger_account if named and self._gate.may_feed(account.owners) else None
+            ),
+            takes_moves=named is not None,
             moves=self._gate.disclose(Facet.TRANSACTIONS, account.owners, moves),
             said=said,
         )

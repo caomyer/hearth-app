@@ -9,11 +9,13 @@
       <h1>{{ a.name }}</h1>
       <p class="sub">{% if a.unseen and a.unseen.kind %}{{ a.unseen.kind }} &middot; owned{% elif a.kind is not withheld %}{{ a.kind }} &middot; owned{% else %}Owned{% endif %} by {{ a.owners | names }}</p>
     </div>
+    {% if not a.unseen or a.unseen.takes_moves %}
     <nav class="row" aria-label="Month" style="gap: var(--s-2)">
       <a class="btn btn-sm btn-quiet" href="/accounts/{{ a.id }}?month={{ view.month.previous() }}" aria-label="Previous month">&lsaquo;</a>
       <span class="tnum">{{ view.month.label }}</span>
       <a class="btn btn-sm btn-quiet" href="/accounts/{{ a.id }}?month={{ view.month.following() }}" aria-label="Next month">&rsaquo;</a>
     </nav>
+    {% endif %}
   </div>
 
   {% set u = a.unseen %}
@@ -33,7 +35,8 @@
           <p class="fig-value muted">Not known</p>
           <p class="fig-sub">Hearth does not see this account's own records.</p>
         </div>
-        {% if u.moves is withheld %}
+        {% if not u.takes_moves %}
+        {% elif u.moves is withheld %}
         <div>
           <p class="fig-label">Moves</p>
           <p class="mt-3">{{ private("Not shared with you") }}</p>
@@ -53,6 +56,7 @@
         </div>
         {% endif %}
       </div>
+      {% if not u.takes_moves %}<p class="sm muted mt-4 measure">Nothing of it reaches hearth. Connect its bank whenever you like, from <a href="/settings/connections">Settings, Connections</a>, and its balance and transactions come in.</p>{% endif %}
     </div>
   </section>
   {% else %}
@@ -65,7 +69,7 @@
         {% else %}
         {% if not view.balance.is_known %}
         <p class="hero-value muted">&ndash;</p>
-        <p class="muted mt-2 measure">Not known yet. {% if view.outside %}Nothing of this account is in hearth: connect its bank to bring it in.{% elif view.unknown == "investment" %}What an investment account holds is what its investments are worth, and its brokerage has not said what they are yet. Hearth asks once the household's admin approves reading holdings: when the account is connected, then each morning.{% elif view.unknown == "kind" %}Its bank reports a balance for it, but not one that says plainly what it holds or owes.{% elif view.unknown == "shared" %}More than one bank account goes to it, so no one balance a bank reports is its own.{% elif view.unknown == "no-balance" %}Its bank has not said what it holds. The balance appears once it does.{% elif view.unknown == "unfinished" %}Its bank's latest update did not finish, so the balance it gave may not match the transactions that came with it. The balance appears after the next update that finishes.{% elif view.unknown == "currency" %}Its bank reports its balance in a different currency from its transactions.{% elif view.unknown == "gap" %}It was connected again, and the transactions from between its two connections are not all in yet. The balance appears once they are.{% else %}This account is connected, but its balance is not in hearth yet. The balance appears once it is.{% endif %} Until then there is no balance to show, not a balance of zero.</p>
+        <p class="muted mt-2 measure">Not known yet. {% if view.arriving %}Hearth is bringing this account in now, and its balance appears once it has.{% elif view.unknown == "investment" %}What an investment account holds is what its investments are worth, and its brokerage has not said what they are yet. Hearth asks once the household's admin approves reading holdings: when the account is connected, then each morning.{% elif view.unknown == "kind" %}Its bank reports a balance for it, but not one that says plainly what it holds or owes.{% elif view.unknown == "shared" %}More than one bank account goes to it, so no one balance a bank reports is its own.{% elif view.unknown == "no-balance" %}Its bank has not said what it holds. The balance appears once it does.{% elif view.unknown == "unfinished" %}Its bank's latest update did not finish, so the balance it gave may not match the transactions that came with it. The balance appears after the next update that finishes.{% elif view.unknown == "currency" %}Its bank reports its balance in a different currency from its transactions.{% elif view.unknown == "gap" %}It was connected again, and the transactions from between its two connections are not all in yet. The balance appears once they are.{% else %}This account is connected, but its balance is not in hearth yet. The balance appears once it is.{% endif %} Until then there is no balance to show, not a balance of zero.</p>
         {% else %}
         <p class="hero-value">{% if view.balance.is_floor %}<span class="sm muted">at least </span>{% endif %}{{ view.balance.value | hero }}</p>
         {% if view.priced %}
@@ -81,6 +85,7 @@
   </section>
   {% endif %}
 
+  {% if not u or u.takes_moves %}
   <section class="panel mt-4" aria-labelledby="tx-h">
     <div class="panel-head">
       <h2 id="tx-h">{{ "Moves" if u else "Transactions" }}, {{ view.month.label }}</h2>
@@ -101,4 +106,5 @@
       {% endif %}
     </div>
   </section>
+  {% endif %}
 {% endblock %}

@@ -121,9 +121,11 @@ class Books:
     """Accounts hearth opened whose opening balance could not be derived from what their bank
     reported, with why (``hearth.plaid.opening``). Each is `unanchored`."""
     unseen: frozenset[str] = frozenset()
-    """Accounts members named that hearth does not see (`unseen`): only what moved between
-    them and connected accounts is in the books, never what they hold. Each is `unanchored`
-    and none is `awaiting`; no valuation holds a figure for them."""
+    """Accounts the household holds that hearth does not see, whose balance it is never told:
+    each a member named (`unseen`), of which only what moved between it and connected
+    accounts is in the books, and each claimed that nothing opens (``ownbooks.Derived.unfed``),
+    of which nothing is. None is `awaiting`, a named one is `unanchored`, and no valuation
+    holds a figure for any of them."""
     invested: frozenset[str] = frozenset()
     """Accounts hearth opened for a brokerage account, whatever it holds: Plaid sends them no
     history, so none is `awaiting`, and each is an investment account whether or not its
@@ -237,11 +239,13 @@ def compute(
     synced: Mapping[str, tuple[str, date]] | None = None,
     unknown: Mapping[str, Unknown] | None = None,
     invested: frozenset[str] = frozenset(),
+    unfed: frozenset[str] = frozenset(),
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
     recent month end. `synced` is each fed ledger account's connection and its last successful
     sync (`synced_through`); `unknown`, each account whose opening balance could not be
-    derived, with why; `invested`, each account a brokerage account feeds.
+    derived, with why; `invested`, each account a brokerage account feeds; `unfed`, each the
+    household holds that nothing opens.
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
@@ -260,7 +264,7 @@ def compute(
     vouches = vouched(history, fed, today)
     own = {account: fed[account][0] for account in vouches}
 
-    hidden = unseen(entries)
+    hidden = unseen(entries) | unfed
 
     def worth(day: date) -> NetWorth:
         # What moved into an account hearth does not see is not what it holds, so it is
@@ -453,8 +457,7 @@ def unanchored(entries: Sequence[Directive]) -> frozenset[str]:
     is: each says what it held. Hearth anchors each from the balance its bank reports
     (``hearth.plaid.opening``); until one does, its balance is not known, never the sum of its
     rows, nor zero. An inherited ledger's own accounts keep beancount's meaning, as in
-    `awaiting`. That includes every account hearth does not see (`unseen`), which nothing
-    anchors.
+    `awaiting`. That includes every account a member named (`unseen`), which nothing anchors.
     """
     anchored: set[str] = set()
     for entry in entries:
@@ -723,6 +726,7 @@ def from_household(
                 synced=synced,
                 unknown=household.unknown,
                 invested=household.invested,
+                unfed=household.unfed,
             )
         finally:
             conn.close()
@@ -736,12 +740,14 @@ def from_household(
 @dataclass(frozen=True, slots=True)
 class Entries:
     """The household's entries before any ruling, each account hearth opened whose opening
-    balance could not be derived, with why, and each a brokerage account feeds
-    (``hearth.plaid.opening``)."""
+    balance could not be derived, with why, each a brokerage account feeds
+    (``hearth.plaid.opening``), and each the household holds that nothing opens
+    (``ownbooks.Derived.unfed``)."""
 
     entries: tuple[Directive, ...]
     unknown: Mapping[str, Unknown] = field(default_factory=dict)
     invested: frozenset[str] = frozenset()
+    unfed: frozenset[str] = frozenset()
 
 
 def household_entries(settings: Settings) -> Entries:
@@ -777,4 +783,4 @@ def household_entries(settings: Settings) -> Entries:
                 f"Hearth's own books have {count} error{'s' if count > 1 else ''}"
                 " it will not serve figures past."
             )
-    return Entries(entries, derived.unknown, derived.invested)
+    return Entries(entries, derived.unknown, derived.invested, derived.unfed)

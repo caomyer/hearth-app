@@ -338,7 +338,10 @@ def test_a_member_whose_only_account_is_a_brokerage_is_told_nothing_nobody_estab
             assert not UNESTABLISHED.search(page), (viewer, path, UNESTABLISHED.search(page))
             assert "No income that month" not in page, (viewer, path)
     you = " ".join(readable(fresh.signed_in("avery").get("/you").text).split())
-    assert "which show hearth nothing of what you spend" in you
+    assert "every account of yours here is a brokerage account, so nothing shows" in you
+    assert "Brokerage accounts only" in you
+    assert "Plaid does not send a brokerage's transactions. Connect" in you
+    assert "hearth does not see" not in you
     assert "$10,000" in you
 
 

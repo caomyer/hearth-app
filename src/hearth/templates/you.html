@@ -93,6 +93,7 @@
           {% call asof(books, status, today, notice, 0, me.worth.unpriced, ends=me.ends) %}{% if unseen_rows and me.worth.counted %} Your connected accounts are at the balances their banks report. Hearth does not know what {{ unseen_rows | names("name") }} {{ "holds" if unseen_rows | length == 1 else "hold" }}, so {{ "it is" if unseen_rows | length == 1 else "they are" }} left out, not counted as zero.{% endif %}{% if me.joint %} Joint accounts{% if me.joint_total is not none %} ({{ me.joint_total | dollars }}){% endif %}, which you own with others, are counted once in the household total instead.{% endif %}{% endcall %}
         </div>
         {% set totals = me.totals %}
+        {% set reasons = ([{"kind": "brokerage", "account": "a brokerage account", "transactions": "Plaid does not send a brokerage's transactions."}] if totals.brokerages else []) + ([{"kind": "unconnected", "account": "one hearth does not see", "transactions": "Accounts hearth does not see are not connected, so none of their transactions are here."}] if totals.unseen else []) %}
         <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
           <div>
             <div class="row between"><p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p></div>
@@ -103,7 +104,7 @@
             {% endif %}
             {{ unreviewed_sub(totals.spent_unreviewed, "/review") }}
             {% else %}<p class="fig-value muted">&ndash;</p>
-            <p class="fig-sub">{{ "History incomplete" if totals.spends else "Brokerage accounts only" }}</p>{% endif %}
+            <p class="fig-sub">{{ "History incomplete" if totals.spends else reasons | map(attribute="kind") | join(" and ") | capitalize ~ " accounts only" }}</p>{% endif %}
           </div>
           <div>
             <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p>
@@ -112,7 +113,7 @@
             <p class="fig-sub">{% if totals.payments_in == 0 %}Nothing paid in yet{% else %}{{ plural(totals.payments_in, "payment") }} in{% endif %}</p>
             {{ unreviewed_sub(totals.earned_unreviewed, "/review") }}
             {% else %}<p class="fig-value muted">&ndash;</p>
-            <p class="fig-sub">{{ "History incomplete" if totals.spends else "Brokerage accounts only" }}</p>{% endif %}
+            <p class="fig-sub">{{ "History incomplete" if totals.spends else reasons | map(attribute="kind") | join(" and ") | capitalize ~ " accounts only" }}</p>{% endif %}
           </div>
         </div>
       </div>
@@ -156,7 +157,7 @@
         <h2 id="pace-h">{{ month_name }} spending, day by day</h2>
         {{ shared("Transactions") }}
         {% if not totals.covered and not totals.spends %}
-        <p class="finding">Not known: your accounts here are brokerage accounts, which show hearth nothing of what you spend. Connect the bank account or card you spend from to see it.</p>
+        <p class="finding">Not known: every account of yours here is {{ reasons | map(attribute="account") | join(" or ") }}, so nothing shows hearth what you spend. Connect the bank account or card you spend from to see it.</p>
         {% elif not totals.covered %}
         <p class="finding">Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.</p>
         {% elif totals.over_typical is not none %}
@@ -263,7 +264,7 @@
       {% if me.days %}
       {{ day_table(me.days, "Your transactions, newest first, grouped by day") }}
       {% elif not totals.covered and not totals.spends %}
-      <p class="muted" style="padding: var(--s-4) var(--s-6)">Plaid does not send a brokerage's transactions. Connect the bank account or card you spend from to see yours here.</p>
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">{% for reason in reasons %}{{ reason.transactions }} {% endfor %}Connect the bank account or card you spend from to see yours here.</p>
       {% elif not totals.covered %}
       <p class="muted" style="padding: var(--s-4) var(--s-6)">Not known yet: hearth does not have all of {{ month_name }}'s transactions for your accounts. They appear here once they are in.</p>
       {% else %}

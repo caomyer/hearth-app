@@ -50,13 +50,13 @@ class AccountRow:
     updated: Disclosed[date | None]
     """Each source's days and the account's last day are when its money moved, which is
     transaction detail, so they go with the transactions facet."""
-    outside: bool = False
-    """Whether the books hold nothing of the account at all (`Household.outside`)."""
+    arriving: bool = False
+    """Whether the books have not caught up with the account yet (`Household.arriving`)."""
     awaiting: bool = False
     """Whether the books hold none of its history yet (`books.awaiting`): its bank has not sent
     it, which is not the same as there being none, whatever its balance."""
     unseen: bool = False
-    """Whether it is an account a member named that hearth does not see (`books.unseen`): its
+    """Whether it is an account hearth does not see (`books.unseen`): its
     balance is never known, so it is listed apart from the accounts a total adds up."""
     where: str | None = None
     """Where an account hearth does not see is: its bank's name, or a person's."""
@@ -100,8 +100,15 @@ class Totals:
     earned_unreviewed: Disclosed[Unreviewed]
     spends: bool = True
     """Whether any of the accounts behind it could show spending: not when every one is a
-    brokerage, which Plaid sends no transactions for, so no figure will ever arrive. What kind
-    each account is goes with its balance, so a page says so to the part's owners alone."""
+    brokerage, which Plaid sends no transactions for, or one hearth does not see, so no figure
+    will ever arrive. What kind each account is goes with its balance, so a page says so to
+    the part's owners alone."""
+    brokerages: bool = False
+    """Whether any of the accounts behind it is a brokerage hearth sees (`books.invested`).
+    With `unseen`, why a part that `spends` nothing shows no figure: each is a reason that
+    applies, said to the part's owners alone, as `spends` is."""
+    unseen: bool = False
+    """Whether any of the accounts behind it is one hearth does not see (`books.unseen`)."""
 
     @property
     def over_typical(self) -> Decimal | None:
@@ -246,6 +253,8 @@ def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
         to_day=h.books.as_of.day,
         covered=figures.flows_cover(h.books, part.accounts, h.books.month),
         spends=bool(h.spends(part)),
+        brokerages=any(a.ledger_account in h.books.invested for a in h.seen(part)),
+        unseen=h.unseen(part) > 0,
         spent=spent,
         earned=gate.disclose(
             Facet.MONTHLY_INCOME_TOTAL, part.owners, lambda: this_month.earned(part.owners)
@@ -314,7 +323,7 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
         updated=h.gate.disclose(
             Facet.TRANSACTIONS, account.owners, lambda: coverage.latest if coverage else None
         ),
-        outside=account.ledger_account in h.outside,
+        arriving=account.ledger_account in h.arriving,
         awaiting=account.ledger_account in h.books.awaiting,
         unseen=unseen,
         where=account.named.institution if unseen and account.named else None,

@@ -207,10 +207,11 @@ class Household:
     parts: tuple[Part, ...]
     ownership: OwnersOf
     books: Books
-    outside: frozenset[str] = frozenset()
-    """Accounts the household names that the books hold nothing of, not even an `open`: one
-    claimed from a ledger it no longer inherits, or never connected. Their balance is not
-    known here, never zero."""
+    arriving: frozenset[str] = frozenset()
+    """Accounts the household holds that the books have not caught up with: registered since
+    they were last computed, as an account is the moment its connection is filed. The
+    recompute that follows brings each in, so its balance is not known yet, never zero. One
+    that nothing will ever bring in is not arriving but unseen (`books.unseen`)."""
 
     @classmethod
     def of(
@@ -223,9 +224,10 @@ class Household:
             parts=tuple(figures.parts(members, accounts)),
             ownership=figures.ownership(accounts),
             books=books,
-            outside=frozenset(
+            arriving=frozenset(
                 {a.ledger_account for a in accounts}
                 - {e.account for e in books.entries if isinstance(e, Open)}
+                - books.unseen
             ),
         )
 
@@ -233,7 +235,7 @@ class Household:
     def balance_unknown(self) -> frozenset[str]:
         """Every account the household names whose balance the books do not know yet: not
         those hearth does not see, which it never will (`unseen`)."""
-        return (self.books.balance_unknown - self.books.unseen) | self.outside
+        return (self.books.balance_unknown - self.books.unseen) | self.arriving
 
     @property
     def viewer(self) -> Member:

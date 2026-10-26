@@ -1620,11 +1620,13 @@ def test_the_import_page_says_so_while_what_arrived_is_still_being_added_up(
     assert 'hx-get="/connect/import"' not in done
 
 
-def test_an_account_the_household_names_that_nothing_brings_in_is_not_known_never_zero(
+def test_an_account_the_household_claimed_that_nothing_brings_in_is_left_out_never_zero(
     filed: FirstDay,
 ) -> None:
     """A household that once inherited a ledger and now keeps its own books still names the
-    accounts it claimed then; one no connection feeds holds nothing in the books, not $0."""
+    accounts it claimed then. One no connection feeds is one hearth does not see, as a named
+    account is: left out of the figure, which says so, never $0 and never "not known yet" for
+    good. Only until the books next catch up is it not known yet, as an account just filed is."""
     conn = filed.connect()
     try:
         elsewhere = accounts.register(
@@ -1635,19 +1637,29 @@ def test_an_account_the_household_names_that_nothing_brings_in_is_not_known_neve
         )
     finally:
         conn.close()
-    filed.bookkeeper.recompute(wait=True)
     avery = filed.signed_in("avery")
 
-    you = shown(avery.get("/you").text)
-    page = shown(avery.get(f"/accounts/{elsewhere.id}").text)
+    def read(path: str) -> str:
+        return " ".join(shown(avery.get(path).text).split())
 
-    assert re.findall(ZERO, you) == []
-    assert "Not connected, nothing brought in" in you
-    assert "Nothing of this account is in hearth: connect its bank to bring it in." in page
-    assert re.findall(ZERO, page) == []
-    # Nor is a month with none of its transactions in hearth a month in which it had none.
+    arriving, arriving_page = read("/you"), read(f"/accounts/{elsewhere.id}")
+    filed.bookkeeper.recompute(wait=True)
+    you, page = read("/you"), read(f"/accounts/{elsewhere.id}")
+
+    assert "Being brought in" in arriving
+    assert "Hearth is bringing this account in now" in arriving_page
+    assert "without 1 account hearth does not see" not in arriving
+    assert "Your net worth, excluding joint, without 1 account hearth does not see" in you
+    assert "Hearth does not see this Elsewhere checking Not connected \N{EN DASH} Not known" in you
+    assert "Not known yet" not in you
+    assert "Being brought in" not in you
+    assert "Nothing of it reaches hearth. Connect its bank whenever you like" in page
+    for said in (arriving, arriving_page, you, page):
+        assert re.findall(ZERO, said) == []
+    # It takes no moves, so there is no month of them to speak of, empty or not.
+    assert "Moves," not in page
     assert "No transactions" not in page
-    assert "does not have all of this account's transactions for October 2026" in page
+    assert "No moves" not in page
 
 
 def test_where_did_it_go_counts_the_moves_hearth_matched_by_itself(filed: FirstDay) -> None:

@@ -27,7 +27,7 @@
       </td>
       <td class="col-hide-sm muted">{% if row.updated is not withheld and row.updated %}{{ row.updated | day }}{% elif row.priced %}{{ close(row.priced, today) }}{% endif %}{% if row.stale %}<span class="second" style="color: var(--warn)">A price is stale</span>{% endif %}</td>
       <td class="num">
-        {% if not row.value.is_known %}<span class="primary faint">Not known yet</span><span class="second">{{ "Not connected, nothing brought in" if row.outside else "Connected, balance not brought in yet" }}</span>
+        {% if not row.value.is_known %}<span class="primary faint">Not known yet</span><span class="second">{{ "Being brought in" if row.arriving else "Connected, balance not brought in yet" }}</span>
         {% elif row.value.is_floor %}<span class="primary">at least {{ row.value.value | money }}</span><span class="second" style="color: var(--warn)">{{ row.value.unpriced | join(", ") }} has no price</span>
         {% else %}<span class="primary">{{ row.value.value | money }}</span>{% if row.is_owed %}<span class="second">owed</span>{% endif %}{% endif %}
       </td>

@@ -208,6 +208,11 @@ def link(world: World, username: str, institution: str) -> str:
 
 @pytest.fixture
 def world(tmp_path: Path, clock: FakeClock) -> World:
+    return build_world(tmp_path, clock)
+
+
+def build_world(tmp_path: Path, clock: FakeClock) -> World:
+    """The invented household, running, in `tmp_path`: for a test that compares several."""
     ledger = tmp_path / "household.beancount"
     ledger.write_text(household.ledger_text())
     settings = Settings.in_directory(tmp_path / "data", ledger=ledger)
