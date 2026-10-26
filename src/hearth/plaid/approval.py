@@ -23,11 +23,18 @@ class Operation(StrEnum):
     REMOVE = "remove"
     """Removing an Item at Plaid, which ends the connection and frees its slot."""
 
+    HOLDINGS = "holdings"
+    """Reading a brokerage's holdings and the price it gives each. Not a `READ`: the first ask
+    adds Plaid's Investments product to an Item that only offered it, which Plaid then bills
+    for that Item from then on, and no later call takes it off again."""
+
 
 DESCRIPTIONS = {
     Operation.LINK: "connect a bank (creates a Plaid Item, which uses one connection)",
     Operation.READ: "read connected banks (accounts, balances and transactions)",
     Operation.REMOVE: "remove a connection at Plaid (frees its slot)",
+    Operation.HOLDINGS: "read connected brokerages' holdings and today's prices"
+    " (adds Plaid's Investments product to each brokerage's Item)",
 }
 
 

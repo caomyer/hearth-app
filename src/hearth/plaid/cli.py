@@ -2,6 +2,8 @@
 
     hearth plaid items                     every connection and every allowance; no live call
     hearth plaid sync --approved           bring every working connection up to date
+    hearth plaid holdings --approved       store today's price of every connected brokerage's
+                                           holdings
     hearth plaid remove ITEM --approved    end one connection at Plaid, freeing its slot
     hearth plaid adopt --member USERNAME --token-file PATH --approved
                                            what an Item made outside hearth offers; nothing kept
@@ -43,9 +45,11 @@ from hearth.plaid.connector import (
     sync_all,
 )
 from hearth.plaid.credentials import CredentialStore
+from hearth.plaid.holdings import price_holdings
 from hearth.plaid.registry import Registry
 from hearth.plaid.setup import DAYS_REQUESTED, PlaidSetup
 from hearth.plaid.sync import Skipped, SyncStoppedError
+from hearth.valuation.pricestore import Recorded
 from hearth.vault.errors import VaultError
 from hearth.vault.secret import Secret
 from hearth.vault.tokens import TokenVault
@@ -64,6 +68,17 @@ def run(arguments: argparse.Namespace, settings: Settings) -> int:
             return sync(settings, approved=arguments.approved)
         case "remove":
             return remove(settings, arguments.item_id, approved=arguments.approved)
+        case "holdings":
+            if not arguments.approved:
+                print(
+                    "hearth plaid holdings makes live Plaid calls, and the first one for a"
+                    " brokerage adds Plaid's Investments product to its Item; pass --approved"
+                    " once the captain has approved it. Nothing was sent."
+                )
+                return REFUSED
+            return holdings(
+                settings, PlaidSetup(approval=Approval.of([Operation.HOLDINGS])), system_clock
+            )
         case "adopt":
             if not arguments.approved:
                 print(
@@ -142,6 +157,36 @@ def sync(settings: Settings, *, approved: bool) -> int:
             )
     finally:
         conn.close()
+    return 0
+
+
+def holdings(settings: Settings, setup: PlaidSetup, clock: Clock) -> int:
+    """Store the price each connected brokerage gives each of its holdings today."""
+    conn = db.connect(settings.database)
+    try:
+        priced = price_holdings(conn, setup, clock)
+    finally:
+        conn.close()
+    if not priced.asked:
+        print("No working connection reaches an investment account, so none was asked.")
+        return 0
+    for asked in priced.asked:
+        if asked.problem is None:
+            print(f"{asked.item_id} ({asked.institution}): {_count(asked.holdings, 'holding')}")
+        else:
+            print(f"{asked.item_id} ({asked.institution}): not read, {asked.problem}")
+    recorded = priced.recorded
+    print(
+        f"Prices stored: {recorded[Recorded.NEW]} new, {recorded[Recorded.CORRECTED]} corrected,"
+        f" {recorded[Recorded.UNCHANGED]} already stored; fetched"
+        f" {priced.fetched_at.astimezone():%Y-%m-%d %H:%M}."
+    )
+    for unpriceable in priced.unpriceable:
+        print(f"Not priced: {unpriceable.security_id}, {unpriceable.reason}.")
+    print(
+        "The books take them in at their next recompute. Plaid gives today's price only, so a"
+        " day nobody asks has no price, for good."
+    )
     return 0
 
 

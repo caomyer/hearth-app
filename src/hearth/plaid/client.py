@@ -117,6 +117,11 @@ LOGIN_REQUIRED = "ITEM_LOGIN_REQUIRED"
 MUTATED_DURING_PAGINATION = "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"
 ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
 """The Item is already gone at Plaid: removed before, or its member revoked access there."""
+NO_INVESTMENT_ACCOUNTS = "NO_INVESTMENT_ACCOUNTS"
+PRODUCTS_NOT_SUPPORTED = "PRODUCTS_NOT_SUPPORTED"
+"""The institution does not offer the product asked for, here Investments."""
+ADDITIONAL_CONSENT_REQUIRED = "ADDITIONAL_CONSENT_REQUIRED"
+"""The member never consented to share the product's data: only Link can ask them to."""
 
 
 class _Payload(dict[str, Any]):
@@ -353,6 +358,19 @@ class PlaidClient:
             has_more=has_more,
             update_status=_optional_text(payload, "transactions_update_status"),
         )
+
+    def holdings(self, access_token: Secret) -> Mapping[str, Any]:
+        """The Item's investment holdings and their securities, as Plaid sent them, read with
+        every number a `Decimal` (``hearth.valuation.institution`` reads it).
+
+        This is ``/investments/holdings/get``: positions and the institution's price for each,
+        today's only. A brokerage's trades and dividends are ``/investments/transactions/get``,
+        which hearth does not call."""
+        self._approval.require(Operation.HOLDINGS, "reading an Item's holdings")
+        payload = self._call("/investments/holdings/get", {}, {"access_token": access_token})
+        _list(payload, "holdings")
+        _list(payload, "securities")
+        return payload
 
     def remove(self, access_token: Secret) -> None:
         """End the Item at Plaid. Its access token stops working and its slot is freed.

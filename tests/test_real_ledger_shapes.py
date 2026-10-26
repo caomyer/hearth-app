@@ -451,6 +451,31 @@ def test_net_worth_history_starts_at_the_first_month_end_with_prices(world: Worl
         assert "Starts on Sep 30: the holdings have no price before then." in page, path
 
 
+def test_a_holding_with_no_price_even_today_never_holds_back_the_others_history(
+    world: World,
+) -> None:
+    """One brokerage priced its fund only from today; another fund has no price at all. Each
+    month end before the first fund's price is left out, never drawn at the cash alone with a
+    rise on the day the price arrived; the fund with no price is a floor at every point alike."""
+    conn = world.connect()
+    try:
+        conn.execute("DELETE FROM price WHERE symbol = 'ZQBB'")
+        conn.execute(
+            "DELETE FROM price WHERE symbol = 'ZQAA' AND as_of < ?", (household.PRICED.isoformat(),)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    world.recompute()
+
+    view = household_for(world, "avery")
+
+    assert [point.day for point in view.history] == [date(2026, 10, 15)]
+    assert view.priced_from == date(2026, 10, 15)
+    page = world.signed_in("avery").get("/").text
+    assert "Starts on Oct 15: the holdings have no price before then." in page
+
+
 def test_history_with_a_price_for_every_month_end_says_nothing_of_prices(world: World) -> None:
     _price_on(world, date(2026, 8, 31))
     world.recompute()

@@ -60,6 +60,7 @@ No live Plaid call is made unless approved for this run, operation by operation:
 
 ```sh
 uv run hearth serve --approve-plaid read                 # sync existing connections, daily
+uv run hearth serve --approve-plaid read --approve-plaid holdings  # and each brokerage's prices
 uv run hearth serve --approve-plaid link --approve-plaid read --approve-plaid remove
 uv run hearth plaid items                                # every connection; no live call
 ```

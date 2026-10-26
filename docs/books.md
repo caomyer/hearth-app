@@ -182,7 +182,10 @@ What it finds is printed to the terminal and is the household's: keep it out of 
 
 ## What Plaid does not send
 
-An investment account opens like any other, but Plaid sends no investment transactions or holdings without its Investments product, which a connection has to have been granted and which is billed separately.
-A brokerage connected without it has no buys, sells or dividends in the books.
+An investment account opens like any other, but `/transactions/sync` sends it nothing: a brokerage's holdings and its trades come through Plaid's Investments product, a separate product from Transactions.
+Investments is not something a connection lacks: an Item lists it among its available products when its institution offers it, and hearth can then ask for it with no new sign-in, though only when asked, and only once the household approves `holdings` (`docs/connections.md`, "Holdings").
+Hearth asks for holdings, positions and the price the brokerage gives each, and keeps only the prices (`docs/valuation.md`).
+It does not book the positions, and it never asks for a brokerage's trades and dividends, which are a separate call: a brokerage connected through Plaid has no buys, sells or dividends in the books, even once its funds show a value.
 Nor is investment history a household once brought in from downloaded statements, which hearth's own books do not read.
 So books driven by Plaid alone hold no investment activity at all; the connect page says so for each such account rather than letting it read as empty.
+A position an inherited ledger holds is valued at the brokerage's price from the first day hearth asked for it.

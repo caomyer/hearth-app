@@ -33,6 +33,7 @@ from hearth.plaid import cli as plaid_cli
 from hearth.plaid import feed
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
 from hearth.plaid.connector import sync_all
+from hearth.plaid.holdings import Priced, price_holdings
 from hearth.plaid.setup import PlaidSetup
 from hearth.reports.common import is_balance_sheet
 
@@ -70,6 +71,12 @@ def main(argv: list[str] | None = None) -> None:
     )
     sync = plaid_commands.add_parser("sync", help="bring every connection up to date (a live call)")
     sync.add_argument("--approved", action="store_true", help="the captain approved this live call")
+    held = plaid_commands.add_parser(
+        "holdings",
+        help="store today's price of every connected brokerage's holdings (a live call; the"
+        " first adds Plaid's Investments product to the brokerage's Item)",
+    )
+    held.add_argument("--approved", action="store_true", help="the captain approved this live call")
     remove = plaid_commands.add_parser(
         "remove", help="remove one connection at Plaid, freeing its slot (live and irreversible)"
     )
@@ -259,7 +266,7 @@ def _run(
         bookkeeper = books.Bookkeeper(establish, system_clock)
         app = create_app(settings, bookkeeper, plaid=plaid)
         bookkeeper.recompute_daily()
-        if plaid.approval.allows(Operation.READ):
+        if plaid.approval.allows(Operation.READ) or plaid.approval.allows(Operation.HOLDINGS):
             _sync_daily(settings, plaid, bookkeeper)
         cert, key = tls if tls is not None else (None, None)
         uvicorn.run(app, host=host, port=port, ssl_certfile=cert, ssl_keyfile=key)
@@ -269,7 +276,7 @@ def _run(
 
 def _sync_daily(settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper) -> None:
     """Bring every working connection up to date at start-up and every morning, only when this
-    run was started with reading approved (`sync_then_recompute`)."""
+    run was started with reading, or reading holdings, approved (`sync_then_recompute`)."""
 
     def run() -> None:
         while True:
@@ -282,16 +289,39 @@ def _sync_daily(settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkee
 def sync_then_recompute(
     settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper, clock: Clock
 ) -> None:
-    """Sync every working connection, then recompute the books, which record how current each
-    connection is: the morning's recompute starts with the sync, so it may finish first."""
+    """Sync every working connection and store today's price of every brokerage's holdings,
+    each refused for a real connection unless approved, then recompute the books, which record
+    how current each connection is: the morning's recompute starts with the sync, so it may
+    finish first.
+
+    A brokerage's price is today's only (``hearth.plaid.holdings``), so it is asked for every
+    morning: a morning missed is a day with no price, for good. That holds too for a fund no
+    position in the books holds yet, as in hearth's own books, which book no brokerage's
+    positions: its price is kept for the day they are, and the log says so rather than
+    leaving a live call that values nothing today unexplained."""
+    priced: Priced | None = None
     conn = db.connect(settings.database)
     try:
         sync_all(conn, settings.feed_database, plaid, clock)
     except Exception:
         _log.exception("the daily sync stopped")
+    try:
+        priced = price_holdings(conn, plaid, clock)
+    except Exception:
+        _log.exception("reading holdings stopped")
     finally:
         conn.close()
     bookkeeper.recompute()
+    computed = bookkeeper.status.books
+    if priced is not None and computed is not None:
+        held = {valued.holding.commodity for valued in computed.today.positions}
+        if unheld := sorted(set(priced.symbols) - held):
+            _log.info(
+                "kept today's price of %s, which no position in the books holds yet: a"
+                " brokerage's price is today's only, so a day not asked can never be priced"
+                " later",
+                ", ".join(unheld),
+            )
 
 
 def _add_member(username: str, name: str, *, is_admin: bool) -> None:

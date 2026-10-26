@@ -1424,10 +1424,16 @@ def sync_all(
     A connection already being followed for its history, here or in a `hearth serve` waiting
     to ask again, is left to its follower; one another sync is running is left to that sync.
     One connection that cannot be synced, say because its key is missing, stops only itself.
+    A connection is not asked unless reading is approved for its environment in this run, so a
+    run that approved only reading holdings sends nothing here and records no sync.
     """
+    store = CredentialStore(conn, TokenVault(conn, setup.keys()))
     done: list[Synced | Skipped] = []
     for item in Registry(conn).all_items():
         if item.state is not ItemState.WORKING:
+            continue
+        saved = store.get(item.credentials)
+        if saved is not None and not setup.allows(saved.environment, Operation.READ):
             continue
         with _following_lock:
             followed = item.item_id in _following

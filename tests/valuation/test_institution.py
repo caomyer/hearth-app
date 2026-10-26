@@ -140,3 +140,45 @@ def test_stored_prices_value_holdings_on_their_own_day_and_after(
     assert (found.price, found.source) == (Decimal("101.2345"), "plaid")
     # Today-only: there is no price before the first day one was asked for.
     assert lookup("ZQFND", date(2026, 10, 15)) is None
+
+
+def test_a_price_given_with_the_moment_it_was_current_is_read_on_that_moments_day() -> None:
+    payload = parsed()
+    payload["holdings"][3]["institution_price_datetime"] = "2026-10-16T16:00:00-04:00"
+
+    prices = institution.read_holdings(payload, fetched_at=FETCHED_AT)
+
+    assert {(q.symbol, q.as_of) for q in prices.quotes} == {
+        ("ZQFND", date(2026, 10, 16)),
+        ("ZQUND", date(2026, 10, 16)),
+    }
+
+
+def test_two_brokerages_pricing_one_fund_differently_on_a_day_store_neither() -> None:
+    other = parsed()
+    other["holdings"][0]["security_id"] = other["securities"][0]["security_id"] = "sec-other"
+    other["holdings"][0]["institution_price"] = Decimal("101.2399")
+
+    prices = institution.read_many([parsed(), other], fetched_at=FETCHED_AT)
+
+    assert all(q.symbol != "ZQFND" for q in prices.quotes)
+    assert Unpriceable("sec-fund", CONFLICT) in prices.unpriceable
+    assert Unpriceable("sec-other", CONFLICT) in prices.unpriceable
+
+
+def test_two_brokerages_agreeing_on_a_fund_store_it_once() -> None:
+    other = parsed()
+    other["holdings"][0]["security_id"] = other["securities"][0]["security_id"] = "sec-other"
+
+    prices = institution.read_many([parsed(), other], fetched_at=FETCHED_AT)
+
+    assert [q.symbol for q in prices.quotes] == ["ZQFND"]
+
+
+def test_a_security_is_matched_by_its_ticker_never_its_cusip() -> None:
+    payload = parsed()
+    payload["securities"][2]["cusip"] = "000000000"
+
+    prices = institution.read_holdings(payload, fetched_at=FETCHED_AT)
+
+    assert Unpriceable("sec-trust", NO_TICKER) in prices.unpriceable

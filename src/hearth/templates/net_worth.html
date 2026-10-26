@@ -246,7 +246,7 @@
       {% endfor %}
     </div>
     <div class="panel-foot">
-      <span>Each price is stored with its source and time.{% if w.provenance.sources %} Source: {{ w.provenance.sources | join(", ") }}{% if w.provenance.fetched_at %}, fetched {{ when(w.provenance.fetched_at, today) }}{% endif %}.{% endif %}</span>
+      <span>Each price is stored with its source and time.{% if w.provenance.sources %} {{ "Source" if w.provenance.sources | length == 1 else "Sources" }}: {{ w.provenance.sources | map("price_source") | join("; ") }}.{% if w.provenance.fetched_at %} Fetched {{ when(w.provenance.fetched_at, today) }}.{% endif %}{% endif %}</span>
     </div>
   </section>
   {% endif %}

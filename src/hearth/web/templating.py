@@ -147,6 +147,19 @@ def names(items: Any, attribute: str = "display_name") -> Markup:
     return Markup(", ".join(words[:-1]) + " and " + words[-1])  # noqa: S704 - escaped above
 
 
+PRICE_SOURCES = {
+    "plaid": "each brokerage's own price, through Plaid",
+    "eodhd": "EODHD",
+    "hand": "entered by hand",
+    "demo": "invented for the demo",
+}
+"""What a page calls each source a price is stored under (``books.PRICE_SOURCES``)."""
+
+
+def price_source(source: str) -> str:
+    return PRICE_SOURCES.get(source, source)
+
+
 def _is_withheld(value: object) -> bool:
     return isinstance(value, Withheld)
 
@@ -175,6 +188,7 @@ environment.filters.update(
     origin=origin,
     names=names,
     left_out=left_out,
+    price_source=price_source,
 )
 environment.globals.update(when=when, close=close, plural=plural, MINUS=MINUS)
 environment.tests["withheld"] = _is_withheld

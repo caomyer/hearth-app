@@ -21,7 +21,7 @@
   <div class="cov-scale"><span>{{ cov.requested_from | month_year }}</span><span>{{ (cov.requested_from.replace(year=cov.requested_from.year + 1)) | month_year }}</span><span>Today</span></div>
 </div>
 {% if a.is_investment and not held.transactions %}
-<p class="sm muted mt-2">A brokerage's buys, sells, dividends and positions come through Plaid's investments data, which Hearth does not bring in yet. This connection asked for it, so it will not need connecting again. Even then, Plaid prices positions for today only, so earlier days can never be valued from it. Statements uploaded as CSV can fill the history.</p>
+<p class="sm muted mt-2">Hearth asks this brokerage each morning for the price it gives each holding, once the household's admin approves it, and keeps each price with its day: Plaid gives today's only, so no earlier day can ever be valued from it. Hearth does not keep the positions themselves yet, and a brokerage's buys, sells and dividends come from a separate part of Plaid that Hearth does not use, so no trade history arrives. Statements uploaded as CSV can fill the history.</p>
 {% if a.statements %}<p class="sm muted mt-1">{{ plural(a.statements, "statement file") }} waiting for the import.</p>{% endif %}
 {% with upload_class = "row wrap mt-3", later = false %}{% include "_upload.html" %}{% endwith %}
 {% elif not cov.complete %}

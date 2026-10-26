@@ -53,6 +53,7 @@ CALLS: dict[str, tuple[Operation, Callable[[PlaidClient], object]]] = {
     "accounts": (Operation.READ, lambda c: c.accounts(TOKEN)),
     "transactions": (Operation.READ, lambda c: c.sync_page(TOKEN, None)),
     "remove": (Operation.REMOVE, lambda c: c.remove(TOKEN)),
+    "holdings": (Operation.HOLDINGS, lambda c: c.holdings(TOKEN)),
 }
 
 
@@ -149,6 +150,33 @@ def test_amounts_are_decimals_with_plaids_sign(client: PlaidClient, fake: FakePl
 
     assert card.current == Decimal("684.12")
     assert all(isinstance(t.amount, Decimal) and t.amount > 0 for t in page.added)
+
+
+def test_holdings_are_read_with_every_number_a_decimal_and_no_cusip(
+    client: PlaidClient, fake: FakePlaid
+) -> None:
+    link = client.create_link_token(user="u", days_requested=730)
+    exchanged = client.exchange(Secret(fake.public_token(link.token, "ins_juniper")))
+
+    held = client.holdings(exchanged.access_token)
+
+    assert held["holdings"]
+    assert all(isinstance(h["institution_price"], Decimal) for h in held["holdings"])
+    assert all(isinstance(h["quantity"], Decimal) for h in held["holdings"])
+    assert all(s["cusip"] is None for s in held["securities"])
+
+
+def test_an_item_that_offers_investments_is_read_with_no_new_sign_in(
+    client: PlaidClient, fake: FakePlaid
+) -> None:
+    link = client.create_link_token(user="u", days_requested=730)
+    exchanged = client.exchange(Secret(fake.public_token(link.token, "ins_juniper")))
+    assert "investments" in client.item(exchanged.access_token).products
+
+    held = client.holdings(exchanged.access_token)
+
+    assert held["holdings"]
+    assert fake.calls.count("/link/token/create") == 1
 
 
 def test_the_https_transport_sends_nothing_outside_plaid() -> None:

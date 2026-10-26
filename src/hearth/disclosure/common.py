@@ -358,19 +358,22 @@ class Household:
     def history(self, parts: Sequence[Part]) -> list[NetWorth]:
         """Each month end `parts` can be valued at, then today.
 
-        That leaves out month ends the ledger does not reach back to and, once today is fully
-        priced, every month end up to the last one a holding had no price at. Prices are looked
-        up as of a day, so a month end after a security's first price is at worst stale, never
+        That leaves out month ends the ledger does not reach back to and every month end up
+        to the last one at which a holding priced today had no price. Prices are looked up as
+        of a day, so a month end after a security's first price is at worst stale, never
         unpriced. A price reported one day at a time, as an institution's is, has no past, and
-        valuing those months at what the cash alone was worth would draw a fall that never
+        valuing those months at what the cash alone was worth would draw a rise that never
         happened. A month end from before a holding was bought is priced, but keeping it would
-        join it straight to a later one across the months left out. While today itself is
-        unpriced, every month end stays, each a labelled floor.
+        join it straight to a later one across the months left out. A holding with no price
+        today has had none at any month end, so every point leaves it out alike, each a
+        labelled floor; it never holds back the months the other holdings can be valued at.
         """
         reached = self._reached(parts)
-        if self._priced(parts, self.books.today):
-            unpriced = [i for i, v in enumerate(reached) if not self._priced(parts, v)]
-            reached = reached[unpriced[-1] + 1 :] if unpriced else reached
+        today = self._holdings(parts, self.books.today, priced=True)
+        unpriced = [
+            i for i, v in enumerate(reached) if today & self._holdings(parts, v, priced=False)
+        ]
+        reached = reached[unpriced[-1] + 1 :] if unpriced else reached
         known = not any(self.awaiting(part) for part in parts)
         return [*reached, *([self.books.today] if known else [])]
 
@@ -408,8 +411,16 @@ class Household:
         ]
 
     @staticmethod
-    def _priced(parts: Sequence[Part], valuation: NetWorth) -> bool:
-        return all(figures.worth(valuation, part).complete for part in parts)
+    def _holdings(
+        parts: Sequence[Part], valuation: NetWorth, *, priced: bool
+    ) -> set[tuple[str, str]]:
+        """Each (account, commodity) of `parts` that `valuation` holds with a price, or without."""
+        return {
+            (p.holding.account, p.holding.commodity)
+            for part in parts
+            for p in figures.worth(valuation, part).positions
+            if (p.freshness is not Freshness.UNPRICED) is priced
+        }
 
     @property
     def month_start_valuation(self) -> NetWorth:

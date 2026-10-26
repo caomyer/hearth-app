@@ -14,8 +14,11 @@ The default approves nothing.
 | `link` | `/link/token/create`, `/item/public_token/exchange` | `hearth serve --approve-plaid link` |
 | `read` | `/item/get`, `/accounts/get`, `/transactions/sync` | `hearth serve --approve-plaid read`, `hearth plaid sync --approved`, `hearth plaid adopt ... --approved` |
 | `remove` | `/item/remove` | `hearth serve --approve-plaid remove`, `hearth plaid remove ITEM --approved` |
+| `holdings` | `/investments/holdings/get` | `hearth serve --approve-plaid holdings`, `hearth plaid holdings --approved` |
 
 Connecting a bank needs both `link` and `read`; approving one never approves another.
+Reading holdings is its own operation, not a `read`: every `read` call asks for something an Item already has, while the first holdings call adds Plaid's Investments product to an Item that only offered it, and Plaid bills that product per Item from then on, until the Item is removed.
+So a run approved to sync never adds a product to anyone's Item, and the household decides that separately.
 A page whose step is not approved says so, and sends nothing.
 The demo and the tests run against hearth's stand-in for Plaid (`hearth.plaid.fake`), which answers only its own `demo` environment, in-process; calls to it reach no bank, so they need no approval.
 A real Plaid account entered in the demo is still refused.
@@ -171,7 +174,7 @@ Each of these syncs is a `read` like any other, refused unless approved.
 The thread keeps going when the member leaves the page; the import page says whether a sync is running, when hearth asks next, and when it has stopped asking.
 Once complete, an account that started more than 14 days after the day asked for is marked short, with its first day, and the member is offered a CSV statement upload to fill the gap, now or later.
 A short account warns and never blocks.
-An investment account's activity comes through Plaid's investments data, which hearth does not bring in yet; new Items ask for it as an optional product so a brokerage connected now does not have to be connected again for it.
+An investment account's transactions do not come through `/transactions/sync`; its holdings' prices come through Plaid's Investments product instead (see "Holdings" below), and its trades and dividends not at all.
 Plaid prices positions for today only, so nothing here implies a price history.
 
 ## Mapping, confirmed
@@ -221,11 +224,27 @@ A run that no longer holds its Item is shown as interrupted, so no page waits on
 The daily sync and `hearth plaid sync` also leave alone an Item whose history is being followed by a process that is still alive.
 `hearth serve` re-syncs every working connection at start-up and every morning when started with `read` approved.
 
+### Holdings
+
+A brokerage's price for each holding is today's and no other, so hearth asks for it at start-up and every morning when started with `holdings` approved, after the sync, and whenever `hearth plaid holdings --approved` is run (`hearth.plaid.holdings`).
+Every working connection that reaches an investment account is asked, whoever holds it: a price is a fact about the market, and pages show it only beside a position its viewer may see.
+It is asked even when no position in the books holds what it prices, as in hearth's own books, which book no brokerage's positions yet: a day not asked can never be priced later, so the price is kept for when they are, and the morning's log names each such fund and says why.
+Each price is stored in the app database's `price` table under source `plaid`, with the Plaid security it priced, the day it was current and the time it was fetched (`docs/valuation.md`).
+A connection that cannot be asked stops only itself and says why with Plaid's own error code: an institution without the product (`PRODUCTS_NOT_SUPPORTED`), an Item whose member never consented to share investments (`ADDITIONAL_CONSENT_REQUIRED`, which only Link can ask for), or data Plaid is still preparing (`PRODUCT_NOT_READY`, collected the next morning).
+
+An Item that lists `investments` among its available products, as Plaid's `/item/get` says and `hearth plaid adopt` reports, can be asked with no new sign-in and no Link update mode, so hearth opens none.
+New Items ask for it as an optional product at Link for the same reason.
+
+This is `/investments/holdings/get` only: positions and their prices.
+A brokerage's trades and dividends are `/investments/transactions/get`, a separate call that Plaid bills separately, and hearth does not make it, so no brokerage's trade history arrives, whatever value its holdings now show.
+
 ## Where it is kept
 
 - The app database holds connections, never money: Items, their accounts and mappings, credential sets' allowances, and uploaded statements' names (`hearth.db`).
 - The feed store, `feed.sqlite3` beside it, holds what Plaid sent: transactions, balances and the record of every sync (`hearth.plaid.feed`).
   It is a staging store for the import, not a second store of record.
+- A brokerage's price for each holding is in the app database's `price` table with its provenance, beside every other price: a price is a fact about the market, not about the household (`docs/valuation.md`).
+  The holdings it came with are not kept.
 - Access tokens and Plaid keys are in the vault, sealed under the Keychain's master key.
 - Uploaded statements are in `statements/` in the data directory, readable only by their owner on the machine.
 - What hearth asked of Plaid, and how it went, is in `hearth.log` in the data directory (see the runtime log, above).
@@ -234,5 +253,6 @@ The daily sync and `hearth plaid sync` also leave alone an Item whose history is
 
 - Booking uploaded statements: what a connection fetches is booked (`docs/books.md`), what a member uploads is kept but not yet read.
 - Carrying an account an inherited ledger holds on from where that ledger stops: the import leaves such an account to the ledger.
-- Bringing in investment holdings and activity.
+- Booking a brokerage's positions into hearth's own books: hearth stores the price each holding has, but only an inherited ledger holds positions to value at it.
+- Bringing in a brokerage's trades and dividends (`/investments/transactions/get`).
 - Reading an account its bank sent no transactions for in a complete history as quiet: its balance is known (`docs/books.md`), its months are not.

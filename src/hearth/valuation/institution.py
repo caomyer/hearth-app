@@ -12,13 +12,11 @@ fetched, and a net worth history starts at the first month end it can value
 (`docs/valuation.md`).
 
 This module only reads a holdings response and stores what it says, and nothing here calls
-Plaid. The holdings fetch is not implemented. It needs Plaid's Investments product, which the
-captain's brokerage Item is not consented to and which is separately billed. Until that
-decision is made and the fetch is built, the `plaid` price source yields nothing and every
-fund values as unpriced.
+Plaid: ``hearth.plaid.holdings`` asks each connected brokerage for its holdings, when reading
+holdings is approved, and hands every response to `read_many`.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -56,42 +54,54 @@ CONFLICT = "another holding of the same ticker was priced differently that day"
 
 
 def read_holdings(payload: Mapping[str, Any], *, fetched_at: datetime) -> InstitutionPrices:
-    """Each holding's institution price as a quote, from a parsed holdings response.
+    """Each holding's institution price as a quote, from a parsed holdings response."""
+    return read_many([payload], fetched_at=fetched_at)
 
-    `payload` must have been parsed with `parse_float=Decimal`: a float here has already lost
-    the price it held, so it is refused rather than converted.
 
-    A holding is matched to a ledger commodity by its security's ticker. A price with no date
-    is not stored: taking it as today's would claim a freshness nobody vouched for. Cash
+def read_many(payloads: Iterable[Mapping[str, Any]], *, fetched_at: datetime) -> InstitutionPrices:
+    """Each holding's institution price as a quote, from every brokerage's holdings response.
+
+    Each payload must have been parsed with `parse_float=Decimal`: a float here has already
+    lost the price it held, so it is refused rather than converted.
+
+    A holding is matched to a ledger commodity by its security's ticker; Plaid's `security_id`
+    is kept beside it, never the CUSIP, which Plaid sends only under a licence. A price with no
+    day is not stored: taking it as today's would claim a freshness nobody vouched for. Cash
     holdings are the account's balance, not a priced security, and are skipped.
+
+    Two brokerages can hold one fund, and the store holds one price for it a day, so they are
+    read together: where they disagree, neither is chosen.
     """
-    securities = {
-        _text(security, "security_id"): security for security in _list(payload, "securities")
-    }
     found: dict[tuple[str, date], list[Quote]] = {}
     unpriceable: list[Unpriceable] = []
-    for holding in _list(payload, "holdings"):
-        security_id = _text(holding, "security_id")
-        security = securities.get(security_id)
-        if security is None:
-            raise HoldingsMalformedError(f"a holding names an unlisted security {security_id}")
-        if security.get("is_cash_equivalent") is True or security.get("type") == "cash":
-            continue
-        ticker = security.get("ticker_symbol")
-        price = _decimal(holding, "institution_price")
-        as_of = _day(holding, "institution_price_as_of")
-        currency = holding.get("iso_currency_code")
-        if not isinstance(ticker, str) or not ticker:
-            unpriceable.append(Unpriceable(security_id, NO_TICKER))
-        elif price is None or price <= 0:
-            unpriceable.append(Unpriceable(security_id, NO_PRICE))
-        elif as_of is None:
-            unpriceable.append(Unpriceable(security_id, NO_DATE))
-        elif not isinstance(currency, str) or not currency:
-            unpriceable.append(Unpriceable(security_id, NO_CURRENCY))
-        else:
-            quote = Quote(ticker, as_of, price, currency, SOURCE, security_id, fetched_at)
-            found.setdefault((ticker, as_of), []).append(quote)
+    for payload in payloads:
+        securities = {
+            _text(security, "security_id"): security for security in _list(payload, "securities")
+        }
+        for holding in _list(payload, "holdings"):
+            security_id = _text(holding, "security_id")
+            security = securities.get(security_id)
+            if security is None:
+                raise HoldingsMalformedError(f"a holding names an unlisted security {security_id}")
+            if security.get("is_cash_equivalent") is True or security.get("type") == "cash":
+                continue
+            ticker = security.get("ticker_symbol")
+            price = _decimal(holding, "institution_price")
+            as_of = _day(holding, "institution_price_as_of") or _moment(
+                holding, "institution_price_datetime"
+            )
+            currency = holding.get("iso_currency_code")
+            if not isinstance(ticker, str) or not ticker:
+                unpriceable.append(Unpriceable(security_id, NO_TICKER))
+            elif price is None or price <= 0:
+                unpriceable.append(Unpriceable(security_id, NO_PRICE))
+            elif as_of is None:
+                unpriceable.append(Unpriceable(security_id, NO_DATE))
+            elif not isinstance(currency, str) or not currency:
+                unpriceable.append(Unpriceable(security_id, NO_CURRENCY))
+            else:
+                quote = Quote(ticker, as_of, price, currency, SOURCE, security_id, fetched_at)
+                found.setdefault((ticker, as_of), []).append(quote)
     quotes = []
     for same_day in found.values():
         # The store holds one price per ticker a day. Two holdings that disagree on it are
@@ -140,3 +150,15 @@ def _day(raw: Mapping[str, Any], name: str) -> date | None:
         return date.fromisoformat(value)
     except TypeError, ValueError:
         raise HoldingsMalformedError(f"{name} is not a date") from None
+
+
+def _moment(raw: Mapping[str, Any], name: str) -> date | None:
+    """The day of a moment the institution gave, as it gave it: some send the time a price was
+    current instead of its day."""
+    value = raw.get(name)
+    if value is None:
+        return None
+    try:
+        return datetime.fromisoformat(value).date()
+    except TypeError, ValueError:
+        raise HoldingsMalformedError(f"{name} is not a date and time") from None

@@ -24,7 +24,15 @@ from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
 
-from hearth.plaid.client import DEMO_HOST, LOGIN_REQUIRED, MUTATED_DURING_PAGINATION, PRIMARIES
+from hearth.plaid.client import (
+    ADDITIONAL_CONSENT_REQUIRED,
+    DEMO_HOST,
+    LOGIN_REQUIRED,
+    MUTATED_DURING_PAGINATION,
+    NO_INVESTMENT_ACCOUNTS,
+    PRIMARIES,
+    PRODUCTS_NOT_SUPPORTED,
+)
 
 LINK_TOKEN_HOURS = 4
 """How long a Link token is good for after it is made, at Plaid and here."""
@@ -49,6 +57,17 @@ class FakeTransaction:
 
 
 @dataclass(frozen=True, slots=True)
+class FakeHolding:
+    """A position an invented brokerage holds, priced as it prices it for the last session."""
+
+    ticker: str | None
+    name: str
+    quantity: Decimal
+    price: Decimal
+    type: str = "mutual fund"
+
+
+@dataclass(frozen=True, slots=True)
 class FakeAccount:
     key: str
     name: str
@@ -60,6 +79,8 @@ class FakeAccount:
     available: Decimal | None = None
     transactions: tuple[FakeTransaction, ...] | None = None
     """Exactly these, or, when None, an invented routine over the history the bank sends."""
+    holdings: tuple[FakeHolding, ...] = ()
+    """What an investment account holds, besides its cash, which is what `current` leaves."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +112,19 @@ DEMO_INSTITUTIONS = (
         "Juniper Brokerage",
         (
             FakeAccount(
-                "ira", "Individual account", "7710", "investment", "brokerage", Decimal("18452.30")
+                "ira",
+                "Individual account",
+                "7710",
+                "investment",
+                "brokerage",
+                Decimal("18452.30"),
+                holdings=(
+                    FakeHolding(
+                        "JNPRX", "Juniper Total Market", Decimal("142.118"), Decimal("88.21")
+                    ),
+                    FakeHolding("JBNDX", "Juniper Bond Index", Decimal("61.5"), Decimal("41.06")),
+                    FakeHolding(None, "Juniper Stable Value Trust", Decimal("12"), Decimal("10")),
+                ),
             ),
         ),
     ),
@@ -113,6 +146,8 @@ class _Item:
     Each joins the log after a sync that has caught up with what came before."""
     login_required: bool = False
     removed: bool = False
+    investments: bool = False
+    """Investments was added to the Item, which happens the first time its holdings are read."""
 
 
 class FakePlaid:
@@ -276,6 +311,7 @@ class FakePlaid:
             "/item/get": self._item_get,
             "/accounts/get": self._accounts_get,
             "/transactions/sync": self._sync,
+            "/investments/holdings/get": self._holdings,
             "/item/remove": self._remove,
         }
 
@@ -337,12 +373,10 @@ class FakePlaid:
                     "institution_id": item.institution.id,
                     "institution_name": item.institution.name,
                     "created_at": f"{item.linked.isoformat()}T09:00:00Z",
-                    "products": ["transactions"],
-                    "billed_products": ["transactions"],
+                    "products": ["transactions", *(["investments"] * item.investments)],
+                    "billed_products": ["transactions", *(["investments"] * item.investments)],
                     "available_products": (
-                        ["investments"]
-                        if any(a.type == "investment" for a in item.institution.accounts)
-                        else []
+                        ["investments"] if _invests(item) and not item.investments else []
                     ),
                 }
             }
@@ -381,6 +415,54 @@ class FakePlaid:
                 "has_more": has_more,
                 "transactions_update_status": status,
                 "accounts": [],
+            }
+        )
+
+    def _holdings(self, request: dict[str, Any]) -> tuple[int, bytes]:
+        item = self._usable(request)
+        if not isinstance(item, _Item):
+            return item
+        if not _invests(item):
+            return _error(400, "ITEM_ERROR", NO_INVESTMENT_ACCOUNTS)
+        item.investments = True
+        # The institution prices a holding at the last session's close: a weekday, never today.
+        priced_on = self._today() - timedelta(days=1)
+        while priced_on.weekday() >= 5:
+            priced_on -= timedelta(days=1)
+        accounts = [a for a in item.institution.accounts if a.type == "investment"]
+        holdings, securities = [], {}
+        for account in accounts:
+            for held in account.holdings:
+                security_id = f"sec-{item.institution.id}-{held.ticker or held.name}"
+                securities[security_id] = {
+                    "security_id": security_id,
+                    "name": held.name,
+                    "ticker_symbol": held.ticker,
+                    "cusip": None,
+                    "isin": None,
+                    "type": held.type,
+                    "is_cash_equivalent": False,
+                    "iso_currency_code": "USD",
+                }
+                holdings.append(
+                    {
+                        "account_id": f"{item.item_id}-{account.key}",
+                        "security_id": security_id,
+                        "quantity": held.quantity,
+                        "institution_price": held.price,
+                        "institution_price_as_of": priced_on.isoformat(),
+                        "institution_price_datetime": None,
+                        "institution_value": (held.quantity * held.price).quantize(Decimal("0.01")),
+                        "cost_basis": None,
+                        "iso_currency_code": "USD",
+                    }
+                )
+        return _ok(
+            {
+                "accounts": [self._account(item, a) for a in accounts],
+                "holdings": holdings,
+                "securities": list(securities.values()),
+                "request_id": "demo",
             }
         )
 
@@ -448,6 +530,10 @@ class FakePlaid:
             "pending": transaction.pending,
             "pending_transaction_id": None,
         }
+
+
+def _invests(item: _Item) -> bool:
+    return any(account.type == "investment" for account in item.institution.accounts)
 
 
 def _primary(detailed: str) -> str:
@@ -527,6 +613,8 @@ def _type_of(code: str) -> str:
         return "ITEM_ERROR"
     if code == MUTATED_DURING_PAGINATION:
         return "TRANSACTIONS_ERROR"
+    if code in {NO_INVESTMENT_ACCOUNTS, PRODUCTS_NOT_SUPPORTED, ADDITIONAL_CONSENT_REQUIRED}:
+        return "ITEM_ERROR"
     return "API_ERROR"
 
 

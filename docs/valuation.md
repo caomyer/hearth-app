@@ -69,10 +69,11 @@ Whose they are is `hearth.figures`'s model: value a member's sole accounts (`fig
 
 `quotes.PriceSource` is the whole contract: a stable `name`, `unavailable_reason()`, and `quotes(symbol, start, end)` returning raw closes.
 Swapping sources means writing one class; stored history keeps its own `source`, so prices from different sources never mix.
+The positions panel names each source behind the prices it shows, and when the newest was fetched.
 
 `eodhd.EodhdSource` is the one implementation, chosen in the hearth-scout-1 report for its mutual fund coverage and a licence that allows keeping prices for private use.
 With no API key it reports itself unavailable and is never called.
-That is the normal state until a plan is bought, so `refresh_prices` records nothing and says why, and every fund then values as unpriced.
+That is the normal state until a plan is bought, so `refresh_prices` records nothing and says why, and a fund no connected brokerage prices then values as unpriced.
 
 ### The institution's own price, through Plaid
 
@@ -82,12 +83,17 @@ A holding is matched to a ledger commodity by its security's ticker.
 One with no ticker, no price, no date or no ISO currency is listed with its reason, never stored on a guess; two holdings of one ticker that disagree on a day are both listed and neither stored.
 The response must be parsed with `parse_float=Decimal`; a float is refused.
 
+A Plaid security is matched by its `security_id` and its ticker; its CUSIP is never used, as Plaid sends it only under a licence.
+An institution that gives the moment a price was current rather than its day (`institution_price_datetime`) is read at that moment's day.
+Two brokerages pricing one ticker differently on a day are both listed and neither stored, like two holdings within one.
+
 It is today-only: Plaid keeps no history of it, so a day nobody asked is a day with no price, and nothing before the first ask can ever be had.
-`valuation.institution` is a reader awaiting its producer; nothing in `valuation` calls Plaid.
-The holdings fetch is not implemented.
-It needs Plaid's Investments product, which the captain's brokerage Item is not consented to and which is separately billed.
-Until that decision is made and the fetch is built, the `plaid` price source yields nothing and every fund values as unpriced.
-Once today is priced, net worth history therefore starts after the last month end a holding had no price at, and both charts say so, rather than drawing earlier months at what the cash alone was worth.
+Nothing in `valuation` calls Plaid: `hearth.plaid.holdings` asks every connected brokerage each morning, when `holdings` is approved, and hands every answer to `institution.read_many` (`docs/connections.md`, "Holdings").
+An Item whose institution offers Investments lists it among its available products and needs no new sign-in or purchase decision to be asked; the first ask adds the product to the Item, which is why it is approved on its own.
+It is holdings only: a brokerage's trades and dividends come from another call that hearth does not make.
+
+Net worth history therefore starts after the last month end at which a holding priced today had no price, and both charts say so, rather than drawing earlier months at what the cash alone was worth and a rise on the day the first price arrived.
+A holding with no price even today has had none at any month end, so it is left out of every point alike, each a labelled floor, and never holds back the months the rest can be valued at.
 
 ## Verifying EODHD before trusting it
 
@@ -116,7 +122,7 @@ They cover holdings with no public ticker, but they are today-only with no histo
 Everything above runs without a key.
 Until an EODHD plan is bought:
 
-- no price is ever fetched, so every fund and ETF values as unpriced and net worth is reported incomplete, naming each one;
+- no market price is ever fetched, so a fund or ETF no connected brokerage prices values as unpriced and net worth is reported incomplete, naming each one;
 - the verification above cannot run;
 - the 2-year price backfill for net worth over time cannot run.
 
