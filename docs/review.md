@@ -24,8 +24,9 @@ Plaid rates its own category in words, which the feed does not keep yet, so such
 A member can:
 
 - **accept** one row, or a group, as suggested;
-- **book** one row against another account: any spending or income category, or one of their own accounts the books hold open on the row's day, never anyone else's, an account nobody connected, or equity, which are all refused alike so a refusal names nobody;
+- **book** one row against another account: any spending or income category, or one of their own accounts the books hold open on the row's day, or that they named (`docs/books.md`, "Accounts hearth does not see"), never anyone else's, an account nobody claimed, or equity, which are all refused alike so a refusal names nobody;
   never, either, one of their own accounts whose balance its bank reports, or will once a sync clears what keeps it unknown, which takes only its bank's rows, refused with a sentence saying so (`docs/books.md`);
+- **move a group** of rows whose other side hearth does not see onto one such account or category, in one decision ("Where did it go?", below);
 - **exclude** one row: it is not a transaction, and books nothing; never a row on an account whose balance its bank reports, or will once a sync clears what keeps it unknown, as the bank counts it.
 
 Rulings live in the app database (`review_rulings`, `review_ruling_rows`), append-only and keyed by review id, never by position in a file.
@@ -90,12 +91,34 @@ After each decision the page returns to the next row, focused and marked, clear 
 A row offers only what the desk would do.
 A row with nothing proposed has nothing to accept, so its button saves the category typed.
 A row its bank counts in the balance it reports offers no Exclude, which the desk would refuse; on a household whose every account is anchored to its bank, that is every row.
-One side of a card payment whose other side hearth has not found (`docs/pairing.md`) has no suggestion that could be right, so it is not a guess to say yes to.
-It is never in what is left, nor in the badge, a reminder or the You page; it is counted apart, "Needs the other side", whatever the filter.
-What is known is said, and no more: if the other side is at a bank nobody connected, connecting it lets pairing settle the row by itself; otherwise the two sides may differ in timing or amount, and pairing records nothing about which.
-So each row keeps the controls the desk accepts: the box and Save, to book it to a category or to one of the member's own accounts no bank reports, and Exclude only where its bank does not count it.
-An account page's "To review" tag on such a row leads to that count, not to the top of the queue.
-Rows Plaid calls a transfer or a loan payment are different: pairing pairs only card payments, so connecting their other account settles nothing, and many (money sent to a person) a category settles, so they stay in what is left.
+A row whose other side hearth does not see is not in the queue at all: it is counted apart, "N more need to know where the money went", whatever the filter, and answered on its own page (below).
+
+## Where did it go?
+
+Money moves between accounts, and hearth often sees one side only: a transfer to savings at a bank nobody connected, a car loan's payment, a card paid from a checking account hearth has never been shown, money from a person.
+No category is right for such a row, so it is not asked "is this suggestion right?" but "where did it go?".
+That is not a gap waiting to close: the other side may be a bank the member will connect next week, one they never will, one Plaid cannot reach, or a person.
+
+A row is one-sided (`ItemView.one_sided`) when it is one side of a card payment hearth could not match (`docs/pairing.md`), or a row Plaid calls a transfer or a loan payment (`booking.moved`) with nothing proposed.
+`review.where` groups a member's one-sided rows so that one answer settles each group: the account they are on, which way the money moved, and where the bank's own words say it went, which for a transfer is often the last digits of the account it went to ("Online transfer to SAV ...0417"); a bank's running number for each transfer is not part of the key.
+The card payments hearth could not match on one account are one group a direction, as most come from one account; two cards are two questions, as they may have been paid from two different places.
+
+Each group is answered once:
+
+- **an account of mine that hearth does not see**, one the member names on the spot (`docs/books.md`, "Accounts hearth does not see") or named before: the rows are moves between their own accounts, neither spending nor income;
+- **someone else**, a category: it was spending, or income;
+- for a loan payment, **a loan of mine** or **a bill**.
+
+The answer is a group ruling (`ReviewDesk.move_group`) bound row by row to what the page showed, as a group accept is: each row with what it said then (`ids.says`), so a row that changed between the page and the click is left waiting and the member is told.
+A group whose rows are not all one answer is answered **one by one** (`/review/where/one`): each row with its own answer, one of the member's own accounts hearth does not see, a new one named for that row alone, or a category, saved as a row ruling (`ReviewDesk.set_account`) only while the row still says what the page showed; the rest of the group waits as it was.
+Undo takes back exactly that answer: the whole group, or the one row answered alone.
+Naming a new account and moving the group into it are one step: the account is open on every row's day from the moment it is named, before the books are next recomputed.
+
+The next row like a group already answered onto a named account is proposed onto it (`ReviewDesk.learned`), "Like 22 past decisions", and waits for the member's yes: a proposal is never a decision, so the row stays `!` until it is accepted.
+A proposal names only an account the member may move rows to, so a joint account's rows never propose one owner's private account to the other.
+
+Not done here: pairing transfers between two connected accounts (shape 2 of `design/money-between-accounts.md`), choosing between two equally close sides of a card payment, money between members, and checking earlier answers against an account's own rows once it is connected.
+Until a transfer between two connected accounts is paired, it waits here too, and its other account, which its bank reports, cannot be named as where it went.
 
 Group names keep Plaid's abbreviations in capitals ("Bank fees: ATM fees"), and a category is named by its most specific part, so wages and interest read apart.
 

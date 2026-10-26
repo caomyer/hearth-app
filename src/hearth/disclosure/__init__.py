@@ -10,8 +10,8 @@ Anything that does not exist and anything the viewer may not see raise the same
 """
 
 import sqlite3
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -21,7 +21,15 @@ from hearth.accounts import Account, all_accounts
 from hearth.audit import EventKind
 from hearth.books import Books, Failure, Status
 from hearth.connections import Connection, Connections
-from hearth.disclosure.common import IDENTITY_HUES, Household, MemberRef, PartRef, Worth
+from hearth.disclosure.common import (
+    IDENTITY_HUES,
+    Household,
+    LeftOut,
+    MemberRef,
+    PartRef,
+    Worth,
+    left_out,
+)
 from hearth.disclosure.gate import (
     WITHHELD,
     Concealed,
@@ -32,17 +40,19 @@ from hearth.disclosure.gate import (
     may_review,
 )
 from hearth.disclosure.household import HouseholdView, household
+from hearth.disclosure.naming import Namer
 from hearth.disclosure.people import (
     AccountRow,
     Day,
     PersonView,
     account_rows,
     days,
+    other_side,
     person,
     person_of,
 )
 from hearth.disclosure.worth import NetWorthView, net_worth
-from hearth.figures import Pace, covers
+from hearth.figures import Pace, covers, lines
 from hearth.members import Member, MemberId
 from hearth.months import Month
 from hearth.reports.balances import AssertionCheck
@@ -73,6 +83,7 @@ __all__ = [
     "Disclosure",
     "FailureNotice",
     "HouseholdView",
+    "LeftOut",
     "MemberRef",
     "NetWorthView",
     "Pace",
@@ -80,6 +91,7 @@ __all__ = [
     "PersonView",
     "Withheld",
     "Worth",
+    "left_out",
     "may_administer",
     "review_decisions",
     "rulings_in",
@@ -150,6 +162,42 @@ class AccountView:
     unknown: str | None = None
     """Why its balance is not known, when the books say (``books.unknown``), told to its owners
     alone (``access.may_see_why_unknown``)."""
+    unseen: UnseenAccount | None = None
+    """What else there is to say of an account a member named that hearth does not see
+    (`books.unseen`); None for any other account."""
+
+
+@dataclass(frozen=True, slots=True)
+class UnseenAccount:
+    """An account hearth does not see, beside its balance, which is never known."""
+
+    kind: str | None
+    """What kind of account its owner said it is, in their words: "Bank account", "Loan"."""
+    where: str | None
+    mask: str | None
+    ledger_account: str | None
+    """Its ledger name, shown to its owners alone, who move money into it."""
+    moves: Disclosed[Moves]
+    """What hearth has seen move into and out of it, which goes with its transactions."""
+    said: Mapping[str, datetime] = field(default_factory=dict)
+    """When the viewer moved each of its rows here, by review id: their own rulings only."""
+
+
+@dataclass(frozen=True, slots=True)
+class Moves:
+    """The money hearth has seen move into and out of an account it does not see: a flow, by
+    its dates, never what the account holds, which hearth is never told."""
+
+    net: Decimal
+    """In less out. What moved, not a balance: interest, and anything spent from the account,
+    never reach hearth."""
+    count: int
+    since: Month | None
+    other: str | None
+    """The one account every move came from or went to, when the viewer may be told it
+    (``access.may_name_other_side``); None when there are several, or it is not theirs."""
+    yours: bool
+    """Whether the viewer may be told the other side of every move: all of them their own."""
 
 
 class Disclosure:
@@ -197,7 +245,11 @@ class Disclosure:
     def net_worth(self) -> NetWorthView:
         return net_worth(self._household())
 
-    def account(self, account_id: str, month: Month) -> AccountView:
+    def account(
+        self, account_id: str, month: Month, rulings: RulingStore | None = None
+    ) -> AccountView:
+        """One account, as the viewer may see it. With `rulings`, the page can say which rows of
+        an account hearth does not see the viewer moved there, and when."""
         h = self._household()
         account = next((a for a in self._accounts if a.id == account_id), None)
         if account is None or not (
@@ -240,6 +292,50 @@ class Disclosure:
                 if isinstance(row, AccountRow) and self._gate.may_see_why_unknown(account.owners)
                 else None
             ),
+            unseen=(
+                self._unseen(h, account, rulings)
+                if account.ledger_account in h.books.unseen
+                else None
+            ),
+        )
+
+    def _unseen(self, h: Household, account: Account, rulings: RulingStore | None) -> UnseenAccount:
+        """What the page of an account hearth does not see says beside its balance, which is
+        never known: where it is, its ledger name to its owners, and what moved."""
+
+        def moves() -> Moves:
+            seen = lines(h.books, [account], date.min, h.books.as_of)
+            others = [other_side(h, line) for line in seen]
+            named = {found.name for found in others if found is not None}
+            yours = all(found is not None for found in others)
+            return Moves(
+                net=sum((line.amount for line in seen), Decimal(0)),
+                count=len(seen),
+                since=Month.of(min(line.date for line in seen)) if seen else None,
+                other=next(iter(named)) if yours and len(named) == 1 else None,
+                yours=yours,
+            )
+
+        said: dict[str, datetime] = {}
+        if rulings is not None:
+            # The viewer's own rulings alone: when they said a row went here is theirs to know.
+            decided = review_decisions(h.books.pile, self._accounts, rulings)
+            for review_id, decision in decided.items():
+                ruling = decision.ruling
+                if (
+                    ruling is not None
+                    and decision.account == account.ledger_account
+                    and ruling.member_id == self._viewer.id
+                ):
+                    said[review_id] = ruling.at
+        named = account.named
+        return UnseenAccount(
+            kind=named.kind.label if named else None,
+            where=named.institution if named else None,
+            mask=named.mask if named else None,
+            ledger_account=account.ledger_account if self._gate.may_feed(account.owners) else None,
+            moves=self._gate.disclose(Facet.TRANSACTIONS, account.owners, moves),
+            said=said,
         )
 
     def may_price(self, symbol: str) -> bool:
@@ -303,6 +399,7 @@ class Disclosure:
         may move to a category or to an account of their own that the books hold open."""
         from beancount.core.data import Balance, Close, Open
 
+        from hearth.plaid.booking import moved
         from hearth.plaid.opening import PASSING, anchors
         from hearth.review.desk import ReviewDesk
 
@@ -322,6 +419,7 @@ class Disclosure:
             banks={e.account for e in entries if isinstance(e, Balance) and anchors(e)}
             | {a for a, why in (books.unknown if books else {}).items() if why in PASSING},
             clock=clock,
+            moves=moved,
         )
 
     def connector(
@@ -361,6 +459,42 @@ class Disclosure:
             runner=runner,
             inherited=ledger - own,
             unbalanced=books.unanchored if books else (),
+        )
+
+    def namer(self, conn: sqlite3.Connection) -> Namer:
+        """The viewer's way to name an account hearth does not see, owned by them alone or with
+        others they choose (see ``access.may_feed``)."""
+        from beancount.core.data import Open
+
+        books = self.books
+        return Namer(
+            self._gate,
+            household=self._members,
+            accounts=self._accounts,
+            ledger_accounts={e.account for e in books.entries if isinstance(e, Open)}
+            if books
+            else set(),
+            conn=conn,
+        )
+
+    def matched(self) -> int:
+        """How many moves between the viewer's own connected accounts hearth matched by
+        itself and counts once: card payments both banks sent (``hearth.plaid.pairing``)."""
+        from beancount.core.data import Transaction
+
+        books = self._require_books()
+        mine = {a.ledger_account for a in self._accounts if may_review(self._viewer.id, a.owners)}
+        return sum(
+            1
+            for entry in books.entries
+            if isinstance(entry, Transaction)
+            and entry.flag == "*"
+            and "review-id" not in (entry.meta or {})
+            and len(entry.postings) == 2
+            and all(
+                posting.account in mine and "source" in (posting.meta or {})
+                for posting in entry.postings
+            )
         )
 
     def _failed_check(self, failure: Failure) -> Disclosed[FailedCheck] | None:

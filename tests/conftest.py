@@ -2,7 +2,7 @@ import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,6 +19,8 @@ from hearth.members import MemberId
 from hearth.plaid.connector import Connector
 from hearth.plaid.fake import FakeAccount, FakeInstitution, FakePlaid, FakeTransaction
 from hearth.plaid.setup import PlaidSetup
+from hearth.review.ids import says
+from hearth.review.rulings import Action, RulingStore, Scope
 from hearth.sharing import Facet
 from hearth.valuation.pricestore import PriceStore
 from hearth.valuation.quotes import Quote
@@ -233,6 +235,32 @@ def world(tmp_path: Path, clock: FakeClock) -> World:
             ).id
             for fixture in household.ACCOUNTS
         }
+        for named in household.NAMED:
+            account_ids[named.key] = accounts.name_account(
+                conn,
+                ledger_account=named.ledger_account,
+                name=named.name,
+                kind=accounts.Kind(named.kind),
+                institution=named.institution,
+                mask=named.mask,
+                owners=[member_ids[owner] for owner in named.owners],
+                by=member_ids[sorted(named.owners)[0]],
+                now=clock(),
+            ).id
+        store_rulings = RulingStore(conn)
+        for day, _, on, amount, review_id, group, by, onto in household.MOVED:
+            store_rulings.record(
+                member_id=member_ids[by],
+                scope=Scope.GROUP,
+                group=group,
+                action=Action.ACCOUNT,
+                account=onto,
+                note=None,
+                rows={review_id: None},
+                says={review_id: says(on, day, Decimal(amount), "USD")},
+                # Said the day it moved, long enough ago that a weekly review is due again.
+                at=datetime.combine(day, time(9), tzinfo=UTC),
+            )
         store = PriceStore(conn)
         for symbol, day, price in household.prices():
             store.record(Quote(symbol, day, price, "USD", "eodhd", "test", clock()))

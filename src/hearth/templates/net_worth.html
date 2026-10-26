@@ -32,8 +32,8 @@
     <div class="panel-body" style="padding-top: var(--s-6)">
       <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
         <div class="hero">
-          <h2 id="hnw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth{% if head.is_partial %}, without {{ head.without | names("name") }}{% endif %}</h2>
-          {{ hero_value(head.value, status, head.without, head.unpriced, head.awaiting) }}
+          <h2 id="hnw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth{% if head.is_partial %}, without {{ head.without | names("name") }}{% endif %}{% if head.leaves_out and head.is_known %}{{ " and " if head.is_partial else ", without " }}{{ head.unseen | left_out }}{% endif %}</h2>
+          {{ hero_value(head.value, status, head.without, head.unpriced, head.awaiting, head.unseen, counted=head.counted) }}
           {% if not head.is_partial %}<div class="hero-meta">{{ delta(head.since_month_start, since) }}</div>{% endif %}
           <div class="recompute mt-4{% if status.recomputing %} recomputing{% endif %}">
             {% call asof(books, status, today, notice, head.stale, head.unpriced, head.priced_on, head.ends) %} Recomputes daily, never silently on page load.{% endcall %}
@@ -60,8 +60,12 @@
                   <span class="who{{ hue }}">{% if ref.is_joint %}Joint accounts{% if not ref.is_viewers %} of {{ ref.owners | names }}{% endif %}{% elif ref.is_viewers %}Your accounts, excluding joint{% else %}{{ ref.name }}, excluding joint{% endif %}</span>
                   {% if part.worth is withheld %}
                   <span class="second priv-line"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared with you</span>
+                  {% elif not part.worth.counted %}
+                  <span class="second">Hearth does not see these accounts</span>
                   {% elif not part.worth.is_known %}
                   <span class="second">{% if part.worth.awaiting is none %}Balances not brought in yet{% else %}{{ plural(part.worth.awaiting, "account") }} without {{ "its balance" if part.worth.awaiting == 1 else "their balances" }} yet{% endif %}</span>
+                  {% elif part.worth.leaves_out %}
+                  <span class="second">Without {{ "some accounts" if part.worth.unseen is none else plural(part.worth.unseen, "account") }} hearth does not see</span>
                   {% elif part.owned is not none and not ref.is_joint %}
                   <span class="second">{{ part.owned | money }} owned, {{ part.owed | money }} owed</span>
                   {% elif ref.is_joint and part.accounts is not none %}
@@ -73,7 +77,7 @@
                 <td class="num{% if part.worth is withheld %} priv{% endif %}">{% if part.worth is withheld %}Not included{% else %}{{ worth_amount(part.worth) }}{% endif %}</td>
               </tr>
               {% endfor %}
-              <tr class="total-row"><th scope="row">{% if head.is_partial %}Known so far{% else %}Household{% endif %}</th><td class="num">{% if not head.is_known %}Not known yet{% else %}{% if head.is_floor %}at least {% endif %}{{ head.value | money }}{% endif %}</td></tr>
+              <tr class="total-row"><th scope="row">{% if head.is_partial %}Known so far{% elif head.leaves_out %}Household, without {{ head.unseen | left_out }}{% else %}Household{% endif %}</th><td class="num">{% if not head.counted %}Not known{% elif not head.is_known %}Not known yet{% else %}{% if head.is_floor %}at least {% endif %}{{ head.value | money }}{% endif %}</td></tr>
             </tbody>
           </table>
         </div>
@@ -133,6 +137,7 @@
           <span class="k"><i class="saved"></i>Saved: money you put in</span>
           <span class="k"><i class="market"></i>Market: prices moving</span>
           {% if w.moves_leave_out %}<span class="k faint">{{ w.moves_leave_out | names("name") }} {{ "is" if w.moves_leave_out | length == 1 else "are" }} not included: you see a total, not its parts.</span>{% endif %}
+          {% if head.leaves_out %}<span class="k faint">Without {{ head.unseen | left_out }}: money moved into them counts as saved out.</span>{% endif %}
         </div>
         {{ priced_from_note(w.moves_priced_from) }}
         {{ as_table("Monthly change in net worth, saved and market", ("Month", "Saved / market"), moves_rows) }}

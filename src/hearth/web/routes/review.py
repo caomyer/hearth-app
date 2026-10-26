@@ -60,13 +60,13 @@ OUTCOMES = {
     "not-an-account": "That row was not booked. Enter a full account name, like"
     " Expenses:Groceries.",
     "not-yours": "That transaction is still waiting. It can go to a spending or income"
-    " category, like Expenses:Groceries, or move to one of your own accounts in hearth. An"
-    " account hearth does not hold yet, such as a mortgage nobody has connected, cannot take it"
-    " yet, so it stays waiting for now. That is not something you did wrong.",
+    " category, like Expenses:Groceries, or move to one of your own accounts in hearth. If"
+    " the money went to an account hearth does not see, such as savings at a bank you have not"
+    " connected or a car loan, name that account on the Where did it go? page.",
     "banks-account": "That transaction is still waiting. That account's balance is the one"
     " its bank reports, so only the bank's own transactions go in it: moving this one there"
-    " would count money the bank says is not there. If it is a move between two accounts you"
-    " have connected, it counts once by itself when both banks have sent it; it can also go"
+    " would count money the bank says is not there. A card payment between two accounts you"
+    " have connected counts once by itself when both banks have sent it; anything else can go"
     " to a spending or income category.",
     "banks-row": "That transaction is still waiting. Its bank counts it in the balance it"
     " reports for this account, so hearth cannot leave it out without disagreeing with the"

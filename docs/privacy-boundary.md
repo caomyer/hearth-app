@@ -94,6 +94,21 @@ Connecting institutions adds three more (`docs/connections.md`):
   It is accepted because beancount's account names are one namespace, so a taken name must be refused, and the check must consult accounts the member cannot see, or a member could create a name that makes the ledger invalid.
   The declined alternative was namespacing every new account under its member, which closes the probe but breaks inheriting an existing ledger's chart of accounts.
 
+Accounts hearth does not see add three more (`docs/books.md`, `docs/review.md`):
+
+- An account a member names has owners, chosen as for an account a connection is filed into (`access.may_feed`): only an owner moves rows into it or names it.
+  It is an account like any other, shared on the same terms: a member its owners share account balances or transactions with sees it, its institution and its last digits, as for a connected one.
+  A member who wants it kept to its owners simply does not share that facet.
+  Its ledger name is the accepted name probe above, with one refusal for every collision.
+  Naming one is deliberately not recorded in the audit log, unlike claiming an account from the command line.
+  Admins read the whole log (`access.may_read_event`), so a line saying a member named an account would tell an admin its owners share nothing with that the account exists, which sharing is what decides; filing a connection's account is not audited for the same reason.
+  Do not add an audit event here for consistency with `ACCOUNT_CLAIMED`.
+- The accounts a member may answer "where did it go?" with, and every proposal, are accounts they may move rows to, from their own desk, so another member's account is never offered or proposed, not even on a joint account's row.
+- A row one owner moves from their own account into a joint account hearth does not see is shown to the other owner as the joint account's side alone: its day, its amount, and "Transfer from another account" (`access.may_name_other_side`).
+  Which account it came from, the bank's words for it, and who said it went there stay the moving owner's, whatever they share, as a paired card payment repeats neither bank's words.
+- A total without an account hearth does not see says so; how many it leaves out goes with the part's balances, so anyone else reads only that it is without some of that member's accounts, the same words whether one is left out or five.
+  That this reaches a viewer who sees only a member's net worth is deliberate, not a leak: that viewer already reads "Not known yet" whenever the member has an account hearth cannot value, so that such an account exists is already disclosed, and "without" discloses the same fact more usefully.
+
 The import adds two more (`docs/books.md`, `docs/pairing.md`):
 
 - A payment from one account to a card the household also connects is booked once, as a transfer marked `*`, never as a `!` row waiting for review.

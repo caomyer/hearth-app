@@ -265,6 +265,20 @@ MIGRATIONS: tuple[str, ...] = (
     -- A ruling made before this was recorded has none, and is bound to nothing more.
     ALTER TABLE review_ruling_rows ADD COLUMN says TEXT;
     """,
+    """
+    -- An account a member names that no connection feeds, such as savings at a bank nobody
+    -- connected or a car loan: hearth sees only the money that moves between it and the
+    -- household's connected accounts, so it never knows the account's balance. The account
+    -- itself is in `accounts`, with its owners, like any other. See hearth.accounts.
+    CREATE TABLE named_accounts (
+        account_id TEXT PRIMARY KEY REFERENCES accounts (id),
+        kind TEXT NOT NULL CHECK (kind IN ('bank', 'card', 'loan', 'owed', 'cash')),
+        institution TEXT,
+        mask TEXT,
+        named_by INTEGER NOT NULL REFERENCES members (id),
+        named_at TEXT NOT NULL
+    ) STRICT;
+    """,
 )
 
 

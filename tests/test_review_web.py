@@ -11,6 +11,7 @@ from beancount.core.data import Transaction
 from fastapi.testclient import TestClient
 
 from hearth.sharing import DEFAULT_SHARED, Facet
+from tests import household
 from tests.conftest import World
 
 KITES = "Expenses:Kites"
@@ -177,7 +178,8 @@ def test_a_filter_says_what_it_leaves(world: World) -> None:
 
     left = 'Showing <strong class="tnum">1</strong> of 3 waiting, <span class="tnum">$10.00</span>'
     assert f"{left} moved" in page
-    assert '0</span> of <span class="tnum">3</span> reviewed' in page
+    # The loan payment Casey said went to Casey's loan is reviewed already (tests.household).
+    assert '1</span> of <span class="tnum">4</span> reviewed' in page
 
 
 def test_after_a_decision_the_queue_resumes_at_the_next_row(world: World) -> None:
@@ -195,9 +197,11 @@ def test_after_a_decision_the_queue_resumes_at_the_next_row(world: World) -> Non
         focus="casey-row-1",
     )
 
+    # The household's own rulings come first (tests.household.MOVED).
+    undo = len(household.MOVED) + 1
     assert (
-        location
-        == "/review?view=rows&order=amount&outcome=accepted&undo=1&focus=casey-row-1#r-casey-row-1"
+        location == f"/review?view=rows&order=amount&outcome=accepted&undo={undo}"
+        "&focus=casey-row-1#r-casey-row-1"
     )
     page = casey.get(location).text
     assert 'id="r-casey-row-1" data-row data-focus' in page

@@ -53,9 +53,10 @@ LATEST = 5
 """How far the bank's row may be dated from the card's, in days: bcng's ``-2 <= gap <=
 pair_days``, with its default ``pair_days``."""
 
-GROUP = "Card payment: other side not connected"
+GROUP = "Card payments hearth could not match"
 """The review group an unpaired leg is booked in, and what Review calls it: a sentence, as
-every other group's name is (``booking.group``), not bcng's ``card-payment-unmatched``."""
+every other group's name is (``booking.group``), not bcng's ``card-payment-unmatched``. It
+does not say the other side is not connected, which is untrue of a leg a tie left unpaired."""
 
 CARD_PAYMENT = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
 """Plaid's category for a card payment. Plaid gives it to the bank's side reliably; a real

@@ -13,6 +13,10 @@ category proposes, and a bank's payment to a card once, as the transfer ``hearth
 pairs it into. Every other account those entries name, and every category a member has
 reviewed a row as, is opened alongside, so the file loads as it stands.
 
+An account a member names rather than connects (``hearth.accounts.name_account``) opens too,
+marked `seen: "moves-only"`: hearth sees only the rows members move into it from their
+connected accounts, so nothing in the books says what it holds (``books.unseen``).
+
 Every recompute also writes these entries to a beancount file, so every figure traces to an
 entry that exists, one a person can open in fava, query, diff and check against a statement.
 The file is an output, never an input: hearth does not read it, and says so at its top. A
@@ -32,7 +36,7 @@ from pathlib import Path
 from beancount.core.data import Directive, Open, Transaction, new_metadata
 from beancount.parser import printer
 
-from hearth.accounts import all_accounts
+from hearth.accounts import Account, all_accounts
 from hearth.plaid import booking, opening
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
@@ -88,7 +92,10 @@ def derive(
 
     Every other account an entry names, and every category a member has reviewed a row as,
     opens on the first of those days, or on `since`, the inherited ledger's first day, when
-    hearth opens none of its own. Raises ``booking.Refused`` when the feed cannot be booked.
+    hearth opens none of its own. Every account a member named (`Unseen`) opens on the
+    earliest of the first row ruled onto it and the household's first day of history, so a
+    ruling is never refused for a day before it opened. Raises ``booking.Refused`` when the
+    feed cannot be booked.
     """
     registry = Registry(conn)
     named = {account.id: account for account in all_accounts(conn)}
@@ -112,10 +119,13 @@ def derive(
         if anchor.day < found[anchor.account].day:
             found[anchor.account] = replace(found[anchor.account], day=anchor.day)
     first = min((o.day for o in found.values()), default=since)
+    unseen = _unseen(conn, named.values(), booked, set(opened) | found.keys(), first, since)
     equity = {opening.EQUITY} if openings.anchors else set()
-    extra = (booked.accounts | equity | _ruled(conn)) - set(opened) - found.keys()
+    extra = (booked.accounts | equity | _ruled(conn)) - set(opened) - found.keys() - unseen.keys()
     ordered = sorted(found.values(), key=lambda o: (o.day, o.account))
     entries: list[Directive] = [o.entry(0) for o in ordered]
+    named_first = sorted(unseen.values(), key=lambda u: (u.day, u.ledger_account))
+    entries += [u.entry(0) for u in named_first]
     if first is not None:
         entries += [Open(new_metadata(ORIGIN, 0), first, a, [], None) for a in sorted(extra)]
     entries += [entry for anchor in openings.anchors for entry in anchor.entries()]
@@ -133,6 +143,38 @@ def _ruled(conn: sqlite3.Connection) -> set[str]:
         for account in RulingStore(conn).accounts()
         if not is_balance_sheet(account) and account not in WAITING
     }
+
+
+def _unseen(
+    conn: sqlite3.Connection,
+    accounts: Iterable[Account],
+    booked: booking.Booked,
+    taken: Collection[str],
+    first: date | None,
+    since: date | None,
+) -> dict[str, Unseen]:
+    """An `open` for each account a member named, that no ledger and no connection holds.
+
+    It opens on the earliest of the first row any ruling moved onto it and the household's
+    first day of history (`first`, or `since` over an inherited ledger), or on the day it was
+    named while there is no history at all, so every row a member could move into it is on
+    or after the day it opens.
+    """
+    ruled = RulingStore(conn).ruled_onto()
+    days = {
+        str(entry.meta["review-id"]): entry.date
+        for entry in booked.entries
+        if isinstance(entry.meta, dict) and "review-id" in entry.meta
+    }
+    found: dict[str, Unseen] = {}
+    for account in accounts:
+        if account.named is None or account.ledger_account in taken:
+            continue
+        moved = [days[r] for r in ruled.get(account.ledger_account, ()) if r in days]
+        candidates = [d for d in (first, since, min(moved, default=None)) if d is not None]
+        day = min(candidates, default=account.named.named_at.astimezone().date())
+        found[account.ledger_account] = Unseen(account, day)
+    return found
 
 
 def _filed(entry: Directive, lineno: int) -> Directive:
@@ -162,6 +204,42 @@ class Opened:
         return Open(meta, self.day, self.account, [], None)
 
 
+SEEN = "seen"
+MOVES_ONLY = "moves-only"
+"""The `seen` metadata of an account hearth sees only the moves into and out of."""
+
+
+@dataclass(frozen=True, slots=True)
+class Unseen:
+    """An account a member named, which hearth sees only the moves into and out of."""
+
+    account: Account
+    day: date
+
+    @property
+    def ledger_account(self) -> str:
+        return self.account.ledger_account
+
+    def entry(self, lineno: int) -> Open:
+        """The `open`, saying what the account is and that hearth does not see it, so a person
+        reading the file knows no figure on it is a balance."""
+        named = self.account.named
+        assert named is not None  # noqa: S101 - only a named account is unseen
+        meta = new_metadata(ORIGIN, lineno)
+        meta["name"] = self.account.name
+        if named.institution:
+            meta["institution"] = named.institution
+        if named.mask:
+            meta["mask"] = named.mask
+        meta[SEEN] = MOVES_ONLY
+        return Open(meta, self.day, self.account.ledger_account, [], None)
+
+
+def moves_only(entry: Directive) -> bool:
+    """Whether `entry` opens an account hearth sees only the moves into and out of."""
+    return isinstance(entry, Open) and (entry.meta or {}).get(SEEN) == MOVES_ONLY
+
+
 def own(entries: Iterable[Directive]) -> list[Directive]:
     """The entries among `entries` that hearth derived, as the books hold them."""
     return [e for e in entries if isinstance(e.meta, dict) and e.meta.get("filename") == ORIGIN]
@@ -181,7 +259,9 @@ def render(entries: Sequence[Directive], *, inherits: Path | None) -> str:
     if opens:
         parts.append(
             "\n; One account for each bank account a member connected, opened on the first day"
-            "\n; of the history asked for, and each category the transactions below name.\n"
+            "\n; of the history asked for, each account a member named that hearth does not see"
+            '\n; (seen: "moves-only": what it holds is not known, only what moved in and out),'
+            "\n; and each category the transactions below name.\n"
         )
         parts.extend(f"\n{printer.format_entry(entry)}" for entry in opens)
     if anchors:

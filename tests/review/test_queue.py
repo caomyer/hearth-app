@@ -147,10 +147,10 @@ def test_a_search_finds_rows_by_merchant_or_description_in_any_case() -> None:
     assert found.remaining.rows == len(rows) - 10 + 1  # the search narrows what is shown only
 
 
-def test_a_row_that_needs_its_other_side_is_counted_apart_from_what_is_left() -> None:
-    """No suggestion is right for one side of a card payment whose other side hearth has not
-    found, so it is never in what is left, nor in any group or page, and always in its own
-    count, which no filter narrows."""
+def test_a_row_whose_other_side_hearth_does_not_see_is_counted_apart_from_what_is_left() -> None:
+    """One side of a card payment hearth could not match is asked where its money went, on a
+    page of its own, so it is never in what is left, nor in any group or page of the queue,
+    and always in its own count, which no filter narrows."""
     legs = [row(n, "Card payment", "300", None, None, transfer=True) for n in range(5000, 5003)]
     rows = first_import()
     found = queue([*rows, *legs], Order.SIZE, Filter())
@@ -158,11 +158,10 @@ def test_a_row_that_needs_its_other_side_is_counted_apart_from_what_is_left() ->
     assert found.total == len(rows)
     assert {v.item.review_id for v in found.rows}.isdisjoint(v.item.review_id for v in legs)
     assert "Card payment" not in {g.name for g in found.groups}
-    assert found.waiting_elsewhere == Tally(3, Decimal(900))
+    assert found.one_sided == Tally(3, Decimal(900))
 
     narrowed = queue([*rows, *legs], Order.SIZE, Filter(text="payee 5001"))
-    assert narrowed.waiting_elsewhere == Tally(3, Decimal(900))
-    assert [v.item.review_id for v in narrowed.elsewhere_shown] == ["r5001"]
+    assert narrowed.one_sided == Tally(3, Decimal(900))
 
 
 def test_review_names_a_category_by_its_most_specific_part_so_kinds_of_income_read_apart() -> None:

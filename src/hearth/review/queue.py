@@ -216,7 +216,8 @@ class Queue:
     """Rows on the member's pile they or a co-owner have reviewed or rejected."""
     remaining: Tally
     """Every row waiting on the member, whatever the filter: what is left is only what they
-    can act on, so a row that needs its other side is counted apart (`elsewhere`)."""
+    can act on here, so a row waiting to be told where its money went is counted apart
+    (`one_sided`)."""
     changed: int
     """Unreviewed rows that were accepted once and have since changed their suggestion."""
     revised: int
@@ -226,21 +227,10 @@ class Queue:
     categories: tuple[Choice, ...]
     decided: tuple[ItemView, ...] = field(default=())
     """The member's reviewed and rejected rows, most recently decided first."""
-    elsewhere: tuple[ItemView, ...] = field(default=())
-    """Rows that need their other side (`ItemView.needs_other_side`), newest first: counted
-    apart from what is left, whatever the filter. Hearth has not found the other side of these
-    payments; connecting the bank it is at settles a row when that is why, and otherwise the
-    two may differ in timing or amount. Each can still be saved to a spending or income
-    category, or to an account of the member's that no bank reports."""
-
-    @property
-    def waiting_elsewhere(self) -> Tally:
-        return Tally.of(self.elsewhere)
-
-    @property
-    def elsewhere_shown(self) -> tuple[ItemView, ...]:
-        """The rows that need their other side and pass the filter."""
-        return tuple(v for v in self.elsewhere if self.filter.matches(v))
+    one_sided: Tally = field(default_factory=Tally)
+    """Rows waiting to be told where their money went (`ItemView.one_sided`), whatever the
+    filter: counted apart from what is left, as they are answered a group at a time on a page
+    of their own (``hearth.review.where``)."""
 
     @property
     def rows(self) -> tuple[ItemView, ...]:
@@ -278,7 +268,6 @@ class Page:
 def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
     """The member's queue over `views`, all of them rows on their own desk."""
     waiting = [v for v in views if v.actionable]
-    elsewhere = [v for v in views if v.needs_other_side]
     decided = [v for v in views if v.decision.state is not State.UNREVIEWED]
     by_group: dict[str, list[ItemView]] = {}
     for view in waiting:
@@ -305,7 +294,7 @@ def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
         decided=tuple(
             sorted(decided, key=lambda v: v.decision.ruling.id if v.decision.ruling else 0)[::-1]
         ),
-        elsewhere=tuple(sorted(elsewhere, key=_row_key(Order.DATE))),
+        one_sided=Tally.of([v for v in views if v.one_sided]),
     )
 
 

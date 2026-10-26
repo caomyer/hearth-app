@@ -29,7 +29,7 @@ bcng's code skips a tied candidate but leaves its rows free, so a row left unpai
 
 ## A leg nothing pairs with
 
-An unpaired leg is booked flagged, in the review group "Card payment: other side not connected" (bcng's `card-payment-unmatched`), against `Equity:Review:TransferPending`.
+An unpaired leg is booked flagged, in the review group "Card payments hearth could not match" (bcng's `card-payment-unmatched`), against `Equity:Review:TransferPending`.
 It is never booked as spending or income, and never dropped.
 Every bank balance stays right, and the transfer-pending account's balance is exactly the money whose other side the books do not hold.
 Accepting such a row as proposed settles nothing: the review pile reads `Equity:Review:TransferPending` as no proposal at all, as it reads `Equity:Review:Unresolved`, and no ruling may book a row against either (`docs/review.md`).

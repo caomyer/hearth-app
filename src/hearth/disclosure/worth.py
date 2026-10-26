@@ -184,12 +184,15 @@ def _moves(h: Household, parts: Sequence[Part]) -> tuple[Move, ...]:
     """Each recent month's change in the parts' net worth, as saved plus market.
 
     Saved is money that crossed into or out of the parts' accounts: pay in, spending out,
-    transfers to and from anyone else's accounts. Market is the rest of the change, which is
-    what prices did to what was held.
+    transfers to and from anyone else's accounts, and to and from accounts hearth does not see,
+    which no valuation holds. Market is the rest of the change, which is what prices did to
+    what was held.
     """
     if not parts:
         return ()
-    accounts = frozenset(name for part in parts for name in part.ledger_accounts)
+    accounts = frozenset(
+        name for part in parts for name in part.ledger_accounts if name not in h.books.unseen
+    )
     moves = []
     for before, after in pairwise(h.history(parts)):
         if Month.of(after.as_of) != Month.of(before.as_of).following():

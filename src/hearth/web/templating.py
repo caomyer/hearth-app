@@ -16,7 +16,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoes
 from markupsafe import Markup, escape
 
 from hearth.connections import PLAID
-from hearth.disclosure import Withheld
+from hearth.disclosure import Withheld, left_out
 from hearth.months import Month
 from hearth.names import readable
 
@@ -174,6 +174,7 @@ environment.filters.update(
     category=category,
     origin=origin,
     names=names,
+    left_out=left_out,
 )
 environment.globals.update(when=when, close=close, plural=plural, MINUS=MINUS)
 environment.tests["withheld"] = _is_withheld

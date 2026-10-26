@@ -81,6 +81,7 @@ Plaid prices positions for today only, so nothing here implies a price history.
 Each account a connection reaches feeds exactly one ledger account, confirmed by its member, never inferred.
 A confirmed account is an account in hearth's own books from the next recompute, which confirming starts (`docs/books.md`).
 The choices are a new ledger account, owned by the member and any co-owners they pick, or an account they already own, whose owners stay as they are.
+An account the member named because hearth does not see it (`docs/books.md`) is not offered yet: what members moved into it would count a second time beside the bank's own rows until those earlier answers are checked against them.
 A new account starts as a proposed ledger name the member can edit, with a name for the household that defaults to the institution's and the bank's names for it and is kept where `hearth add-account --name` keeps it.
 When the bank calls several of its accounts the same, such as several cards, the proposed ledger name and the default household name of each carry its last digits; an account called like no other keeps the plain name.
 An account connected again after its member removed the connection it came through defaults to the account it fed before, so its history stays in one account (`Registry.fed_before`, which tells the same real account as `connected_twice` does and looks only at that member's own removed connections).

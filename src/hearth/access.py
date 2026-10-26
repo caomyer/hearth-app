@@ -122,6 +122,20 @@ def may_feed(viewer: Member, owners: Collection[MemberId]) -> bool:
     return viewer.id in owners
 
 
+def may_name_other_side(viewer: Member, owners: Collection[MemberId]) -> bool:
+    """Whether ``viewer``, looking at a move into or out of an account hearth does not see, may
+    be told which account ``owners`` own was on the other side of it.
+
+    Only an owner of that account. A row a member moves from their own account into a joint
+    account hearth does not see is shown to the other owner as the joint account's side
+    alone: the day, the amount, and that it came from another account. Which account, and the
+    bank's words for the row, are that account's transaction detail; sharing transactions
+    shares what is in an account, not what one member says about where its money went, as a
+    paired card payment never repeats either bank's words. What nobody owns, nobody is told.
+    """
+    return viewer.id in owners
+
+
 def may_administer(viewer: Member) -> bool:
     """Admins manage members and passwords. That is all being an admin means."""
     return viewer.is_admin

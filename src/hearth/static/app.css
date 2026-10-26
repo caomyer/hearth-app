@@ -132,3 +132,7 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 6px; border: 1px soli
   .rgroup-figs > div:nth-child(3) dd { white-space: normal; }
   .rfilter .field { max-width: none; }
 }
+
+/* The net worth a newly named account would leave out is the namer's alone, so it is hidden
+   while the account is to be joint, whatever display the preview has. */
+.hero-partial[hidden] { display: none; }

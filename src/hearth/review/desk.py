@@ -15,6 +15,10 @@ else, an equity account included, is refused with `NotTheirs`, which says the sa
 account is someone else's or nobody's, so the desk cannot be used to learn another member's
 account names.
 
+An account a member named that hearth does not see (``hearth.accounts.name_account``) is open
+on every row's day by construction (``hearth.ownbooks``), so it takes a moved row as soon as it
+is named, before the books are next recomputed.
+
 An account whose balance its bank reports is the bank's to fill, not a ruling's: the books
 assert that balance (``hearth.plaid.opening``), so a row moved into it, or one of its own rows
 ruled not a transaction, would leave the books disagreeing with the bank, and every member's
@@ -33,9 +37,16 @@ still proposes that account, so a proposal that changed between the page and the
 accepted unseen. Accepting a group records, row by row, the account each row proposed then
 (``hearth.review.decision``): a row whose proposal changes later is unreviewed again, and a row
 the import had nothing to propose for is never covered.
+
+A row whose other side hearth does not see (`ItemView.one_sided`) is settled by saying where
+the money went, not by a category, and is answered a group at a time (``hearth.review.where``):
+`move_group` moves every row a page showed onto one account, each bound to what it said then,
+as a group accept is, and a row unlike the rest of its group is answered alone (`set_account`).
+Where rows like one were said to have gone into an account of the member's own, the desk
+proposes it for the next (`learned`).
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -45,7 +56,7 @@ from hearth.clock import Clock
 from hearth.disclosure import Concealed
 from hearth.members import MemberId
 from hearth.review.decision import Decision, State, decide
-from hearth.review.pile import PileItem
+from hearth.review.pile import Moved, PileItem
 from hearth.review.rulings import Action, Covered, Ruling, RulingStore, Scope, check_account
 
 __all__ = [
@@ -55,6 +66,8 @@ __all__ = [
     "Decision",
     "GroupView",
     "ItemView",
+    "Learned",
+    "Moved",
     "NotOneDecision",
     "NotTheirs",
     "ReviewDesk",
@@ -79,6 +92,14 @@ HELD = frozenset({"Assets", "Liabilities"})
 type Opened = Mapping[str, tuple[date, date | None]]
 """Each account the books open, with the day it opens and the day it closes, if it does."""
 
+type Moves = Callable[[str], Moved | None]
+"""What kind of move a review group's rows are, if they move money whose other side hearth
+does not see (``hearth.plaid.booking.moved``)."""
+
+
+def _nothing_moves(group: str) -> Moved | None:
+    return None
+
 
 @dataclass(frozen=True, slots=True)
 class ItemView:
@@ -90,24 +111,38 @@ class ItemView:
     bank_counts: bool = False
     """Whether the row's bank counts it in the balance it reports, so it cannot be excluded
     (`BanksRow`)."""
+    moved: Moved | None = None
+    """What kind of move it is, when it moves money whose other side hearth does not see."""
 
     @property
     def unreviewed(self) -> bool:
         return self.decision.state is State.UNREVIEWED
 
     @property
-    def needs_other_side(self) -> bool:
-        """Whether it is one side of a card payment whose other side hearth has not found, so
-        it is not the member's to settle at a glance: if that side is at an account nobody
-        connected, connecting it lets pairing settle this one; otherwise the two may differ in
-        timing or amount. Either way the member can still save it to a spending or income
-        category, or to an account of theirs that no bank reports."""
-        return self.unreviewed and self.item.transfer
+    def one_sided(self) -> bool:
+        """Whether it is waiting to be told where its money went: one side of a card payment
+        hearth could not match, or a transfer or loan payment whose other account the bank
+        does not name, and nothing proposed for it. A category is no answer to "is this
+        right?" for these, so they are asked where the money went instead, a group at a time,
+        and counted apart from what is left (``hearth.review.where``)."""
+        return self.unreviewed and (
+            self.item.transfer or (self.moved is not None and self.item.proposed is None)
+        )
 
     @property
     def actionable(self) -> bool:
-        """Whether it is left for the member: unreviewed, and not one that needs its other side."""
-        return self.unreviewed and not self.item.transfer
+        """Whether it is left for the member in the queue: unreviewed, and not one waiting to
+        be told where its money went (`one_sided`)."""
+        return self.unreviewed and not self.one_sided
+
+
+@dataclass(frozen=True, slots=True)
+class Learned:
+    """What the member has said rows like one went into: an account of theirs hearth does not
+    see, and how many such rows they have moved there. A proposal, never a decision."""
+
+    account: Account
+    like: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +217,12 @@ class Acceptance:
     """Rows shown with a proposal they no longer have, or no longer waiting for this member."""
 
 
+type Likeness = Callable[[PileItem], str]
+"""What makes two rows alike enough that the answer for one is a proposal for the other: the
+same account, the same direction, and the same description, as ``hearth.review.where`` keys
+them."""
+
+
 def resolve(
     pile: Sequence[PileItem],
     accounts: Sequence[Account],
@@ -221,14 +262,20 @@ class ReviewDesk:
         may_move_to: MayMoveTo,
         clock: Clock,
         banks: Collection[str] = (),
+        moves: Moves = _nothing_moves,
     ) -> None:
         self._member = member
         self._banks = frozenset(banks)
+        self._moves = moves
+        # An account a member named opens on every row's day (``hearth.ownbooks``), so it is
+        # open here from the moment it is named, before the books are next recomputed.
         self._movable = {
-            account.ledger_account: opened[account.ledger_account]
+            account.ledger_account: (
+                (date.min, None) if account.named else opened[account.ledger_account]
+            )
             for account in accounts
             if account.ledger_account.split(":")[0] in HELD
-            and account.ledger_account in opened
+            and (account.named is not None or account.ledger_account in opened)
             and may_move_to(account.owners)
         }
         self._owners = _owners(accounts)
@@ -309,14 +356,78 @@ class ReviewDesk:
         of the member's own accounts the books hold open on the row's day (`NotTheirs`
         otherwise) and whose balance no bank reports (`BanksAccount` otherwise)."""
         item = self._row(review_id)
-        check_account(account)
-        if account.split(":")[0] not in FREE:
-            opens, closes = self._movable.get(account, (date.max, None))
-            if not opens <= item.date <= (closes or date.max):
-                raise NotTheirs
-            if account in self._banks:
-                raise BanksAccount
+        self._check_target(account, [item])
         return self._record(Scope.ROW, None, Action.ACCOUNT, account, note, {review_id: None})
+
+    def move_group(
+        self, group: str, account: str, shown: Mapping[str, str], note: str | None = None
+    ) -> Acceptance:
+        """Review every row in `shown` against `account`, as one decision called `group`: the
+        rows a page showed together, each with what it said then (``PileItem.says``).
+
+        The account is checked as `set_account` checks it, for every row. A row that is no
+        longer waiting, or says something else now, is left as it is and counted as changed,
+        so the decision covers exactly the rows the member saw as they saw them. A row that is
+        not on the member's desk at all is concealed, like one that does not exist.
+        """
+        rows = [self._row(review_id) for review_id in shown]
+        if not rows:
+            raise Concealed
+        self._check_target(account, rows)
+        waiting = {v.item.review_id for v in self._views(rows) if v.unreviewed}
+        bound = {
+            item.review_id: None
+            for item in rows
+            if item.review_id in waiting and shown[item.review_id] == item.says
+        }
+        changed = len(rows) - len(bound)
+        if not bound:
+            return Acceptance(None, 0, changed)
+        ruling = self._record(Scope.GROUP, group, Action.ACCOUNT, account, note, bound)
+        return Acceptance(ruling, len(bound), changed)
+
+    def movable(self) -> list[Account]:
+        """The member's own accounts a row may be moved onto: open in the books, or named, and
+        not one whose balance its bank reports."""
+        return [
+            account
+            for account in self._accounts
+            if account.ledger_account in self._movable and account.ledger_account not in self._banks
+        ]
+
+    def learned(self, alike: Likeness) -> dict[str, Learned]:
+        """For each row waiting to be told where its money went, what the rows like it on the
+        member's desk (`alike`) were said to have gone into, when that is one of the member's
+        own accounts hearth does not see: the account most of them went to, and how many did.
+
+        Only an account the member may move a row to counts, so a proposal never names an
+        account that is not theirs: a co-owner's answer on a joint account's row onto their
+        own private account proposes nothing to the other owner.
+        """
+        views = self._views(self._mine.values())
+        targets = {a.ledger_account: a for a in self.movable() if a.named is not None}
+        said: defaultdict[str, Counter[str]] = defaultdict(Counter)
+        for view in views:
+            decision = view.decision
+            if decision.state is State.REVIEWED and decision.account in targets:
+                said[alike(view.item)][decision.account] += 1
+        found: dict[str, Learned] = {}
+        for view in views:
+            if not view.one_sided or (counts := said.get(alike(view.item))) is None:
+                continue
+            account, like = counts.most_common(1)[0]
+            found[view.item.review_id] = Learned(targets[account], like)
+        return found
+
+    def _check_target(self, account: str, rows: Sequence[PileItem]) -> None:
+        check_account(account)
+        if account.split(":")[0] in FREE:
+            return
+        opens, closes = self._movable.get(account, (date.max, None))
+        if not all(opens <= item.date <= (closes or date.max) for item in rows):
+            raise NotTheirs
+        if account in self._banks:
+            raise BanksAccount
 
     def reject(self, review_id: str, note: str | None = None) -> Ruling:
         """One row is not a transaction: book nothing for it; never a row its bank counts in
@@ -383,6 +494,7 @@ class ReviewDesk:
                 decisions[item.review_id],
                 account(item),
                 bank_counts=item.account in self._banks,
+                moved=Moved.CARD if item.transfer else self._moves(item.group),
             )
             for item in rows
         ]

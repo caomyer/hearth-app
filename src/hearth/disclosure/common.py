@@ -58,6 +58,49 @@ class PartRef:
 
 
 @dataclass(frozen=True, slots=True)
+class LeftOut:
+    """A part of a figure that leaves out accounts hearth does not see, and how many.
+
+    `count` is None when the viewer may not see the part's balances: the figure says it is
+    without some of their accounts, the same words whether one is left out or five.
+    """
+
+    part: PartRef
+    count: int | None
+
+    def words(self, alone: bool = False) -> str:
+        """ "2 accounts", "1 of Jordan's accounts", "some of the joint accounts".
+
+        `alone` is for a figure that is this part's only, as a member's own page is, which
+        needs no saying whose.
+        """
+        if alone:
+            whose = ""
+        elif self.part.is_joint:
+            whose = "the joint "
+        elif self.part.is_viewers:
+            whose = "your "
+        else:
+            whose = f"{self.part.owners[0].display_name}\N{RIGHT SINGLE QUOTATION MARK}s "
+        if self.count is None:
+            return f"some of {whose}accounts" if whose else "some accounts"
+        if whose:
+            return f"{self.count} of {whose}accounts"
+        return f"{self.count} {'account' if self.count == 1 else 'accounts'}"
+
+
+def left_out(parts: Sequence[LeftOut], alone: bool = False) -> str:
+    """What a figure leaves out, in words: "2 accounts hearth does not see", "some of Jordan's
+    accounts hearth does not see". A figure of the viewer's own accounts alone says how many."""
+    if not parts:
+        return ""
+    alone = alone or (len(parts) == 1 and parts[0].part.is_viewers and not parts[0].part.is_joint)
+    words = [part.words(alone) for part in parts]
+    joined = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+    return f"{joined} hearth does not see"
+
+
+@dataclass(frozen=True, slots=True)
 class Unreviewed:
     """How much of a total rests on rows nobody has checked yet, at their suggested category.
 
@@ -112,6 +155,15 @@ class Worth:
     While there are any, the figure is not known: `value` counts them as nothing, so it is
     never shown. None when there are some but the viewer may not see the part's balances,
     as how many would say how many accounts its owners have."""
+    unseen: int | None = 0
+    """Accounts in the figure that hearth does not see (`books.unseen`), whose balance it will
+    never be told. They are not "not known yet", which would leave the figure unknown for
+    good: `value` is what the rest add up to, and the figure says it is without them. None
+    when there are some but the viewer may not see the part's balances, for the same reason
+    as `awaiting`."""
+    counted: bool = True
+    """Whether any account in the figure is one hearth sees. When none is, `value` adds up
+    nothing at all, which is not a figure, let alone one of zero."""
 
     @property
     def is_floor(self) -> bool:
@@ -119,7 +171,12 @@ class Worth:
 
     @property
     def is_known(self) -> bool:
-        return self.awaiting == 0
+        return self.awaiting == 0 and self.counted
+
+    @property
+    def leaves_out(self) -> bool:
+        """Whether the figure is without accounts hearth does not see."""
+        return self.unseen != 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,8 +231,9 @@ class Household:
 
     @property
     def balance_unknown(self) -> frozenset[str]:
-        """Every account the household names whose balance the books do not know."""
-        return self.books.balance_unknown | self.outside
+        """Every account the household names whose balance the books do not know yet: not
+        those hearth does not see, which it never will (`unseen`)."""
+        return (self.books.balance_unknown - self.books.unseen) | self.outside
 
     @property
     def viewer(self) -> Member:
@@ -203,15 +261,28 @@ class Household:
     def worth(self, valuation: NetWorth, part: Part) -> Worth:
         mine = figures.worth(valuation, part)
         awaiting: int | None = self.awaiting(part)
-        if awaiting and not self.gate.may(Facet.ACCOUNT_BALANCES, part.owners):
-            awaiting = None
-        return Worth(mine.known_total, self.unpriced(mine, part), awaiting)
+        unseen: int | None = self.unseen(part)
+        if not self.gate.may(Facet.ACCOUNT_BALANCES, part.owners):
+            awaiting = None if awaiting else 0
+            unseen = None if unseen else 0
+        return Worth(
+            mine.known_total, self.unpriced(mine, part), awaiting, unseen, bool(self.seen(part))
+        )
 
     def awaiting(self, part: Part) -> int:
         """How many of the part's accounts the books do not know the balance of yet. A count,
         never which: it says only that an account's history, or the balance it started from, is
         not in the books yet. The count is released only with the part's balances (`worth`)."""
         return sum(1 for a in part.accounts if a.ledger_account in self.balance_unknown)
+
+    def unseen(self, part: Part) -> int:
+        """How many of the part's accounts hearth does not see (`books.unseen`). A count, never
+        which, released only with the part's balances (`worth`), as `awaiting` is."""
+        return sum(1 for a in part.accounts if a.ledger_account in self.books.unseen)
+
+    def seen(self, part: Part) -> tuple[Account, ...]:
+        """The part's accounts hearth sees: every one but those it holds by name alone."""
+        return tuple(a for a in part.accounts if a.ledger_account not in self.books.unseen)
 
     def unpriced(self, valuation: NetWorth, part: Part) -> tuple[str, ...]:
         """Name the unpriced positions, or only count them when holdings are not shown."""
@@ -238,6 +309,7 @@ class Household:
                 not now.complete
                 or not then.complete
                 or self.awaiting(part)
+                or not self.seen(part)
                 or not self.reaches(part, valuation)
             ):
                 return None
@@ -273,8 +345,14 @@ class Household:
         """Whether the ledger's history of the part reaches back to `valuation`'s month.
 
         Before an account's history starts, the ledger holds nothing for it, so its value
-        there is not zero but unknown. Uses the rule the spending bars use, `figures.covers`.
+        there is not zero but unknown: a part none of whose accounts had opened yet was not
+        worth nothing then, so no change is measured from it. Otherwise it uses the rule the
+        spending bars use, `figures.covers`.
         """
+        opened = {c.account: c.opened for c in self.books.coverage}
+        days = [opened[a.ledger_account] for a in self.seen(part) if a.ledger_account in opened]
+        if days and min(days) > valuation.as_of:
+            return False
         return figures.covers(self.books, part.accounts, Month.of(valuation.as_of))
 
     def history(self, parts: Sequence[Part]) -> list[NetWorth]:
@@ -308,14 +386,17 @@ class Household:
 
         None while an account's history is in the books without the balance it started from
         (`books.unanchored`): every month end would be what it moved since, not what it held.
+        An account hearth does not see is never in a valuation (`books.unseen`), so the line
+        is drawn through the accounts it sees, and says it is without the rest.
         """
-        if any(a.ledger_account in self.books.unanchored for p in parts for a in p.accounts):
+        unknown = self.books.unanchored - self.books.unseen
+        if any(a.ledger_account in unknown for p in parts for a in p.accounts):
             return []
         opened = {c.account: c.opened for c in self.books.coverage}
         days = [
             opened[a.ledger_account]
             for p in parts
-            for a in p.accounts
+            for a in self.seen(p)
             if a.ledger_account in opened
         ]
         return [

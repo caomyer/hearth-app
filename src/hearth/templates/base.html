@@ -38,7 +38,7 @@
     <a class="brand" href="/"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</a>
     <nav class="nav" aria-label="Primary">
       {% for key, href, label, icon in nav %}
-      <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}>{{ label }}{% if key == "review" and waiting %} <span class="count" aria-label="{{ waiting }} to review">{{ waiting }}</span>{% endif %}</a>
+      <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}>{{ label }}{% if key == "review" and waiting %} <span class="count" aria-label="{{ "{:,}".format(waiting) }} to review">{{ "{:,}".format(waiting) }}</span>{% endif %}</a>
       {% endfor %}
     </nav>
     <div class="topbar-end">
@@ -62,7 +62,7 @@
 {% if session and not session.member.must_change_password and not focused %}
 <nav class="tabbar" aria-label="Primary">
   {% for key, href, label, icon in nav %}
-  <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#{{ icon }}"/></svg>{% if key == "review" and waiting %}<span class="count" aria-hidden="true">{{ waiting }}</span>{% endif %}{{ label }}{% if key == "review" and waiting %}<span class="vh">, {{ waiting }} to review</span>{% endif %}</a>
+  <a href="{{ href }}"{% if section | default("") == key %} aria-current="page"{% endif %}><svg aria-hidden="true"><use href="#{{ icon }}"/></svg>{% if key == "review" and waiting %}<span class="count" aria-hidden="true">{{ "999+" if waiting > 999 else waiting }}</span>{% endif %}{{ label }}{% if key == "review" and waiting %}<span class="vh">, {{ "{:,}".format(waiting) }} to review</span>{% endif %}</a>
   {% endfor %}
 </nav>
 {% endif %}

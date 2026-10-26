@@ -888,10 +888,15 @@ class Connector:
         linked = self._registry.account(account.account_id)
         assert linked is not None  # noqa: S101 - the view was built from this account
         root = "Liabilities" if account.is_credit else "Assets"
+        # An account a member named is not offered: what members moved into it would count a
+        # second time beside its bank's own rows, until its earlier answers can be checked
+        # against them when it is connected.
         mine = [
             a
             for a in self._accounts
-            if self._policy.may_feed(a.owners) and a.ledger_account.split(":")[0] == root
+            if self._policy.may_feed(a.owners)
+            and a.ledger_account.split(":")[0] == root
+            and a.named is None
         ]
         current = next((a for a in self._accounts if a.id == linked.hearth_account), None)
         existing = [

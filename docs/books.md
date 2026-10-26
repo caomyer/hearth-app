@@ -118,6 +118,31 @@ The reasons (`opening.Unknown`):
 
 An inherited ledger's accounts keep beancount's meaning, where an account nothing has moved holds nothing; hearth works out no opening for them.
 
+### Accounts hearth does not see
+
+Money a member's connected accounts send to, or take from, an account no connection feeds is ordinary and often permanent: savings at a bank nobody connected, a car loan, money lent to a sibling, a bank Plaid cannot reach.
+A member names such an account once, from the rows that moved money to or from it (`docs/review.md`, "Where did it go?"): a kind (a bank account, a card, a loan, money owed to them, cash), where it is, a name, its last digits if they like, its owners and its ledger name (`accounts.name_account`).
+A loan or a card goes under Liabilities, everything else under Assets.
+No balance is asked for: one typed today is wrong tomorrow, as hearth does not see what is spent from the account.
+
+It is stored as an account like any other, with its owners, and marked as named (`named_accounts`).
+Each recompute opens it with its name, institution and last digits, and `seen: "moves-only"`, on the earliest of the first row moved onto it and the household's first day of history (`ownbooks.Unseen`), and the rows members moved into it are booked against it.
+Those rows are what moved, not what it holds: interest, and anything spent from it, never reach hearth.
+So its balance is never read from them, and never asked for:
+
+- `books.unseen` names every such account; each is `unanchored`, as its balance is not known, and none is `awaiting`, so no spending figure waits on history that will never arrive.
+- No valuation holds a figure for it (`books.compute`), so no total can add it in by mistake.
+- A total that includes one says it leaves it out: "$48,210 without 2 accounts hearth does not see", the known part, drawn with the dashed grey "not there yet" chip, never "not known yet", which is for a balance about to arrive and would make a member's net worth unknown for good.
+  The history chart draws the accounts hearth sees, and says it is without the rest.
+  How many it leaves out goes only to a viewer who may see the part's balances; anyone else reads "without some of Jordan's accounts".
+- Its own page says its balance is not known, and what moved in and out of it, by its dates.
+- An account that is never read as a balance is never read as $0.
+
+Summing the moves into an account instead would make its balance the sum of what moved into it: in an invented household of a real one's shape, about −$118k for two years of card payments made from a checking account nobody connected, and net worth would fall by that, which is a lie.
+
+Connecting the bank later is not done yet: the mapping page does not offer a named account as where a connected account goes, since what members moved into it would then count a second time beside the bank's own rows.
+What it will need is kept: every ruling that moved a row onto the account names it, and each row's review id leads back to the feed row it was booked from, with its day and amount (`RulingStore.ruled_onto`).
+
 ### Balances are not history
 
 An opening balance says what an account held before its history, and an assertion what its bank says it holds now; neither says which days the history covers.

@@ -76,6 +76,9 @@ class Gate:
     def may_feed(self, owners: Collection[MemberId]) -> bool:
         return access.may_feed(self.viewer, owners)
 
+    def may_name_other_side(self, owners: Collection[MemberId]) -> bool:
+        return access.may_name_other_side(self.viewer, owners)
+
 
 def may_administer(member: Member) -> bool:
     """Whether `member` may manage members and passwords; it shows them nobody's money."""

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Where did it go? - Review{% endblock %}
+{% macro row_day(d) %}{{ d | day if d.year == today.year else d | year_day }}{% endmacro %}
+{% macro accounts_of(group) %}{% set found = group.accounts %}{% if found %}{{ found[0].name }}{% if found | length > 2 %} and {{ found | length - 1 }} more{% elif found | length == 2 %} and {{ found[1].name }}{% endif %}{% endif %}{% endmacro %}
+{% block content %}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/review">Review</a> <span aria-hidden="true">/</span> <span aria-current="page">Where did it go?</span></nav>
+  <div class="page-head">
+    <div>
+      <h1>Where did it go?</h1>
+      <p class="sub measure">Hearth sees one side of these: money left one of your connected accounts, or arrived in one, and hearth has no record of the other side. Say once what is on the other side, and every transaction like it follows.</p>
+    </div>
+  </div>
+
+  {% if message %}
+  <div class="alert alert-info rnotice" role="status">
+    <svg aria-hidden="true"><use href="#i-info"/></svg>
+    <div class="alert-body">
+      <p style="color: var(--ink)">{{ message }}</p>
+      {% if undo %}
+      <p>Undo takes back exactly this answer: {% if undo[1] == 1 %}the transaction will wait for an answer again{% else %}{{ plural(undo[1], "transaction") }}{% if undo[0].group %} in {{ undo[0].group }}{% endif %}, which will wait for an answer again{% endif %}.</p>
+      <form class="alert-actions" method="post" action="/review/where/undo">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="ruling" value="{{ undo[0].id }}">
+        <button class="btn btn-sm" type="submit">Undo</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if page.groups %}
+  <section class="panel" aria-labelledby="os-h">
+    <div class="panel-body review-summary" style="padding-top: var(--s-6)">
+      <div class="hero">
+        <h2 id="os-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Seen from one side</h2>
+        <p class="hero-value">{{ "{:,}".format(page.rows) }}</p>
+        <p class="muted"><span class="tnum">{{ page.moved | money }}</span> moved, in {{ plural(page.groups | length, "group") }}. None of it is spending or income until you say.</p>
+      </div>
+      {% if matched %}
+      <div class="review-bulk">
+        <p class="sm"><svg aria-hidden="true" style="width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; color: var(--pos)"><use href="#i-check"/></svg><span class="tnum">{{ "{:,}".format(matched) }}</span> {{ "move" if matched == 1 else "moves" }} between your connected accounts matched</p>
+        <p class="xs faint">Each counted once. Nothing to do for them.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% else %}
+  <section class="panel" aria-labelledby="ok-h">
+    <div class="caught-up">
+      <span class="glyph" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
+      <div>
+        <h2 id="ok-h">Every place your money went has a name</h2>
+        <p class="muted">Nothing your banks sent is waiting to be told where it went. When a new transfer or payment comes in whose other side hearth does not see, it waits here. <a href="/review">Back to Review</a></p>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% for s in settled %}
+  <section class="panel mt-4" aria-labelledby="done-{{ s.ruling.id }}-h">
+    <div class="panel-body row between wrap" style="gap: var(--s-3)">
+      <div class="row" style="gap: var(--s-3); align-items: flex-start">
+        <svg aria-hidden="true" style="width: 18px; height: 18px; color: var(--pos); flex: none; margin-top: 2px"><use href="#i-check"/></svg>
+        <div>
+          <h2 id="done-{{ s.ruling.id }}-h" style="font-size: var(--t-md); line-height: var(--lh-md)">{{ s.ruling.group }}</h2>
+          {% set sq = s.question.value %}
+          <p class="sm muted">{{ plural(s.rows, "payment" if sq in ("paid-from", "paid-to", "loan") else "transaction") }}, <span class="tnum">{{ s.moved | money }}</span>: {% if s.unseen %}{% if sq == "paid-from" %}paid from{% elif sq == "paid-to" %}paid to{% elif sq == "loan" %}paying{% elif sq == "came" %}from{% else %}moved to{% endif %} <strong style="font-weight: 500">{{ s.to }}</strong>, an account hearth does not see.{% else %}saved under <strong style="font-weight: 500">{{ s.to }}</strong>.{% endif %}</p>
+        </div>
+      </div>
+      <form method="post" action="/review/where/undo">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="ruling" value="{{ s.ruling.id }}">
+        <button class="btn btn-sm" type="submit">Undo {{ "{:,}".format(s.rows) }}</button>
+      </form>
+    </div>
+  </section>
+  {% endfor %}
+
+  {% for a in answers %}
+  {% set g = a.group %}
+  {% set gid = "w-" ~ g.key %}
+  {% set q = g.question.value %}
+  {% set count = g.rows | length %}
+  <section class="panel rgroup mt-4" aria-labelledby="{{ gid }}-h" id="{{ gid }}"{% if landing == g.key %} data-focus{% endif %}>
+    <div class="rgroup-head">
+      <div class="rgroup-what">
+        <h2 id="{{ gid }}-h">{{ g.title }}</h2>
+        <p class="muted">{% if q == "paid-from" %}Payments into {{ accounts_of(g) }} that hearth found no other side for.{% elif q == "paid-to" %}Card payments out of {{ accounts_of(g) }} that hearth found no other side for.{% elif q == "loan" %}{{ "A loan payment out of" if g.outgoing else "Money from a loan, into" }} {{ accounts_of(g) }}{% if count > 1 %}, {{ "the same each time" if g.described_once else "more than one description" }}{% endif %}.{% elif q == "came" %}Into {{ accounts_of(g) }}{% if count > 1 and g.described_once %}, the same description each time{% endif %}.{% else %}Out of {{ accounts_of(g) }}{% if count > 1 and g.described_once %}, the same description each time{% endif %}.{% endif %}{% if g.learned %} <span class="faint">Like {{ plural(g.learned.like, "past decision") }}.</span>{% endif %}</p>
+      </div>
+      <dl class="rgroup-figs">
+        <div><dt>Transactions</dt><dd class="tnum">{{ "{:,}".format(count) }}</dd></div>
+        <div><dt>Total</dt><dd class="tnum{% if g.total > 0 %} amt-in{% endif %}">{% if g.total > 0 %}+{% endif %}{{ g.total | money }}</dd></div>
+        <div><dt>Since</dt><dd>{{ g.since | month_year }}</dd></div>
+      </dl>
+      <div class="rgroup-act"></div>
+    </div>
+    <div class="panel-body" style="border-top: 1px solid var(--line)">
+      {% set seen_side %}<div class="side"><span class="primary">{{ accounts_of(g) }}</span><span class="second">connected</span></div>{% endset %}
+      {% set unseen_side %}<div class="side is-unseen"><span class="primary">{{ g.learned.account.name if g.learned else "Not named yet" }}</span><span class="second">{% if g.learned %}{% if g.mask %}&bull;&bull;&nbsp;{{ g.mask }} &middot; {% endif %}hearth does not see it{% elif g.mask %}&bull;&bull;&nbsp;{{ g.mask }}, as the bank names it{% elif q in ("paid-from", "paid-to") %}Hearth found no other side{% else %}The bank does not say which account{% endif %}</span></div>{% endset %}
+      <div class="sides" aria-hidden="true">
+        {% if g.outgoing %}{{ seen_side }}{% else %}{{ unseen_side }}{% endif %}
+        <div class="via"><svg><use href="#i-arrow"/></svg></div>
+        {% if g.outgoing %}{{ unseen_side }}{% else %}{{ seen_side }}{% endif %}
+      </div>
+      <form class="mt-6" method="post" action="/review/where/move">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="group" value="{{ g.key }}">
+        <input type="hidden" name="title" value="{{ g.title }}">
+        {% for rid, says in g.shown().items() %}<input type="hidden" name="rows" value="{{ rid }} {{ says }}">{% endfor %}
+        <fieldset class="role">
+          <legend class="label">{% if q == "paid-from" %}Paid from?{% elif q == "paid-to" %}Which card did it pay?{% elif q == "loan" %}What is it paying?{% elif q == "came" %}Where did it come from?{% else %}Where did it go?{% endif %}</legend>
+          {% set mine %}
+          <label class="role-opt">
+            <input type="radio" name="answer" value="account"{% if a.by_account %} checked{% endif %}>
+            <span class="grow" style="min-width: 0">
+              <span style="font-weight: 500">{{ "A loan of mine that hearth does not see" if q == "loan" else "A card of mine that hearth does not see" if q == "paid-to" else "An account of mine that hearth does not see" }}</span>
+              <span class="sm faint" style="display: block">{% if q == "loan" %}What you still owe is not known to hearth, so your net worth will say it leaves this loan out.{% elif q == "came" %}You moved your own money in.{% else %}A bank you have not connected, cannot, or would rather not. Not spending: your money just moved.{% endif %}</span>
+              <span class="row wrap mt-2" style="gap: var(--s-2)">
+                <select class="select" name="account" aria-label="Which account" style="max-width: 320px">
+                  {% for acct in a.accounts %}<option value="{{ acct.id }}"{% if acct.id == a.chosen %} selected{% endif %}>{{ acct.name }}</option>{% endfor %}
+                  <option value="{{ new }}"{% if a.chosen == new %} selected{% endif %}>{{ "Name another loan…" if q == "loan" else "Name another account…" if a.accounts else "Name the account…" }}</option>
+                </select>
+              </span>
+            </span>
+          </label>
+          {% endset %}
+          {% set other %}
+          {% if a.categories %}
+          <label class="role-opt">
+            <input type="radio" name="answer" value="category"{% if not a.by_account %} checked{% endif %}>
+            <span class="grow" style="min-width: 0">
+              <span style="font-weight: 500">{{ "A bill" if q == "loan" else "Someone else" }}</span>
+              <span class="sm faint" style="display: block">{% if q == "loan" %}Something you pay for, not something you owe. It was spending, and you choose what for.{% elif q == "came" %}Income, or someone paying you back. You choose which.{% else %}A person or a business. It was spending, and you choose what for.{% endif %}</span>
+              <span class="row wrap mt-2" style="gap: var(--s-2)">
+                <select class="select" name="category" aria-label="Category" style="max-width: 320px">
+                  {% for c in a.categories %}<option value="{{ c }}">{{ category_label(c) }}</option>{% endfor %}
+                </select>
+              </span>
+            </span>
+          </label>
+          {% endif %}
+          {% endset %}
+          {% if a.by_account %}{{ mine }}{{ other }}{% else %}{{ other }}{{ mine }}{% endif %}
+        </fieldset>
+        <div class="row between wrap mt-6" style="gap: var(--s-3)">
+          <p class="sm faint measure">{% if q == "loan" %}Each payment goes to the loan whole. Part of it is interest, which hearth cannot split out yet, so interest is not in your spending.{% elif g.learned %}Like {{ plural(g.learned.like, "past decision") }}: {{ "it is" if count == 1 else "they are" }} suggested, and {{ "waits" if count == 1 else "wait" }} for your yes.{% elif g.mask %}The next one to &bull;&bull;&nbsp;{{ g.mask }} will be suggested here too, waiting for your yes.{% else %}The next one like {{ "it" if count == 1 else "these" }} will be suggested here too, waiting for your yes.{% endif %}</p>
+          {% if count == 1 %}
+          <button class="btn btn-primary" type="submit">Save</button>
+          {% else %}
+          <div class="row" style="gap: var(--s-2)">
+            <a class="btn btn-quiet" href="/review/where/one?group={{ g.key }}">One by one</a>
+            <button class="btn btn-primary" type="submit">Save for all {{ "{:,}".format(count) }}</button>
+          </div>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+    <details class="rgroup-items">
+      <summary>Show the {{ plural(count, "transaction") }}</summary>
+      <table class="table">
+        <caption class="vh">{{ g.title }}, seen from one side</caption>
+        <thead><tr><th scope="col" class="col-hide-sm">Date</th><th scope="col">Description</th><th scope="col" class="num">Amount</th></tr></thead>
+        <tbody>
+          {% for row in g.rows %}
+          <tr><td class="col-hide-sm muted tnum">{{ row_day(row.item.date) }}</td><td><span class="primary">{{ row.item.narration or row.item.payee or "No description" }}</span>{% if g.accounts | length > 1 and row.account %}<span class="second">{{ row.account.name }}</span>{% endif %}</td><td class="num amt{% if row.item.amount > 0 %} amt-in{% endif %}">{{ row.item.amount | amount }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </section>
+  {% endfor %}
+
+  {% if page.groups %}
+  <section class="panel mt-4" aria-labelledby="eff-h">
+    <div class="panel-head">
+      <h2 id="eff-h">What this does to your figures</h2>
+      <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+    </div>
+    <div class="panel-body">
+      <ul class="list" role="list">
+        <li><span class="grow"><span style="font-weight: 500">Spending and income</span><span class="sm faint" style="display: block">A move to an account of yours is neither. Only "someone else" counts.</span></span></li>
+        <li><span class="grow"><span style="font-weight: 500">Net worth</span><span class="sm faint" style="display: block">An account hearth does not see is left out, and the figure says so. Hearth never adds up what moved into it as if it were a balance.</span></span></li>
+      </ul>
+    </div>
+  </section>
+  {% endif %}
+{% endblock %}

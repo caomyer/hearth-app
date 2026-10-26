@@ -12,6 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from enum import StrEnum
 
 from beancount.core.amount import Amount
 from beancount.core.data import Directive, Transaction
@@ -28,6 +29,19 @@ anyone chose either, so accepting the row as proposed cannot settle it."""
 
 WAITING = frozenset({UNRESOLVED, TRANSFER_PENDING})
 """The accounts a row balances against while it waits for a member to say where it belongs."""
+
+
+class Moved(StrEnum):
+    """What kind of move a row is whose other side hearth does not see: money that left or
+    reached a connected account for another account, which the row does not name. What
+    settles one is saying where it went, not what it was for."""
+
+    CARD = "card"
+    """One side of a card payment that nothing pairs with."""
+    TRANSFER = "transfer"
+    """A transfer the bank sent with no other side: to savings elsewhere, from a person."""
+    LOAN = "loan"
+    """A loan payment, or a loan paid out."""
 
 
 @dataclass(frozen=True, slots=True)

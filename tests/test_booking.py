@@ -31,6 +31,7 @@ from hearth.disclosure import rulings_in
 from hearth.members import MemberId
 from hearth.months import Month
 from hearth.plaid import booking, opening, pairing
+from hearth.plaid.booking import moved
 from hearth.plaid.client import SyncPage
 from hearth.plaid.client import Transaction as PlaidTransaction
 from hearth.plaid.connector import NEW
@@ -458,32 +459,34 @@ def test_a_payment_to_a_card_nobody_connected_waits_as_a_transfer_pending(
     assert item.transfer
 
 
-def test_review_counts_a_leg_that_needs_its_other_side_apart_from_what_is_left(
+def test_review_counts_a_leg_whose_other_side_hearth_does_not_see_apart_from_what_is_left(
     filed: FirstDay,
 ) -> None:
     """One side of a payment whose other side hearth has not found is not a guess to say yes
-    to: the queue counts it apart, says only what is known of why, and still offers what the
-    desk accepts; what is left, and the count on every page, is only the rest."""
+    to: it is asked where its money went, on a page of its own, with every row like it. What
+    is left in the queue is only the rest; the count on every page is every row waiting."""
     avery = filed.signed_in("avery")
     found = filed.books()
     (leg,) = [i for i in found.pile if i.payee == "Payment to Fenwick card ending in 9090"]
-    actionable = sum(1 for i in found.pile if not i.transfer)
+    one_sided = [i for i in found.pile if i.transfer or (moved(i.group) and not i.proposed)]
+    actionable = len(found.pile) - len(one_sided)
 
     page = avery.get("/review").text
     assert f'<p class="hero-value">{actionable:,}</p>' in page
-    assert f'aria-label="{actionable} to review"' in page
-    assert '<a href="#elsewhere">1 more</a> needs the other side.' in page
-    assert '<h2 id="ew-h">Needs the other side</h2>' in page
-    assert "If that side is at a bank you have not connected" in page
-    assert "may differ in timing or amount." in page
-    assert "the account the money went to or came from" not in page
-    row = _review_row(page, leg.review_id)
-    assert ">Save<" in row
-    assert "data-exclude" not in row  # its bank counts it
+    assert f'aria-label="{len(found.pile):,} to review"' in page
+    assert (
+        f'<a href="/review/where">{len(one_sided)} more need to know where the money went</a>'
+        in page
+    )
+    assert f'id="r-{leg.review_id}"' not in page
+    assert "Needs the other side" not in page
+    where = avery.get("/review/where").text
+    assert "Card payments hearth could not match" in where
+    assert leg.payee is not None
+    assert leg.payee in where
+    assert "other side not connected" not in where  # nothing says why it was not found
     for path in ("/", "/you"):
-        assert f'aria-label="{actionable} to review"' in avery.get(path).text
-    rows = avery.get("/review?view=rows&q=fenwick").text
-    assert _review_row(rows, leg.review_id)  # still found, where it is counted
+        assert f'aria-label="{len(found.pile):,} to review"' in avery.get(path).text
 
 
 def test_a_leg_that_needs_its_other_side_can_be_booked_and_leaves_the_count(
@@ -496,9 +499,10 @@ def test_a_leg_that_needs_its_other_side_can_be_booked_and_leaves_the_count(
         data={"csrf": filed.csrf(avery), "review_id": leg.review_id, "account": "Expenses:Misc"},
     )
     assert booked.status_code == 303
-    after = avery.get("/review").text
-    assert '<h2 id="ew-h">Needs the other side</h2>' not in after
-    assert f'id="r-{leg.review_id}"' not in after
+    after = avery.get("/review/where").text
+    assert leg.payee is not None
+    assert leg.payee not in after
+    assert f'id="r-{leg.review_id}"' not in avery.get("/review").text
 
 
 def test_an_account_page_sends_a_leg_that_needs_its_other_side_to_where_it_is_counted(
@@ -516,14 +520,19 @@ def test_an_account_page_sends_a_leg_that_needs_its_other_side_to_where_it_is_co
     tags = re.findall(
         r'<span class="primary">([^<]+)</span> <a class="tag tag-review" href="([^"]+)">', page
     )
-    assert (leg.payee, "/review#elsewhere") in tags
-    assert {href for payee, href in tags if payee != leg.payee} == {"/review"}
+    assert (leg.payee, "/review/where") in tags
+    others = {payee: href for payee, href in tags if payee != leg.payee}
+    assert others == {
+        payee: "/review/where" if payee.startswith("Transfer to") else "/review" for payee in others
+    }
 
 
 def test_you_names_the_biggest_few_groups_waiting_and_counts_the_rest(filed: FirstDay) -> None:
     found = filed.books()
-    sizes = Counter(i.group for i in found.pile if not i.transfer)
-    assert len(sizes) > 5
+    sizes = Counter(
+        i.group for i in found.pile if not (i.transfer or (moved(i.group) and not i.proposed))
+    )
+    assert len(sizes) > 4
     card = re.search(
         r'<section class="panel review-card".*?</section>',
         filed.signed_in("avery").get("/you").text,
@@ -533,11 +542,13 @@ def test_you_names_the_biggest_few_groups_waiting_and_counts_the_rest(filed: Fir
     listed = re.findall(
         r'<li><span class="grow">([^<]+)</span><span class="end tnum">([\d,]+)</span>', card[0]
     )
+    # Money hearth sees one side of is its own line, which leads to where it is answered.
+    assert '<a href="/review/where">Where did it go?</a>' in card[0]
     assert [(unescape(name), int(n.replace(",", ""))) for name, n in listed] == [
-        (name, n) for name, n in sorted(sizes.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        (name, n) for name, n in sorted(sizes.items(), key=lambda kv: (-kv[1], kv[0]))[:4]
     ]
     assert pairing.GROUP not in card[0]
-    assert f"And {len(sizes) - 5} more group" in card[0]
+    assert f"And {len(sizes) - 4} more group" in card[0]
 
 
 def test_review_offers_no_exclude_on_a_row_its_bank_counts(filed: FirstDay) -> None:
@@ -580,10 +591,21 @@ def test_a_card_connected_without_its_side_of_a_payment_leaves_the_payment_waiti
     # The card's own feed sent no payment row for it, so its other side is still not in the
     # books: still a leg, never booked as spending.
     assert entry.postings[1].account == TRANSFER_PENDING
-    # Both sides' banks are connected now, so its row claims nothing about a connection.
+    # Both sides' banks are connected now, so where it waits claims nothing about either.
     (waiting,) = [i for i in found.pile if i.payee == leg.name]
-    row = _review_row(filed.signed_in("avery").get("/review").text, waiting.review_id)
-    assert "connected" not in row
+    assert leg.name is not None
+    page = filed.signed_in("avery").get("/review/where").text
+    group = re.search(
+        r'<section class="panel rgroup[^>]*>(?:(?!</section>).)*?'
+        + re.escape(leg.name)
+        + ".*?</section>",
+        page,
+        re.S,
+    )
+    assert group is not None, waiting.review_id
+    asked = group[0].split("<fieldset")[0]
+    assert "not connected" not in asked
+    assert "does not see" not in asked
 
 
 def test_once_the_card_and_its_side_are_connected_the_payment_is_one_transfer(
@@ -1626,3 +1648,19 @@ def test_an_account_the_household_names_that_nothing_brings_in_is_not_known_neve
     # Nor is a month with none of its transactions in hearth a month in which it had none.
     assert "No transactions" not in page
     assert "does not have all of this account's transactions for October 2026" in page
+
+
+def test_where_did_it_go_counts_the_moves_hearth_matched_by_itself(filed: FirstDay) -> None:
+    """Card payments both banks sent are matched and counted once: Where did it go? says how
+    many, as nothing is left to do for them."""
+    found = filed.books()
+    pairs = [e for e in _transactions(found.entries) if e.narration == booking.CARD_PAYMENT]
+    assert pairs
+
+    page = filed.signed_in("avery").get("/review/where").text
+
+    matched = f"{len(pairs)} move{'' if len(pairs) == 1 else 's'} between your connected accounts"
+    assert f'<span class="tnum">{len(pairs)}</span> {matched.split(" ", 1)[1]} matched' in page
+    assert (
+        "between your connected accounts" not in filed.signed_in("blake").get("/review/where").text
+    )

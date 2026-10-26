@@ -174,8 +174,9 @@ def test_a_quiet_card_still_leaves_its_months_incomplete(world: World) -> None:
 
 
 def test_a_month_missing_from_the_middle_of_the_history_is_no_move_at_all(world: World) -> None:
-    """An account opened Sep 1 is first paid into on Sep 20, so September is not whole: the
-    change from Aug 31 to today spans two months and is not passed off as October's."""
+    """An account opened Sep 1 is first paid into on Sep 20, so September is not whole, and on
+    Aug 31 the part it is in held nothing hearth knows of, not nothing: no change is measured
+    from either, so none is passed off as October's."""
     _history_from_august(world)
     _claim(
         world,
@@ -188,9 +189,7 @@ def test_a_month_missing_from_the_middle_of_the_history_is_no_move_at_all(world:
 
     moves = disclosure_for(world, "avery").net_worth().moves
 
-    assert [(move.month_end, move.saved, move.market) for move in moves] == [
-        (date(2026, 10, 15), None, None)
-    ]
+    assert [(move.month_end, move.saved, move.market) for move in moves] == []
 
 
 def _statements_close_on_sep_30(world: World, *, asserted: bool) -> None:
@@ -305,7 +304,7 @@ def test_a_total_is_as_current_as_its_stalest_part_named_only_to_who_may_see_it(
 
     for page in (shared_totals_only, casey_shares_everything):
         assert COARSE in page
-        assert "Casey\u2019s accounts" not in page
+        assert "Casey\u2019s accounts stop" not in page
     named = "Casey\u2019s accounts stop at Oct 3, so it is only as current as that."
     assert named in everyone_shares_everything
 
@@ -541,3 +540,12 @@ def test_the_sharing_preview_shows_no_categories_for_a_month_the_ledger_has_not_
     assert "Nothing spent yet" not in preview
     assert "this month, with merchants" not in preview
     assert preview.count("History incomplete") == 4
+
+
+def test_no_change_is_measured_from_before_any_account_opened(world: World) -> None:
+    """The household's books open on Aug 1, so a year ago it held nothing hearth knows of, not
+    nothing: twelve months' change would be the whole of today's figure, read as growth."""
+    page = world.signed_in("avery").get("/").text
+
+    assert "in 12 months" not in page
+    assert "since Oct 1" in page  # a change it can measure is still there

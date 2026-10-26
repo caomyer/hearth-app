@@ -51,7 +51,7 @@ from hearth.plaid.feed import Feed
 from hearth.plaid.mapping import component
 from hearth.plaid.registry import Item, LinkedAccount, Registry
 from hearth.review.ids import plaid_review_id
-from hearth.review.pile import TRANSFER_PENDING, UNRESOLVED
+from hearth.review.pile import TRANSFER_PENDING, UNRESOLVED, Moved
 
 ORIGIN = "<plaid>"
 """Where an entry booked here says it is from, until ``hearth.ownbooks`` files it among the
@@ -231,6 +231,26 @@ def group(category: str | None) -> str:
         detail = detail.removeprefix(primary).strip()
     named = f"{primary}: {detail}" if detail else primary
     return named[:1].upper() + named[1:]
+
+
+MOVES = {
+    "TRANSFER_IN": Moved.TRANSFER,
+    "TRANSFER_OUT": Moved.TRANSFER,
+    "LOAN_PAYMENTS": Moved.LOAN,
+    "LOAN_DISBURSEMENTS": Moved.LOAN,
+}
+"""Primaries whose rows move money to or from another account the row does not name."""
+
+
+def moved(group_name: str) -> Moved | None:
+    """What kind of move a review group's rows are, if they move money to or from an account
+    hearth does not see the side of: one side of a card payment nothing pairs with, or a row
+    Plaid calls a transfer or a loan payment. None for every other group, which a category
+    settles."""
+    if group_name == pairing.GROUP:
+        return Moved.CARD
+    primary = group_name.split(":", 1)[0].strip().casefold()
+    return next((kind for p, kind in MOVES.items() if _words(p) == primary), None)
 
 
 ABBREVIATIONS = frozenset({"ATM", "TV"})

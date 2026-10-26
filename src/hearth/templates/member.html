@@ -23,7 +23,7 @@
       <div class="panel-body" style="padding-top: var(--s-6)">
         <div class="hero">
           <div class="row between wrap">
-            <h2 id="snw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">{{ name }}'s net worth, excluding joint</h2>
+            <h2 id="snw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">{{ name }}'s net worth, excluding joint{% if m.left_out and m.worth.is_known %}, without {{ m.left_out | left_out(true) }}{% endif %}</h2>
             {% if m.worth is not withheld %}<span class="tag tag-shared"><svg aria-hidden="true"><use href="#i-eye"/></svg>Shared by {{ name }}</span>{% endif %}
           </div>
           {% if not m.connected %}
@@ -32,7 +32,7 @@
           {% elif m.worth is withheld %}
           <p class="mt-3">{{ private("Not shared with you") }}</p>
           {% else %}
-          {{ hero_value(m.worth.value, status, (), m.worth.unpriced, m.worth.awaiting) }}
+          {{ hero_value(m.worth.value, status, (), m.worth.unpriced, m.worth.awaiting, m.left_out, alone=true, counted=m.worth.counted) }}
           <div class="hero-meta">{{ delta(m.change, since) if m.change is not withheld else "" }}</div>
           {% call asof(books, status, today, notice, 0, m.worth.unpriced, ends=m.ends) %} Excludes joint accounts{% if m.joint %}, shown below{% endif %}.{% endcall %}
           {% endif %}
@@ -161,7 +161,7 @@
             <td class="num"><span class="primary">{{ worth_amount(row.value) }}</span></td>
           </tr>
           {% endfor %}
-          <tr class="total-row"><th scope="row">Joint total</th><td class="col-hide-sm"></td><td class="num">{{ worth_amount(joint.total) }}</td></tr>
+          <tr class="total-row"><th scope="row">Joint total{% if joint.total is not withheld and joint.total.leaves_out and joint.total.counted %}, without {{ plural(joint.total.unseen, "account") if joint.total.unseen is not none else "some accounts" }} hearth does not see{% endif %}</th><td class="col-hide-sm"></td><td class="num">{{ worth_amount(joint.total) }}</td></tr>
         </tbody>
       </table>
     </div>

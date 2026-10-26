@@ -737,12 +737,14 @@ def test_the_command_changes_nothing_of_the_households(
     household: FirstDay, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Not even a database an older hearth left, which serving would bring up to date: the
-    one before rulings recorded what each row said. Nor the books file: hearth leaves one it
-    would write unchanged untouched, so it is taken away first, and must stay away."""
+    one before rulings recorded what each row said, or members named accounts. Nor the books
+    file: hearth leaves one it would write unchanged untouched, so it is taken away first, and
+    must stay away."""
     conn = sqlite3.connect(household.settings.database)
     try:
+        conn.execute("DROP TABLE named_accounts")
         conn.execute("ALTER TABLE review_ruling_rows DROP COLUMN says")
-        conn.execute(f"PRAGMA user_version = {len(db.MIGRATIONS) - 1}")
+        conn.execute(f"PRAGMA user_version = {len(db.MIGRATIONS) - 2}")
     finally:
         conn.close()
     household.settings.books_file.unlink()

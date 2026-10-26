@@ -22,6 +22,7 @@ from hearth.accounts import Account
 from hearth.books import Books
 from hearth.members import Member
 from hearth.months import Month
+from hearth.plaid.booking import moved
 from hearth.plaid.opening import anchors
 from hearth.reports.common import is_balance_sheet, root, units
 from hearth.reports.flows import (
@@ -32,7 +33,7 @@ from hearth.reports.flows import (
     payers,
     spending_by_category,
 )
-from hearth.review.pile import TRANSFER_PENDING
+from hearth.review.pile import TRANSFER_PENDING, UNRESOLVED
 from hearth.valuation.networth import NetWorth
 
 TYPICAL_MONTHS = 6
@@ -266,27 +267,68 @@ class Line:
     amount: Decimal
     account: Account
     unreviewed: bool
-    needs_other_side: bool = False
-    """One side of a card payment whose other side is not found yet (`TRANSFER_PENDING`),
-    which review counts apart from what is left."""
+    one_sided: bool = False
+    """A row waiting to be told where its money went, whose other side hearth does not see:
+    one side of a card payment not found yet (`TRANSFER_PENDING`), or a transfer or loan
+    payment nothing was proposed for (``booking.moved``). Review asks about these apart from
+    what is left (``hearth.review.where``)."""
+    unseen: bool = False
+    """Whether the line is on an account hearth does not see (`books.unseen`)."""
+    other_side: tuple[str, ...] = ()
+    """On an account hearth does not see (`books.unseen`), the accounts the money moved from
+    or to. The line says only which way it moved: who may be told which account the other
+    side is, is for ``hearth.disclosure`` to decide."""
+    review_id: str | None = None
+    """The review row the line was booked from, if it was one."""
+
+
+MOVED_IN = "Transfer from another account"
+MOVED_OUT = "Transfer to another account"
+"""What a line on an account hearth does not see says. It is the other side of a row on a
+connected account, so the bank's words for it are that account's transaction detail, which
+an owner of only the unseen account, such as a joint one, may not see: like a paired card
+payment's, it repeats none of them."""
 
 
 def lines(books: Books, accounts: Sequence[Account], start: date, end: date) -> list[Line]:
     """Every posting to `accounts` from start to end, newest first.
 
-    The category is the transaction's single income or expense account, when it has one.
+    The category is the transaction's single income or expense account, when it has one. A
+    posting on an account hearth does not see says only which way the money moved (`MOVED_IN`,
+    `MOVED_OUT`), with the accounts on the other side for disclosure to name or not.
     """
     by_name = {account.ledger_account: account for account in accounts}
     found = []
     for entry in _transactions(books, start, end):
         others = [p.account for p in entry.postings if not is_balance_sheet(p.account)]
         category = others[0] if len(others) == 1 else None
+        review_id = (entry.meta or {}).get("review-id")
         for posting in entry.postings:
             account = by_name.get(posting.account)
             if account is None:
                 continue
             amount = units(posting, entry)
             if amount.currency != books.currency:
+                continue
+            if posting.account in books.unseen:
+                found.append(
+                    Line(
+                        date=entry.date,
+                        payee=MOVED_IN if amount.number > 0 else MOVED_OUT,
+                        narration="",
+                        category=None,
+                        amount=amount.number,
+                        account=account,
+                        unreviewed=entry.flag == "!",
+                        unseen=True,
+                        other_side=tuple(
+                            p.account
+                            for p in entry.postings
+                            if p.account != posting.account and is_balance_sheet(p.account)
+                        ),
+                        review_id=review_id if isinstance(review_id, str) else None,
+                    )
+                )
                 continue
             found.append(
                 Line(
@@ -297,11 +339,20 @@ def lines(books: Books, accounts: Sequence[Account], start: date, end: date) -> 
                     amount=amount.number,
                     account=account,
                     unreviewed=entry.flag == "!",
-                    needs_other_side=entry.flag == "!"
-                    and any(p.account == TRANSFER_PENDING for p in entry.postings),
+                    one_sided=entry.flag == "!" and _one_sided(entry),
+                    review_id=review_id if isinstance(review_id, str) else None,
                 )
             )
     return sorted(found, key=lambda line: line.date, reverse=True)
+
+
+def _one_sided(entry: Transaction) -> bool:
+    """Whether a flagged row waits to be told where its money went (`Line.one_sided`)."""
+    waiting = {p.account for p in entry.postings}
+    group = (entry.meta or {}).get("review-group")
+    return TRANSFER_PENDING in waiting or (
+        UNRESOLVED in waiting and isinstance(group, str) and moved(group) is not None
+    )
 
 
 def covers(books: Books, accounts: Sequence[Account], month: Month) -> bool:
@@ -345,10 +396,15 @@ def covers(books: Books, accounts: Sequence[Account], month: Month) -> bool:
     A month the ledger has not reached never reads as a month in which nothing happened.
     Spending and income figures ask `flows_cover` instead, which judges only the accounts that
     can move them.
+
+    An account hearth does not see (`books.unseen`) is not judged at all: its rows are moves
+    members made from their connected accounts, which those accounts' history holds, so it
+    has no history of its own to be whole or not.
     """
     first = date(month.year, month.month, 1)
     last = first.replace(day=calendar.monthrange(month.year, month.month)[1])
     by_account = {coverage.account: coverage for coverage in books.coverage}
+    accounts = [a for a in accounts if a.ledger_account not in books.unseen]
     opened: list[str] = []
     for account in accounts:
         coverage = by_account.get(account.ledger_account)
@@ -381,14 +437,15 @@ def last_day(books: Books, accounts: Sequence[Account]) -> date | None:
     `covers` decides months by: the part's newest known day, held back to the day each account
     its connection vouches for is known through. An account is known through its own last day
     in the ledger, or its vouched connection's last sync if that is later; a vouched account's
-    own last day ignores entries another connection booked, as `covers` explains."""
+    own last day ignores entries another connection booked, as `covers` explains. An account
+    hearth does not see has no data of its own to stop (`covers`), so it is left out."""
     ends = books.account_ends
     known = {
         account.ledger_account: max(
             ends[account.ledger_account], books.synced.get(account.ledger_account, date.min)
         )
         for account in accounts
-        if account.ledger_account in ends
+        if account.ledger_account in ends and account.ledger_account not in books.unseen
     }
     if not known:
         return None

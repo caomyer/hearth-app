@@ -42,8 +42,8 @@
       <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
         <div>
           <div class="hero">
-            <h2 id="nw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth{% if head.is_partial %}, without {{ head.without | names("name") }}{% endif %}</h2>
-            {{ hero_value(head.value, status, head.without, head.unpriced, head.awaiting) }}
+            <h2 id="nw-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Household net worth{% if head.is_partial %}, without {{ head.without | names("name") }}{% endif %}{% if head.leaves_out and head.is_known %}{{ " and " if head.is_partial else ", without " }}{{ head.unseen | left_out }}{% endif %}</h2>
+            {{ hero_value(head.value, status, head.without, head.unpriced, head.awaiting, head.unseen, counted=head.counted) }}
             {% if head.is_partial %}
             <p class="muted mt-2 measure">{{ head.without | names("name") }} {{ "does" if head.without | length == 1 else "do" }} not share net worth with you, so there is no household total. This is everyone else.</p>
             {% else %}
@@ -94,7 +94,7 @@
         <figure>
           <figcaption>
             <h3 id="nw-t" style="font-size: var(--t-sm); line-height: var(--lh-sm)">Net worth, end of each month</h3>
-            <p class="xs faint">{% if head.is_partial %}Everyone except {{ head.without | names("name") }}, every month.{% else %}Every member's shared total plus joint accounts.{% endif %}</p>
+            <p class="xs faint">{% if head.is_partial %}Everyone except {{ head.without | names("name") }}, every month.{% else %}Every member's shared total plus joint accounts.{% endif %}{% if head.leaves_out %} Without {{ head.unseen | left_out }}.{% endif %}</p>
           </figcaption>
           <div class="chart-wrap mt-3">
 {{ charts.net_worth }}
@@ -245,7 +245,7 @@
           {% for row in h.members %}
           {% set ref = row.part.owners[0] %}
           <tr>
-            <th scope="row"><a class="row member-link" href="/members/{{ ref.username }}">{{ part_avatar(row.part) }}<span><span class="primary">{{ ref.display_name }}</span>{% if row.part.is_viewers %} <span class="faint">(you)</span>{% endif %}<span class="second">{% if not row.connected %}Nothing connected yet{% elif row.accounts is not none %}{{ plural(row.accounts, "account") }}{% else %}&nbsp;{% endif %}</span></span></a></th>
+            <th scope="row"><a class="row member-link" href="/members/{{ ref.username }}">{{ part_avatar(row.part) }}<span><span class="primary">{{ ref.display_name }}</span>{% if row.part.is_viewers %} <span class="faint">(you)</span>{% endif %}<span class="second">{% if not row.connected %}Nothing connected yet{% elif row.net_worth is not withheld and row.net_worth.leaves_out %}Without {{ "some accounts" if row.net_worth.unseen is none else plural(row.net_worth.unseen, "account") }} hearth does not see{% elif row.accounts is not none %}{{ plural(row.accounts, "account") }}{% else %}&nbsp;{% endif %}</span></span></a></th>
             <td class="col-hide-sm"><span class="row wrap" style="gap: 6px">{% for tag in row.shares %}<span class="tag tag-shared">{{ tag }}</span>{% else %}<span class="faint">Nothing yet</span>{% endfor %}</span></td>
             {% if not row.connected %}
             <td class="num"><span class="faint">Not connected</span></td>
@@ -254,20 +254,20 @@
             <td class="num"><span class="priv-line" style="justify-content: flex-end"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</span></td>
             <td class="num col-hide-sm"></td>
             {% else %}
-            <td class="num"><span class="primary">{{ worth_amount(row.net_worth, dollars_only=true) }}</span><span class="second">excluding joint</span></td>
+            <td class="num"><span class="primary">{{ worth_amount(row.net_worth, dollars_only=true) }}</span><span class="second">{% if not row.net_worth.counted %}hearth does not see these{% elif row.net_worth.leaves_out %}not complete, excluding joint{% else %}excluding joint{% endif %}</span></td>
             <td class="num col-hide-sm">{{ delta(row.change, "") if row.change is not withheld else "" }}</td>
             {% endif %}
           </tr>
           {% endfor %}
           {% for row in h.joint %}
           <tr>
-            <th scope="row"><a class="row member-link" href="/net-worth#joint">{{ part_avatar(row.part) }}<span><span class="primary">Joint accounts</span><span class="second">{{ row.part.owners | names }}{% if row.accounts is not none %}, {{ plural(row.accounts, "account") }}{% endif %}</span></span></a></th>
+            <th scope="row"><a class="row member-link" href="/net-worth#joint">{{ part_avatar(row.part) }}<span><span class="primary">Joint accounts</span><span class="second">{{ row.part.owners | names }}{% if row.net_worth is not withheld and row.net_worth.leaves_out %}, without {{ "some accounts" if row.net_worth.unseen is none else plural(row.net_worth.unseen, "account") }} hearth does not see{% elif row.accounts is not none %}, {{ plural(row.accounts, "account") }}{% endif %}</span></span></a></th>
             <td class="col-hide-sm">{% if row.part.is_viewers %}<span class="tag tag-joint">Full detail to both owners</span>{% else %}<span class="faint">Totals, as its owners share them</span>{% endif %}</td>
             {% if row.net_worth is withheld %}
             <td class="num"><span class="priv-line" style="justify-content: flex-end"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</span></td>
             <td class="num col-hide-sm"></td>
             {% else %}
-            <td class="num"><span class="primary">{{ worth_amount(row.net_worth, dollars_only=true) }}</span></td>
+            <td class="num"><span class="primary">{{ worth_amount(row.net_worth, dollars_only=true) }}</span>{% if not row.net_worth.counted %}<span class="second">hearth does not see these</span>{% elif row.net_worth.leaves_out %}<span class="second">not complete</span>{% endif %}</td>
             <td class="num col-hide-sm">{{ delta(row.change, "") if row.change is not withheld else "" }}</td>
             {% endif %}
           </tr>

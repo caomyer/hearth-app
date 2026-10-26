@@ -81,6 +81,17 @@ def proposed(*, credit: bool, member: str, institution: str, name: str, subtype:
     return f"{root}:{component(member)}:{bank}:{kind}"
 
 
+def proposed_named(*, root: str, member: str, institution: str, name: str) -> str:
+    """ "Assets:Jordan:Bramblewood:Savings" for savings at Bramblewood Credit Union called
+    "Bramblewood savings"; "Liabilities:Jordan:CarLoan" for a car loan from no institution."""
+    where: list[str] = re.findall(r"[A-Za-z0-9]+", institution)
+    first = component(where[0]) if where else ""
+    known = {w.casefold() for w in where}
+    rest = [w for w in re.findall(r"[A-Za-z0-9]+", name) if w.casefold() not in known]
+    kind = component(" ".join(rest)) if rest else component(name or "Account")
+    return ":".join(part for part in (root, component(member), first, kind) if part)
+
+
 def unused(name: str, taken: Iterable[str], mask: str | None) -> str:
     """`name`, or the nearest name to it that `check_new` would take beside `taken`: beside
     any taken account it would sit inside, then with the account's last digits when another

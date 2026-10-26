@@ -46,6 +46,69 @@ ACCOUNTS = (
     AccountFixture("unowned", "Assets:Zq:Orphan", "Ocelot Orphan", frozenset()),
 )
 
+
+@dataclass(frozen=True)
+class NamedFixture:
+    """An account a member named, which hearth does not see: no connection feeds it."""
+
+    key: str
+    ledger_account: str
+    name: str
+    owners: frozenset[str]
+    kind: str
+    institution: str
+    mask: str | None
+
+
+NAMED = (
+    # Casey's own, which a loan payment from Casey's checking went to.
+    NamedFixture(
+        "casey_named",
+        "Liabilities:Zq:CaseyLoan",
+        "Gharial Loan",
+        frozenset({"casey"}),
+        "loan",
+        "Pangolin Lending",
+        None,
+    ),
+    # Avery's and Blake's, which Avery moved money into from Avery's own account: Blake sees
+    # the joint side and nothing of Avery's account or the bank's words for it.
+    NamedFixture(
+        "joint_named",
+        "Assets:Zq:JointSavings",
+        "Tamarin Savings",
+        frozenset({"avery", "blake"}),
+        "bank",
+        "Okapi Credit Union",
+        "8136",
+    ),
+)
+
+# Rows the import set aside that a member said went to one of those: date, payee, the
+# account it is on, amount, review id, group, who said so, and where they said it went.
+MOVED = (
+    (
+        OCT,
+        "Payee Saki Sweep",
+        "Assets:Zq:AverySolo",
+        "-777.31",
+        "avery-moved-1",
+        "Transfer out: account transfer",
+        "avery",
+        "Assets:Zq:JointSavings",
+    ),
+    (
+        OCT,
+        "Payee Gecko Lender",
+        "Assets:Zq:CaseyChecking",
+        "-333.17",
+        "casey-moved-1",
+        "Loan payments: car payment",
+        "casey",
+        "Liabilities:Zq:CaseyLoan",
+    ),
+)
+
 # Each security: the account holding it, the units held, and its stored price.
 SECURITIES = {
     "ZQAA": ("Assets:Zq:AveryInvest", "10", "1234.56"),
@@ -77,6 +140,15 @@ TRANSACTIONS = (
 # A row the import set aside for Casey to review: nothing could be proposed for it.
 PILE = (
     (OCT, "Payee Shrike Pending", "Assets:Zq:CaseyChecking", "-23.45", "casey-row-1", "Unsure"),
+    # Money whose other side hearth does not see, which nobody has said where it went yet.
+    (
+        OCT,
+        "Payee Jerboa Transfer",
+        "Assets:Zq:CaseyChecking",
+        "-55.55",
+        "casey-where-1",
+        "Transfer out: account transfer",
+    ),
 )
 UNRESOLVED = "Equity:Review:Unresolved"
 
@@ -122,6 +194,8 @@ def ledger_text() -> str:
         moved[account] = moved.get(account, Decimal(0)) + Decimal(amount)
     for _, _, account, amount, _, _ in PILE:
         moved[account] = moved.get(account, Decimal(0)) + Decimal(amount)
+    for _, _, account, amount, *_ in MOVED:
+        moved[account] = moved.get(account, Decimal(0)) + Decimal(amount)
     for account, cash in CASH.items():
         opening = Decimal(cash) - moved.get(account, Decimal(0))
         lines += [f'{OPENED} * "Opening"', f"  {account}  {opening} USD", "  Equity:Opening", ""]
@@ -132,7 +206,7 @@ def ledger_text() -> str:
             "  Equity:Opening",
             "",
         ]
-    for day, payee, account, amount, review_id, group in PILE:
+    for day, payee, account, amount, review_id, group in [*PILE, *(m[:6] for m in MOVED)]:
         lines += [
             f'{day} ! "{payee}" ""',
             f'  review-id: "{review_id}"',
@@ -366,6 +440,30 @@ def secrets(account_ids: Mapping[str, str]) -> Iterator[Secret]:
     for _, payee, set_aside_from, _, _, _ in PILE:
         rule = shared(Facet.TRANSACTIONS, owners_of(_key_of(set_aside_from)))
         yield secret(payee, "a set-aside row's payee", rule)
+    for named in NAMED:
+        exists = any_of(
+            shared(Facet.ACCOUNT_BALANCES, named.owners), shared(Facet.TRANSACTIONS, named.owners)
+        )
+        yield secret(named.name, f"{named.key} name", exists)
+        yield secret(account_ids[named.key], f"{named.key} id", exists)
+        yield secret(named.institution, f"{named.key} institution", exists)
+        if named.mask:
+            yield secret(f"&nbsp;{named.mask}", f"{named.key} mask", exists)
+        yield secret(named.ledger_account, f"{named.key} ledger name", among(named.owners))
+    # A row moved onto an account hearth does not see is the paying account's transaction: its
+    # words go with that account's transactions, and its amount with either account's.
+    for _, payee, paid_from, amount, _, _, _, onto in MOVED:
+        key = _key_of(paid_from)
+        on = next(n for n in NAMED if n.ledger_account == onto)
+        yield secret(payee, f"{key} moved payee", shared(Facet.TRANSACTIONS, owners_of(key)))
+        yield secret(
+            amount.lstrip("-"),
+            f"{key} moved amount",
+            any_of(
+                shared(Facet.TRANSACTIONS, owners_of(key)),
+                shared(Facet.TRANSACTIONS, on.owners),
+            ),
+        )
     yield secret("Orphanage", "unowned category", never)
     yield secret("17.36", "unowned amount", never)
 

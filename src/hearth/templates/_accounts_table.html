@@ -1,14 +1,17 @@
 {# Accounts grouped as the design groups them, each with how much history the ledger holds and
    from where, so a change of source part way through the year is visible, not smoothed over.
    Expects `accounts` (Cash, Credit, Investments sort in that order by name) and an optional
-   `total_label`. #}
+   `total_label`. Accounts hearth does not see sit below the total, in a group of their own, so
+   the total adds up exactly the rows above it and no "Not known" is ever above a sum. #}
+{% set seen = accounts | rejectattr("unseen") | list %}
+{% set unseen = accounts | selectattr("unseen") | list %}
 <table class="table">
   <caption class="vh">Accounts and balances</caption>
   <thead>
     <tr><th scope="col">Account</th><th scope="col" class="col-hide-sm">History</th><th scope="col" class="col-hide-sm">Updated</th><th scope="col" class="num">Balance</th></tr>
   </thead>
   <tbody>
-    {% for kind, rows in accounts | groupby("kind") %}
+    {% for kind, rows in seen | groupby("kind") %}
     <tr class="group-row"><th scope="rowgroup" colspan="4">{{ kind }}</th></tr>
     {% for row in rows %}
     <tr>
@@ -31,13 +34,24 @@
     </tr>
     {% endfor %}
     {% endfor %}
-    {% if total_label is defined %}
+    {% if total_label is defined and seen %}
     <tr class="total-row">
-      <th scope="row">{{ total_label }}</th>
+      <th scope="row">{{ total_label }}{% if unseen %}, without the {{ "account" if unseen | length == 1 else unseen | length }} below{% endif %}</th>
       <td class="col-hide-sm"></td>
       <td class="col-hide-sm"></td>
-      <td class="num">{% if accounts | rejectattr("value.is_known") | list %}Not known yet{% else %}{% if accounts | selectattr("value.is_floor") | list %}at least {% endif %}{{ accounts | sum(attribute="value.value") | money }}{% endif %}</td>
+      <td class="num">{% if seen | rejectattr("value.is_known") | list %}Not known yet{% else %}{% if seen | selectattr("value.is_floor") | list %}at least {% endif %}{{ seen | sum(attribute="value.value") | money }}{% endif %}</td>
     </tr>
+    {% endif %}
+    {% if unseen %}
+    <tr class="group-row" id="unseen"><th scope="rowgroup" colspan="4">Hearth does not see {{ "this" if unseen | length == 1 else "these" }}</th></tr>
+    {% for row in unseen %}
+    <tr>
+      <th scope="row"><a class="primary" href="/accounts/{{ row.id }}">{{ row.name }}</a>{% if row.where or row.mask or row.owners | length > 1 %}<span class="second">{% if row.where %}{{ row.where }}{% endif %}{% if row.where and row.mask %} &middot; {% endif %}{% if row.mask %}&bull;&bull;&nbsp;{{ row.mask }}{% endif %}{% if row.owners | length > 1 %}{% if row.where or row.mask %} &middot; {% endif %}{{ row.owners | names }}{% endif %}</span>{% endif %}</th>
+      <td class="col-hide-sm"><span class="tag tag-unseen"><svg aria-hidden="true"><use href="#i-unlink"/></svg>Not connected</span></td>
+      <td class="col-hide-sm muted">&ndash;</td>
+      <td class="num"><span class="primary muted">Not known</span>{% if row.kind == "Credit" %}<span class="second">owed</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
     {% endif %}
   </tbody>
 </table>

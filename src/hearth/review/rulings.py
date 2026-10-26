@@ -204,6 +204,21 @@ class RulingStore:
         )
         return {row["account"] for row in rows}
 
+    def ruled_onto(self) -> dict[str, set[str]]:
+        """Every account a ruling has moved a row onto, with the review ids of the rows it
+        moved, whether or not the ruling still decides them: how a later connection of that
+        account finds what members said went into it."""
+        rows = self._db.execute(
+            "SELECT s.account, r.review_id FROM review_ruling_rows AS r"
+            " JOIN review_rulings AS s ON s.id = r.ruling_id"
+            " WHERE s.action = ? AND s.account IS NOT NULL",
+            (Action.ACCOUNT,),
+        )
+        found: dict[str, set[str]] = {}
+        for row in rows:
+            found.setdefault(row["account"], set()).add(row["review_id"])
+        return found
+
     def latest_by(self, member_id: MemberId) -> datetime | None:
         """When `member_id` last ruled, or `None` if they never have; taking a
         decision back is not reviewing."""

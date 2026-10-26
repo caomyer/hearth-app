@@ -12,6 +12,7 @@ If a route is added that the crawl does not know how to reach, the build fails
 until it is taught to, so no route can sit outside this suite.
 """
 
+import hashlib
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -75,6 +76,10 @@ STATE_CHANGING_ROUTES = {
     ("POST", "/review/rows/reject"),
     ("POST", "/review/reminders"),
     ("POST", "/review/undo"),
+    ("POST", "/review/where/move"),
+    ("POST", "/review/where/row"),
+    ("POST", "/review/where/undo"),
+    ("POST", "/review/where/account"),
     ("POST", "/connect/credentials"),
     ("POST", "/connect/credentials/remove"),
     ("POST", "/connect/household"),
@@ -90,6 +95,9 @@ STATE_CHANGING_ROUTES = {
 # All an anonymous visitor may be served; everything else sends them to sign in.
 PUBLIC_PAGES = {"/sign-in", "/healthz"}
 
+CASEY_GROUP = "move|Assets:Zq:CaseyChecking|out|says:payee jerboa transfer"
+"""What `hearth.review.where.alike` keys Casey's set-aside transfer by."""
+
 TAMPERED_QUERIES: tuple[dict[str, str], ...] = (
     {},
     {"month": "2026-10"},
@@ -99,6 +107,9 @@ TAMPERED_QUERIES: tuple[dict[str, str], ...] = (
     {"month": "2026-13"},
     {"view": "rows", "order": "confidence", "group": "Unsure", "category": "-", "page": "2"},
     {"order": "amount", "outcome": "changed", "focus": "casey-row-1"},
+    {"group": "0123456789ab", "outcome": "moved", "undo": "1", "focus": "0123456789ab"},
+    # Casey's own group of money whose other side hearth does not see, tried by everyone.
+    {"group": hashlib.sha256(CASEY_GROUP.encode()).hexdigest()[:12]},
     {
         "viewer": "blake",
         "as": "blake",

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% set g = a.group %}
+{% set q = g.question.value %}
+{% block title %}{{ g.title }} - Where did it go?{% endblock %}
+{% macro row_day(d) %}{{ d | day if d.year == today.year else d | year_day }}{% endmacro %}
+{% block content %}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/review">Review</a> <span aria-hidden="true">/</span> <a href="/review/where#w-{{ g.key }}">Where did it go?</a> <span aria-hidden="true">/</span> <span aria-current="page">One by one</span></nav>
+  <div class="page-head">
+    <div>
+      <h1>{{ g.title }}</h1>
+      <p class="sub measure">One by one: each answer is for that transaction alone, and the rest wait as they are. Say where each went, or what it was for.</p>
+    </div>
+  </div>
+
+  {% if message %}
+  <div class="alert alert-info rnotice" role="status">
+    <svg aria-hidden="true"><use href="#i-info"/></svg>
+    <div class="alert-body">
+      <p style="color: var(--ink)">{{ message }}</p>
+      {% if undo %}
+      <p>Undo takes back exactly this answer: {% if undo[1] == 1 %}the transaction will wait for an answer again{% else %}{{ plural(undo[1], "transaction") }}, which will wait for an answer again{% endif %}.</p>
+      <form class="alert-actions" method="post" action="/review/where/undo">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="group" value="{{ g.key }}">
+        <input type="hidden" name="ruling" value="{{ undo[0].id }}">
+        <button class="btn btn-sm" type="submit">Undo</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <section class="panel mt-4" aria-labelledby="one-h">
+    <div class="panel-head">
+      <h2 id="one-h">{{ plural(g.rows | length, "transaction") }} waiting</h2>
+      <p class="sm faint"><a href="/review/where#w-{{ g.key }}">Answer them all at once</a></p>
+    </div>
+    <table class="table ritems">
+      <colgroup><col class="c-date"><col><col class="c-amt"><col class="c-cat"><col class="c-act"></colgroup>
+      <caption class="vh">{{ g.title }}, one by one</caption>
+      <thead><tr><th scope="col" class="col-hide-sm">Date</th><th scope="col">Description</th><th scope="col" class="num">Amount</th><th scope="col">{% if q == "came" %}Where it came from{% else %}Where it went{% endif %}</th><th scope="col"><span class="vh">Save</span></th></tr></thead>
+      <tbody>
+        {% for row in g.rows %}
+        {% set rid = row.item.review_id %}
+        {% set what = row.item.narration or row.item.payee or "No description" %}
+        <tr id="r-{{ rid }}">
+          <td class="col-hide-sm muted tnum">{{ row_day(row.item.date) }}</td>
+          <td><span class="primary">{{ what }}</span>{% if row.account %}<span class="second">{{ row.account.name }}</span>{% endif %}</td>
+          <td class="num amt{% if row.item.amount > 0 %} amt-in{% endif %}">{{ row.item.amount | amount }}</td>
+          <td>
+            <form method="post" action="/review/where/row" id="f-{{ rid }}">
+              <input type="hidden" name="csrf" value="{{ session.csrf }}">
+              <input type="hidden" name="group" value="{{ g.key }}">
+              <input type="hidden" name="row" value="{{ rid }} {{ row.item.says }}">
+              <label class="vh" for="t-{{ rid }}">Where {{ what }} {{ "came from" if q == "came" else "went" }}</label>
+              <select class="select" id="t-{{ rid }}" name="to" required>
+                <option value=""{% if not g.learned %} selected{% endif %} disabled>Choose&hellip;</option>
+                {% if a.accounts %}
+                <optgroup label="Your accounts hearth does not see">
+                  {% for acct in a.accounts %}<option value="account:{{ acct.id }}"{% if g.learned and acct.id == g.learned.account.id %} selected{% endif %}>{{ acct.name }}</option>{% endfor %}
+                </optgroup>
+                {% endif %}
+                <option value="{{ new }}">{{ "Name another account…" if a.accounts else "Name the account…" }}</option>
+                {% if a.categories %}
+                <optgroup label="{{ 'Income, or someone paying you back' if q == 'came' else 'Spending' }}">
+                  {% for c in a.categories %}<option value="category:{{ c }}">{{ category_label(c) }}</option>{% endfor %}
+                </optgroup>
+                {% endif %}
+              </select>
+            </form>
+          </td>
+          <td class="act"><div class="ract"><button class="btn btn-sm" type="submit" form="f-{{ rid }}">Save<span class="vh"> {{ what }}</span></button></div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

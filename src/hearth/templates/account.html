@@ -7,7 +7,7 @@
   <div class="page-head">
     <div>
       <h1>{{ a.name }}</h1>
-      <p class="sub">{% if a.kind is not withheld %}{{ a.kind }} &middot; owned{% else %}Owned{% endif %} by {{ a.owners | names }}</p>
+      <p class="sub">{% if a.unseen and a.unseen.kind %}{{ a.unseen.kind }} &middot; owned{% elif a.kind is not withheld %}{{ a.kind }} &middot; owned{% else %}Owned{% endif %} by {{ a.owners | names }}</p>
     </div>
     <nav class="row" aria-label="Month" style="gap: var(--s-2)">
       <a class="btn btn-sm btn-quiet" href="/accounts/{{ a.id }}?month={{ view.month.previous() }}" aria-label="Previous month">&lsaquo;</a>
@@ -16,6 +16,46 @@
     </nav>
   </div>
 
+  {% set u = a.unseen %}
+  {% if u %}
+  <section class="panel" aria-labelledby="bal-h">
+    <div class="panel-head">
+      <div>
+        <h2 id="bal-h">What hearth sees of it</h2>
+        {% if u.where or u.mask or u.ledger_account %}<p class="sm faint">{% if u.where %}{{ u.where }}{% endif %}{% if u.where and u.mask %} &middot; {% endif %}{% if u.mask %}&bull;&bull;&nbsp;{{ u.mask }}{% endif %}{% if u.ledger_account %}{% if u.where or u.mask %} &middot; {% endif %}<code>{{ u.ledger_account }}</code>{% endif %}</p>{% endif %}
+      </div>
+      <span class="tag tag-unseen"><svg aria-hidden="true"><use href="#i-unlink"/></svg>Not connected</span>
+    </div>
+    <div class="panel-body">
+      <div class="figs">
+        <div>
+          <p class="fig-label">Balance</p>
+          <p class="fig-value muted">Not known</p>
+          <p class="fig-sub">Hearth does not see this account's own records.</p>
+        </div>
+        {% if u.moves is withheld %}
+        <div>
+          <p class="fig-label">Moves</p>
+          <p class="mt-3">{{ private("Not shared with you") }}</p>
+        </div>
+        {% elif u.moves.count %}
+        {% set m = u.moves %}
+        <div>
+          <p class="fig-label">{{ "Moved in" if m.net >= 0 else "Moved out" }}{% if m.yours %} {{ "from" if m.net >= 0 else "to" }} your accounts{% endif %}</p>
+          <p class="fig-value tnum"><span class="cur">$</span>{{ "{:,.2f}".format(m.net | abs) }}</p>
+          <p class="fig-sub">{{ plural(m.count, "move") }}{% if m.other %} {{ "from" if m.net >= 0 else "to" }} {{ m.other }}{% endif %} since {{ m.since | month_year }}. What moved, not what it holds: interest, and anything spent from it, never reach hearth.</p>
+        </div>
+        {% else %}
+        <div>
+          <p class="fig-label">Moves</p>
+          <p class="fig-value muted">None yet</p>
+          <p class="fig-sub">Money you say went to it, or came from it, shows here.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% else %}
   <section class="panel" aria-labelledby="bal-h">
     <div class="panel-body" style="padding-top: var(--s-6)">
       <div class="hero">
@@ -36,16 +76,19 @@
       </div>
     </div>
   </section>
+  {% endif %}
 
   <section class="panel mt-4" aria-labelledby="tx-h">
     <div class="panel-head">
-      <h2 id="tx-h">Transactions, {{ view.month.label }}</h2>
+      <h2 id="tx-h">{{ "Moves" if u else "Transactions" }}, {{ view.month.label }}</h2>
     </div>
     <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
       {% if view.days is withheld %}
       <p style="padding: var(--s-4) var(--s-6)">{{ private("The transactions in this account are not shared with you.") }}</p>
       {% elif view.days %}
-      {{ day_table(view.days, "Transactions in " ~ a.name ~ ", newest first", show_account=false) }}
+      {{ day_table(view.days, ("Moves into and out of " if u else "Transactions in ") ~ a.name ~ ", newest first", show_account=false, said=u.said if u else {}) }}
+      {% elif u %}
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">No moves into or out of it that hearth saw in {{ view.month.label }}.</p>
       {% elif not view.covered %}
       <p class="muted" style="padding: var(--s-4) var(--s-6)">Not known yet: hearth does not have all of this account's transactions for {{ view.month.label }}. They appear here once they are in.</p>
       {% else %}

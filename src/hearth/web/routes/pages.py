@@ -16,6 +16,7 @@ from hearth import audit
 from hearth.disclosure import Disclosure
 from hearth.review import cadence
 from hearth.review.rulings import RulingStore
+from hearth.review.where import where
 from hearth.web import presenters
 from hearth.web.deps import Acting, App, Conn, SelectedMonth, Session, SignedIn, Viewing
 from hearth.web.templating import render
@@ -29,8 +30,9 @@ def chrome(
     """What every signed-in page shows around its content: the review badge and the viewer's
     own reminder and colour, and why today's figures are missing when they are."""
     desk = view.review_desk(RulingStore(conn), app.clock)
-    # Only what is left: a row that needs its other side is counted apart, not a review due.
-    waiting = sum(1 for item in desk.items() if item.actionable)
+    # Every row waiting on the member, those waiting to be told where their money went too:
+    # each now has an answer, on its own page (``hearth.review.where``).
+    waiting = sum(1 for item in desk.items() if item.unreviewed)
     reminder = cadence.reminder(
         cadence.load(conn, session.member.id), waiting, desk.last_reviewed(), app.clock()
     )
@@ -81,12 +83,14 @@ def you(request: Request, app: App, conn: Conn, session: SignedIn, view: Viewing
         books = view.books
         assert books is not None  # noqa: S101 - _figures calls build only when there are books
         desk = view.review_desk(RulingStore(conn), app.clock)
+        items = desk.items()
         return {
             "view": me,
             # Biggest first: a first import is sixty-odd groups, and the card names a few.
             "groups": sorted(
                 (g for g in desk.groups() if g.pending), key=lambda g: (-g.pending, g.name)
             ),
+            "one_sided": where(items, {}),
             **presenters.person_page(me),
         }
 
@@ -118,7 +122,7 @@ def account(
     month: SelectedMonth,
 ) -> HTMLResponse:
     def build() -> dict[str, Any]:
-        return {"view": view.account(account_id, month)}
+        return {"view": view.account(account_id, month, RulingStore(conn))}
 
     return figures_page(request, app, conn, session, view, "household", "account.html", build)
 

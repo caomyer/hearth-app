@@ -22,6 +22,7 @@ sends, so Avery's figure is not known again, and must say so rather than read as
 """
 
 import re
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from decimal import Decimal
@@ -58,6 +59,7 @@ VOCABULARY = re.compile(
 
 NAMED = {
     "/connect/map": ("New ledger account", "Ledger account"),
+    "/review/where/account": ("Ledger account",),
 }
 """Where a page names the beancount path itself: the member types one there, and calling it
 anything else would be untrue. A line of help beside it says what it is for."""
@@ -129,7 +131,13 @@ def _get(client: TestClient, fresh: FirstDay, route: str, path: str) -> str:
 
 ARRIVED = "its history arrived"
 BROKERAGE = "a brokerage connected"
-HISTORY_IN = (ARRIVED, BROKERAGE)
+HISTORY_IN = (
+    ARRIVED,
+    "a first decision made",
+    "before an account is named",
+    "an account named",
+    BROKERAGE,
+)
 """Steps on which the history is in, so a chart's zero can be one."""
 
 QUARRY = FakeInstitution(
@@ -168,6 +176,8 @@ def first_day_steps(fresh: FirstDay) -> Iterator[Visit]:
     until_transacted(fresh, PATHS["6616"])
     yield from walk(fresh, ARRIVED)
     yield from decide(fresh, avery)
+    yield from name_where_it_went(fresh, avery)
+    yield from walk(fresh, NAMED_STEP)
     fresh.plaid.institutions[QUARRY.id] = QUARRY
     fresh.link("avery", QUARRY.id)
     fresh.map(fresh.signed_in("avery"), {"8818": "Assets:Avery:Quarry:Brokerage"})
@@ -192,6 +202,59 @@ def decide(fresh: FirstDay, avery: TestClient) -> Iterator[Visit]:
     landed = avery.get(location).text
     assert "Undo takes back exactly this decision" in landed
     yield Visit("a first decision made", "avery", location, landed)
+
+
+NAMED_STEP = "an account named"
+"""Avery has said where the card payments hearth could not match came from: a checking
+account at a bank Avery has not connected, which hearth does not see."""
+
+
+def name_where_it_went(fresh: FirstDay, avery: TestClient) -> Iterator[Visit]:
+    """Avery answers the card payments hearth could not match as a member does: from Where did
+    it go?, naming the account they came from on the page that names it."""
+    where = avery.get("/review/where").text
+    yield Visit("before an account is named", "avery", "/review/where", where)
+    key = re.search(r'id="w-([0-9a-f]{12})"', where)
+    assert key is not None, "nothing waits to be told where it went"
+    assert f'href="/review/where/one?group={key[1]}"' in where, "no way to answer them one by one"
+    one = avery.get(f"/review/where/one?group={key[1]}").text
+    assert 'action="/review/where/row"' in one, "no row to answer on its own"
+    yield Visit("before an account is named", "avery", "/review/where/one", one)
+    form = avery.get(f"/review/where/account?group={key[1]}").text
+    yield Visit("before an account is named", "avery", "/review/where/account", form)
+    data: dict[str, list[str] | str] = {}
+    for name, value in re.findall(r'<input type="hidden" name="([^"]+)" value="([^"]*)">', form):
+        existing = data.setdefault(unescape(name), [])
+        assert isinstance(existing, list)
+        existing.append(unescape(value))
+    owners = re.search(
+        r'<select class="select" id="own" name="owners"[^>]*>\s*<option value="([^"]+)"', form
+    )
+    assert owners is not None
+    # What a browser sends: the details typed, and the first owner offered, just Avery.
+    data |= {
+        "kind": "bank",
+        "where": "Hawthorn Bank",
+        "name": "Hawthorn checking",
+        "owners": owners[1],
+    }
+    response = avery.post("/review/where/account", data=data)
+    assert response.status_code == 303, response.text
+    landed = avery.get(response.headers["location"]).text
+    assert "Undo takes back exactly this answer" in landed
+    yield Visit(NAMED_STEP, "avery", response.headers["location"], landed)
+    until_unseen(fresh)
+
+
+def until_unseen(fresh: FirstDay) -> None:
+    """Wait for the recompute the answer started to open the account it named."""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        found = fresh.bookkeeper.status.books
+        if found is not None and found.unseen and not fresh.bookkeeper.status.recomputing:
+            return
+        time.sleep(0.01)
+    raise AssertionError("the named account never reached the books")
 
 
 def problems(visit: Visit) -> list[str]:
@@ -292,3 +355,38 @@ def test_an_account_whose_balance_cannot_be_worked_out_stays_not_known_never_zer
         "What an investment account holds is what its investments are worth" in p for p in pages
     )
     assert "1 account has no balance yet" in brokerage[("avery", "/connect/import")]
+
+
+def test_an_account_hearth_does_not_see_is_left_out_of_every_total_and_never_zero(
+    visits: list[Visit],
+) -> None:
+    """Naming the account the card payments came from changes no figure: net worth is what the
+    banks say the connected accounts hold, as it was, and now says what it leaves out; the
+    named account's own balance is not known, never $0, and its owner reads why."""
+    named = {(v.viewer, v.path): readable(v.page) for v in visits if v.step == NAMED_STEP}
+
+    you = " ".join(named[("avery", "/you")].split())
+    assert re.search(AVERYS, you)
+    assert "Your net worth, excluding joint, without 1 account hearth does not see" in you
+    assert "+ 1 account, not known" in you
+    assert "Hearth does not know what Hawthorn checking holds" in you
+    for page in ("/", "/net-worth"):
+        read = " ".join(named[("avery", page)].split())
+        assert re.search(AVERYS, read), page
+        assert "without 1 account hearth does not see" in read, page
+    # Blake sees Avery's net worth, not Avery's balances: that it is not complete, not how.
+    for page in ("/", "/members/avery"):
+        read = " ".join(named[("blake", page)].split())
+        assert re.search(AVERYS, read), page
+        assert "some accounts hearth does not see" in read, page
+        assert "Hawthorn" not in read, page
+        assert "1 account hearth does not see" not in read, page
+    (page,) = [
+        text
+        for (viewer, path), text in named.items()
+        if viewer == "avery"
+        and path.startswith("/accounts/")
+        and "Hawthorn checking" in text
+        and "What hearth sees of it" in text
+    ]
+    assert "Not known" in " ".join(page.split())

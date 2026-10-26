@@ -112,6 +112,10 @@ class Books:
     unknown: dict[str, Unknown] = field(default_factory=dict)
     """Accounts hearth opened whose opening balance could not be derived from what their bank
     reported, with why (``hearth.plaid.opening``). Each is `unanchored`."""
+    unseen: frozenset[str] = frozenset()
+    """Accounts members named that hearth does not see (`unseen`): only what moved between
+    them and connected accounts is in the books, never what they hold. Each is `unanchored`
+    and none is `awaiting`; no valuation holds a figure for them."""
 
     @property
     def balance_unknown(self) -> frozenset[str]:
@@ -239,8 +243,13 @@ def compute(
     vouches = vouched(history, fed, today)
     own = {account: fed[account][0] for account in vouches}
 
+    hidden = unseen(entries)
+
     def worth(day: date) -> NetWorth:
-        return value_holdings(holdings_at(entries, day), lookup, as_of=day, currency=CURRENCY)
+        # What moved into an account hearth does not see is not what it holds, so it is
+        # never valued as though it were: its balance is left out, not summed from its rows.
+        held = [h for h in holdings_at(entries, day) if h.account not in hidden]
+        return value_holdings(held, lookup, as_of=day, currency=CURRENCY)
 
     return Books(
         computed_at=now,
@@ -260,6 +269,7 @@ def compute(
         - {a for a, why in (unknown or {}).items() if why is Unknown.INVESTMENT},
         unanchored=unanchored(entries),
         unknown=dict(unknown or {}),
+        unseen=hidden,
         pile=pile,
     )
 
@@ -403,8 +413,13 @@ def awaiting(entries: Sequence[Directive], today: date) -> frozenset[str]:
     What it holds may be known all the same, from its bank (`unanchored`). An inherited
     ledger's own accounts keep beancount's meaning, where an account nothing has moved holds
     nothing.
+
+    An account hearth does not see (`unseen`) is never awaiting: no history of its own will
+    ever arrive, so waiting on it would hold every spending figure hostage for good, and what
+    it spends is not in the household's figures to wait on.
     """
-    return frozenset(_connected(entries) - account_reaches(entries, today).keys())
+    reached = account_reaches(entries, today).keys()
+    return frozenset(_connected(entries) - reached - unseen(entries))
 
 
 def unanchored(entries: Sequence[Directive]) -> frozenset[str]:
@@ -418,7 +433,8 @@ def unanchored(entries: Sequence[Directive]) -> frozenset[str]:
     is: each says what it held. Hearth anchors each from the balance its bank reports
     (``hearth.plaid.opening``); until one does, its balance is not known, never the sum of its
     rows, nor zero. An inherited ledger's own accounts keep beancount's meaning, as in
-    `awaiting`.
+    `awaiting`. That includes every account hearth does not see (`unseen`), which nothing
+    anchors.
     """
     anchored: set[str] = set()
     for entry in entries:
@@ -432,9 +448,24 @@ def unanchored(entries: Sequence[Directive]) -> frozenset[str]:
     return frozenset(_connected(entries) - anchored)
 
 
+def unseen(entries: Sequence[Directive]) -> frozenset[str]:
+    """Accounts hearth opened for an account a member named, held by name alone
+    (``ownbooks.moves_only``): savings at a bank nobody connected, a car loan.
+
+    Hearth sees only the money that moves between such an account and the connected ones, so
+    its rows are not its history and their sum is not its balance: a savings account that has
+    taken twenty transfers holds them, its interest, and whatever was spent from it, none of
+    which reaches hearth. It is `unanchored`, its balance not known, and always will be, so a
+    total that includes it leaves it out and says so rather than read "not known" for good.
+    """
+    return frozenset(
+        e.account for e in ownbooks.own(entries) if isinstance(e, Open) and ownbooks.moves_only(e)
+    )
+
+
 def _connected(entries: Sequence[Directive]) -> set[str]:
-    """The balance-sheet accounts hearth opened, one for each account a member connected; not
-    the categories it opens beside them."""
+    """The balance-sheet accounts hearth opened, one for each account a member connected or
+    named; not the categories it opens beside them."""
     return {
         e.account
         for e in ownbooks.own(entries)

@@ -14,17 +14,27 @@
 {% endmacro %}
 
 {# A net worth figure in a table: "Not known yet" while an account in it has no history in
-   the books, a floor while a holding has no price, and the figure otherwise. #}
-{% macro worth_amount(w, dollars_only=false) %}{% if not w.is_known %}<span class="faint">Not known yet</span>{% else %}{% if w.is_floor %}at least {% endif %}{{ (w.value | dollars) if dollars_only else (w.value | money) }}{% endif %}{% endmacro %}
+   the books, "Not known" when every account in it is one hearth does not see, a floor while
+   a holding has no price, and the figure otherwise. #}
+{% macro worth_amount(w, dollars_only=false) %}{% if not w.counted %}<span class="faint">Not known</span>{% elif not w.is_known %}<span class="faint">Not known yet</span>{% else %}{% if w.is_floor %}at least {% endif %}{{ (w.value | dollars) if dollars_only else (w.value | money) }}{% endif %}{% endmacro %}
+
+{# What a figure leaves out of accounts hearth does not see, beside a figure in a table. #}
+{% macro unseen_note(w) %}{% if w.leaves_out %}<span class="second">{{ "Hearth does not see these accounts" if not w.counted else "Without " ~ ("some accounts" if w.unseen is none else plural(w.unseen, "account")) ~ " hearth does not see" }}</span>{% endif %}{% endmacro %}
 
 {# The figure at display size, held and dimmed while it is being recomputed. What it leaves
    out is attached to the number itself, so it can never read as complete: violet and a lock
-   for a part its owner withholds, amber and a clock for a price nobody has. #}
-{% macro hero_value(value, status, withheld=(), unpriced=(), awaiting=0) %}
+   for a part its owner withholds, amber and a clock for a price nobody has, and dashed grey,
+   the design's "not there yet", for accounts hearth does not see, whose balance it is never
+   told. `unseen` is what leaves those out (`LeftOut`); `alone` says the figure is one part's,
+   and `unseen_href` where the accounts it leaves out are listed. #}
+{% macro hero_value(value, status, withheld=(), unpriced=(), awaiting=0, unseen=(), alone=false, unseen_href=none, counted=true) %}
 {% if awaiting != 0 %}
 <p class="hero-value muted">&ndash;</p>
 <p class="muted mt-2 measure">Not known yet. {% if awaiting is none %}Some accounts have{% else %}{{ plural(awaiting, "account") }} {{ "has" if awaiting == 1 else "have" }}{% endif %} no balance in hearth yet. The figure appears once they are brought in; until then there is none to show, not a figure of zero.</p>
-{% elif withheld or unpriced %}
+{% elif not counted %}
+<p class="hero-value muted">&ndash;</p>
+<p class="muted mt-2 measure">Not known. Hearth does not see {{ "this account" if unseen | length == 1 and unseen[0].count == 1 else "these accounts" }}, so it is never told what {{ "it holds" if unseen | length == 1 and unseen[0].count == 1 else "they hold" }}: there is no figure to show, not a figure of zero.</p>
+{% elif withheld or unpriced or unseen %}
 <div class="hero-partial">
   <p class="hero-value{% if status.recomputing %} is-stale-hold{% endif %}">{{ value | hero }}</p>
   {% for part in withheld %}
@@ -33,6 +43,9 @@
   {% if unpriced %}
   <span class="missing-chip is-gap"><svg aria-hidden="true"><use href="#i-clock"/></svg>+ {{ plural(unpriced | length, "holding") }} with no price</span>
   {% endif %}
+  {% for left in unseen %}
+  {% if unseen_href %}<a class="unseen-chip" href="{{ unseen_href }}">{% else %}<span class="unseen-chip">{% endif %}<svg aria-hidden="true"><use href="#i-unlink"/></svg>+ {{ left.words(alone or (unseen | length == 1 and left.part.is_viewers and not left.part.is_joint)) }}, not known{% if unseen_href %}</a>{% else %}</span>{% endif %}
+  {% endfor %}
 </div>
 {% else %}
 <p class="hero-value{% if status.recomputing %} is-stale-hold{% endif %}">{{ value | hero }}</p>
@@ -120,7 +133,7 @@
 {% endmacro %}
 
 {# Transactions grouped under day headers, each day with what was spent that day. #}
-{% macro day_table(days, caption, show_account=true) %}
+{% macro day_table(days, caption, show_account=true, said={}) %}
 <table class="table tx">
   <caption class="vh">{{ caption }}</caption>
   <thead class="vh"><tr><th scope="col">Description</th><th scope="col" class="num">Amount</th></tr></thead>
@@ -128,7 +141,7 @@
     {% for group in days %}
     <tr class="day"><th scope="rowgroup" colspan="2">{{ group.day | full_day }}{% if group.spent %} <span class="num">{{ (-group.spent) | money }}</span>{% endif %}</th></tr>
     {% for line in group.lines %}
-    <tr><td><span class="primary">{{ line.payee }}</span>{% if line.unreviewed %} <a class="tag tag-review" href="/review{% if line.needs_other_side %}#elsewhere{% endif %}">To review</a>{% endif %}<span class="second">{{ line.category | category }}{% if line.unreviewed %}, suggested{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}{% if line.narration %} &middot; {{ line.narration }}{% endif %}</span></td><td class="num amt{% if line.amount > 0 %} amt-in{% endif %}">{{ line.amount | amount }}</td></tr>
+    <tr><td><span class="primary">{{ line.payee }}</span>{% if line.unreviewed %} <a class="tag tag-review" href="/review{% if line.one_sided %}/where{% endif %}">To review</a>{% endif %}{% if line.unseen %}<span class="second">{% if line.review_id in said %}You said it went here, {{ said[line.review_id].astimezone() | day }}{% else %}Moved between accounts, not spending{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}</span>{% else %}<span class="second">{{ line.category | category }}{% if line.unreviewed %}, suggested{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}{% if line.narration %} &middot; {{ line.narration }}{% endif %}</span>{% endif %}</td><td class="num amt{% if line.amount > 0 %} amt-in{% endif %}">{{ line.amount | amount }}</td></tr>
     {% endfor %}
     {% endfor %}
   </tbody>

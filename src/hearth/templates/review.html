@@ -8,9 +8,7 @@
 <input type="hidden" name="focus" value="{{ next_id }}">
 {% endmacro %}
 {% macro row_day(d) %}{{ d | day if d.year == today.year else d | year_day }}{% endmacro %}
-{# A row that needs its other side sits under a heading that says so; pairing's group name for
-   it claims the side is not connected, which is not always so, so it is not repeated here. #}
-{% macro reason(row) %}{% set band = confidence(row) %}<span class="second">{{ band.value }}{% if not where.filter.group and not row.needs_other_side %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}</span>{% endmacro %}
+{% macro reason(row) %}{% set band = confidence(row) %}<span class="second">{{ band.value }}{% if not where.filter.group %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}</span>{% endmacro %}
 {# One row and its decision: the suggestion is already in the box, so Accept keeps it and
    typing another account books that instead. The page sends back what it showed. #}
 {% macro decide_row(row, next_id) %}
@@ -93,6 +91,9 @@
         <h2 id="rq-h" class="hero-label" style="font-size: var(--t-md); line-height: var(--lh-md)">Waiting for you</h2>
         <p class="hero-value">{{ "{:,}".format(remaining.rows) }}</p>
         <p class="muted"><span class="tnum">{{ remaining.moved | money }}</span> moved, across {{ plural(q.group_count, "group") }}. Oldest from {{ q.oldest | year_day if q.oldest.year != today.year else q.oldest | day }}.</p>
+        {% if q.one_sided.rows %}
+        <p class="sm mt-2"><a href="/review/where">{{ "{:,}".format(q.one_sided.rows) }} more {{ "needs" if q.one_sided.rows == 1 else "need" }} to know where the money went</a> <span class="faint">&middot; counted apart</span></p>
+        {% endif %}
       </div>
       <div class="review-bulk rprogress">
         <p class="sm"><span class="tnum" style="font-weight: 600">{{ "{:,}".format(q.reviewed) }}</span> of <span class="tnum">{{ "{:,}".format(q.total) }}</span> reviewed</p>
@@ -102,9 +103,6 @@
         {% endif %}
         {% if q.revised %}
         <p class="xs faint">{{ plural(q.revised, "row") }} came back because the bank changed {{ "it" if q.revised == 1 else "them" }} after {{ "it was" if q.revised == 1 else "they were" }} reviewed.</p>
-        {% endif %}
-        {% if q.elsewhere %}
-        <p class="xs faint"><a href="#elsewhere">{{ "{:,}".format(q.elsewhere | length) }} more</a> {{ "needs" if q.elsewhere | length == 1 else "need" }} the other side.</p>
         {% endif %}
       </div>
     </div>
@@ -237,7 +235,17 @@
       <span class="glyph" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
       <div>
         <h2 id="ok-h">All caught up</h2>
-        <p class="muted">{% if q.elsewhere %}Every transaction has been checked except the card payments below, which need the other side.{% else %}Every transaction in your accounts has been checked.{% endif %} New ones wait here, counted at their suggested category, until you look at them.</p>
+        <p class="muted">{% if q.one_sided.rows %}Every transaction has been checked except {{ "{:,}".format(q.one_sided.rows) }} whose other side hearth does not see: <a href="/review/where">say where {{ "it" if q.one_sided.rows == 1 else "they" }} went</a>.{% else %}Every transaction in your accounts has been checked.{% endif %} New ones wait here, counted at their suggested category, until you look at them.</p>
+      </div>
+    </div>
+  </section>
+  {% elif q.one_sided.rows %}
+  <section class="panel" aria-labelledby="ok-h">
+    <div class="caught-up">
+      <span class="glyph" aria-hidden="true"><svg><use href="#i-check"/></svg></span>
+      <div>
+        <h2 id="ok-h">Nothing to check here</h2>
+        <p class="muted">{{ "{:,}".format(q.one_sided.rows) }} {{ "transaction is" if q.one_sided.rows == 1 else "transactions are" }} waiting to be told where the money went, because hearth does not see the other side. <a href="/review/where">Where did it go?</a></p>
       </div>
     </div>
   </section>
@@ -253,29 +261,7 @@
   </section>
   {% endif %}
 
-  {% if q.elsewhere %}
-  {# Counted apart from what is left, whatever the filter: hearth has not found the other side
-     of these, so no suggestion is right for them, but each still offers what the desk accepts. #}
-  {% set shown_elsewhere = q.elsewhere_shown %}
-  {% set elsewhere = q.waiting_elsewhere %}
-  <section class="panel mt-4" aria-labelledby="ew-h" id="elsewhere">
-    <div class="panel-head">
-      <h2 id="ew-h">Needs the other side</h2>
-      <p class="sm faint tnum">{{ plural(elsewhere.rows, "transaction") }}, {{ elsewhere.moved | money }} moved</p>
-    </div>
-    <div class="panel-body">
-      <p class="muted measure">Card payments whose other side hearth has not found: the card a payment went to, or the account a card was paid from. Until it is found they count as neither spending nor income. If that side is at a bank you have not connected, connecting it in <a href="/settings/connections">Settings, Connections</a> settles each one by itself. Otherwise the two sides may differ in timing or amount. Each can still be saved to a spending or income category, or to an account of yours that no bank reports.</p>
-    </div>
-    {% if shown_elsewhere %}
-    <details class="rgroup-items"{% if landing in shown_elsewhere | map(attribute="item.review_id") %} open{% endif %}>
-      <summary>Show the {{ plural(shown_elsewhere | length, "transaction") }}{% if q.filter.active and shown_elsewhere | length < elsewhere.rows %} matching this filter{% endif %}</summary>
-      {{ decide_table(shown_elsewhere, "Card payments that need the other side") }}
-    </details>
-    {% endif %}
-  </section>
-  {% endif %}
-
-  {% if remaining.rows or q.elsewhere %}
+  {% if remaining.rows %}
   <details class="panel mt-4 rkeys">
     <summary>Keyboard shortcuts</summary>
     <dl class="rkeys-list">

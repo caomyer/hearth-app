@@ -15,6 +15,7 @@ from hearth import figures
 from hearth.disclosure.common import (
     DataEnds,
     Household,
+    LeftOut,
     PartRef,
     Unreviewed,
     Worth,
@@ -54,10 +55,20 @@ class Headline:
     """Accounts behind the total whose balance the books do not hold yet; while there are
     any, the total is not known (`Worth.awaiting`). None when a part with some withholds
     its count, so the total never sums a count the viewer may not see."""
+    unseen: tuple[LeftOut, ...] = ()
+    """Each part behind the total that leaves out accounts hearth does not see, with how
+    many where the viewer may see that part's balances (`Worth.unseen`). The total is what
+    the rest add up to, and says it is without them."""
+    counted: bool = True
+    """Whether any account behind the total is one hearth sees (`Worth.counted`)."""
 
     @property
     def is_known(self) -> bool:
-        return self.awaiting == 0
+        return self.awaiting == 0 and self.counted
+
+    @property
+    def leaves_out(self) -> bool:
+        return bool(self.unseen)
 
     @property
     def is_partial(self) -> bool:
@@ -249,6 +260,10 @@ def headline(h: Household, parts: Sequence[Part]) -> Headline:
             for missing in worth.unpriced
         ),
         without=tuple(h.part_ref(part) for part, worth in shown if is_withheld(worth)),
+        unseen=tuple(
+            LeftOut(h.part_ref(part), worth.unseen) for part, worth in visible if worth.leaves_out
+        ),
+        counted=not visible or any(worth.counted for _, worth in visible),
         since_month_start=_change(h, [p for p, _ in visible], h.month_start_valuation),
         over_year=_change(h, [p for p, _ in visible], h.books.month_ends[0]),
         priced_on=max(
@@ -277,11 +292,12 @@ def _change(h: Household, parts: Sequence[Part], since: NetWorth) -> Decimal | N
 
 def _composition(h: Household, parts: Sequence[Part]) -> tuple[Slice, ...]:
     """Who holds what. Drawn only when the total is whole: a bar of the known parts alone
-    would draw each of them as a bigger share of the household than they are."""
+    would draw each of them as a bigger share of the household than they are, and so would
+    a bar of parts without the accounts hearth does not see."""
     slices = []
     for part in parts:
         worth = h.disclosed_worth(part)
-        if not isinstance(worth, Worth) or worth.is_floor or not worth.is_known:
+        if not isinstance(worth, Worth) or worth.is_floor or not worth.is_known or worth.leaves_out:
             return ()
         slices.append(Slice(h.part_ref(part), worth.value))
     return tuple(slices)
@@ -356,8 +372,8 @@ def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> Sp
         bars=tuple(bars),
         typical=figures.typical([bar.spent for bar in bars[:-1] if bar.covered]),
         leaves_out_unassigned=bool(this_month.spending.unattributed),
-        spent_counted=any(part.accounts for part in spenders),
-        earned_counted=any(part.accounts for part in earners),
+        spent_counted=any(h.seen(part) for part in spenders),
+        earned_counted=any(h.seen(part) for part in earners),
     )
 
 

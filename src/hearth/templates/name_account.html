@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% from "_macros.html" import hero_value %}
+{% set d = checked.draft %}
+{% block title %}Name an account hearth does not see{% endblock %}
+{% block content %}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/review">Review</a> <span aria-hidden="true">/</span> <a href="/review/where">Where did it go?</a></nav>
+  <h1>Name an account hearth does not see</h1>
+  <p class="lede">Hearth will not see its balance, or what you spend from it. It sees only the money that moves between it and your connected accounts, and keeps those moves out of your spending.</p>
+
+  {% if not fresh and not checked.ok %}
+  <div class="alert alert-err mt-6" role="alert">
+    <svg aria-hidden="true"><use href="#i-error"/></svg>
+    <div class="alert-body"><p style="color: var(--ink); font-weight: 600">The account was not added yet.</p><p>{{ wrongs[checked.wrong] if checked.wrong else problems[checked.problem] }}</p></div>
+  </div>
+  {% endif %}
+
+  <form class="panel mt-6" method="post" action="/review/where/account" id="name-form" aria-labelledby="f-h" data-name-account>
+    <h2 id="f-h" class="vh">The account's details</h2>
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <input type="hidden" name="auto" value="{{ '1' if auto else '0' }}">
+    {% if group %}
+    <input type="hidden" name="group" value="{{ group.key }}">
+    <input type="hidden" name="title" value="{{ group.title }}">
+    {% if one %}<input type="hidden" name="one" value="1">{% endif %}
+    {% for rid, says in shown.items() %}<input type="hidden" name="rows" value="{{ rid }} {{ says }}">{% endfor %}
+    {% endif %}
+    <div class="panel-body" style="padding-top: var(--s-6)">
+      <fieldset class="role">
+        <legend class="label">What kind of account</legend>
+        <div class="grid grid-2" style="gap: var(--s-2)">
+          {% for k in kinds %}
+          <label class="role-opt"><input type="radio" name="kind" value="{{ k.value }}" data-root="{{ k.root }}"{% if k == d.kind %} checked{% endif %}><span><span style="font-weight: 500">{{ k.label }}</span><span class="sm faint" style="display: block">{{ k.hint }}</span></span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="field mt-6">
+        <label for="where">Where it is</label>
+        <input class="input" id="where" name="where" value="{{ d.where }}" maxlength="80" autocomplete="off"{% if not fresh and checked.wrong == "where-too-long" %} aria-invalid="true"{% endif %}>
+        <p class="hint">The bank's name, or the person's for a private loan.</p>
+      </div>
+      <div class="field">
+        <label for="name">Name</label>
+        <input class="input" id="name" name="name" value="{{ d.name }}" maxlength="80" autocomplete="off" required style="max-width: 320px"{% if not fresh and checked.wrong in ("name", "name-too-long") %} aria-invalid="true"{% endif %}>
+        <p class="hint">What the household calls it.</p>
+      </div>
+      <div class="field">
+        <label for="mask">Last 4 digits <span class="faint" style="font-weight: 400">(optional)</span></label>
+        <input class="input mono-input" id="mask" name="mask" value="{{ d.mask }}" inputmode="numeric" maxlength="4" autocomplete="off" style="max-width: 10ch"{% if not fresh and checked.wrong == "mask" %} aria-invalid="true"{% endif %}>
+        <p class="hint">{% if group and group.mask %}From &ldquo;&bull;&bull;&nbsp;{{ group.mask }}&rdquo; in the transfers. {% endif %}Helps tell it apart from your other accounts.</p>
+      </div>
+      <div class="field">
+        <label for="own">Owner</label>
+        <select class="select" id="own" name="owners" style="max-width: 320px">
+          {% for c in owner_choices %}<option value="{{ c.key }}"{% if c.key in alone %} data-alone{% endif %}{% if c.key == d.owners %} selected{% endif %}>{{ c.label }}</option>{% endfor %}
+        </select>
+        <p class="hint">A joint account's owners all see it and every move into it. Anyone else sees it only as you share your accounts, as with a connected one.</p>
+      </div>
+      <div class="field">
+        <label for="led">Ledger account</label>
+        <input class="input mono-input" id="led" name="ledger" value="{{ d.ledger_account }}" maxlength="200" autocomplete="off" spellcheck="false" data-proposed="{{ d.ledger_account }}" data-member="{{ session.member.display_name }}"{% if checked.problem and not fresh %} aria-invalid="true"{% endif %}>
+        <p class="hint">Proposed from the details above. A name already in use is refused, and the refusal does not say by what.</p>
+      </div>
+    </div>
+    <div class="panel-foot">
+      <span>No balance is asked for. Hearth would have to guess how it has changed since, and a guessed balance is a wrong one.</span>
+    </div>
+  </form>
+
+  {% if you %}
+  <section class="panel mt-4" aria-labelledby="pv-h">
+    <div class="panel-head">
+      <h2 id="pv-h">How it will show</h2>
+      <span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Only you</span>
+    </div>
+    <div class="panel-body">
+      <table class="table">
+        <caption class="vh">The new account as it will appear among your accounts</caption>
+        <thead><tr><th scope="col">Account</th><th scope="col" class="col-hide-sm">History</th><th scope="col" class="num">Balance</th></tr></thead>
+        <tbody>
+          <tr>
+            <th scope="row"><span class="primary" data-preview="name">{{ d.name or "The new account" }}</span><span class="second" data-preview="where">{{ d.where }}{% if d.where and d.mask %} &middot; {% endif %}{% if d.mask %}&bull;&bull;&nbsp;{{ d.mask }}{% endif %}</span></th>
+            <td class="col-hide-sm"><span class="tag tag-unseen"><svg aria-hidden="true"><use href="#i-unlink"/></svg>Not connected</span></td>
+            <td class="num"><span class="primary muted">Not known</span><span class="second">left out of net worth</span></td>
+          </tr>
+        </tbody>
+      </table>
+      {% set w = you.worth %}
+      {% if w is not withheld and w.is_known %}
+      {% set left = (w.unseen or 0) + 1 %}
+      {% set picked = d.owners or (owner_choices[0].key if owner_choices else "") %}
+      <div class="hero-partial mt-6" aria-label="Your net worth, as it will read" data-preview="worth"{% if picked not in alone %} hidden{% endif %}>
+        <span class="fig-label" style="flex-basis: 100%">Your net worth, without {{ plural(left, "account") }} hearth does not see</span>
+        <span class="fig-value tnum" style="margin: 0">{{ w.value | dollars }}</span>
+        <span class="unseen-chip"><svg aria-hidden="true"><use href="#i-unlink"/></svg>+ {{ plural(left, "account") }}, not known</span>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="focus-actions">
+    <a class="btn btn-quiet" href="{{ '/review/where/one?group=' ~ group.key if one else '/review/where' }}">Back</a>
+    <div class="end">
+      {% if shown %}<span class="sm muted">Then {{ plural(shown | length, "transaction") }} {{ "goes" if shown | length == 1 else "go" }} to it</span>{% endif %}
+      <button class="btn btn-primary btn-lg" type="submit" form="name-form">Add the account</button>
+    </div>
+  </div>
+  <script src="/static/name-account.js" defer></script>
+{% endblock %}

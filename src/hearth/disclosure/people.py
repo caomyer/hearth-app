@@ -8,7 +8,7 @@ simply the case where nothing is withheld.
 import calendar
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 
@@ -17,6 +17,7 @@ from hearth.accounts import Account
 from hearth.disclosure.common import (
     DataEnds,
     Household,
+    LeftOut,
     MemberRef,
     PartRef,
     Unreviewed,
@@ -54,6 +55,13 @@ class AccountRow:
     awaiting: bool = False
     """Whether the books hold none of its history yet (`books.awaiting`): its bank has not sent
     it, which is not the same as there being none, whatever its balance."""
+    unseen: bool = False
+    """Whether it is an account a member named that hearth does not see (`books.unseen`): its
+    balance is never known, so it is listed apart from the accounts a total adds up."""
+    where: str | None = None
+    """Where an account hearth does not see is: its bank's name, or a person's."""
+    mask: str | None = None
+    """The last digits of an account hearth does not see, when its owner gave them."""
 
     @property
     def is_owed(self) -> bool:
@@ -119,6 +127,8 @@ class PersonView:
     joint: tuple[Joint, ...]
     ends: DataEnds | None
     """Where this member's own data stops, when the page should say so."""
+    left_out: tuple[LeftOut, ...] = ()
+    """What `worth` leaves out of accounts hearth does not see, if it may be seen at all."""
 
     @property
     def withheld(self) -> tuple[FacetDescription, ...]:
@@ -145,12 +155,18 @@ def person_of(h: Household, member: Member) -> PersonView:
     gate = h.gate
     this_month = figures.month_flows(h.books, h.ownership, h.books.month, to_day=h.books.as_of.day)
     shared = gate.shared_by(member.id)
+    worth = h.disclosed_worth(part)
     return PersonView(
         member=h.ref(member),
         is_viewer=member.id == h.viewer.id,
         connected=bool(part.accounts),
         shares=tuple((DESCRIPTIONS[facet], facet in shared) for facet in Facet),
-        worth=h.disclosed_worth(part),
+        worth=worth,
+        left_out=(
+            (LeftOut(h.part_ref(part), worth.unseen),)
+            if isinstance(worth, Worth) and worth.leaves_out
+            else ()
+        ),
         change=h.change_since(part, h.month_start_valuation),
         totals=_totals(h, part, this_month),
         ends=h.ends([part]),
@@ -268,6 +284,7 @@ def account_rows(h: Household, accounts: Sequence[Account]) -> tuple[AccountRow,
 def _account_row(h: Household, account: Account, coverage: AccountCoverage | None) -> AccountRow:
     positions = [p for p in h.books.today.positions if p.holding.account == account.ledger_account]
     unknown = h.books.unknown.get(account.ledger_account)
+    unseen = account.ledger_account in h.books.unseen
     return AccountRow(
         id=account.id,
         name=account.name,
@@ -277,6 +294,8 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
             sum((p.value for p in positions if p.value is not None), Decimal(0)),
             tuple(p.holding.commodity for p in positions if p.freshness is Freshness.UNPRICED),
             1 if account.ledger_account in h.balance_unknown else 0,
+            1 if unseen else 0,
+            counted=not unseen,
         ),
         stale=any(p.freshness is Freshness.STALE for p in positions),
         since=Month.of(coverage.spans[0].earliest) if coverage and coverage.spans else None,
@@ -288,6 +307,9 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
         ),
         outside=account.ledger_account in h.outside,
         awaiting=account.ledger_account in h.books.awaiting,
+        unseen=unseen,
+        where=account.named.institution if unseen and account.named else None,
+        mask=account.named.mask if unseen and account.named else None,
     )
 
 
@@ -302,6 +324,29 @@ def _kind(
     return "Cash"
 
 
+def other_side(h: Household, line: Line) -> Account | None:
+    """The account a line on an account hearth does not see moved money from or to, when the
+    viewer may be told which it is (``access.may_name_other_side``): an owner of it. Anyone
+    else, such as the other owner of a joint account one member moved their own money into,
+    reads only that it came from, or went to, another account."""
+    if len(line.other_side) != 1:
+        return None
+    found = next((a for a in h.accounts if a.ledger_account == line.other_side[0]), None)
+    if found is None or not h.gate.may_name_other_side(found.owners):
+        return None
+    return found
+
+
+def named_side(h: Household, line: Line) -> Line:
+    """`line`, naming the other side of a move on an account hearth does not see where the
+    viewer may be told it (`other_side`)."""
+    found = other_side(h, line) if line.other_side else None
+    if found is None:
+        return line
+    payee = f"Transfer {'from' if line.amount > 0 else 'to'} {found.name}"
+    return replace(line, payee=payee)
+
+
 def days(h: Household, accounts: Sequence[Account], month: Month) -> tuple[Day, ...]:
     """This month's lines on `accounts`, grouped by day, newest first, with each day's spending.
 
@@ -312,7 +357,7 @@ def days(h: Household, accounts: Sequence[Account], month: Month) -> tuple[Day, 
     end = min(h.books.as_of, start.replace(day=calendar.monthrange(month.year, month.month)[1]))
     grouped: defaultdict[date, list[Line]] = defaultdict(list)
     for line in figures.lines(h.books, accounts, start, end):
-        grouped[line.date].append(line)
+        grouped[line.date].append(named_side(h, line))
     return tuple(
         Day(
             day=day,
