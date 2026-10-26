@@ -39,7 +39,12 @@ def test_a_rejected_member_is_reported_plainly(
 
 @pytest.mark.parametrize(
     "command",
-    [["plaid", "sync"], ["plaid", "remove", "item-synthetic-0001"]],
+    [
+        ["plaid", "sync"],
+        ["plaid", "remove", "item-synthetic-0001"],
+        ["plaid", "adopt", "--member", "avery", "--token-file", "absent"],
+        ["plaid", "adopt", "--member", "avery", "--token-file", "-", "--confirm", "item-0001"],
+    ],
 )
 def test_a_live_plaid_command_refuses_without_approval_and_sends_nothing(
     tmp_path: Path,

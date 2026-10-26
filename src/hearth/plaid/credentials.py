@@ -197,6 +197,16 @@ class CredentialStore:
             return None
         return Capacity(stored.item_limit, stored.used_elsewhere, self.in_use(scope))
 
+    def brought_in(self, scope: str) -> None:
+        """One of the set's Items in use outside hearth is now held by hearth: it counts in
+        hearth from here, and no longer elsewhere, so the allowance left is unchanged."""
+        with transaction(self._db):
+            self._db.execute(
+                "UPDATE plaid_credentials SET used_elsewhere = max(used_elsewhere - 1, 0)"
+                " WHERE scope = ?",
+                (scope,),
+            )
+
     def chose_household(self, member: MemberId) -> bool:
         row = self._db.execute(
             "SELECT 1 FROM plaid_household_users WHERE member_id = ?", (member,)

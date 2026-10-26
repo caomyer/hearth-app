@@ -3,6 +3,9 @@
     hearth plaid items                     every connection and every allowance; no live call
     hearth plaid sync --approved           bring every working connection up to date
     hearth plaid remove ITEM --approved    end one connection at Plaid, freeing its slot
+    hearth plaid adopt --member USERNAME --token-file PATH --approved
+                                           what an Item made outside hearth offers; nothing kept
+    hearth plaid adopt ... --confirm ITEM  hold that Item as the member's own connection
 
 This is the machine's operator's view, not a page: whoever can run commands as the user
 hearth runs as can already read the database and the Keychain (``hearth.vault``), so it
@@ -10,27 +13,45 @@ lists every member's connections, which is what finding a leaked slot needs. The
 each member only their own.
 
 A command that calls Plaid refuses, before anything is sent, unless given ``--approved``.
+
+An access token is read from a file, or from standard input given ``-``, never from the
+command line, where it would be kept in the shell's history and shown to every process on the
+machine. It is never printed.
 """
 
 import argparse
 import sqlite3
-from datetime import UTC, datetime
+import sys
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 from hearth import db, members
-from hearth.clock import system_clock
+from hearth.books import Status
+from hearth.clock import Clock, system_clock
 from hearth.config import Settings
+from hearth.disclosure import Disclosure
 from hearth.plaid import feed
 from hearth.plaid.approval import Approval, ApprovalRequired, Operation
 from hearth.plaid.client import PlaidError
-from hearth.plaid.connector import sync_all
+from hearth.plaid.connector import (
+    NotAdopted,
+    Offer,
+    Offered,
+    Refusal,
+    Refused,
+    Unadoptable,
+    sync_all,
+)
 from hearth.plaid.credentials import CredentialStore
 from hearth.plaid.registry import Registry
-from hearth.plaid.setup import PlaidSetup
-from hearth.plaid.sync import Skipped
+from hearth.plaid.setup import DAYS_REQUESTED, PlaidSetup
+from hearth.plaid.sync import Skipped, SyncStoppedError
 from hearth.vault.errors import VaultError
+from hearth.vault.secret import Secret
 from hearth.vault.tokens import TokenVault
 
 REFUSED = 2
+STDIN = "-"
 
 
 def run(arguments: argparse.Namespace, settings: Settings) -> int:
@@ -43,6 +64,21 @@ def run(arguments: argparse.Namespace, settings: Settings) -> int:
             return sync(settings, approved=arguments.approved)
         case "remove":
             return remove(settings, arguments.item_id, approved=arguments.approved)
+        case "adopt":
+            if not arguments.approved:
+                print(
+                    "hearth plaid adopt makes live Plaid calls to read an Item; pass --approved"
+                    " once the captain has approved it. Nothing was read or sent."
+                )
+                return REFUSED
+            return adopt(
+                settings,
+                PlaidSetup(approval=Approval.of([Operation.READ])),
+                system_clock,
+                username=arguments.member,
+                token_file=arguments.token_file,
+                confirm=arguments.confirm,
+            )
     return REFUSED
 
 
@@ -141,3 +177,280 @@ def remove(settings: Settings, item_id: str, *, approved: bool) -> int:
     finally:
         conn.close()
     return 0
+
+
+def adopt(
+    settings: Settings,
+    setup: PlaidSetup,
+    clock: Clock,
+    *,
+    username: str,
+    token_file: str,
+    confirm: str | None,
+) -> int:
+    """Say what an Item made outside hearth offers, and, given `confirm`, hold it as
+    `username`'s own connection, through the Plaid account their next connection would use.
+
+    The first run writes nothing: the member decides from what it says, since the history an
+    Item reaches back is fixed when it is made. The second names the Item they chose."""
+    try:
+        token = _read_token(token_file)
+    except ValueError as error:
+        print(f"hearth: {error}")
+        return REFUSED
+    conn = db.connect(settings.database)
+    try:
+        member = members.find(conn, username)
+        if member is None:
+            print(f"hearth: there is no member {username}")
+            return REFUSED
+        connector = Disclosure.load(conn, member, Status(None, None, recomputing=False)).connector(
+            conn,
+            database=settings.database,
+            feed_path=settings.feed_database,
+            data_dir=settings.data_dir,
+            setup=setup,
+            clock=clock,
+            runner=_never,
+        )
+        try:
+            offer = connector.offer(token)
+            _report(offer, clock().astimezone().date())
+            if offer.reached:
+                print(_already_reached(offer))
+                return REFUSED
+            if confirm is None:
+                print(
+                    f"Nothing was written. To adopt it as {member.username}'s connection, run"
+                    f" this again with --confirm {offer.item_id}."
+                )
+                return 0
+            synced = connector.adopt(token, confirm)
+        except NotAdopted as refused:
+            print(f"hearth: {_unadoptable(refused, member.username)}")
+            return REFUSED
+        except Refused as refused:
+            print(f"hearth: {_refusal(refused)}")
+            return REFUSED
+        except (VaultError, SyncStoppedError) as error:
+            print(f"hearth: {error}")
+            return REFUSED
+    finally:
+        conn.close()
+    print(
+        f"{offer.item_id} ({offer.name}) is {member.username}'s connection now; no slot was used."
+    )
+    if isinstance(synced, Skipped):
+        print(f"Its first sync did not run: {synced.reason}.")
+    else:
+        run = synced.run
+        print(
+            f"First sync: {run.outcome.value}, {run.pages} page(s), +{run.added}"
+            + (f" ({run.problem})" if run.problem else "")
+        )
+    print(
+        "Confirm where each of its accounts goes on Connect, then it is in the books from the"
+        f" next recompute. To free its slot later: hearth plaid remove {offer.item_id} --approved."
+    )
+    return 0
+
+
+def _read_token(path: str) -> Secret:
+    """The token in the file at `path`, or on standard input for ``-``, without surrounding
+    space. A failure is raised outside the handler: what was read must not travel with it."""
+    problem: str | None = None
+    try:
+        return Secret(
+            (sys.stdin.read() if path == STDIN else Path(path).read_text(encoding="utf-8")).strip()
+        )
+    except OSError as error:
+        problem = f"the token file cannot be read ({error.strerror})"
+    except ValueError:
+        problem = "the token file holds no token"
+    raise ValueError(problem)
+
+
+def _never(work: object) -> None:
+    """Adopting syncs where it stands; nothing is left to run after it."""
+    raise AssertionError("nothing runs in the background from the command line")
+
+
+def _report(offer: Offer, today: date) -> None:
+    made = f", made at Plaid {offer.created_at:%Y-%m-%d}" if offer.created_at else ""
+    print(f"{offer.name}: Item {offer.item_id}{made}")
+    for offered in offer.accounts:
+        print(f"  {_account(offered)}")
+    earliest = offer.earliest
+    if earliest is None:
+        print("Plaid has no transactions for it.")
+    else:
+        days = (today - earliest).days + 1
+        print(
+            f"Earliest transaction: {earliest:%Y-%m-%d}, {_count(days, 'day')} back; a"
+            f" connection made through hearth asks for {DAYS_REQUESTED} days."
+        )
+    print(
+        "These are what Plaid holds for this Item now, read from Plaid, not what any tool kept"
+        " from it. Plaid does not say how many days the Item was linked with, so its window"
+        " starts on or before the earliest transaction: an account quiet at first reaches"
+        " back further than its first transaction."
+    )
+    if not offer.complete:
+        print("Plaid says it is still preparing this Item's history, so it may reach further.")
+    print(
+        "An Item's history is fixed when it is made: adopting keeps what it has, and reaching"
+        " further means linking the bank again, which uses another connection."
+    )
+    if offer.investments:
+        print("Its holdings can be read without linking again (investments).")
+
+
+def _count(n: int, thing: str) -> str:
+    return f"{n} {thing}" if n == 1 else f"{n} {thing}s"
+
+
+def _account(offered: Offered) -> str:
+    account = offered.account
+    kind = account.subtype or account.type
+    ending = f" ending {account.mask}" if account.mask else ""
+    held = offered.held
+    if held.earliest and held.latest:
+        seen = (
+            f"{_count(held.transactions, 'transaction')},"
+            f" {held.earliest:%Y-%m-%d} to {held.latest:%Y-%m-%d}"
+        )
+    elif account.type == "investment":
+        seen = "no transactions; its trades and holdings are Plaid's investments data"
+    else:
+        seen = "no transactions"
+    line = f"{account.name} ({kind}{ending}): {seen}"
+    reached = offered.reached
+    if reached is None:
+        return line
+    if not reached.yours:
+        return f"{line}; hearth already reaches it through another connection"
+    covered = reached.held
+    since = (
+        f", {_count(covered.transactions, 'transaction')} since {covered.earliest:%Y-%m-%d}"
+        if covered and covered.earliest
+        else ""
+    )
+    return f"{line}; hearth already reaches it through {reached.item_id}{since}"
+
+
+def _already_reached(offer: Offer) -> str:
+    """Why hearth will not adopt an Item reaching an account a connection it holds reaches."""
+    why = (
+        f"hearth will not adopt it: a connection hearth holds already reaches"
+        f" {_count(len(offer.reached), 'of its account')}, and every transaction would come"
+        " twice."
+    )
+    kept = (
+        " Nothing was written; the Item still holds a slot outside hearth until whatever holds"
+        " its token removes it."
+    )
+    if not all(a.reached is not None and a.reached.yours for a in offer.reached):
+        return why + kept
+    further = [a for a in offer.reached if _reaches(a.held) < _reaches(_own(a))]
+    shorter = [a for a in offer.reached if _reaches(_own(a)) < _reaches(a.held)]
+    new = [a for a in offer.accounts if a.reached is None]
+    bounds = (
+        " Each date is an account's earliest transaction, so its history starts on or before it."
+    )
+    if not further and not new:
+        how = f", further back on {_listed(shorter)}" if shorter else " as far back"
+        return (
+            f"{why} hearth's own reaches every one of its accounts{how}: hearth already covers"
+            f" it {'better' if shorter else 'as well'}, so keep that one.{bounds}{kept}"
+        )
+    if further and not shorter and not offer.beyond:
+        also = f", and also reaches {_offered(new)}" if new else ""
+        held = sorted({a.reached.item_id for a in offer.reached if a.reached and a.reached.item_id})
+        return (
+            f"{why} This Item reaches every account hearth's own does, further back on"
+            f" {_listed(further)}{also}. To keep the longer history, remove hearth's"
+            f" ({', '.join(held)}) with hearth plaid remove first, then adopt this one; what it"
+            f" brought in is kept.{bounds}{kept}"
+        )
+    parts = [
+        f"{lead} {listed}"
+        for lead, listed in (
+            ("This Item reaches further back on", _listed(further)),
+            ("hearth's own reaches further back on", _listed(shorter)),
+            ("Only this Item reaches", _offered(new)),
+            ("Only hearth's own reaches", "; ".join(_named(a.name, a.mask) for a in offer.beyond)),
+        )
+        if listed
+    ]
+    return f"{why} {'. '.join(parts)}. Which to keep is the member's choice.{bounds}{kept}"
+
+
+def _own(offered: Offered) -> feed.Held | None:
+    return offered.reached.held if offered.reached else None
+
+
+def _reaches(held: feed.Held | None) -> date:
+    """How far back `held` reaches, for comparing; with no transactions, not at all."""
+    return held.earliest if held and held.earliest else date.max
+
+
+def _listed(accounts: list[Offered]) -> str:
+    return "; ".join(
+        f"{_named(a.account.name, a.account.mask)} (this Item {_since(a.held)},"
+        f" hearth's own {_since(_own(a))})"
+        for a in accounts
+    )
+
+
+def _offered(accounts: list[Offered]) -> str:
+    return "; ".join(_named(a.account.name, a.account.mask) for a in accounts)
+
+
+def _named(name: str, mask: str | None) -> str:
+    return f"{name} ending {mask}" if mask else name
+
+
+def _since(held: feed.Held | None) -> str:
+    return f"from {held.earliest:%Y-%m-%d}" if held and held.earliest else "no transactions"
+
+
+def _unadoptable(refused: NotAdopted, username: str) -> str:
+    using = refused.using.value if refused.using else "its"
+    match refused.reason:
+        case Unadoptable.NOT_A_TOKEN:
+            return "that is not a Plaid access token (one begins access-production-)"
+        case Unadoptable.WRONG_ENVIRONMENT:
+            return (
+                f"that token was made in Plaid's {refused.made_in} environment, and the Plaid"
+                f" account {username} connects through is in {using}. A token works only in"
+                " the environment that made it. Nothing was sent."
+            )
+        case Unadoptable.NOT_KNOWN:
+            return (
+                f"Plaid does not know that token under the Plaid account {username} connects"
+                f" through ({using}): another Plaid account made it, or its Item was removed. A"
+                " token works only with the client id and environment that made it."
+            )
+        case Unadoptable.ALREADY_HELD:
+            return "hearth already holds that Item. Nothing was written."
+        case Unadoptable.ALREADY_REACHED:
+            assert refused.offer is not None  # noqa: S101 - raised with what it reaches
+            return _already_reached(refused.offer)
+        case Unadoptable.NOT_SHOWN:
+            return (
+                "that token is not for the Item named by --confirm. Run it without --confirm"
+                " to see which Item it is. Nothing was written."
+            )
+
+
+def _refusal(refused: Refused) -> str:
+    match refused.reason:
+        case Refusal.NO_PLAID_ACCOUNT:
+            return (
+                "that member has no Plaid account to connect through: save their own, or"
+                " choose the household's, on Connect first"
+            )
+        case Refusal.NOT_APPROVED:
+            return "reading an Item is a live Plaid call that was not approved; nothing was sent"
+    code = f" ({refused.plaid_code})" if refused.plaid_code else ""
+    return f"Plaid did not complete that{code}. Nothing was written."

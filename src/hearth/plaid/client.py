@@ -144,6 +144,18 @@ class Institution:
 
 
 @dataclass(frozen=True, slots=True)
+class ItemDetails:
+    """What Plaid says of an Item: where it is, when it was made, and what it may be asked for."""
+
+    item_id: str
+    institution: Institution
+    created_at: datetime | None
+    products: frozenset[str]
+    """Every product the Item has or may be asked for without linking again: Plaid's
+    ``products``, ``billed_products`` and ``available_products`` together."""
+
+
+@dataclass(frozen=True, slots=True)
 class BankAccount:
     account_id: str
     name: str
@@ -259,13 +271,33 @@ class PlaidClient:
         return Exchanged(_text(payload, "item_id"), Secret(_text(payload, "access_token")))
 
     def institution(self, access_token: Secret) -> Institution:
+        return self.item(access_token).institution
+
+    def item(self, access_token: Secret) -> ItemDetails:
         self._approval.require(Operation.READ, "reading an Item")
         payload = self._call("/item/get", {}, {"access_token": access_token})
         if not isinstance(payload.get("item"), dict):
             raise PlaidMalformedError("Plaid sent an Item without its details")
         item = _Payload(payload["item"])
-        return Institution(
-            _optional_text(item, "institution_id"), _optional_text(item, "institution_name")
+        created = _optional_text(item, "created_at")
+        try:
+            created_at = datetime.fromisoformat(created) if created else None
+        except ValueError:
+            created_at = None
+        products = frozenset(
+            product
+            for name in ("products", "billed_products", "available_products")
+            if isinstance(item.get(name), list)
+            for product in item[name]
+            if isinstance(product, str)
+        )
+        return ItemDetails(
+            item_id=_text(item, "item_id"),
+            institution=Institution(
+                _optional_text(item, "institution_id"), _optional_text(item, "institution_name")
+            ),
+            created_at=created_at,
+            products=products,
         )
 
     def accounts(self, access_token: Secret) -> list[BankAccount]:

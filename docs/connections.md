@@ -12,7 +12,7 @@ The default approves nothing.
 | Operation | Plaid calls | Approved by |
 |---|---|---|
 | `link` | `/link/token/create`, `/item/public_token/exchange` | `hearth serve --approve-plaid link` |
-| `read` | `/item/get`, `/accounts/get`, `/transactions/sync` | `hearth serve --approve-plaid read`, `hearth plaid sync --approved` |
+| `read` | `/item/get`, `/accounts/get`, `/transactions/sync` | `hearth serve --approve-plaid read`, `hearth plaid sync --approved`, `hearth plaid adopt ... --approved` |
 | `remove` | `/item/remove` | `hearth serve --approve-plaid remove`, `hearth plaid remove ITEM --approved` |
 
 Connecting a bank needs both `link` and `read`; approving one never approves another.
@@ -55,6 +55,48 @@ To connect a bank again, remove the old Item first, then connect.
 That order never needs more connections than the account has.
 The one risk is the time in between, when the bank is not connected and an awkward sign-in can leave a member there for a while; the page says so.
 A connection that only needs its member to sign in again is fixed in place through Link's update mode, which keeps the Item and uses no new slot.
+
+## Adopting a connection made outside hearth
+
+A household may already hold working Items that another tool linked through the same Plaid account.
+Linking each bank again would spend a connection on an Item the household already has, so `hearth plaid adopt` takes one in instead, with no Link flow and no slot.
+
+```
+hearth plaid adopt --member USERNAME --token-file PATH --approved
+jq -r '<where the token is>' tokens.json | hearth plaid adopt --member USERNAME --token-file - --approved
+```
+
+The access token comes from a file, or from standard input given `-`, never from the command line, where the shell's history would keep it and every process on the machine could read it.
+It is never printed or logged, and is sealed in the vault exactly as a linked token is (`docs/vault.md`).
+
+The first run only reads, and writes nothing.
+It verifies the token against Plaid through the Plaid account the member's next connection would use, then says what the Item offers: its institution, when Plaid made it, each account with how many posted transactions Plaid has for it and over which days, the earliest transaction of all, and whether its holdings can be read without linking again.
+What it reports is read from Plaid, from the beginning of the Item's history, so it is what the Item offers, not what another tool kept of it.
+Plaid does not say how many days an Item was linked with, so the window starts on or before the earliest transaction, and the report says so.
+That report is the point: an Item's history is fixed when it is made, so an Item an older tool made with four months keeps four months for good.
+Adopting it is right for a bank hearth does not reach yet, and wrong for one hearth already holds with two years.
+
+Run it again with `--confirm ITEM_ID`, naming the Item the first run showed, to adopt it.
+Everything is verified again; a token for any other Item is refused.
+The Item becomes the member's own connection, as if they had just linked it: it is listed, synced, mapped and imported like any other, its first sync runs at once, and its accounts wait on Connect to be confirmed.
+If that first sync cannot run, the Item stays adopted and the command says why; the next sync brings it up to date.
+It is counted in hearth from then on and no longer among those used elsewhere, so the connections left do not change.
+Its `days_requested` is the 730 hearth asks of every connection, so an account it reaches less far back is marked short, with its first day, like any other.
+
+What it refuses, writing nothing:
+
+- A token made in another Plaid environment than the member's Plaid account's, before anything is sent: a token names its environment.
+- A token Plaid does not know under the member's Plaid account: an Item's token works only with the client id and the environment that made it.
+- An Item hearth already holds, alike whoever holds it.
+- An Item reaching an account a connection hearth holds already reaches, by institution and last digits as `Registry.connected_twice` tells: every transaction would come twice, and hearth's own connection may reach further back.
+  The report says how far back each reaches when the connection is the member's own; of another member's it says only that hearth reaches the account, never through whose connection nor since when.
+  It weighs them account by account: it says to keep hearth's own only when that reaches every account the Item reaches at least as far back, and to remove it first only when the Item reaches every account hearth's own does, each at least as far back and one further.
+  Otherwise it gives no verdict: it names the accounts each reaches further back and the accounts only one of them reaches, and leaves the choice to the member.
+
+A member adopts only into their own connections, through their own Plaid account or the household's once they chose it, as on Connect: the connector the command uses is built by `hearth.disclosure` for that member.
+
+Once adopted, hearth holds the Item's token, so `hearth plaid remove ITEM --approved` can end it and free its slot when the household no longer wants it.
+An Item hearth refused to adopt still holds its slot until whatever holds its token removes it.
 
 ## History, asked for and received
 

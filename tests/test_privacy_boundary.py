@@ -8,6 +8,9 @@ of tampered query parameters and headers, and asserts two things:
 * every datum the viewer may see does turn up somewhere, so the crawl provably
   reached the data rather than passing because it saw nothing.
 
+The one way into the household that is not a route, ``hearth plaid adopt``, is attacked the
+same way: the crawl runs again once a member holds what it took in.
+
 If a route is added that the crawl does not know how to reach, the build fails
 until it is taught to, so no route can sit outside this suite.
 """
@@ -17,6 +20,8 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from decimal import Decimal
+from functools import partial
+from pathlib import Path
 from urllib.parse import quote, urlencode
 
 import pytest
@@ -24,6 +29,8 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from starlette.routing import Mount
 
+from hearth.plaid import cli as plaid_cli
+from hearth.plaid.fake import FakeAccount, FakeInstitution
 from hearth.sharing import DEFAULT_SHARED, Facet
 from hearth.web.routes import ROUTERS
 from tests import household
@@ -282,3 +289,36 @@ def test_a_joint_account_cannot_be_recovered_from_what_one_owner_shares(world: W
     derivable |= {2 * a for a in derivable}
     assert Decimal(household.JOINT_NET_WORTH.replace(",", "")) not in derivable
     assert Decimal(household.JOINT_SPENDING.replace(",", "")) not in derivable
+
+
+ADOPTED = FakeInstitution(
+    "ins_hollowmere",
+    "Hollowmere Brokerage",
+    (
+        FakeAccount(
+            "brk", "Wrenfield Growth Account", "6161", "investment", "brokerage", Decimal("1.00")
+        ),
+        FakeAccount("chk", "Thistlecombe Cash", "6262", "depository", "checking", Decimal("1.00")),
+    ),
+)
+
+
+def test_an_adopted_connection_is_its_members_alone(world: World, tmp_path: Path) -> None:
+    """``hearth plaid adopt`` takes an Item made outside hearth in as one member's own
+    connection. Every route is attacked again with it held, its id among those tried: nobody
+    else is shown anything of it, and its member is, so the crawl reached it."""
+    world.plaid.institutions[ADOPTED.id] = ADOPTED
+    item_id, token = world.plaid.made_elsewhere(
+        "client-avery", ADOPTED.id, days=120, linked=household.NOW.date()
+    )
+    path = tmp_path / "token"
+    path.write_text(token)
+    adopt = partial(plaid_cli.adopt, world.settings, world.setup, world.clock, token_file=str(path))
+    assert adopt(username="avery", confirm=item_id) == 0
+    world.item_ids["avery-adopted"] = item_id
+    texts = (ADOPTED.name, *(account.name for account in ADOPTED.accounts))
+
+    assert all(text in everything_seen(world, world.signed_in("avery")) for text in texts)
+    for other in ("blake", "casey"):
+        seen = everything_seen(world, world.signed_in(other))
+        assert not [text for text in texts if text in seen], other

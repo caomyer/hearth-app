@@ -34,14 +34,30 @@ from hearth.members import Member, MemberId
 from hearth.plaid import credentials as sets
 from hearth.plaid import mapping
 from hearth.plaid.approval import ApprovalRequired, Operation
-from hearth.plaid.client import Environment, Institution, PlaidError, PlaidRejectedError
+from hearth.plaid.client import (
+    ITEM_NOT_FOUND,
+    BankAccount,
+    Environment,
+    Institution,
+    PlaidError,
+    PlaidRejectedError,
+)
 from hearth.plaid.credentials import Capacity, CredentialSet, CredentialStore
 from hearth.plaid.feed import Balance, Coverage, Feed, Outcome, Run
+from hearth.plaid.feed import Held as HeldRows
 from hearth.plaid.mapping import Problem
 from hearth.plaid.owner import is_alive
-from hearth.plaid.registry import History, Item, ItemState, Registry
+from hearth.plaid.registry import (
+    UNNAMED_INSTITUTION,
+    History,
+    Item,
+    ItemState,
+    LinkedAccount,
+    Registry,
+)
 from hearth.plaid.setup import DAYS_REQUESTED, PlaidSetup
-from hearth.plaid.sync import Skipped, SyncBusyError, Synced, check_waits, sync_item
+from hearth.plaid.sync import Skipped, SyncBusyError, Synced, check_waits, look, sync_item
+from hearth.vault.errors import VaultError
 from hearth.vault.secret import Secret
 from hearth.vault.tokens import TokenVault
 
@@ -118,6 +134,96 @@ class Held(Exception):  # noqa: N818 - it names an outcome, not a fault
         super().__init__(reason.value)
         self.reason = reason
         self.view = view
+
+
+class Unadoptable(StrEnum):
+    """Why an Item made outside hearth was not taken in. None carries the token."""
+
+    NOT_A_TOKEN = "not-a-token"  # noqa: S105 - a reason's name, not a token
+    """What was given is not a Plaid access token."""
+    WRONG_ENVIRONMENT = "wrong-environment"
+    """The token was made in another of Plaid's environments than the member's Plaid account's."""
+    NOT_KNOWN = "not-known"
+    """Plaid does not know the token under the member's Plaid account: another account made it,
+    or its Item was removed."""
+    ALREADY_HELD = "already-held"
+    """hearth already holds this very Item, whoever's it is."""
+    ALREADY_REACHED = "already-reached"
+    """A connection hearth holds already reaches one of its accounts."""
+    NOT_SHOWN = "not-shown"
+    """The token is not for the Item the member was shown and chose."""
+
+
+class NotAdopted(Exception):  # noqa: N818 - it names an outcome, not a fault
+    def __init__(
+        self,
+        reason: Unadoptable,
+        *,
+        made_in: str | None = None,
+        using: Environment | None = None,
+        offer: Offer | None = None,
+    ) -> None:
+        super().__init__(reason.value)
+        self.reason = reason
+        self.made_in = made_in
+        """The Plaid environment the token says it was made in, for `WRONG_ENVIRONMENT`."""
+        self.using = using
+        """The environment of the member's Plaid account."""
+        self.offer = offer
+        """What the Item offers, for `ALREADY_REACHED`: which of its accounts hearth reaches."""
+
+
+TOKEN_ENVIRONMENTS = ("production", "sandbox", "development", "demo")
+"""The environments a Plaid access token names after ``access-``: Plaid's, and the stand-in's."""
+
+
+@dataclass(frozen=True, slots=True)
+class Reached:
+    """An account hearth already reaches through a connection it holds."""
+
+    yours: bool
+    """Whether that connection is the member's own. Only then is anything more said of it."""
+    item_id: str | None
+    held: HeldRows | None
+    """What hearth holds of it, for the member's own connection only."""
+
+
+@dataclass(frozen=True, slots=True)
+class Offered:
+    """One account an Item made outside hearth reaches, and the history Plaid has for it."""
+
+    account: BankAccount
+    held: HeldRows
+    reached: Reached | None
+
+
+@dataclass(frozen=True, slots=True)
+class Offer:
+    """What an Item made outside hearth would bring: seen, verified, and nothing written."""
+
+    item_id: str
+    institution: Institution
+    created_at: datetime | None
+    accounts: tuple[Offered, ...]
+    complete: bool
+    """Whether Plaid says the history it has is all it will send."""
+    investments: bool
+    """Whether its holdings may be read without linking again."""
+    beyond: tuple[LinkedAccount, ...]
+    """Accounts the member's own connections reaching any of its accounts reach and it does
+    not. Nothing is said of another member's connections."""
+
+    @property
+    def name(self) -> str:
+        return self.institution.name or UNNAMED_INSTITUTION
+
+    @property
+    def earliest(self) -> date | None:
+        return min((a.held.earliest for a in self.accounts if a.held.earliest), default=None)
+
+    @property
+    def reached(self) -> tuple[Offered, ...]:
+        return tuple(a for a in self.accounts if a.reached is not None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -676,6 +782,111 @@ class Connector:
         self._vault().delete(self._viewer.id, item.item_id)
         self._registry.remove(item.item_id, at=self._clock())
 
+    def offer(self, access_token: Secret) -> Offer:
+        """What an Item made outside hearth offers, verified against Plaid through the Plaid
+        account the member's next connection would use: its institution, its accounts, and the
+        history Plaid has for each. Only reads; nothing is stored, and no slot is used.
+
+        Refused before anything is sent when the token was made in another environment than
+        that Plaid account's, or the read is not approved. An Item hearth already holds is
+        refused alike whoever holds it, before its accounts or history are asked for."""
+        scope = self._usable_scope(self._store())
+        credentials = self._store().credentials(scope)
+        made_in = next(
+            (e for e in TOKEN_ENVIRONMENTS if access_token.reveal().startswith(f"access-{e}-")),
+            None,
+        )
+        if made_in is None:
+            raise NotAdopted(Unadoptable.NOT_A_TOKEN)
+        if made_in != credentials.environment.value:
+            raise NotAdopted(
+                Unadoptable.WRONG_ENVIRONMENT, made_in=made_in, using=credentials.environment
+            )
+        if not self._setup.allows(credentials.environment, Operation.READ):
+            raise Refused(Refusal.NOT_APPROVED)
+        client = self._setup.client(credentials)
+        try:
+            details = self._plaid(lambda: client.item(access_token))
+        except Refused as refused:
+            if refused.plaid_code in {"INVALID_ACCESS_TOKEN", ITEM_NOT_FOUND}:
+                raise NotAdopted(Unadoptable.NOT_KNOWN, using=credentials.environment) from None
+            raise
+        if self._registry.item(details.item_id) is not None:
+            raise NotAdopted(Unadoptable.ALREADY_HELD)
+        accounts = self._plaid(lambda: client.accounts(access_token))
+        looked = self._plaid(lambda: look(client, access_token))
+        with Feed.open(self._feed_path) as feed:
+            offered = tuple(
+                Offered(
+                    account,
+                    looked.held.get(
+                        account.account_id, HeldRows(account.account_id, 0, None, None)
+                    ),
+                    self._reached(details.institution, account, feed),
+                )
+                for account in accounts
+            )
+        mine = [a.reached for a in offered if a.reached is not None and a.reached.yours]
+        reached = {r.held.account_id for r in mine if r.held}
+        beyond = tuple(
+            linked
+            for item_id in sorted({r.item_id for r in mine if r.item_id})
+            for linked in self._registry.accounts_of(item_id)
+            if linked.account_id not in reached
+        )
+        return Offer(
+            item_id=details.item_id,
+            institution=details.institution,
+            created_at=details.created_at,
+            accounts=offered,
+            complete=looked.update_status == History.COMPLETE.value,
+            investments="investments" in details.products,
+            beyond=beyond,
+        )
+
+    def adopt(self, access_token: Secret, item_id: str) -> Synced | Skipped:
+        """Hold an Item made outside hearth as the member's own connection, as if they had just
+        linked it through the Plaid account their next connection would use, and bring it up to
+        date. `item_id` is the Item the member was shown by `offer` and chose; everything is
+        verified again first. Returns the first sync, or why it did not run.
+
+        No new Item is made, so no slot is used: the one it held outside hearth is counted in
+        hearth from now on. A connection hearth already reaches any of its accounts through is
+        refused, since every transaction would come twice and hearth's own may reach further.
+        Nothing is left written when holding it fails part way."""
+        offer = self.offer(access_token)
+        if offer.item_id != item_id:
+            raise NotAdopted(Unadoptable.NOT_SHOWN)
+        if offer.reached:
+            raise NotAdopted(Unadoptable.ALREADY_REACHED, offer=offer)
+        store = self._store()
+        scope = self._usable_scope(store)
+        item = self._registry.add(
+            offer.item_id,
+            member=self._viewer.id,
+            credentials=scope,
+            institution=offer.institution,
+            fallback_name="",
+            days_requested=DAYS_REQUESTED,
+            now=self._clock(),
+        )
+        try:
+            self._vault().put(self._viewer.id, item.item_id, access_token)
+            self._registry.record_accounts(item.item_id, [a.account for a in offer.accounts])
+            store.brought_in(scope)
+        except BaseException:
+            self._vault().delete(self._viewer.id, item.item_id)
+            self._registry.forget(item.item_id)
+            raise
+        try:
+            synced = _sync(self._db, self._feed_path, self._setup, self._clock, item)
+        except SyncBusyError:
+            return Skipped(item.item_id, "another sync of it is running; it brings it up to date")
+        except VaultError as error:
+            return Skipped(item.item_id, str(error))
+        self._setup.synced()
+        return synced
+
     def confirm(
         self, submitted: Sequence[Mapping], *, near_seen: Collection[tuple[str, str]] = ()
     ) -> int:
@@ -825,6 +1036,28 @@ class Connector:
         if item is None or not item.active or not self._policy.may_use_connection(item.member):
             raise Concealed
         return item
+
+    def _reached(
+        self, institution: Institution, account: BankAccount, feed: Feed
+    ) -> Reached | None:
+        """Whether a connection hearth holds already reaches `account`. Of another member's,
+        only that it does: never whose, nor what it holds."""
+        if account.mask is None:
+            return None
+        found = self._registry.reaching(institution.id, account.mask)
+        if not found:
+            return None
+        mine = next(
+            (
+                linked
+                for linked, holder in found
+                if holder == self._viewer.id and self._policy.may_use_connection(holder)
+            ),
+            None,
+        )
+        if mine is None:
+            return Reached(yours=False, item_id=None, held=None)
+        return Reached(yours=True, item_id=mine.item_id, held=feed.held(mine.account_id))
 
     def _item_view(self, item: Item, feed: Feed) -> ItemView:
         requested_from = item.requested_from

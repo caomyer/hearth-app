@@ -14,6 +14,8 @@ In one line: it protects the database file and its backups, and it does not prot
   They are revealed only inside the expression that hands them to the cipher, so even a traceback that prints every frame's local variables shows nothing.
   `tests/vault/test_no_leak.py` triggers every failure and checks exactly that.
 
+A token for an Item made outside hearth, taken in by `hearth plaid adopt` (`docs/connections.md`), is sealed the same way and by the same call as one from Link; there is no second path.
+
 ## Plaid keys
 
 Each Plaid account's client id and secret are sealed the same way, in `vault_credential`, bound to the set they belong to (`member:<id>` or `household`) and their name, so one member's keys copied onto another's set fail to open.

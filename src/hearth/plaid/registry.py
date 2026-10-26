@@ -168,6 +168,12 @@ class Registry:
         assert found is not None  # noqa: S101 - inserted just above
         return found
 
+    def forget(self, item_id: str) -> None:
+        """Undo `add` and `record_accounts` for an Item nothing has synced or mapped yet."""
+        with transaction(self._db):
+            self._db.execute("DELETE FROM plaid_accounts WHERE item_id = ?", (item_id,))
+            self._db.execute("DELETE FROM plaid_items WHERE item_id = ?", (item_id,))
+
     def item(self, item_id: str) -> Item | None:
         row = self._db.execute("SELECT * FROM plaid_items WHERE item_id = ?", (item_id,)).fetchone()
         return _item(row) if row else None
@@ -247,6 +253,24 @@ class Registry:
             if twice:
                 groups.append(twice)
         return groups
+
+    def reaching(
+        self, institution_id: str | None, mask: str
+    ) -> list[tuple[LinkedAccount, MemberId]]:
+        """Accounts of connections still active, confirmed or not, that may be the one real
+        account ending `mask` at `institution_id`, as `connected_twice` tells, each with the
+        member who holds its connection: what an Item brought in from outside would duplicate."""
+        rows = self._db.execute(
+            "SELECT a.*, i.institution_id AS at_id, i.member_id AS holder"
+            " FROM plaid_accounts a JOIN plaid_items i USING (item_id)"
+            " WHERE a.mask = ? AND i.state != 'removed' ORDER BY a.account_id",
+            (mask,),
+        )
+        return [
+            (_account(row), MemberId(row["holder"]))
+            for row in rows
+            if _one_institution(institution_id, row["at_id"])
+        ]
 
     def fed_before(self, account_id: str) -> list[LinkedAccount]:
         """Confirmed accounts on its member's own removed connections that may be the same real

@@ -199,6 +199,24 @@ class FakePlaid:
             (i.item_id for i in self._items.values() if i.access_token == access_token), None
         )
 
+    def made_elsewhere(
+        self, client_id: str, institution_id: str, *, days: int, linked: date
+    ) -> tuple[str, str]:
+        """An Item another tool linked through the same Plaid account, `days` of history asked
+        for on `linked`, all of it sent long ago: its (item id, access token), which hearth has
+        never been given."""
+        item = _Item(
+            item_id=f"item-demo-{secrets.token_hex(6)}",
+            client_id=client_id,
+            institution=self.institutions[institution_id],
+            access_token=f"access-demo-{secrets.token_hex(12)}",
+            days=min(days, self.institutions[institution_id].history_days),
+            linked=linked,
+        )
+        item.log = [("added", raw) for raw in self._history(item, until=self._today())]
+        self._items[item.item_id] = item
+        return item.item_id, item.access_token
+
     def update_token(self, link_token: str) -> str:
         """What Link returns after a member signs in again through an update-mode token."""
         if link_token not in self._link_tokens or self._link_tokens[link_token][2] is None:
@@ -314,6 +332,14 @@ class FakePlaid:
                     "item_id": item.item_id,
                     "institution_id": item.institution.id,
                     "institution_name": item.institution.name,
+                    "created_at": f"{item.linked.isoformat()}T09:00:00Z",
+                    "products": ["transactions"],
+                    "billed_products": ["transactions"],
+                    "available_products": (
+                        ["investments"]
+                        if any(a.type == "investment" for a in item.institution.accounts)
+                        else []
+                    ),
                 }
             }
         )
@@ -384,15 +410,18 @@ class FakePlaid:
             },
         }
 
-    def _history(self, item: _Item) -> list[dict[str, Any]]:
+    def _history(self, item: _Item, until: date | None = None) -> list[dict[str, Any]]:
+        """What the bank sends from the first day asked for to `until`, by default the day
+        the Item was linked."""
         start = item.linked - timedelta(days=item.days - 1)
+        end = until or item.linked
         found = []
         for account in item.institution.accounts:
             found_here = account.transactions
             if found_here is None:
-                found_here = tuple(_routine(account, start, item.linked))
+                found_here = tuple(_routine(account, start, end))
             for transaction in found_here:
-                if start <= transaction.day <= item.linked:
+                if start <= transaction.day <= end:
                     found.append(self._raw(item, account.key, transaction))
         return sorted(found, key=lambda raw: (raw["date"], raw["transaction_id"]))
 

@@ -9,7 +9,7 @@ from hearth.plaid.client import LOGIN_REQUIRED, MUTATED_DURING_PAGINATION, Plaid
 from hearth.plaid.fake import FakePlaid, FakeTransaction
 from hearth.plaid.feed import LEASE, Coverage, Feed, Outcome
 from hearth.plaid.registry import History, ItemState, Registry
-from hearth.plaid.sync import SyncBusyError, sync_item
+from hearth.plaid.sync import SyncBusyError, look, sync_item
 from tests.plaid.conftest import NOW, TODAY, Clock, held_by, linked
 
 
@@ -357,3 +357,21 @@ def test_history_arrives_after_linking_and_is_never_taken_for_short_history(
         (History.COMPLETE, True, False),
     ]
     assert feed.held(account.account_id).earliest == date(2024, 10, 19)
+
+
+def test_looking_at_an_item_sees_what_a_sync_brings_and_stores_nothing(
+    client: PlaidClient, fake: FakePlaid, registry: Registry, feed: Feed
+) -> None:
+    item, token = linked(client, fake, registry, "ins_lakeside")
+    fake.page_size = 50
+    # Plaid's data changes part way through: the look starts again from the beginning.
+    fake.fail_next("/transactions/sync", MUTATED_DURING_PAGINATION)
+
+    looked = look(client, token)
+
+    assert looked.update_status == History.COMPLETE.value
+    assert feed.cursor(item.item_id) is None
+    sync_item(item, client=client, access_token=token, registry=registry, feed=feed, clock=Clock())
+    assert looked.held == {
+        account: feed.held(account) for account in (f"{item.item_id}-chk", f"{item.item_id}-sav")
+    }

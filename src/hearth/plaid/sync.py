@@ -18,7 +18,7 @@ collects the rest.
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from hearth.clock import Clock
 from hearth.plaid.client import (
@@ -28,7 +28,7 @@ from hearth.plaid.client import (
     PlaidError,
     PlaidRejectedError,
 )
-from hearth.plaid.feed import Feed, Outcome, Run
+from hearth.plaid.feed import Feed, Held, Outcome, Run
 from hearth.plaid.registry import Item, ItemState, Registry
 from hearth.vault.secret import Secret
 
@@ -73,7 +73,7 @@ class Synced:
 
 @dataclass(frozen=True, slots=True)
 class Skipped:
-    """An Item a sync of the whole household left alone, and why."""
+    """An Item a sync left alone, and why."""
 
     item_id: str
     reason: str
@@ -118,6 +118,50 @@ def sync_item(
     finished = feed.finish(run, Outcome.COMPLETE, now=clock())
     registry.synced(item.item_id, at=finished.finished_at or clock(), history=finished.history)
     return Synced(item.item_id, finished)
+
+
+@dataclass(frozen=True, slots=True)
+class Looked:
+    """What an Item would bring in, seen without storing any of it."""
+
+    held: dict[str, Held]
+    """By account id: the posted transactions Plaid has for it now."""
+    update_status: str | None
+    """Plaid's ``transactions_update_status``: whether that is all the history it will send."""
+
+
+def look(client: PlaidClient, access_token: Secret) -> Looked:
+    """Page through everything Plaid has for an Item, from the beginning, keeping only how
+    many posted transactions each account has and over which days. Nothing is stored: a
+    cursor is the caller's, so asking from the beginning changes nothing at Plaid."""
+    restarts = 0
+    while True:
+        days: dict[str, list[date]] = {}
+        cursor: str | None = None
+        status: str | None = None
+        try:
+            for _ in range(MAX_PAGES):
+                page = client.sync_page(access_token, cursor)
+                for transaction in page.added:
+                    if not transaction.pending:
+                        days.setdefault(transaction.account_id, []).append(transaction.day)
+                cursor, status = page.next_cursor, page.update_status
+                if not page.has_more:
+                    break
+            else:
+                raise SyncStoppedError(f"Plaid sent more than {MAX_PAGES} pages; stopping here")
+        except PlaidRejectedError as error:
+            if error.error_code != MUTATED_DURING_PAGINATION or restarts >= MAX_RESTARTS:
+                raise
+            restarts += 1
+            continue
+        return Looked(
+            {
+                account: Held(account, len(seen), min(seen), max(seen))
+                for account, seen in days.items()
+            },
+            status,
+        )
 
 
 def _pages(

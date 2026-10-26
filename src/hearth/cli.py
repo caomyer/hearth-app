@@ -63,6 +63,25 @@ def main(argv: list[str] | None = None) -> None:
     )
     remove.add_argument("item_id")
     remove.add_argument("--approved", action="store_true", help="the captain approved this call")
+    adopt = plaid_commands.add_parser(
+        "adopt",
+        help="say what a Plaid Item made outside hearth offers and, with --confirm, hold it as a"
+        " member's connection without using a slot (live reads)",
+    )
+    adopt.add_argument("--member", required=True, metavar="USERNAME", help="whose it becomes")
+    adopt.add_argument(
+        "--token-file",
+        required=True,
+        metavar="PATH",
+        help="a file holding the Item's access token, or - to read it from standard input;"
+        " never the token itself, which the shell's history would keep",
+    )
+    adopt.add_argument(
+        "--confirm",
+        metavar="ITEM_ID",
+        help="adopt the Item a run without it showed; without it nothing is written",
+    )
+    adopt.add_argument("--approved", action="store_true", help="the captain approved these reads")
 
     add = commands.add_parser("add-member", help="add a member and print their one-time password")
     add.add_argument("username")
