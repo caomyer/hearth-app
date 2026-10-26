@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -234,3 +235,77 @@ def test_without_a_ledger_there_is_nothing_to_claim_and_no_file_to_ask_for(
     assert capsys.readouterr().out == ""
     with pytest.raises(SystemExit, match="the books open no Assets or Liabilities account"):
         main(["add-account", "Assets:Zq:Joint", "--name", "Joint", "--owner", "avery"])
+
+
+def test_serving_over_https_registers_the_way_back_plaid_production_accepts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(tmp_path))
+    served: list[tuple[Any, ...]] = []
+    monkeypatch.setattr("hearth.cli._run", lambda *arguments: served.append(arguments))
+    cert, key = tmp_path / "localhost.pem", tmp_path / "localhost-key.pem"
+
+    everywhere = "0.0.0.0"  # noqa: S104 - never bound: serving is replaced
+    main(
+        [
+            "serve",
+            "--host",
+            everywhere,
+            "--port",
+            "8443",
+            "--tls-cert",
+            str(cert),
+            "--tls-key",
+            str(key),
+        ]
+    )
+
+    ((settings, _, host, port, setup, tls),) = served
+    assert (host, port, tls) == (everywhere, 8443, (cert, key))
+    # Always localhost, the address to register, however hearth is reached.
+    assert setup.redirect_uri == "https://localhost:8443/connect/oauth"
+    assert settings.secure_cookies
+    assert "https://localhost:8443/connect/oauth, which must be one of" in capsys.readouterr().out
+
+
+def test_serving_https_on_its_default_port_registers_the_address_a_browser_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(tmp_path))
+    served: list[tuple[Any, ...]] = []
+    monkeypatch.setattr("hearth.cli._run", lambda *arguments: served.append(arguments))
+    cert, key = tmp_path / "localhost.pem", tmp_path / "localhost-key.pem"
+
+    main(["serve", "--port", "443", "--tls-cert", str(cert), "--tls-key", str(key)])
+
+    ((_, _, _, port, setup, _),) = served
+    assert port == 443
+    assert setup.redirect_uri == "https://localhost/connect/oauth"
+
+
+def test_serving_plain_http_offers_plaid_no_way_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(tmp_path))
+    served: list[tuple[Any, ...]] = []
+    monkeypatch.setattr("hearth.cli._run", lambda *arguments: served.append(arguments))
+
+    main(["serve", "--host", "0.0.0.0", "--port", "8000"])  # noqa: S104 - never bound here
+
+    ((settings, _, _, _, setup, tls),) = served
+    assert setup.redirect_uri is None
+    assert tls is None
+    assert not settings.secure_cookies
+    assert "offers no way back to a bank that takes over the tab" in capsys.readouterr().out
+
+
+def test_a_certificate_without_its_key_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(tmp_path))
+    monkeypatch.setattr("hearth.cli._run", lambda *arguments: pytest.fail("served"))
+
+    with pytest.raises(SystemExit) as refused:
+        main(["serve", "--tls-cert", str(tmp_path / "localhost.pem")])
+
+    assert refused.value.code == 2

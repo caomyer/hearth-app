@@ -3,10 +3,15 @@
 {% block content %}
 {% include "_stepper.html" %}
 
+  {% if resuming %}
+  <h1>Finishing with your bank</h1>
+  <p class="lede">Your bank sent you back to Hearth. Plaid finishes the connection over this page.</p>
+  {% else %}
   <h1>{{ "Sign in to your bank again" if start.item_id else "Connect a bank" }}</h1>
   <p class="lede">{% if start.item_id %}Your bank asked you to sign in again. This keeps the same connection, so it uses no new slot, and nothing is imported twice.{% else %}Choose your bank and sign in there. Hearth asks it for {{ days }} days of history.{% endif %}</p>
+  {% endif %}
 
-  {% if start.stand_in or start.environment.value == "demo" %}
+  {% if not resuming and (start.stand_in or start.environment.value == "demo") %}
   <section class="panel mt-6" aria-labelledby="si-h">
     <div class="panel-head">
       <h2 id="si-h">Invented banks</h2>
@@ -42,12 +47,18 @@
     </div>
   </section>
   {% else %}
-  <section class="panel mt-6" aria-labelledby="pl-h" id="plaid-link" data-link-token="{{ start.link_token }}"{% if start.item_id %} data-update="reconnected-form"{% else %} data-success="exchange-form"{% endif %}>
+  {# Link's token rides only in this page and, until Link finishes, in this tab's own storage
+     (static/connect.js): the page Plaid brings a member back to is given none. #}
+  <section class="panel mt-6" aria-labelledby="pl-h" id="plaid-link"{% if resuming %} data-resume{% else %} data-link-token="{{ start.link_token }}"{% if start.expires %} data-expires="{{ start.expires.isoformat() }}"{% endif %}{% if start.item_id %} data-item="{{ start.item_id }}"{% endif %}{% endif %}>
     <div class="panel-head">
-      <h2 id="pl-h">Opening your bank's sign-in</h2>
+      <h2 id="pl-h">{{ "Carrying on with Plaid" if resuming else "Opening your bank's sign-in" }}</h2>
     </div>
     <div class="panel-body">
-      <p class="muted">A secure window run by Plaid opens over this page. If it does not, check that this browser allows it, then try again.</p>
+      {% if resuming %}
+      <p class="muted">Plaid's window opens over this page again to finish. If it does not, check that this browser allows it, then go back to Connect.</p>
+      {% else %}
+      <p class="muted">A secure window run by Plaid opens over this page. Some banks then open their sign-in in a window of its own; others take over this tab and bring you back here when you are done. If nothing opens, check that this browser allows it, then try again.</p>
+      {% endif %}
       <noscript><p class="sm warn-link mt-2">Plaid's sign-in needs JavaScript.</p></noscript>
       <form id="exchange-form" method="post" action="/connect/exchange">
         <input type="hidden" name="csrf" value="{{ session.csrf }}">
@@ -56,8 +67,14 @@
       </form>
       <form id="reconnected-form" method="post" action="/connect/reconnected">
         <input type="hidden" name="csrf" value="{{ session.csrf }}">
-        <input type="hidden" name="item_id" value="{{ start.item_id or '' }}">
+        <input type="hidden" name="item_id" value="">
         <input type="hidden" name="public_token" value="">
+      </form>
+      <form id="exit-form" method="post" action="/connect/exited">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        {% for name in ("error_type", "error_code", "status", "last_event", "institution_id", "institution_name", "request_id", "link_session_id", "resumed", "lost") %}
+        <input type="hidden" name="{{ name }}" value="">
+        {% endfor %}
       </form>
     </div>
   </section>
@@ -66,6 +83,9 @@
   {% endif %}
 
   <div class="focus-actions">
-    <a class="btn btn-quiet" href="/connect?outcome=link-closed">Cancel</a>
+    <span class="sm faint">Step 2 of 4</span>
+    <div class="end">
+      <a class="btn btn-quiet" href="/connect?outcome={{ 'link-left' if resuming else 'link-closed' }}">Cancel</a>
+    </div>
   </div>
 {% endblock %}

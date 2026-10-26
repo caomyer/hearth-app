@@ -64,8 +64,15 @@ uv run hearth serve --approve-plaid link --approve-plaid read --approve-plaid re
 uv run hearth plaid items                                # every connection; no live call
 ```
 
-State lives in `$HEARTH_DATA_DIR`, by default `~/.local/share/hearth`, outside any cloud-synced folder.
-Set `HEARTH_HTTPS=1` when serving behind TLS so the session cookie is marked secure.
+A bank that signs a member in on its own page opens in a window of its own; for one that takes over the whole tab instead, Plaid's production brings the member back only to an `https://` address, so serve Hearth over HTTPS and register the redirect URI `hearth serve` prints in the Plaid dashboard ([docs/connections.md](docs/connections.md#banks-that-sign-in-on-their-own-page)):
+
+```sh
+mkcert -install && mkcert localhost      # brew install mkcert
+uv run hearth serve --tls-cert localhost.pem --tls-key localhost-key.pem --approve-plaid link --approve-plaid read
+```
+
+State lives in `$HEARTH_DATA_DIR`, by default `~/.local/share/hearth`, outside any cloud-synced folder, with `hearth.log`, which records what Hearth asked of Plaid and how it went and never a token, key, balance, account or payee.
+Set `HEARTH_HTTPS=1` when serving behind TLS so the session cookie is marked secure; `--tls-cert` does that itself.
 
 If this repository lives under a cloud-synced folder such as `~/Documents` with iCloud Drive, put the virtual environment outside it:
 

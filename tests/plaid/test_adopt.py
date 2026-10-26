@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from hearth import db
+from hearth import db, runlog
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid import connector as connector_module
 from hearth.plaid.credentials import CredentialStore
@@ -537,3 +537,21 @@ def test_a_first_sync_the_vault_stops_still_leaves_the_item_adopted(
         )
     finally:
         conn.close()
+
+
+def test_adopting_is_in_the_runtime_log_beside_links_connections(
+    world: World, outside: tuple[str, str], tmp_path: Path
+) -> None:
+    item_id, token = outside
+    log = runlog.configure(world.settings.data_dir)
+    try:
+        assert adopt(world, "avery", token_file(tmp_path, token)) == 0
+        assert adopt(world, "avery", token_file(tmp_path, token), confirm=item_id) == 0
+    finally:
+        runlog.stop(world.settings.data_dir)
+    written = log.read_text()
+
+    member = world.member_ids["avery"]
+    assert f"member {member} adopted Quarry Street Brokerage as item {item_id}" in written
+    assert "demo /item/get: ok request_id=demo" in written
+    assert token not in written

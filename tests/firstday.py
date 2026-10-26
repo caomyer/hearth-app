@@ -126,7 +126,7 @@ class FirstDay:
                 item_limit="10",
                 used_elsewhere="0",
             )
-            start = connector.start_link()
+            start = connector.start_link(served_at="http://testserver")
             token = self.plaid.public_token(start.link_token, institution)
             return connector.finish_link(Secret(token), "")
         finally:

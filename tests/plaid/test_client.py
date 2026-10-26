@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -155,3 +156,20 @@ def test_the_https_transport_sends_nothing_outside_plaid() -> None:
         https_transport("https://example.invalid/item/remove", b"{}")
     with pytest.raises(ValueError, match="outside the Plaid API"):
         https_transport("https://plaid.demo.invalid/item/remove", b"{}")
+
+
+def test_a_link_token_is_good_for_four_hours_from_when_it_is_made(client: PlaidClient) -> None:
+    before = datetime.now(UTC)
+    link = client.create_link_token(user="hearth-member-1", days_requested=730)
+
+    assert link.expires is not None
+    assert before + timedelta(hours=4) <= link.expires <= datetime.now(UTC) + timedelta(hours=4)
+
+
+def test_plaids_request_id_is_kept_with_its_refusal(fake: FakePlaid, client: PlaidClient) -> None:
+    fake.fail_next("/link/token/create", "INVALID_FIELD")
+
+    with pytest.raises(PlaidRejectedError) as refused:
+        client.create_link_token(user="hearth-member-1", days_requested=730)
+
+    assert (refused.value.error_code, refused.value.request_id) == ("INVALID_FIELD", "demo")

@@ -8,11 +8,16 @@ failure is raised afresh, outside the handler that caught the underlying error, 
 reporter that walks the whole exception chain and prints every frame's locals finds no
 request body, response body or key in it (``tests/plaid/test_no_leak.py``).
 
+Every call is noted in the runtime log (``hearth.runlog``): the path, the environment, and how
+it ended, with Plaid's error code and the request id Plaid gave it. Nothing else of a request
+or a response is ever logged.
+
 Amounts are read as `Decimal`, never as floats, and kept with Plaid's own sign: positive is
 money leaving the account.
 """
 
 import json
+import logging
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -22,6 +27,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
+from hearth import runlog
 from hearth.plaid.approval import Approval, Operation
 from hearth.vault.secret import Secret
 
@@ -29,6 +35,8 @@ PLAID_VERSION = "2020-09-14"
 TIMEOUT_SECONDS = 60
 SYNC_PAGE_SIZE = 500
 CLIENT_NAME = "Hearth"
+
+_log = logging.getLogger(__name__)
 
 
 class Environment(StrEnum):
@@ -90,11 +98,15 @@ class PlaidUnreachableError(PlaidError):
 class PlaidRejectedError(PlaidError):
     """Plaid answered with an error, named by Plaid's own error type and code."""
 
-    def __init__(self, error_type: str, error_code: str, status: int) -> None:
+    def __init__(
+        self, error_type: str, error_code: str, status: int, request_id: str | None = None
+    ) -> None:
         super().__init__(f"Plaid refused the request: {error_type} {error_code} (HTTP {status})")
         self.error_type = error_type
         self.error_code = error_code
         self.status = status
+        self.request_id = request_id
+        """What Plaid support asks for to find this request; never a secret."""
 
 
 class PlaidMalformedError(PlaidError):
@@ -237,10 +249,19 @@ class PlaidClient:
         return f"PlaidClient(environment={self._credentials.environment.value})"
 
     def create_link_token(
-        self, *, user: str, days_requested: int, access_token: Secret | None = None
+        self,
+        *,
+        user: str,
+        days_requested: int,
+        access_token: Secret | None = None,
+        redirect_uri: str | None = None,
     ) -> LinkToken:
         """A token for Plaid Link: for a new Item, or, with `access_token`, to sign an existing
-        Item in again (update mode), which keeps the Item and so uses no new connection."""
+        Item in again (update mode), which keeps the Item and so uses no new connection.
+
+        With `redirect_uri`, a bank that takes over the whole page for its own sign-in sends the
+        member back there, where Link carries on (``docs/connections.md``). Plaid refuses the
+        call unless the address is one of the account's allowed redirect URIs, exactly."""
         self._approval.require(Operation.LINK, "creating a Link token")
         fields: dict[str, object] = {
             "client_name": CLIENT_NAME,
@@ -248,6 +269,8 @@ class PlaidClient:
             "country_codes": ["US"],
             "user": {"client_user_id": user},
         }
+        if redirect_uri is not None:
+            fields["redirect_uri"] = redirect_uri
         secrets: dict[str, Secret] = {}
         if access_token is None:
             fields["products"] = ["transactions"]
@@ -355,14 +378,28 @@ class PlaidClient:
         # Raised here, outside the handler, so the transport's own frames and error are not
         # this exception's context: they hold the request body.
         if unreachable is not None:
+            _log.warning("%s %s: unreachable (%s)", environment.value, path, unreachable)
             raise PlaidUnreachableError(f"Plaid could not be reached ({unreachable})")
-        payload = _parse(reply)
+        try:
+            payload = _parse(reply)
+        except PlaidMalformedError:
+            _log.warning("%s %s: unreadable reply (HTTP %d)", environment.value, path, reply.status)
+            raise
+        request_id = runlog.identifier(payload.get("request_id"))
         if reply.status != 200:
-            raise PlaidRejectedError(
-                _optional_text(payload, "error_type") or "UNKNOWN",
-                _optional_text(payload, "error_code") or "UNKNOWN",
+            error_type = runlog.code(payload.get("error_type")) or "UNKNOWN"
+            error_code = runlog.code(payload.get("error_code")) or "UNKNOWN"
+            _log.warning(
+                "%s %s: refused %s %s (HTTP %d) request_id=%s",
+                environment.value,
+                path,
+                error_type,
+                error_code,
                 reply.status,
+                request_id,
             )
+            raise PlaidRejectedError(error_type, error_code, reply.status, request_id)
+        _log.info("%s %s: ok request_id=%s", environment.value, path, request_id)
         return payload
 
 

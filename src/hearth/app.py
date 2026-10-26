@@ -48,8 +48,9 @@ _SECURITY_HEADERS = {
     "Cross-Origin-Resource-Policy": "same-origin",
 }
 
-LINK_PAGE = "/connect/link"
-"""The only page allowed to set a content security policy of its own."""
+LINK_PAGES = frozenset({"/connect/link", "/connect/oauth"})
+"""The only pages allowed to set a content security policy and an opener policy of their own:
+the one that opens Plaid Link, and the one Link carries on at after a bank's own sign-in."""
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -100,12 +101,17 @@ def _in_background(work: Callable[[], None]) -> None:
 
 async def _add_security_headers(request: Request, call_next: CallNext) -> Response:
     response = await call_next(request)
-    # The one page that opens Plaid Link widens its own policy to Plaid's script and frame;
-    # every other page gets the locked-down default.
-    policy = response.headers.get("Content-Security-Policy")
+    # The pages that open Plaid Link widen their own policies to Plaid's script and frame and
+    # to the bank's sign-in window (``hearth.web.routes.connect``); every other page gets the
+    # locked-down default.
+    own = {
+        name: response.headers[name]
+        for name in ("Content-Security-Policy", "Cross-Origin-Opener-Policy")
+        if name in response.headers
+    }
     response.headers.update(_SECURITY_HEADERS)
-    if policy is not None and request.url.path == LINK_PAGE:
-        response.headers["Content-Security-Policy"] = policy
+    if request.url.path in LINK_PAGES:
+        response.headers.update(own)
     if not request.url.path.startswith("/static/"):
         # Pages hold private figures; never leave a copy in a cache for the next person.
         response.headers["Cache-Control"] = "no-store"

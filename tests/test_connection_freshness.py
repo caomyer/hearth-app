@@ -20,7 +20,7 @@ from hearth.plaid.connector import NEW, Mapping
 from hearth.plaid.registry import ItemState, Registry
 from hearth.sharing import Facet
 from tests.conftest import World
-from tests.plaid.test_connect_pages import add_dana, form, save_keys, stand_in_tokens
+from tests.plaid.linking import add_dana, form, save_keys, stand_in_tokens
 from tests.test_disclosure import disclosure_for, household_for
 from tests.test_real_ledger_shapes import WITHOUT_TRANSACTIONS
 

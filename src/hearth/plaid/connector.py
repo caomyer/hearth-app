@@ -24,9 +24,10 @@ from datetime import date, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from hearth import accounts as hearth_accounts
-from hearth import db
+from hearth import db, runlog
 from hearth.accounts import Account
 from hearth.clock import Clock
 from hearth.disclosure import Concealed
@@ -107,14 +108,21 @@ class Refusal(StrEnum):
     NOT_UNDERSTOOD = "not-understood"
     TARGET_TAKEN = "target-taken"
     STATEMENT_UNREADABLE = "statement-unreadable"
+    WRONG_ADDRESS = "wrong-address"
+    """Opened from an address other than the one Plaid brings the member back to, where this
+    browser holds no session and the tab holds no Link token."""
 
 
 class Refused(Exception):  # noqa: N818 - it names an outcome, not a fault
-    def __init__(self, reason: Refusal, plaid_code: str | None = None) -> None:
+    def __init__(
+        self, reason: Refusal, plaid_code: str | None = None, plaid_request: str | None = None
+    ) -> None:
         super().__init__(reason.value)
         self.reason = reason
         self.plaid_code = plaid_code
         """Plaid's own error code, when Plaid refused: safe to show, and what to look up."""
+        self.plaid_request = plaid_request
+        """Plaid's request id, when Plaid refused: what its support asks for."""
 
 
 class Hold(StrEnum):
@@ -357,6 +365,8 @@ class LinkStart:
     """Set when signing an existing connection in again, which uses no new slot."""
     stand_in: tuple[tuple[str, str], ...]
     """(institution name, public token) for each invented bank, on the stand-in only."""
+    expires: datetime | None = None
+    """When Plaid stops accepting the Link token, so a tab never carries on with a stale one."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -689,9 +699,11 @@ class Connector:
             raise Concealed
         self._store().choose_household(self._viewer.id, chosen=chosen, now=self._clock())
 
-    def start_link(self) -> LinkStart:
+    def start_link(self, *, served_at: str) -> LinkStart:
         """Everything is checked before Plaid is asked for anything: approval, which Plaid
-        account, and that it has a connection left."""
+        account, and that it has a connection left. When Link can bring the member back from a
+        bank that signs in on its own page, it opens only at the address it brings them back
+        to, so `served_at`, the address of the page asking, must be that one."""
         store = self._store()
         scope = self._usable_scope(store)
         capacity = store.capacity(scope)
@@ -700,13 +712,18 @@ class Connector:
         credentials = store.credentials(scope)
         if not self._setup.allows(credentials.environment, Operation.LINK, Operation.READ):
             raise Refused(Refusal.NOT_APPROVED)
+        self._check_return(credentials.environment, served_at)
         client = self._setup.client(credentials)
         token = self._plaid(
             lambda: client.create_link_token(
-                user=self._client_user(), days_requested=DAYS_REQUESTED
+                user=self._client_user(),
+                days_requested=DAYS_REQUESTED,
+                redirect_uri=self._setup.link_return(credentials.environment),
             )
         )
-        return LinkStart(token.token, credentials.environment, None, self._stand_in(token.token))
+        return LinkStart(
+            token.token, credentials.environment, None, self._stand_in(token.token), token.expires
+        )
 
     def finish_link(self, public_token: Secret, institution_hint: str) -> str:
         """Exchange what Link returned, record the new Item, and start its first sync."""
@@ -730,23 +747,32 @@ class Connector:
             days_requested=DAYS_REQUESTED,
             now=self._clock(),
         )
+        named = item.institution
         with contextlib.suppress(Refused):
             institution = self._plaid(lambda: client.institution(exchanged.access_token))
             self._registry.name_institution(item.item_id, institution)
+            named = institution.name or named
+        _log.info(
+            "member %s connected %s as item %s", self._viewer.id, runlog.name(named), item.item_id
+        )
         self._sync_later(item.item_id)
         return item.item_id
 
-    def start_reconnect(self, item_id: str) -> LinkStart:
+    def start_reconnect(self, item_id: str, *, served_at: str) -> LinkStart:
         """Sign an expired connection in again. The Item stays the same, so no slot is used."""
         item = self._own_item(item_id)
         credentials = self._store().credentials(item.credentials)
         if not self._setup.allows(credentials.environment, Operation.LINK, Operation.READ):
             raise Refused(Refusal.NOT_APPROVED)
+        self._check_return(credentials.environment, served_at)
         client = self._setup.client(credentials)
         token = self._vault().get(self._viewer.id, item.item_id)
         link = self._plaid(
             lambda: client.create_link_token(
-                user=self._client_user(), days_requested=item.days_requested, access_token=token
+                user=self._client_user(),
+                days_requested=item.days_requested,
+                access_token=token,
+                redirect_uri=self._setup.link_return(credentials.environment),
             )
         )
         stand_in = (
@@ -754,7 +780,7 @@ class Connector:
             if self._setup.stand_in is not None and link.token.startswith("link-demo-")
             else ()
         )
-        return LinkStart(link.token, credentials.environment, item.item_id, stand_in)
+        return LinkStart(link.token, credentials.environment, item.item_id, stand_in, link.expires)
 
     def finish_reconnect(self, item_id: str, public_token: Secret | None) -> None:
         item = self._own_item(item_id)
@@ -878,6 +904,13 @@ class Connector:
             self._vault().delete(self._viewer.id, item.item_id)
             self._registry.forget(item.item_id)
             raise
+        # Beside Link's "connected", so the log tells every way an Item came to be held.
+        _log.info(
+            "member %s adopted %s as item %s, made outside hearth",
+            self._viewer.id,
+            runlog.name(offer.institution.name or ""),
+            item.item_id,
+        )
         try:
             synced = _sync(self._db, self._feed_path, self._setup, self._clock, item)
         except SyncBusyError:
@@ -1023,6 +1056,12 @@ class Connector:
             sync=self._setup.allows(environment, Operation.READ),
             remove=self._setup.allows(environment, Operation.REMOVE),
         )
+
+    def _check_return(self, environment: Environment, served_at: str) -> None:
+        """Refuse to open Link anywhere but at the address it would bring the member back to."""
+        uri = self._setup.link_return(environment)
+        if uri is not None and address_of(uri) != served_at:
+            raise Refused(Refusal.WRONG_ADDRESS)
 
     def _items(self) -> list[Item]:
         return [
@@ -1309,15 +1348,18 @@ class Connector:
         """Make a Plaid call, turning its failure into a `Refused` raised outside the handler,
         so nothing of the call's own frames travels with it."""
         code: str | None = None
+        request_id: str | None = None
         try:
             return call()
         except ApprovalRequired:
             reason = Refusal.NOT_APPROVED
+            _log.warning("a Plaid call was not sent: this run is not approved for it")
         except PlaidError as error:
+            # The client has logged the call, its error code and Plaid's request id.
             reason = Refusal.PLAID_FAILED
-            code = error.error_code if isinstance(error, PlaidRejectedError) else None
-            _log.warning("a Plaid call failed: %s", error)
-        raise Refused(reason, code)
+            if isinstance(error, PlaidRejectedError):
+                code, request_id = error.error_code, error.request_id
+        raise Refused(reason, code, request_id)
 
     def _today(self) -> date:
         return self._clock().astimezone().date()
@@ -1430,6 +1472,12 @@ def _called(institution: str, account: AccountView) -> str:
 def _account_name(text: str) -> str:
     """What a member typed to call an account: printable and trimmed."""
     return "".join(ch for ch in text if ch.isprintable()).strip()
+
+
+def address_of(url: str) -> str:
+    """A URL's scheme, host and port: what a browser keeps a session and a tab's storage under."""
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
 
 
 def _institution_name(text: str) -> str:

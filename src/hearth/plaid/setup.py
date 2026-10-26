@@ -36,6 +36,13 @@ class PlaidSetup:
     synced: Callable[[], None] = field(default=lambda: None)
     """Called after each sync made while history is still arriving, so whoever keeps figures
     from connections takes each one in as it lands, not only when the history is complete."""
+    redirect_uri: str | None = None
+    """Where Plaid sends a member back after a bank that took over the whole page for its own
+    sign-in: this hearth's ``/connect/oauth``, at the address it is served on, or None when it
+    offers no way back and Link uses the bank's own window alone. It must be one of the Plaid
+    account's allowed redirect URIs, character for character, and Plaid's production accepts
+    only an ``https://`` one, so `hearth serve` sets it only when serving over HTTPS
+    (``docs/connections.md``)."""
 
     @property
     def environments(self) -> tuple[Environment, ...]:
@@ -49,6 +56,16 @@ class PlaidSetup:
     def allows(self, environment: Environment, *operations: Operation) -> bool:
         approval = self.approval_for(environment)
         return all(approval.allows(operation) for operation in operations)
+
+    def link_return(self, environment: Environment) -> str | None:
+        """The redirect URI a Link token for `environment` carries, or None when it carries
+        none: the stand-in never leaves the page, and Plaid's production returns only to an
+        ``https://`` address."""
+        if environment is Environment.DEMO or self.redirect_uri is None:
+            return None
+        if environment is Environment.PRODUCTION and not self.redirect_uri.startswith("https://"):
+            return None
+        return self.redirect_uri
 
     def signed_in_again(self, environment: Environment, public_token: Secret | None) -> None:
         """Tell the stand-in a member signed in again. Plaid itself needs no call for this: an

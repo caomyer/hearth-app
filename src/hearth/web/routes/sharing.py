@@ -95,5 +95,6 @@ def connections_page(
         connect=connect.connector(app, conn, view).overview(),
         message=message,
         plaid_code=plaid_code,
+        plaid_request=connect.plaid_request(request, message),
         is_problem=connect.is_problem(outcome),
     )

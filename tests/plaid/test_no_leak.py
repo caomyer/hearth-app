@@ -136,7 +136,7 @@ def test_a_refused_step_carries_nothing_of_the_call_that_failed(world: World) ->
 
     world.plaid.fail_next("/item/public_token/exchange", "INVALID_PUBLIC_TOKEN")
     with world.connector("casey") as connector:
-        start = connector.start_link()
+        start = connector.start_link(served_at="http://testserver")
         # Held as a Secret here too: this frame is part of what is rendered.
         token = Secret(world.plaid.public_token(start.link_token, "ins_casey"))
         with pytest.raises(Refused) as raised:

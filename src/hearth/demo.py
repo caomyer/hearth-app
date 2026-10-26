@@ -546,7 +546,7 @@ def connect(settings: Settings, setup: PlaidSetup, *, now: datetime) -> None:
                     used_elsewhere="3" if household else "0",
                 )
             for bank in banks:
-                start = connector.start_link()
+                start = connector.start_link(served_at="http://localhost")
                 assert setup.stand_in is not None  # noqa: S101 - the demo always has it
                 token = setup.stand_in.public_token(start.link_token, bank)
                 connector.finish_link(Secret(token), "")

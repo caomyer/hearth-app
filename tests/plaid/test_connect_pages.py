@@ -5,14 +5,12 @@ approved for the call, is told so and nothing reaches Plaid. A member reaches on
 connections; anyone else's answers exactly like one that does not exist.
 """
 
-import re
 from dataclasses import replace
 from datetime import timedelta
 
 import pytest
-from fastapi.testclient import TestClient
 
-from hearth import auth, db, members
+from hearth import db, members
 from hearth.members import MemberId
 from hearth.plaid.approval import Approval, Operation
 from hearth.plaid.fake import DEMO_INSTITUTIONS
@@ -22,56 +20,12 @@ from hearth.vault.errors import TokenNotFoundError
 from hearth.vault.secret import Secret
 from hearth.vault.tokens import TokenVault
 from tests import household
-from tests.conftest import World, link, password_of
+from tests.conftest import World, link
 from tests.plaid.conftest import held_by
+from tests.plaid.linking import add_dana, form, save_keys, stand_in_tokens
 from tests.test_concealment import assert_indistinguishable
 
 LINK_CALL = "/link/token/create"
-
-
-def form(world: World, client: TestClient, **fields: str) -> dict[str, str]:
-    return {"csrf": world.csrf(client), **fields}
-
-
-def save_keys(world: World, client: TestClient, **fields: str) -> None:
-    sent = {
-        "client_id": "client-dana",
-        "secret": "secret-dana",
-        "environment": "demo",
-        "item_limit": "10",
-        "used_elsewhere": "0",
-        **fields,
-    }
-    response = client.post("/connect/credentials", data=form(world, client, **sent))
-    assert response.status_code == 303
-
-
-def add_dana(world: World) -> TestClient:
-    """A new member with no Plaid account of their own yet."""
-    conn = world.connect()
-    try:
-        auth.create_member(
-            conn,
-            actor=None,
-            username="dana",
-            display_name="Dana",
-            is_admin=False,
-            password=password_of("dana"),
-            now=world.clock(),
-        )
-    finally:
-        conn.close()
-    world.plaid.register_client("client-dana", "secret-dana")
-    return world.signed_in("dana")
-
-
-def stand_in_tokens(page: str) -> dict[str, str]:
-    found = re.findall(
-        r'name="public_token" value="([^"]+)">\s*'
-        r'<input type="hidden" name="institution" value="([^"]+)"',
-        page,
-    )
-    return {name: token for token, name in found}
 
 
 def test_the_connection_count_comes_from_the_members_own_plaid_account(world: World) -> None:
@@ -310,7 +264,7 @@ def test_a_connection_whose_institution_plaid_cannot_name_is_still_kept(world: W
     world.plaid.fail_next("/item/get", "INTERNAL_SERVER_ERROR")
 
     with world.connector("avery") as connector:
-        start = connector.start_link()
+        start = connector.start_link(served_at="http://testserver")
         token = world.plaid.public_token(start.link_token, "ins_avery")
         item_id = connector.finish_link(Secret(token), "Gryphon Mutual")
 

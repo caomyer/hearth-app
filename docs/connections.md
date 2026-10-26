@@ -56,6 +56,62 @@ That order never needs more connections than the account has.
 The one risk is the time in between, when the bank is not connected and an awkward sign-in can leave a member there for a while; the page says so.
 A connection that only needs its member to sign in again is fixed in place through Link's update mode, which keeps the Item and uses no new slot.
 
+## Banks that sign in on their own page
+
+Most large banks sign a member in on their own site through OAuth, not inside Plaid's window.
+Plaid Link does this one of two ways, and decides which itself: it opens the bank in a window of its own over hearth's page, or the bank takes over the tab and Plaid brings the member back to hearth afterwards.
+Which one a bank gets cannot be told in advance: Plaid reports `oauth` for the institution, not for the way it will open, and banks that report the same work one way or the other.
+Plaid's own guidance is to support both ([Plaid's OAuth guide](https://plaid.com/docs/link/oauth/)).
+Hearth always supports the window of its own, and the tab taken over whenever it is served over HTTPS, which Plaid's production requires of the way back.
+
+**The window of its own.**
+Every hearth page sends `Cross-Origin-Opener-Policy: same-origin`, which cuts off any window a page opens to another site.
+On the link page that broke Link: its `window.open` for the bank came back empty, exactly as if the browser had blocked it, while the bank's window still opened, the member still approved access, and Plaid created the Item, holding a slot, with Link never learning of it.
+The two link pages, `/connect/link` and `/connect/oauth`, therefore send `same-origin-allow-popups`, which keeps the windows those pages open and nothing else: a window from another site that opens hearth is still cut off.
+
+**The tab taken over.**
+This needs three things, and hearth has all three when served over HTTPS.
+The Link token carries a `redirect_uri`, hearth's `/connect/oauth`; that route is where Plaid brings the member back; and Link is opened again there with `receivedRedirectUri` set to the full address the browser arrived at, with the same Link token it began with.
+Hearth keeps no Link token: the link page puts it in that tab's session storage until Link finishes either way or Plaid stops accepting it, and the page Plaid comes back to reads it from there.
+A token is good for one attempt only; another attempt, in that tab or any other, gets a new one.
+Coming back to a tab that no longer holds its token is said plainly, never shown as a member closing Plaid.
+Neither page needs more of the content security policy than the window of its own does: the bank's page replaces hearth's at the top of the tab, which no frame or script rule governs.
+
+**The redirect URI.**
+Plaid's production accepts only an `https://` redirect URI; plain `http://localhost` is allowed in its sandbox alone.
+So `hearth serve` offers Plaid a way back only when it serves HTTPS itself:
+
+```sh
+mkcert -install && mkcert localhost      # brew install mkcert: a certificate this Mac's browsers trust
+uv run hearth serve --tls-cert localhost.pem --tls-key localhost-key.pem --approve-plaid link --approve-plaid read
+```
+
+The redirect URI is then `https://localhost:PORT/connect/oauth`, `https://localhost:8000/connect/oauth` on the default port and `https://localhost/connect/oauth` on 443, whose port a browser leaves out of its address, and always `localhost`, whatever `--host` says, so the address to register never depends on how a page was reached.
+`hearth serve` prints it at start-up and the connect page shows it.
+Plaid refuses a Link token whose redirect URI is not one of the Plaid account's allowed redirect URIs, character for character, so register it in the Plaid dashboard, under the API settings' allowed redirect URIs, before connecting: a refused token costs nothing, since no Link opens.
+Link then opens only from the redirect URI's own address, so the member comes back to the browser session and the tab storage they left from; from any other, such as `127.0.0.1` for `localhost`, the page names the address to use and sends nothing.
+
+Served without a certificate, hearth sends no redirect URI, and Link opens every bank's own sign-in in a window of its own, as it did before.
+Whether a given bank needs the tab taken over is known only by trying it: Plaid opens the window of its own whenever it can.
+
+**When Link closes without connecting.**
+Link says why: Plaid's error type and code, the step the member reached (`status`), the bank, and Plaid's request id, which is what Plaid support asks for.
+Hearth keeps all of that in the runtime log and tells the member what is true:
+closing before signing in anywhere connected nothing and used nothing;
+closing after a bank's own sign-in opened, or after coming back from one, or on an error, may have left an Item at Plaid that hearth never received, so the member is told to check their Plaid dashboard before trying again, with Plaid's code and request id.
+Link's own messages are free text and are neither logged nor carried to the page.
+
+## The runtime log
+
+Hearth writes `hearth.log` in its data directory, readable only by the user it runs as, kept to a few rotated files of 1 MB.
+`hearth serve` and `hearth plaid` write to it.
+It holds every Plaid call by its path and environment, and how it ended: succeeded, refused with Plaid's error type, code and HTTP status, unreachable, or unreadable, each with the request id Plaid gave it.
+It holds each new connection by member id, institution and Item id, whether linked or adopted from outside hearth; each return from a bank's own sign-in; and each time Link closed without connecting, with Plaid's codes, the step reached, the institution and Plaid's identifiers.
+It never holds a request or response body, an access token, a public token, a Link token, a client id or secret, a balance, an amount, an account number, an account name or a payee.
+The client logs only what it chose to read from a response, and every value that came from a browser is checked against the shape Plaid gives it before it is written (`hearth.runlog`, `tests/plaid/test_runlog.py`).
+It is owner-only (0600), rotated files included, inside the 0700 data directory.
+That is acceptable because `books.beancount` beside it, also 0600, already holds every transaction with payees and amounts, so the log adds nothing a reader of that directory could not already have.
+
 ## Adopting a connection made outside hearth
 
 A household may already hold working Items that another tool linked through the same Plaid account.
@@ -172,6 +228,7 @@ The daily sync and `hearth plaid sync` also leave alone an Item whose history is
   It is a staging store for the import, not a second store of record.
 - Access tokens and Plaid keys are in the vault, sealed under the Keychain's master key.
 - Uploaded statements are in `statements/` in the data directory, readable only by their owner on the machine.
+- What hearth asked of Plaid, and how it went, is in `hearth.log` in the data directory (see the runtime log, above).
 
 ## What is not done yet
 

@@ -201,7 +201,7 @@ def institutions() -> list[FakeInstitution]:
 def link(world: World, username: str, institution: str) -> str:
     """Connect `username` to an invented institution through the stand-in, as Link would."""
     with world.connector(username) as connector:
-        start = connector.start_link()
+        start = connector.start_link(served_at="http://testserver")
         token = world.plaid.public_token(start.link_token, institution)
         return connector.finish_link(Secret(token), "")
 

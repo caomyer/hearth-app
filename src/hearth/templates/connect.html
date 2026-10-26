@@ -24,6 +24,9 @@
       {% if using.environment.value != "production" %}
       <p class="sm faint mt-1">{{ "Hearth's demo stand-in: invented banks, nobody's money." if using.environment.value == "demo" else "Plaid's sandbox: test institutions only." }}</p>
       {% endif %}
+      {% if using.environment.value != "demo" and redirect_uri %}
+      <p class="sm faint mt-1">Some banks sign you in on their own page, and Plaid brings you back to <code>{{ redirect_uri }}</code>. It must be one of {{ "this" if using.is_household else "your" }} Plaid account's allowed redirect URIs, exactly as written here.</p>
+      {% endif %}
     </div>
   </section>
   {% else %}
@@ -113,7 +116,7 @@
         <input type="hidden" name="csrf" value="{{ session.csrf }}">
         <button class="btn mt-6" type="submit"><svg aria-hidden="true"><use href="#i-plus"/></svg>Connect {{ "another" if connect.items else "a" }} bank</button>
       </form>
-      <p class="xs faint mt-2">Uses one of the {{ using.capacity.remaining }} connections left. Opens your bank's own sign-in in a secure window run by the connection provider. Hearth never sees your bank password.</p>
+      <p class="xs faint mt-2">Uses one of the {{ using.capacity.remaining }} connections left. Opens your bank's own sign-in through the connection provider, in a secure window or in this tab and back. Hearth never sees your bank password.</p>
       {% endif %}
     </div>
   </section>

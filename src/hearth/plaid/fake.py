@@ -19,12 +19,15 @@ import json
 import secrets
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
 
 from hearth.plaid.client import DEMO_HOST, LOGIN_REQUIRED, MUTATED_DURING_PAGINATION, PRIMARIES
+
+LINK_TOKEN_HOURS = 4
+"""How long a Link token is good for after it is made, at Plaid and here."""
 
 PAYEES = (
     ("Larkspur Grocer", "FOOD_AND_DRINK_GROCERIES", Decimal("64.20")),
@@ -286,8 +289,9 @@ class FakePlaid:
         days = int(request.get("transactions", {}).get("days_requested", 90))
         token = f"link-demo-{secrets.token_hex(8)}"
         self._link_tokens[token] = (request["client_id"], days, update)
-        expires = datetime.combine(self._today(), datetime.min.time()) + timedelta(hours=4)
-        return _ok({"link_token": token, "expiration": expires.isoformat() + "Z"})
+        # Four hours from when it is made, as Plaid's are.
+        expires = datetime.now(UTC) + timedelta(hours=LINK_TOKEN_HOURS)
+        return _ok({"link_token": token, "expiration": expires.isoformat().replace("+00:00", "Z")})
 
     def _exchange(self, request: dict[str, Any]) -> tuple[int, bytes]:
         found = self._public_tokens.pop(request.get("public_token", ""), None)
@@ -386,7 +390,7 @@ class FakePlaid:
             return _error(400, "INVALID_INPUT", "INVALID_ACCESS_TOKEN")
         item.removed = True
         item.access_token = ""
-        return _ok({"request_id": "demo"})
+        return _ok({})
 
     def _by_token(self, token: str) -> _Item | None:
         if not token:
@@ -535,8 +539,9 @@ def _encode(value: object) -> bytes:
     return json.dumps(value, default=default).encode()
 
 
-def _ok(value: object) -> tuple[int, bytes]:
-    return 200, _encode(value)
+def _ok(value: dict[str, Any]) -> tuple[int, bytes]:
+    # Plaid names every request it answers, as its support asks for that name.
+    return 200, _encode({**value, "request_id": f"demo{secrets.token_hex(6)}"})
 
 
 def _error(status: int, error_type: str, code: str) -> tuple[int, bytes]:

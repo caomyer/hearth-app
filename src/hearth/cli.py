@@ -4,6 +4,9 @@
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
 --approve-plaid OPERATION`` for the web pages, and ``--approved`` for each ``hearth plaid``
 command that calls Plaid. Without it, they refuse before anything is sent.
+
+``hearth serve`` and ``hearth plaid`` note what they ask of Plaid in ``hearth.log`` in the data
+directory (``hearth.runlog``).
 """
 
 import argparse
@@ -12,13 +15,14 @@ import sqlite3
 import sys
 import tempfile
 import threading
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 import uvicorn
 from beancount.core.data import Open
 
-from hearth import accounts, auth, books, comparison, db, demo, members
+from hearth import accounts, auth, books, comparison, db, demo, members, runlog
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
 from hearth.clock import Clock, system_clock
@@ -50,6 +54,14 @@ def main(argv: list[str] | None = None) -> None:
         help="approve one kind of live Plaid call for this run: "
         + "; ".join(f"{op.value}: {DESCRIPTIONS[op]}" for op in Operation),
     )
+    serve.add_argument(
+        "--tls-cert",
+        type=Path,
+        metavar="PEM",
+        help="serve over HTTPS with this certificate for localhost, with --tls-key, which also"
+        " lets Plaid bring a member back from a bank that signs in on its own page",
+    )
+    serve.add_argument("--tls-key", type=Path, metavar="PEM", help="the certificate's key")
 
     plaid = commands.add_parser("plaid", help="the household's Plaid connections")
     plaid_commands = plaid.add_subparsers(dest="plaid_command", required=True)
@@ -152,9 +164,18 @@ def main(argv: list[str] | None = None) -> None:
     arguments = parser.parse_args(argv)
     match arguments.command:
         case "serve":
-            _serve(arguments.host, arguments.port, Approval.of(arguments.approve_plaid))
+            if (arguments.tls_cert is None) != (arguments.tls_key is None):
+                parser.error("--tls-cert and --tls-key go together")
+            tls = (arguments.tls_cert, arguments.tls_key) if arguments.tls_cert else None
+            _serve(arguments.host, arguments.port, Approval.of(arguments.approve_plaid), tls)
         case "plaid":
-            sys.exit(plaid_cli.run(arguments, Settings.from_environment()))
+            settings = Settings.from_environment()
+            runlog.configure(settings.data_dir)
+            try:
+                code = plaid_cli.run(arguments, settings)
+            finally:
+                runlog.stop(settings.data_dir)
+            sys.exit(code)
         case "add-member":
             _add_member(arguments.username, arguments.name, is_admin=arguments.admin)
         case "add-account":
@@ -180,28 +201,70 @@ def _add_address(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--port", type=int, default=8000)
 
 
-def _serve(host: str, port: int, approval: Approval) -> None:
+type Tls = tuple[Path, Path]
+"""A certificate and its key, both PEM files."""
+
+
+def redirect_uri(port: int) -> str:
+    """Where Plaid brings a member back after a bank's own sign-in, exactly as it must be
+    allowed in the Plaid dashboard. Always ``localhost``, so the address to register never
+    depends on how a page was reached. Port 443 is left out, as a browser leaves it out of the
+    address it reports."""
+    address = "localhost" if port == 443 else f"localhost:{port}"
+    return f"https://{address}/connect/oauth"
+
+
+def _serve(host: str, port: int, approval: Approval, tls: Tls | None = None) -> None:
     settings = Settings.from_environment()
+    if tls is not None:
+        settings = replace(settings, secure_cookies=True)
     approved = ", ".join(sorted(op.value for op in approval.operations)) or "none"
     print(f"Live Plaid calls approved for this run: {approved}.", flush=True)
-    setup = PlaidSetup(approval=approval)
-    _run(settings, books.from_household(settings, rulings=rulings_in), host, port, setup)
+    # Plaid's production returns only to an https address, so only HTTPS offers a way back.
+    uri = redirect_uri(port) if tls is not None else None
+    setup = PlaidSetup(approval=approval, redirect_uri=uri)
+    if uri is not None:
+        print(
+            f"Open Hearth at {uri.removesuffix('/connect/oauth')}. Plaid brings members back from"
+            f" a bank's own sign-in to {uri}, which must be one of the Plaid account's allowed"
+            " redirect URIs.",
+            flush=True,
+        )
+    else:
+        print(
+            "Not served over HTTPS: Plaid opens each bank's own sign-in in a window of its own"
+            " and offers no way back to a bank that takes over the tab. --tls-cert and --tls-key"
+            " offer one (docs/connections.md).",
+            flush=True,
+        )
+    _run(settings, books.from_household(settings, rulings=rulings_in), host, port, setup, tls)
 
 
 def _run(
-    settings: Settings, establish: books.Establish, host: str, port: int, plaid: PlaidSetup
+    settings: Settings,
+    establish: books.Establish,
+    host: str,
+    port: int,
+    plaid: PlaidSetup,
+    tls: Tls | None = None,
 ) -> None:
     """Serve, recomputing at start-up and then every morning (decision 6).
 
     The app is created first, as that brings both databases up to date, so the first
     recompute and the first sync never find a database part way through being created.
     """
-    bookkeeper = books.Bookkeeper(establish, system_clock)
-    app = create_app(settings, bookkeeper, plaid=plaid)
-    bookkeeper.recompute_daily()
-    if plaid.approval.allows(Operation.READ):
-        _sync_daily(settings, plaid, bookkeeper)
-    uvicorn.run(app, host=host, port=port)
+    log = runlog.configure(settings.data_dir)
+    print(f"Hearth notes what it asks of Plaid in {log}", flush=True)
+    try:
+        bookkeeper = books.Bookkeeper(establish, system_clock)
+        app = create_app(settings, bookkeeper, plaid=plaid)
+        bookkeeper.recompute_daily()
+        if plaid.approval.allows(Operation.READ):
+            _sync_daily(settings, plaid, bookkeeper)
+        cert, key = tls if tls is not None else (None, None)
+        uvicorn.run(app, host=host, port=port, ssl_certfile=cert, ssl_keyfile=key)
+    finally:
+        runlog.stop(settings.data_dir)
 
 
 def _sync_daily(settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper) -> None:
