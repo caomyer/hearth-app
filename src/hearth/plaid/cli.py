@@ -164,7 +164,7 @@ def holdings(settings: Settings, setup: PlaidSetup, clock: Clock) -> int:
     """Store the price each connected brokerage gives each of its holdings today."""
     conn = db.connect(settings.database)
     try:
-        priced = price_holdings(conn, setup, clock)
+        priced = price_holdings(conn, settings.feed_database, setup, clock)
     finally:
         conn.close()
     if not priced.asked:

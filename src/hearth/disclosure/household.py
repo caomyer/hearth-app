@@ -82,7 +82,9 @@ class Headline:
 @dataclass(frozen=True, slots=True)
 class Slice:
     part: PartRef
-    value: Decimal
+    value: Decimal | None
+    """None when the figure is not known: it still takes its place, as its absence would say
+    something of the part the figure does not."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,8 +128,11 @@ class SpendingPanel:
     """Some spending went through accounts nobody owns, or several owners at once. It is in
     no part, so it is not counted, and its amount is not shown: it may be anyone's."""
     spent_counted: bool = True
-    """Whether any part behind `spent` has an account. When none has, the sum is of nothing
-    anybody connected, not a month in which nothing was spent, so it is not a figure."""
+    """Whether any part behind `spent` has an account that could show spending. When none
+    has, the sum is of nothing that says what was spent, not a month in which nothing was, so
+    it is not a figure. What kind each account is goes with its balance, so only a viewer who
+    may see every such part's balances is told so; anyone else reads the figure as not known
+    (`covered`), as though those accounts had not sent their history yet."""
     earned_counted: bool = True
     """`spent_counted`, for `earned`."""
 
@@ -372,8 +377,8 @@ def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> Sp
         bars=tuple(bars),
         typical=figures.typical([bar.spent for bar in bars[:-1] if bar.covered]),
         leaves_out_unassigned=bool(this_month.spending.unattributed),
-        spent_counted=any(h.seen(part) for part in spenders),
-        earned_counted=any(h.seen(part) for part in earners),
+        spent_counted=any(h.spends(part) for part in spenders) or not _explained(h, spenders),
+        earned_counted=any(h.spends(part) for part in earners) or not _explained(h, earners),
     )
 
 
@@ -384,7 +389,22 @@ def _sum(
 
 
 def _covers(h: Household, parts: Sequence[Part], month: Month) -> bool:
-    return all(figures.flows_cover(h.books, part.accounts, month) for part in parts)
+    """Whether every part behind a figure is whole for `month`. One whose accounts cannot show
+    spending or income, as brokerages cannot, adds nothing to either; but that is what kind
+    its accounts are, so it adds nothing only for a viewer who may see its balances. To anyone
+    else it is not known, as a part whose accounts have sent no history yet is."""
+    return all(
+        figures.flows_cover(h.books, part.accounts, month)
+        if h.spends(part)
+        else _explained(h, [part])
+        for part in parts
+    )
+
+
+def _explained(h: Household, parts: Sequence[Part]) -> bool:
+    """Whether the viewer may be told what kind of accounts `parts` have: only with their
+    balances (`Totals.spends`)."""
+    return all(h.gate.may(Facet.ACCOUNT_BALANCES, part.owners) for part in parts)
 
 
 def _categories(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> CategoryPanel:
@@ -449,7 +469,11 @@ def category_panel(
             for category in sorted(fixed)
         ),
         rows=tuple(rows[:CATEGORY_ROWS]) + _other(rows[CATEGORY_ROWS:]),
-        totals_only=tuple(Slice(h.part_ref(p), this_month.spent(p.owners)) for p in totals),
+        # A part that cannot have spent anything hearth sees has no total to show, not $0.
+        totals_only=tuple(
+            Slice(h.part_ref(p), this_month.spent(p.owners) if h.spends(p) else None)
+            for p in totals
+        ),
         unreviewed=_unreviewed(h, [*detailed, *totals], this_month, MonthFlows.spent_unreviewed),
     )
 

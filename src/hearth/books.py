@@ -30,7 +30,15 @@ from typing import Any
 
 from beancount import loader
 from beancount.core.account import is_valid as is_valid_account
-from beancount.core.data import Balance, Directive, Open, Pad, Transaction, entry_sortkey
+from beancount.core.data import (
+    Balance,
+    Commodity,
+    Directive,
+    Open,
+    Pad,
+    Transaction,
+    entry_sortkey,
+)
 from beancount.core.interpolate import BalanceError
 from beancount.ops import validation
 from beancount.parser import options
@@ -116,6 +124,14 @@ class Books:
     """Accounts members named that hearth does not see (`unseen`): only what moved between
     them and connected accounts is in the books, never what they hold. Each is `unanchored`
     and none is `awaiting`; no valuation holds a figure for them."""
+    invested: frozenset[str] = frozenset()
+    """Accounts hearth opened for a brokerage account, whatever it holds: Plaid sends them no
+    history, so none is `awaiting`, and each is an investment account whether or not its
+    holdings are in yet."""
+    positioned: dict[str, date] = field(default_factory=dict)
+    """Each account that holds what its brokerage reported, with the day it reported it
+    (`positioned`). Nothing says what it held on any day before, so no month before that day
+    is whole for it (``figures.covers``)."""
 
     @property
     def balance_unknown(self) -> frozenset[str]:
@@ -220,11 +236,12 @@ def compute(
     decide: Decide,
     synced: Mapping[str, tuple[str, date]] | None = None,
     unknown: Mapping[str, Unknown] | None = None,
+    invested: frozenset[str] = frozenset(),
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
     recent month end. `synced` is each fed ledger account's connection and its last successful
     sync (`synced_through`); `unknown`, each account whose opening balance could not be
-    derived, with why.
+    derived, with why; `invested`, each account a brokerage account feeds.
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
@@ -265,11 +282,12 @@ def compute(
         synced=vouches,
         # Plaid sends an investment account no transactions at all, so waiting on its
         # history would leave every month's spending incomplete for good.
-        awaiting=awaiting(history, today)
-        - {a for a, why in (unknown or {}).items() if why is Unknown.INVESTMENT},
+        awaiting=awaiting(history, today) - invested,
         unanchored=unanchored(entries),
         unknown=dict(unknown or {}),
         unseen=hidden,
+        invested=invested,
+        positioned=positioned(entries),
         pile=pile,
     )
 
@@ -288,9 +306,11 @@ def _disagreement(entries: Sequence[Directive], check: AssertionCheck) -> Ledger
     if asserted is not None and opening.anchors(asserted):
         bank = str(asserted.meta["reported-by"])
         day = check.date - timedelta(days=1)
+        what = "holdings" if opening.held(asserted) else "balance"
+        verb = "are" if opening.held(asserted) else "is"
         return LedgerError(
-            f"The balance {bank} reported for {day:%b} {day.day} is not what its transactions"
-            " add up to.",
+            f"The {what} {bank} reported for {day:%b} {day.day} {verb} not what its"
+            " transactions add up to.",
             check,
             reported_by=bank,
         )
@@ -446,6 +466,19 @@ def unanchored(entries: Sequence[Directive]) -> frozenset[str]:
         ):
             anchored.update(p.account for p in entry.postings)
     return frozenset(_connected(entries) - anchored)
+
+
+def positioned(entries: Sequence[Directive]) -> dict[str, date]:
+    """Each account anchored at what its brokerage reported it holds, with the day it did.
+
+    Plaid sends no trades, so that day is the first the account's holdings are known on: an
+    earlier day would value it as holding nothing, or its cash alone, which nobody said.
+    """
+    return {
+        e.account: datetime.fromisoformat(str(e.meta["reported-at"])).astimezone().date()
+        for e in entries
+        if isinstance(e, Balance) and opening.held(e)
+    }
 
 
 def unseen(entries: Sequence[Directive]) -> frozenset[str]:
@@ -689,6 +722,7 @@ def from_household(
                 decide=rulings(conn),
                 synced=synced,
                 unknown=household.unknown,
+                invested=household.invested,
             )
         finally:
             conn.close()
@@ -701,11 +735,13 @@ def from_household(
 
 @dataclass(frozen=True, slots=True)
 class Entries:
-    """The household's entries before any ruling, and each account hearth opened whose opening
-    balance could not be derived, with why (``hearth.plaid.opening``)."""
+    """The household's entries before any ruling, each account hearth opened whose opening
+    balance could not be derived, with why, and each a brokerage account feeds
+    (``hearth.plaid.opening``)."""
 
     entries: tuple[Directive, ...]
     unknown: Mapping[str, Unknown] = field(default_factory=dict)
+    invested: frozenset[str] = frozenset()
 
 
 def household_entries(settings: Settings) -> Entries:
@@ -719,11 +755,12 @@ def household_entries(settings: Settings) -> Entries:
     else:
         inherited, options_map = (), options.OPTIONS_DEFAULTS.copy()
     opened = {e.account for e in inherited if isinstance(e, Open)}
+    declared = {e.currency for e in inherited if isinstance(e, Commodity)}
     since = min((e.date for e in inherited), default=None)
     conn = db.connect(settings.database)
     try:
         with feed.Feed.open(settings.feed_database) as fed:
-            derived = ownbooks.derive(conn, fed, opened=opened, since=since)
+            derived = ownbooks.derive(conn, fed, opened=opened, declared=declared, since=since)
     except booking.Refused as refused:
         raise LedgerError(str(refused)) from refused
     finally:
@@ -740,4 +777,4 @@ def household_entries(settings: Settings) -> Entries:
                 f"Hearth's own books have {count} error{'s' if count > 1 else ''}"
                 " it will not serve figures past."
             )
-    return Entries(entries, derived.unknown)
+    return Entries(entries, derived.unknown, derived.invested)

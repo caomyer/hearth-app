@@ -96,9 +96,10 @@ The opening is worked out from the rows as the bank sent them; the books hold en
 Every recompute checks each assertion against those entries, exactly, to the cent (`books.compute`), and beancount checks it again when the books file is opened.
 Books that do not add up to what the bank says are wrong somewhere: the recompute keeps the previous books and says a balance check failed, through the same path as a statement's failed check (`docs/dashboards.md`).
 So Review never offers what would make that happen from an ordinary click: an account whose balance its bank reports is not a target a row can be moved to, and a row its bank counts cannot be marked as not a transaction (`hearth.review.desk`); each is refused with a sentence saying why.
-That holds too while the account's balance is not known only for a reason a later sync clears (`opening.PASSING`: no balance reported yet, an unfinished sync, another currency, a gap between connections), since a ruling made meanwhile would still be there when the assertion returns.
+That holds too while the account's balance is not known only for a reason a later sync clears (`opening.PASSING`: no balance reported yet, an unfinished sync, another currency, a gap between connections, a brokerage that has not said what it holds yet), since a ruling made meanwhile would still be there when the assertion returns.
 What is inside such an account is the bank's to say; a move between two connected accounts needs no ruling, as pairing books it.
-An account kept by hand, which nothing asserts, still takes a moved row, and so does one whose balance is never its bank's to assert: an investment account, an account of another kind, or one that more than one bank account feeds.
+A brokerage account is one of them: what it holds, cash included, is its brokerage's to say (see "What a brokerage holds", below).
+An account kept by hand, which nothing asserts, still takes a moved row, and so does one whose balance is never its bank's to assert: an account of another kind, or one that more than one bank account feeds.
 Should books still disagree, as with a ruling on record from before, the account's owners read the bank's figure, the books' figure and the difference, and anyone else reads only that the figures wait on one member's records.
 
 ### What stays not known
@@ -107,7 +108,7 @@ An opening that cannot be worked out is never guessed: the account's balance sta
 Its owners read why on its page; anyone else who sees its balance reads only that it is not known (`access.may_see_why_unknown`).
 The reasons (`opening.Unknown`):
 
-- An investment account: its balance is what its investments are worth, which no transaction Plaid sends moves (see below).
+- An investment account whose brokerage has not said what it holds yet: its balance is what its holdings are worth, which no transaction Plaid sends moves, so only its holdings can anchor it (see "What a brokerage holds", below).
   Nor does Plaid send it any transactions, so its spending is not waited on, and it is listed with investments.
 - An account of a kind whose balance is not plainly money held or owed: only deposit, credit and loan accounts are worked out.
 - More than one real bank account going to one account, as when a reissued card at another bank is filed into it: no one balance is its own.
@@ -184,8 +185,27 @@ What it finds is printed to the terminal and is the household's: keep it out of 
 
 An investment account opens like any other, but `/transactions/sync` sends it nothing: a brokerage's holdings and its trades come through Plaid's Investments product, a separate product from Transactions.
 Investments is not something a connection lacks: an Item lists it among its available products when its institution offers it, and hearth can then ask for it with no new sign-in, though only when asked, and only once the household approves `holdings` (`docs/connections.md`, "Holdings").
-Hearth asks for holdings, positions and the price the brokerage gives each, and keeps only the prices (`docs/valuation.md`).
-It does not book the positions, and it never asks for a brokerage's trades and dividends, which are a separate call: a brokerage connected through Plaid has no buys, sells or dividends in the books, even once its funds show a value.
+Hearth asks for holdings, what each account holds and the price the brokerage gives each, and books what each account holds (see "What a brokerage holds", below), valued at those prices (`docs/valuation.md`).
+It never asks for a brokerage's trades and dividends, which are a separate call: a brokerage connected through Plaid shows a value, and still has no buys, sells or dividends in the books.
+Do not read the one as the other: the value says what the account holds, never how it came to hold it.
 Nor is investment history a household once brought in from downloaded statements, which hearth's own books do not read.
-So books driven by Plaid alone hold no investment activity at all; the connect page says so for each such account rather than letting it read as empty.
+So books driven by Plaid alone hold no investment activity at all; the connect page and the account's own page say so rather than letting it read as empty.
 A position an inherited ledger holds is valued at the brokerage's price from the first day hearth asked for it.
+
+### What a brokerage holds
+
+A brokerage account is anchored as a bank account is (`hearth.plaid.opening`), at what its brokerage last said it holds rather than at its current balance, which is only what those holdings were worth at prices hearth keeps apart.
+Every answer is kept in the feed with when it came (`Feed.holdings`), as Plaid keeps none of them and a day not kept is gone; the books hold the latest.
+Its anchor is one entry dated the day the brokerage reported it, `Holdings as reported` against `Equity:Opening-Balances`, with an assertion of each security's units and of its cash the day after, carrying `balance: "holdings"`, who reported it and when.
+Each security is a commodity named by its ticker, or, when it has none beancount can name it by (a trust fund that is not listed), by a name made from its Plaid security (`valuation.institution.commodity`); the books declare each with what it is called, unless an inherited ledger declares it already.
+Units are decimals as Plaid sent them, never floats: fractional shares are ordinary.
+Cash, and money as good as cash such as a money market fund, is held as money at what the brokerage says it is worth.
+Any rows Plaid did send for the account are money, so its cash before them is worked out as a bank account's opening is, from the rows up to the day it was reported, and the assertion still proves the books add up to the report.
+A row after that day is not in the report, so it is added on top of it, and today's balance shows it.
+A brokerage that says the account holds nothing anchors it at nothing, a zero somebody established; one that has not answered yet leaves it not known (`Unknown.INVESTMENT`), never empty.
+
+The anchor claims nothing about any earlier day.
+Plaid gives holdings and prices for today only and no trades, so the books hold nothing in the account before the day it was reported, and no month that ended earlier is whole for its value (`books.positioned`, `figures.covers`).
+Net worth is therefore a total from that day, and no history is drawn through a part that holds a brokerage: an earlier month end would value it as empty, or as its cash alone, which nobody said.
+That is a question of value alone: what its rows say was spent or earned is judged by its history, as any account's is (`figures.flows_cover`).
+A member whose accounts are all brokerages has no spending or income anyone established, so those read as not known on their page and add nothing to the household's for anyone who may see that member's balances; to anyone else they read as not known, since what kind an account is goes with its balance (`docs/privacy-boundary.md`).

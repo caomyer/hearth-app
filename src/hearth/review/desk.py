@@ -27,9 +27,9 @@ clear it (``opening.PASSING``) as once it is in the books, since a ruling made m
 be there when it is. So such an account, one of `banks`, is never a move target
 (`BanksAccount`), and its rows are never rejected (`BanksRow`); either refusal is about an
 account of the member's own, so it names nothing they could not see. A transfer between two
-connected accounts needs no ruling: pairing books it once. An account a household keeps by
-hand, or one whose balance is never its bank's to assert, such as an investment account,
-still takes a moved row.
+connected accounts needs no ruling: pairing books it once. A brokerage account is one of
+them, its cash what its brokerage reports. An account a household keeps by hand, or one whose
+balance is never its bank's to assert, still takes a moved row.
 
 Every accept is bound to what its author was shown. A page sends back each row it showed with
 the account it proposed then, and the desk accepts a row only while it is still waiting and

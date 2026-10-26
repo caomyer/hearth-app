@@ -1,9 +1,10 @@
-"""What the household holds: positions read from the ledger.
+"""What the household holds: positions read from the books.
 
-Holdings live in the ledger, like every other financial fact. A security is a commodity, its
-lots are postings at cost on an Assets account, and the units held on a day are the sum of
-those postings up to that day. The ledger records quantities only; what they are worth comes
-from stored prices (see `hearth.valuation.networth`).
+Holdings live in the books, like every other financial fact. A security is a commodity, held
+as postings on an Assets account: a ledger's lots at cost, or what a brokerage reported in
+hearth's own books (``hearth.plaid.opening``). The units held on a day are the sum of those
+postings up to that day. The books record quantities only; what they are worth comes from
+stored prices (see `hearth.valuation.networth`).
 """
 
 from collections import defaultdict

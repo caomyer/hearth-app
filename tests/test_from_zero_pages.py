@@ -8,8 +8,8 @@ fails it until it is taught to the walk, so whoever adds one reads it as a new h
 
 The steps: nobody has connected anything; Avery has connected a bank; Avery has filed its
 seven accounts, before the bank has sent any history; the bank's two years of history have
-arrived; Avery has connected a brokerage too. Blake connects nothing throughout. Every value
-is invented.
+arrived; Avery has connected a brokerage too, which has not said what it holds yet; and it
+has. Blake connects nothing throughout. Every value is invented.
 
 From the moment the accounts are filed, what each holds is what the bank says, so net worth
 is a figure; how they moved is not known until the history arrives. Once it has, spending and
@@ -18,7 +18,9 @@ chart's axis. So on those steps the charts, and the tables that read them out, a
 the search for a stated zero, as they are for a reader (``tests.firstday.shown``); every other
 line of every page is still searched, and every word of every page, charts included, is still
 searched for bookkeeping. The brokerage's balance cannot be worked out from anything its bank
-sends, so Avery's figure is not known again, and must say so rather than read as zero.
+sends, so Avery's figure is not known again, and must say so rather than read as zero, until
+the brokerage says what the account holds. Then it is a figure again, and every page that
+was honest while the brokerage was empty is read once more, as that is when one stops being.
 """
 
 import re
@@ -32,8 +34,8 @@ import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from hearth import accounts
-from hearth.plaid.fake import FakeAccount, FakeInstitution
+from hearth import accounts, cli
+from hearth.plaid.fake import FakeAccount, FakeHolding, FakeInstitution
 from hearth.plaid.registry import Registry
 from hearth.web.routes import ROUTERS
 from tests.firstday import PATHS, ZERO, FirstDay, until_booked, until_transacted
@@ -131,12 +133,14 @@ def _get(client: TestClient, fresh: FirstDay, route: str, path: str) -> str:
 
 ARRIVED = "its history arrived"
 BROKERAGE = "a brokerage connected"
+HOLDINGS = "its holdings arrived"
 HISTORY_IN = (
     ARRIVED,
     "a first decision made",
     "before an account is named",
     "an account named",
     BROKERAGE,
+    HOLDINGS,
 )
 """Steps on which the history is in, so a chart's zero can be one."""
 
@@ -145,12 +149,23 @@ QUARRY = FakeInstitution(
     "Quarry Brokerage",
     (
         FakeAccount(
-            "ira", "Individual account", "8818", "investment", "brokerage", Decimal("18452.30")
+            "ira",
+            "Individual account",
+            "8818",
+            "investment",
+            "brokerage",
+            Decimal("18452.30"),
+            holdings=(
+                FakeHolding("ZQTM", "Quarry Total Market", Decimal("101.375"), Decimal("142.06")),
+                FakeHolding(None, "Quarry Stable Value Trust", Decimal(25), Decimal("10.00")),
+            ),
         ),
     ),
 )
 """An invented brokerage, whose balance is what its investments are worth: no opening
-balance can be derived from it, so what Avery holds is not known again, never $0."""
+balance can be derived from it, so what Avery holds is not known again, never $0, until it
+says what it holds: a fund, a fraction of a share and all, a trust with no ticker, and its
+cash, which together are worth the balance it reports."""
 
 
 AVERYS = r"\$\s*12,771"
@@ -179,10 +194,15 @@ def first_day_steps(fresh: FirstDay) -> Iterator[Visit]:
     yield from name_where_it_went(fresh, avery)
     yield from walk(fresh, NAMED_STEP)
     fresh.plaid.institutions[QUARRY.id] = QUARRY
+    # Plaid prepares a brokerage's holdings after it is linked, as it often does.
+    fresh.plaid.fail_next("/investments/holdings/get", "PRODUCT_NOT_READY")
     fresh.link("avery", QUARRY.id)
     fresh.map(fresh.signed_in("avery"), {"8818": "Assets:Avery:Quarry:Brokerage"})
     until_booked(fresh, "Assets:Avery:Quarry:Brokerage")
     yield from walk(fresh, BROKERAGE)
+    # The next morning's ask finds them ready.
+    cli.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
+    yield from walk(fresh, HOLDINGS)
 
 
 def decide(fresh: FirstDay, avery: TestClient) -> Iterator[Visit]:
@@ -352,9 +372,61 @@ def test_an_account_whose_balance_cannot_be_worked_out_stays_not_known_never_zer
     assert re.search(r"Investments\s+Card 8818", brokerage[("avery", "/you")])
     pages = [text for (viewer, _), text in brokerage.items() if viewer == "avery"]
     assert any(
-        "What an investment account holds is what its investments are worth" in p for p in pages
+        "What an investment account holds is what its investments are worth, and its"
+        " brokerage has not said what they are yet" in p
+        for p in pages
     )
     assert "1 account has no balance yet" in brokerage[("avery", "/connect/import")]
+
+
+AVERYS_WITH_HOLDINGS = r"\$\s*31,22(4|3\.55)"
+"""Avery's net worth once the brokerage says what it holds: the bank's accounts as before,
+and the brokerage at the balance it reports, which its holdings at its own prices make up,
+the headline rounding it to the dollar."""
+
+
+def test_a_brokerage_that_says_what_it_holds_is_a_figure_and_still_has_no_trades(
+    visits: list[Visit],
+) -> None:
+    """What the account holds, at the brokerage's own prices, is the balance it reports, so
+    Avery's figure is a figure again, not a floor. It is valued from the day it was asked, and
+    nothing says the account has a history it does not: no trades come with it."""
+    held = {(v.viewer, v.path): readable(v.page) for v in visits if v.step == HOLDINGS}
+
+    for page in ("/", "/you", "/net-worth"):
+        assert re.search(AVERYS_WITH_HOLDINGS, held[("avery", page)]), page
+        assert "no balance in hearth yet" not in held[("avery", page)], page
+        assert "at least" not in held[("avery", page)], page
+    for page in ("/", "/net-worth", "/members/avery"):
+        assert re.search(AVERYS_WITH_HOLDINGS, held[("blake", page)]), page
+    you = held[("avery", "/you")]
+    assert re.search(r"Investments\s+Card 8818\s+Holdings only\s+Wed close\s+\$18,452\.30", you)
+    worth = " ".join(held[("avery", "/net-worth")].split())
+    assert (
+        "Card 8818 · Avery"
+        " Quarry Stable Value Trust No ticker 25.000 $10.00 Wed close $250.00"
+        " Quarry Total Market ZQTM 101.375 $142.06 Wed close $14,401.33"
+        " Cash Uninvested \N{EN DASH} \N{EN DASH} $3,800.97"
+        " Positions you can see $18,452.30"
+    ) in worth
+    # No month before the brokerage was asked is drawn: nothing says what it held then.
+    assert "once hearth has the history of every account behind it" in worth
+    (brokerage,) = [
+        text
+        for (viewer, path), text in held.items()
+        if viewer == "avery" and path.startswith("/accounts/") and "Card 8818" in text
+    ]
+    assert "Hearth does not bring in a brokerage's trades" in brokerage
+    assert "What its brokerage says it holds, at Wed close prices." in brokerage
+    # Today is the only day every account's value is known: one point is not a line.
+    assert (
+        "The line appears once hearth has the history of every account behind it"
+        in held[("avery", "/")]
+    )
+    assert (
+        "no trade history arrives, even once the account shows a value"
+        in held[("avery", "/connect")]
+    )
 
 
 def test_an_account_hearth_does_not_see_is_left_out_of_every_total_and_never_zero(

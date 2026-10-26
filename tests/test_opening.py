@@ -424,9 +424,11 @@ def test_a_balance_in_another_currency_is_not_used(filed: FirstDay) -> None:
     _not_known(filed, PATHS["7707"], "in a different currency from its transactions")
 
 
-def test_an_investment_account_is_not_known_never_its_balance_read_as_cash(
+def test_an_investment_account_is_not_known_until_its_brokerage_says_what_it_holds(
     tmp_path: Path, clock: FakeClock
 ) -> None:
+    """Its balance is what its holdings are worth, never read as cash, and its brokerage is
+    preparing them yet: so it is not known, rather than holding nothing."""
     quarry = FakeInstitution(
         "ins_quarry",
         "Quarry Brokerage",
@@ -437,12 +439,13 @@ def test_an_investment_account_is_not_known_never_its_balance_read_as_cash(
         ),
     )
     fresh = first_day(tmp_path, clock, institutions=(quarry,))
+    fresh.plaid.fail_next("/investments/holdings/get", "PRODUCT_NOT_READY")
     fresh.link("avery", quarry.id)
     fresh.map(fresh.signed_in("avery"), {"8818": "Assets:Avery:Quarry:Brokerage"})
     until_booked(fresh, "Assets:Avery:Quarry:Brokerage")
 
     assert fresh.books().unknown == {"Assets:Avery:Quarry:Brokerage": Unknown.INVESTMENT}
-    _not_known(fresh, "Assets:Avery:Quarry:Brokerage", "what its investments are worth")
+    _not_known(fresh, "Assets:Avery:Quarry:Brokerage", "has not said what they are yet")
 
 
 def test_two_bank_accounts_going_to_one_have_no_one_balance(filed: FirstDay) -> None:

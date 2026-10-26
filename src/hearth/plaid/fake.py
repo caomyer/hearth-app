@@ -80,7 +80,8 @@ class FakeAccount:
     transactions: tuple[FakeTransaction, ...] | None = None
     """Exactly these, or, when None, an invented routine over the history the bank sends."""
     holdings: tuple[FakeHolding, ...] = ()
-    """What an investment account holds, besides its cash, which is what `current` leaves."""
+    """What an investment account holds, besides its cash, which is what `current` leaves and
+    the stand-in lists as a cash holding, as Plaid does."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +226,19 @@ class FakePlaid:
             item.institution,
             accounts=tuple(
                 replace(a, current=current) if a.key == account else a
+                for a in item.institution.accounts
+            ),
+        )
+
+    def hold(self, item_id: str, account: str, holdings: tuple[FakeHolding, ...]) -> None:
+        """Have the brokerage report `holdings` for one of an Item's investment accounts from
+        now on, as it does once a trade settles; the account is worth what it was, the rest
+        of it in cash."""
+        item = self._items[item_id]
+        item.institution = replace(
+            item.institution,
+            accounts=tuple(
+                replace(a, holdings=holdings) if a.key == account else a
                 for a in item.institution.accounts
             ),
         )
@@ -457,6 +471,37 @@ class FakePlaid:
                         "iso_currency_code": "USD",
                     }
                 )
+            # Plaid lists an account's uninvested cash as a holding of its own: what the
+            # account is worth beyond its securities.
+            invested = sum(
+                ((h.quantity * h.price).quantize(Decimal("0.01")) for h in account.holdings),
+                Decimal(0),
+            )
+            if account.current is not None and account.current > invested:
+                cash = account.current - invested
+                securities[_CASH] = {
+                    "security_id": _CASH,
+                    "name": "U S Dollar",
+                    "ticker_symbol": "CUR:USD",
+                    "cusip": None,
+                    "isin": None,
+                    "type": "cash",
+                    "is_cash_equivalent": True,
+                    "iso_currency_code": "USD",
+                }
+                holdings.append(
+                    {
+                        "account_id": f"{item.item_id}-{account.key}",
+                        "security_id": _CASH,
+                        "quantity": cash,
+                        "institution_price": Decimal(1),
+                        "institution_price_as_of": None,
+                        "institution_price_datetime": None,
+                        "institution_value": cash,
+                        "cost_basis": cash,
+                        "iso_currency_code": "USD",
+                    }
+                )
         return _ok(
             {
                 "accounts": [self._account(item, a) for a in accounts],
@@ -530,6 +575,10 @@ class FakePlaid:
             "pending": transaction.pending,
             "pending_transaction_id": None,
         }
+
+
+_CASH = "sec-cash-usd"
+"""The security Plaid lists an investment account's uninvested dollars as."""
 
 
 def _invests(item: _Item) -> bool:

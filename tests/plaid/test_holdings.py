@@ -25,7 +25,6 @@ from hearth.plaid.fake import FakeAccount, FakeHolding, FakeInstitution
 from hearth.plaid.feed import Feed, Run
 from hearth.plaid.holdings import price_holdings
 from hearth.plaid.registry import ItemState, Registry
-from hearth.valuation.institution import NO_TICKER
 from hearth.valuation.networth import Freshness
 from hearth.valuation.pricestore import PriceStore, Recorded
 from tests import household
@@ -104,8 +103,19 @@ def unpriced(world: World) -> World:
 
 
 def connected(world: World, institution: FakeInstitution, username: str = "avery") -> str:
-    """Link `institution` and sync it once, as Link does, so its accounts are recorded."""
+    """Link `institution` and sync it once, as Link does, so its accounts are recorded; a
+    brokerage is asked for its holdings then too."""
     return link(world, username, institution.id)
+
+
+def forget_prices(world: World) -> None:
+    """Every price stored so far gone, as on a morning nothing had priced the funds yet."""
+    conn = world.connect()
+    try:
+        conn.execute("DELETE FROM price")
+    finally:
+        conn.close()
+    world.recompute()
 
 
 def freshness(world: World, symbol: str) -> Freshness:
@@ -115,11 +125,40 @@ def freshness(world: World, symbol: str) -> Freshness:
     return valued.freshness
 
 
+def test_a_brokerage_is_asked_for_its_holdings_as_soon_as_it_is_connected(
+    unpriced: World,
+) -> None:
+    """Its holdings and prices are today's only, so connecting it is the first chance to have
+    them; nobody waits for the morning to see what it is worth."""
+    world = unpriced
+    assert freshness(world, "ZQAA") is Freshness.UNPRICED
+
+    item_id = connected(world, BROKERAGE)
+    world.recompute()
+
+    assert freshness(world, "ZQAA") is Freshness.CURRENT
+    conn = world.connect()
+    try:
+        (linked,) = Registry(conn).accounts_of(item_id)
+    finally:
+        conn.close()
+    with Feed.open(world.settings.feed_database) as feed:
+        report = feed.holdings(linked.account_id)
+    assert report is not None
+    assert report.reported_at == world.clock()
+    assert {(p.ticker, p.quantity, p.cash) for p in report.positions} == {
+        ("ZQAA", Decimal(10), False),
+        (None, Decimal(40), False),
+        ("CUR:USD", Decimal("89.30"), True),
+    }
+
+
 def test_a_fund_with_no_price_is_valued_at_its_brokerages_price_once_asked(
     unpriced: World, capsys: pytest.CaptureFixture[str]
 ) -> None:
     world = unpriced
     item_id = connected(world, BROKERAGE)
+    forget_prices(world)
     assert freshness(world, "ZQAA") is Freshness.UNPRICED
 
     assert plaid_cli.holdings(world.settings, world.setup, world.clock) == 0
@@ -135,15 +174,17 @@ def test_a_fund_with_no_price_is_valued_at_its_brokerages_price_once_asked(
     assert (quote.source, quote.as_of, quote.fetched_at) == ("plaid", PRICED_ON, world.clock())
     assert quote.source_ref == "sec-ins_sorrel-ZQAA"
     said = capsys.readouterr().out
-    assert f"{item_id} (Sorrel Brokerage): 2 holdings" in said
-    assert "Prices stored: 1 new, 0 corrected, 0 already stored" in said
-    assert f"Not priced: sec-ins_sorrel-Sorrel Stable Value Trust, {NO_TICKER}." in said
+    assert f"{item_id} (Sorrel Brokerage): 3 holdings" in said
+    # The trust has no ticker, and is priced as the name hearth's own books would hold it by.
+    assert "Prices stored: 2 new, 0 corrected, 0 already stored" in said
+    assert "Not priced" not in said
 
 
 def test_the_morning_sync_asks_every_brokerage_for_its_prices(unpriced: World) -> None:
     world = unpriced
     connected(world, BROKERAGE)
     connected(world, SECOND, "blake")
+    forget_prices(world)
 
     cli.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
 
@@ -154,8 +195,9 @@ def test_the_morning_sync_asks_every_brokerage_for_its_prices(unpriced: World) -
 def test_the_morning_says_why_it_kept_a_price_no_position_holds_yet(
     unpriced: World, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Hearth's own books hold no brokerage's positions, so a price may value nothing today;
-    it is kept, being today's only, and the log says so rather than paying for it silently."""
+    """An inherited ledger need not hold every fund a brokerage holds, so a price may value
+    nothing today; it is kept, being today's only, and the log says so rather than paying
+    for it silently."""
     world = unpriced
     world.plaid.institutions[UNHELD.id] = UNHELD
     connected(world, BROKERAGE)
@@ -165,7 +207,8 @@ def test_the_morning_says_why_it_kept_a_price_no_position_holds_yet(
         cli.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
 
     (said,) = [r.getMessage() for r in caplog.records if "no position" in r.getMessage()]
-    assert said.startswith("kept today's price of ZQCC, which no position in the books holds")
+    assert said.startswith("kept today's price of ")
+    assert "ZQCC" in said.partition(", which")[0]
     assert "ZQAA" not in said
 
 
@@ -174,14 +217,14 @@ def test_asking_again_the_same_day_stores_nothing_new(unpriced: World) -> None:
     connected(world, BROKERAGE)
     conn = world.connect()
     try:
-        price_holdings(conn, world.setup, world.clock)
+        price_holdings(conn, world.settings.feed_database, world.setup, world.clock)
         world.clock.now += timedelta(hours=2)
-        again = price_holdings(conn, world.setup, world.clock)
+        again = price_holdings(conn, world.settings.feed_database, world.setup, world.clock)
         revisions = PriceStore(conn).revisions("ZQAA", PRICED_ON, "plaid")
     finally:
         conn.close()
 
-    assert sum(again.recorded.values()) == again.recorded[Recorded.UNCHANGED] == 1
+    assert sum(again.recorded.values()) == again.recorded[Recorded.UNCHANGED] == 2
     assert len(revisions) == 1
 
 
@@ -190,7 +233,7 @@ def test_a_bank_with_no_investment_account_is_never_asked(unpriced: World) -> No
     connected(world, BANK)
     conn = world.connect()
     try:
-        priced = price_holdings(conn, world.setup, world.clock)
+        priced = price_holdings(conn, world.settings.feed_database, world.setup, world.clock)
     finally:
         conn.close()
 
@@ -202,10 +245,11 @@ def test_one_brokerage_that_cannot_answer_stops_only_itself(unpriced: World) -> 
     world = unpriced
     first = connected(world, BROKERAGE)
     connected(world, SECOND, "blake")
+    forget_prices(world)
     world.plaid.fail_next("/investments/holdings/get", PRODUCTS_NOT_SUPPORTED)
     conn = world.connect()
     try:
-        priced = price_holdings(conn, world.setup, world.clock)
+        priced = price_holdings(conn, world.settings.feed_database, world.setup, world.clock)
     finally:
         conn.close()
     world.recompute()
@@ -223,7 +267,7 @@ def test_a_brokerage_wanting_its_member_to_sign_in_again_is_marked_so(unpriced: 
     world.plaid.require_login(item_id)
     conn = world.connect()
     try:
-        priced = price_holdings(conn, world.setup, world.clock)
+        priced = price_holdings(conn, world.settings.feed_database, world.setup, world.clock)
         item = Registry(conn).item(item_id)
     finally:
         conn.close()
@@ -254,10 +298,10 @@ def test_a_real_connection_is_never_asked_unless_holdings_are_approved(unpriced:
         conn.execute("UPDATE plaid_credentials SET environment = 'production'")
         recorder = Recorder()
         reading = replace(world.setup, approval=Approval.of([Operation.READ]), transport=recorder)
-        not_asked = price_holdings(conn, reading, world.clock)
+        not_asked = price_holdings(conn, world.settings.feed_database, reading, world.clock)
         sent_unapproved = list(recorder.paths)
         approved = replace(reading, approval=Approval.of([Operation.HOLDINGS]))
-        asked = price_holdings(conn, approved, world.clock)
+        asked = price_holdings(conn, world.settings.feed_database, approved, world.clock)
     finally:
         conn.close()
 

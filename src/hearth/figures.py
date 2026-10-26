@@ -400,7 +400,21 @@ def covers(books: Books, accounts: Sequence[Account], month: Month) -> bool:
     An account hearth does not see (`books.unseen`) is not judged at all: its rows are moves
     members made from their connected accounts, which those accounts' history holds, so it
     has no history of its own to be whole or not.
+
+    A brokerage account's holdings are known from the day its brokerage reported them
+    (`books.positioned`), and Plaid sends no trades to say what it held before: a month that
+    ended earlier is not whole, whatever rows reached the account in it, or its value there
+    would be what nobody said it held. That is a question of value alone, so `flows_cover`
+    does not ask it.
     """
+    last = date(month.year, month.month, calendar.monthrange(month.year, month.month)[1])
+    if any(books.positioned.get(a.ledger_account, date.min) > last for a in accounts):
+        return False
+    return _history_covers(books, accounts, month)
+
+
+def _history_covers(books: Books, accounts: Sequence[Account], month: Month) -> bool:
+    """`covers` by the accounts' history alone, whatever their holdings are known from."""
     first = date(month.year, month.month, 1)
     last = first.replace(day=calendar.monthrange(month.year, month.month)[1])
     by_account = {coverage.account: coverage for coverage in books.coverage}
@@ -453,15 +467,24 @@ def last_day(books: Books, accounts: Sequence[Account]) -> date | None:
 
 
 def flows_cover(books: Books, accounts: Sequence[Account], month: Month) -> bool:
-    """`covers` for a spending or income figure, judged only over the accounts that can move it.
+    """`covers` for a spending or income figure, judged only over the accounts that can move it,
+    and by their history alone: when a brokerage's holdings are known from says nothing of
+    what moved.
 
     An account that only ever takes transfers (`books.flowing`) adds nothing to spending or
     income, so its quiet months never leave such a figure incomplete; a quiet card still does.
     So does an account with no history in the books yet (`books.awaiting`): nothing says yet
     what it spends, so it is judged as one that might.
+
+    Accounts that are all brokerages (`books.invested`) cover no month at all: Plaid sends a
+    brokerage no transactions, so nothing says what they spent or earned, and a figure of
+    nothing would be one nobody established.
     """
+    seen = [a for a in accounts if a.ledger_account not in books.unseen]
+    if seen and all(a.ledger_account in books.invested for a in seen):
+        return False
     judged = books.flowing | books.awaiting
-    return covers(books, [a for a in accounts if a.ledger_account in judged], month)
+    return _history_covers(books, [a for a in accounts if a.ledger_account in judged], month)
 
 
 FIXED_MONTHS = 3

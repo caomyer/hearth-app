@@ -103,7 +103,7 @@
             {% endif %}
             {{ unreviewed_sub(totals.spent_unreviewed, "/review") }}
             {% else %}<p class="fig-value muted">&ndash;</p>
-            <p class="fig-sub">History incomplete</p>{% endif %}
+            <p class="fig-sub">{{ "History incomplete" if totals.spends else "Brokerage accounts only" }}</p>{% endif %}
           </div>
           <div>
             <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p>
@@ -112,7 +112,7 @@
             <p class="fig-sub">{% if totals.payments_in == 0 %}Nothing paid in yet{% else %}{{ plural(totals.payments_in, "payment") }} in{% endif %}</p>
             {{ unreviewed_sub(totals.earned_unreviewed, "/review") }}
             {% else %}<p class="fig-value muted">&ndash;</p>
-            <p class="fig-sub">History incomplete</p>{% endif %}
+            <p class="fig-sub">{{ "History incomplete" if totals.spends else "Brokerage accounts only" }}</p>{% endif %}
           </div>
         </div>
       </div>
@@ -155,7 +155,9 @@
       <div class="panel-head">
         <h2 id="pace-h">{{ month_name }} spending, day by day</h2>
         {{ shared("Transactions") }}
-        {% if not totals.covered %}
+        {% if not totals.covered and not totals.spends %}
+        <p class="finding">Not known: your accounts here are brokerage accounts, which show hearth nothing of what you spend. Connect the bank account or card you spend from to see it.</p>
+        {% elif not totals.covered %}
         <p class="finding">Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.</p>
         {% elif totals.over_typical is not none %}
         {% set off = (totals.over_typical | abs) | dollars %}
@@ -166,7 +168,7 @@
       </div>
       <div class="panel-body">
         {% if not totals.covered %}
-        <p class="muted">History incomplete.</p>
+        <p class="muted">{{ "History incomplete." if totals.spends else "Not known." }}</p>
         {% else %}
         <figure>
           <figcaption class="vh" id="pace-t">Your cumulative spending in {{ month_name }} against your typical month</figcaption>
@@ -205,7 +207,7 @@
       </div>
       <div class="panel-body">
         {% if not totals.covered %}
-        <p class="muted">History incomplete.</p>
+        <p class="muted">{{ "History incomplete." if totals.spends else "Not known." }}</p>
         {% else %}
         {% for bill in cats.fixed %}
         <p class="fixed-row"><span><span class="muted">Fixed:</span> {{ bill.name }}, paid {{ bill.paid_on | day }}</span><span class="tnum">{{ bill.amount | money }}</span></p>
@@ -260,6 +262,8 @@
     <div class="panel-body" style="padding: var(--s-2) 0 var(--s-1)">
       {% if me.days %}
       {{ day_table(me.days, "Your transactions, newest first, grouped by day") }}
+      {% elif not totals.covered and not totals.spends %}
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">Plaid does not send a brokerage's transactions. Connect the bank account or card you spend from to see yours here.</p>
       {% elif not totals.covered %}
       <p class="muted" style="padding: var(--s-4) var(--s-6)">Not known yet: hearth does not have all of {{ month_name }}'s transactions for your accounts. They appear here once they are in.</p>
       {% else %}

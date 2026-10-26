@@ -65,9 +65,12 @@
         {% else %}
         {% if not view.balance.is_known %}
         <p class="hero-value muted">&ndash;</p>
-        <p class="muted mt-2 measure">Not known yet. {% if view.outside %}Nothing of this account is in hearth: connect its bank to bring it in.{% elif view.unknown == "investment" %}What an investment account holds is what its investments are worth. Hearth reads the price its brokerage gives each, but does not keep the investments themselves yet, so it cannot add them up.{% elif view.unknown == "kind" %}Its bank reports a balance for it, but not one that says plainly what it holds or owes.{% elif view.unknown == "shared" %}More than one bank account goes to it, so no one balance a bank reports is its own.{% elif view.unknown == "no-balance" %}Its bank has not said what it holds. The balance appears once it does.{% elif view.unknown == "unfinished" %}Its bank's latest update did not finish, so the balance it gave may not match the transactions that came with it. The balance appears after the next update that finishes.{% elif view.unknown == "currency" %}Its bank reports its balance in a different currency from its transactions.{% elif view.unknown == "gap" %}It was connected again, and the transactions from between its two connections are not all in yet. The balance appears once they are.{% else %}This account is connected, but its balance is not in hearth yet. The balance appears once it is.{% endif %} Until then there is no balance to show, not a balance of zero.</p>
+        <p class="muted mt-2 measure">Not known yet. {% if view.outside %}Nothing of this account is in hearth: connect its bank to bring it in.{% elif view.unknown == "investment" %}What an investment account holds is what its investments are worth, and its brokerage has not said what they are yet. Hearth asks once the household's admin approves reading holdings: when the account is connected, then each morning.{% elif view.unknown == "kind" %}Its bank reports a balance for it, but not one that says plainly what it holds or owes.{% elif view.unknown == "shared" %}More than one bank account goes to it, so no one balance a bank reports is its own.{% elif view.unknown == "no-balance" %}Its bank has not said what it holds. The balance appears once it does.{% elif view.unknown == "unfinished" %}Its bank's latest update did not finish, so the balance it gave may not match the transactions that came with it. The balance appears after the next update that finishes.{% elif view.unknown == "currency" %}Its bank reports its balance in a different currency from its transactions.{% elif view.unknown == "gap" %}It was connected again, and the transactions from between its two connections are not all in yet. The balance appears once they are.{% else %}This account is connected, but its balance is not in hearth yet. The balance appears once it is.{% endif %} Until then there is no balance to show, not a balance of zero.</p>
         {% else %}
         <p class="hero-value">{% if view.balance.is_floor %}<span class="sm muted">at least </span>{% endif %}{{ view.balance.value | hero }}</p>
+        {% if view.priced %}
+        <p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>What its brokerage says it holds, at {{ close(view.priced, today) }} prices. <a href="/net-worth">Each holding is on Net worth</a>.</p>
+        {% endif %}
         {% endif %}
         {% endif %}
         {% if a.spans is not withheld and a.spans %}
@@ -89,6 +92,8 @@
       {{ day_table(view.days, ("Moves into and out of " if u else "Transactions in ") ~ a.name ~ ", newest first", show_account=false, said=u.said if u else {}) }}
       {% elif u %}
       <p class="muted" style="padding: var(--s-4) var(--s-6)">No moves into or out of it that hearth saw in {{ view.month.label }}.</p>
+      {% elif not view.covered and view.kind == "Investments" %}
+      <p class="muted" style="padding: var(--s-4) var(--s-6)">Hearth does not bring in a brokerage's trades: Plaid says what the account holds, not the buys, sells and dividends that got it there.</p>
       {% elif not view.covered %}
       <p class="muted" style="padding: var(--s-4) var(--s-6)">Not known yet: hearth does not have all of this account's transactions for {{ view.month.label }}. They appear here once they are in.</p>
       {% else %}

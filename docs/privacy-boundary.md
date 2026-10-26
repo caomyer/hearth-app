@@ -37,6 +37,9 @@ The captain's original criterion asked for a range.
 A range bounds the withheld value from BOTH sides and therefore reveals more about the member who withdrew than a labelled partial does, so the amendment makes the product more private, not less.
 The captain has not yet reviewed this amendment; it is listed for him in the overnight brief and he may overturn it.
 
+A figure withheld or not known still occupies its place, since an absence can disclose: whether a line appears, its wording, its order and whom it names depend only on what the viewer may see.
+What kind a part's accounts are goes with their balances, so a part whose accounts cannot show spending, such as brokerages, reads to anyone who may not see those balances as a part whose history has not come in: "Not known yet", never $0 and never left out.
+
 Spending that went through accounts nobody owns, or through several owners' accounts at once, belongs to no part; it is in nobody's figure, its amount is never shown, and a household figure says it leaves it out.
 
 Detail that is finer than its facet goes with the finer facet.

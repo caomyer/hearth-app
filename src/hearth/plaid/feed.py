@@ -1,4 +1,5 @@
-"""What Plaid sent: every transaction and balance, kept as fetched, and a record of each sync.
+"""What Plaid sent: every transaction, balance and holding, kept as fetched, and a record of
+each sync.
 
 This is a staging store, deliberately apart from both the ledger and the app database. The
 books stay the one record: nothing here is booked as it sits, and every recompute turns these
@@ -13,6 +14,13 @@ last page it finished, and the next one carries on from there. When Plaid says i
 changed mid-loop, every page the run stored is undone before the loop starts again.
 
 Amounts are stored as decimal text with Plaid's sign: positive is money leaving the account.
+So are a holding's units: a share count read through a float is wrong at the first fractional
+share.
+
+What a brokerage says each investment account holds is today's and no other, like its prices
+(``hearth.plaid.holdings``): Plaid keeps no history of it, so every answer is kept, each with
+when it came, as a day not kept can never be had again. The books take only the latest
+(``hearth.plaid.opening``).
 """
 
 import sqlite3
@@ -26,7 +34,7 @@ from pathlib import Path
 
 from hearth import db
 from hearth.plaid import owner
-from hearth.plaid.client import BankAccount, SyncPage, Transaction
+from hearth.plaid.client import BankAccount, Holdings, Position, SyncPage, Transaction
 
 MIGRATIONS: tuple[str, ...] = (
     """
@@ -111,6 +119,29 @@ MIGRATIONS: tuple[str, ...] = (
         recorded_at TEXT NOT NULL
     ) STRICT;
     """,
+    """
+    -- Each time a brokerage said what an investment account holds, including that it holds
+    -- nothing, and each holding it listed then.
+    CREATE TABLE feed_holdings_report (
+        id INTEGER PRIMARY KEY,
+        item_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        reported_at TEXT NOT NULL
+    ) STRICT;
+    CREATE INDEX feed_holdings_report_by_account ON feed_holdings_report (account_id, id);
+
+    CREATE TABLE feed_holding (
+        report INTEGER NOT NULL REFERENCES feed_holdings_report (id),
+        security_id TEXT NOT NULL,
+        ticker TEXT,
+        name TEXT,
+        cash INTEGER NOT NULL CHECK (cash IN (0, 1)),
+        quantity TEXT NOT NULL,
+        value TEXT,
+        currency TEXT,
+        PRIMARY KEY (report, security_id)
+    ) STRICT;
+    """,
 )
 
 
@@ -151,6 +182,16 @@ class Balance:
     available: Decimal | None
     currency: str | None
     recorded_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class Report:
+    """What a brokerage last said one investment account holds, and when."""
+
+    item_id: str
+    account_id: str
+    reported_at: datetime
+    positions: tuple[Position, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,6 +495,65 @@ class Feed:
             _decimal(row["available"]),
             row["currency"],
             datetime.fromisoformat(row["recorded_at"]),
+        )
+
+    def record_holdings(self, item_id: str, found: Holdings, *, now: datetime) -> None:
+        """Keep what one answer says each investment account holds, as a report of its own:
+        an account it listed holding nothing is kept as that."""
+        with db.transaction(self._db):
+            for account_id in found.accounts:
+                report = self._db.execute(
+                    "INSERT INTO feed_holdings_report (item_id, account_id, reported_at)"
+                    " VALUES (?, ?, ?)",
+                    (item_id, account_id, now.isoformat()),
+                ).lastrowid
+                self._db.executemany(
+                    "INSERT INTO feed_holding (report, security_id, ticker, name, cash, quantity,"
+                    " value, currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        (
+                            report,
+                            p.security_id,
+                            p.ticker,
+                            p.name,
+                            int(p.cash),
+                            str(p.quantity),
+                            None if p.value is None else str(p.value),
+                            p.currency,
+                        )
+                        for p in found.positions
+                        if p.account_id == account_id
+                    ],
+                )
+
+    def holdings(self, account_id: str) -> Report | None:
+        """What a brokerage last said the account holds, or None if it never has."""
+        report = self._db.execute(
+            "SELECT * FROM feed_holdings_report WHERE account_id = ? ORDER BY id DESC LIMIT 1",
+            (account_id,),
+        ).fetchone()
+        if report is None:
+            return None
+        rows = self._db.execute(
+            "SELECT * FROM feed_holding WHERE report = ? ORDER BY security_id", (report["id"],)
+        )
+        return Report(
+            item_id=report["item_id"],
+            account_id=account_id,
+            reported_at=datetime.fromisoformat(report["reported_at"]),
+            positions=tuple(
+                Position(
+                    account_id=account_id,
+                    security_id=row["security_id"],
+                    ticker=row["ticker"],
+                    name=row["name"],
+                    cash=bool(row["cash"]),
+                    quantity=Decimal(row["quantity"]),
+                    value=_decimal(row["value"]),
+                    currency=row["currency"],
+                )
+                for row in rows
+            ),
         )
 
     def recorded_by(self, balance: Balance, item_id: str) -> Run | None:

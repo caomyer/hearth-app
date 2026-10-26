@@ -21,7 +21,7 @@ import logging
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -29,6 +29,7 @@ from typing import Any
 
 from hearth import runlog
 from hearth.plaid.approval import Approval, Operation
+from hearth.valuation.institution import is_cash
 from hearth.vault.secret import Secret
 
 PLAID_VERSION = "2020-09-14"
@@ -224,6 +225,35 @@ class Transaction:
     category: str | None
     pending: bool
     pending_transaction_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Position:
+    """One holding in an investment account, as its brokerage reported it: how much of which
+    security, never what it was bought for, nor how it came to be held."""
+
+    account_id: str
+    security_id: str
+    ticker: str | None
+    name: str | None
+    cash: bool
+    """Whether the security is money, or as good as money: Plaid's security `type` "cash",
+    which covers cash and money market funds, or `is_cash_equivalent`."""
+    quantity: Decimal
+    value: Decimal | None
+    """Plaid's ``institution_value``: what the brokerage says the holding is worth."""
+    currency: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Holdings:
+    """What one ``/investments/holdings/get`` answer says each investment account holds.
+
+    `accounts` are every investment account it answered for, including one that holds
+    nothing, which is something the brokerage said, unlike an account it did not answer for."""
+
+    accounts: tuple[str, ...]
+    positions: tuple[Position, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -508,6 +538,46 @@ def _account(raw: Mapping[str, Any]) -> BankAccount:
         currency=_optional_text(balances, "iso_currency_code")
         or _optional_text(balances, "unofficial_currency_code"),
     )
+
+
+def held(payload: Mapping[str, Any]) -> Holdings:
+    """What each investment account holds, from a holdings answer read with every number a
+    `Decimal` (`PlaidClient.holdings`). A holding naming an account or a security the answer
+    does not list, or with no quantity, is refused, never read as holding nothing. Two
+    holdings of one security in one account are one position, their units added together."""
+    investments = tuple(
+        _text(account, "account_id")
+        for account in _list(payload, "accounts")
+        if account.get("type") == "investment"
+    )
+    securities = {_text(s, "security_id"): s for s in _list(payload, "securities")}
+    positions: dict[tuple[str, str], Position] = {}
+    for raw in _list(payload, "holdings"):
+        account_id, security_id = _text(raw, "account_id"), _text(raw, "security_id")
+        security = securities.get(security_id)
+        quantity = _decimal(raw, "quantity")
+        if account_id not in investments or security is None or quantity is None:
+            raise PlaidMalformedError("Plaid sent a holding it does not account for")
+        value = _decimal(raw, "institution_value")
+        known = positions.get((account_id, security_id))
+        if known is not None:
+            both = None if known.value is None or value is None else known.value + value
+            positions[account_id, security_id] = replace(
+                known, quantity=known.quantity + quantity, value=both
+            )
+            continue
+        positions[account_id, security_id] = Position(
+            account_id=account_id,
+            security_id=security_id,
+            ticker=_optional_text(security, "ticker_symbol"),
+            name=_optional_text(security, "name"),
+            cash=is_cash(security),
+            quantity=quantity,
+            value=value,
+            currency=_optional_text(raw, "iso_currency_code")
+            or _optional_text(raw, "unofficial_currency_code"),
+        )
+    return Holdings(investments, tuple(positions.values()))
 
 
 def _transaction(raw: Mapping[str, Any]) -> Transaction:

@@ -7,6 +7,8 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from beancount.core.data import Commodity
+from beancount.parser import parser
 
 from hearth import books
 from hearth.valuation import institution
@@ -15,11 +17,11 @@ from hearth.valuation.institution import (
     NO_CURRENCY,
     NO_DATE,
     NO_PRICE,
-    NO_TICKER,
     HoldingsMalformedError,
     Unpriceable,
 )
 from hearth.valuation.pricestore import PriceStore, Recorded
+from hearth.valuation.quotes import Quote
 from tests.valuation.conftest import FETCHED_AT
 
 RESPONSE = """{
@@ -55,11 +57,18 @@ def parsed(text: str = RESPONSE) -> dict[str, Any]:
     return payload
 
 
+TRUST = institution.commodity("sec-trust", None)
+"""What the fund with no ticker is held and priced as: a name made from its Plaid security."""
+
+
+def fund(prices: institution.InstitutionPrices, symbol: str = "ZQFND") -> list[Quote]:
+    return [quote for quote in prices.quotes if quote.symbol == symbol]
+
+
 def test_each_holding_is_priced_at_the_institutions_own_price_with_its_provenance() -> None:
     prices = institution.read_holdings(parsed(), fetched_at=FETCHED_AT)
 
-    (quote,) = prices.quotes
-    assert quote.symbol == "ZQFND"
+    (quote,) = fund(prices)
     assert quote.price == Decimal("101.2345")
     assert quote.as_of == date(2026, 10, 16)
     assert (quote.source, quote.source_ref, quote.fetched_at) == ("plaid", "sec-fund", FETCHED_AT)
@@ -68,10 +77,34 @@ def test_each_holding_is_priced_at_the_institutions_own_price_with_its_provenanc
 def test_a_holding_hearth_cannot_price_is_listed_with_the_reason() -> None:
     prices = institution.read_holdings(parsed(), fetched_at=FETCHED_AT)
 
-    assert prices.unpriceable == (
-        Unpriceable("sec-trust", NO_TICKER),
-        Unpriceable("sec-undated", NO_DATE),
-    )
+    assert prices.unpriceable == (Unpriceable("sec-undated", NO_DATE),)
+
+
+def test_a_fund_with_no_ticker_is_priced_as_the_name_its_position_is_held_by() -> None:
+    """A trust fund that is not listed has no ticker for a ledger to name it by; hearth's own
+    books hold it by a name made from its Plaid security, so its price is stored as that."""
+    prices = institution.read_holdings(parsed(), fetched_at=FETCHED_AT)
+
+    (quote,) = fund(prices, TRUST)
+    assert (quote.price, quote.source_ref) == (Decimal("55.10"), "sec-trust")
+    assert TRUST.startswith(institution.UNTICKERED)
+    assert institution.ticker(TRUST) is None
+    assert institution.commodity("sec-trust", None) == TRUST
+
+
+@pytest.mark.parametrize("ticker", [None, "", "brk b", "CUR:USD"])
+def test_a_security_with_no_ticker_a_commodity_can_be_named_by_gets_a_name_of_its_own(
+    ticker: str | None,
+) -> None:
+    name = institution.commodity("sec-odd", ticker)
+
+    assert name.startswith(institution.UNTICKERED)
+    assert name != institution.commodity("sec-other", ticker)
+    # Beancount itself reads it as a commodity, so the books file loads as hearth wrote it.
+    (entry,), errors, _ = parser.parse_string(f"2026-10-16 commodity {name}\n")
+    assert not errors
+    assert isinstance(entry, Commodity)
+    assert entry.currency == name
 
 
 def test_a_price_read_as_a_float_is_refused() -> None:
@@ -93,7 +126,7 @@ def test_a_holding_without_a_usable_price_is_listed(change: dict[str, Any], reas
 
     prices = institution.read_holdings(payload, fetched_at=FETCHED_AT)
 
-    assert prices.quotes == ()
+    assert fund(prices) == []
     assert Unpriceable("sec-fund", reason) in prices.unpriceable
 
 
@@ -101,7 +134,7 @@ def test_two_holdings_of_one_ticker_that_agree_store_one_price() -> None:
     payload = parsed()
     payload["holdings"].append(payload["holdings"][0] | {"account_id": "acct-zq-2"})
 
-    assert len(institution.read_holdings(payload, fetched_at=FETCHED_AT).quotes) == 1
+    assert len(fund(institution.read_holdings(payload, fetched_at=FETCHED_AT))) == 1
 
 
 def test_two_holdings_of_one_ticker_that_disagree_store_neither() -> None:
@@ -112,7 +145,7 @@ def test_two_holdings_of_one_ticker_that_disagree_store_neither() -> None:
 
     prices = institution.read_holdings(payload, fetched_at=FETCHED_AT)
 
-    assert prices.quotes == ()
+    assert fund(prices) == []
     assert Unpriceable("sec-fund", CONFLICT) in prices.unpriceable
     assert Unpriceable("sec-fund-2", CONFLICT) in prices.unpriceable
 
@@ -131,8 +164,8 @@ def test_stored_prices_value_holdings_on_their_own_day_and_after(
     store = PriceStore(connection)
     prices = institution.read_holdings(parsed(), fetched_at=FETCHED_AT)
 
-    assert institution.record(store, prices) == [Recorded.NEW]
-    assert institution.record(store, prices) == [Recorded.UNCHANGED]
+    assert institution.record(store, prices) == [Recorded.NEW, Recorded.NEW]
+    assert institution.record(store, prices) == [Recorded.UNCHANGED, Recorded.UNCHANGED]
 
     lookup = books.stored_prices(store)
     found = lookup("ZQFND", date(2026, 10, 17))
@@ -150,6 +183,7 @@ def test_a_price_given_with_the_moment_it_was_current_is_read_on_that_moments_da
 
     assert {(q.symbol, q.as_of) for q in prices.quotes} == {
         ("ZQFND", date(2026, 10, 16)),
+        (TRUST, date(2026, 10, 16)),
         ("ZQUND", date(2026, 10, 16)),
     }
 
@@ -172,13 +206,13 @@ def test_two_brokerages_agreeing_on_a_fund_store_it_once() -> None:
 
     prices = institution.read_many([parsed(), other], fetched_at=FETCHED_AT)
 
-    assert [q.symbol for q in prices.quotes] == ["ZQFND"]
+    assert [q.symbol for q in prices.quotes] == ["ZQFND", TRUST]
 
 
-def test_a_security_is_matched_by_its_ticker_never_its_cusip() -> None:
+def test_a_security_is_matched_by_its_ticker_or_its_plaid_security_never_its_cusip() -> None:
     payload = parsed()
     payload["securities"][2]["cusip"] = "000000000"
 
     prices = institution.read_holdings(payload, fetched_at=FETCHED_AT)
 
-    assert Unpriceable("sec-trust", NO_TICKER) in prices.unpriceable
+    assert [q.symbol for q in prices.quotes] == ["ZQFND", TRUST]

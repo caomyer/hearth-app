@@ -8,24 +8,24 @@ A silently wrong net worth is the worst thing hearth could show, because its who
 
 | Fact | Lives in | Read by |
 |---|---|---|
-| Units held: cash, card balances, fund shares | The ledger | `holdings.holdings_at` |
+| Units held: cash, card balances, fund shares | The books: a ledger's, or hearth's own | `holdings.holdings_at` |
 | Prices, with provenance | The app database, table `price` | `pricestore.PriceStore` |
 | Where prices come from | A `quotes.PriceSource` implementation | `refresh.refresh_prices` |
 | What it is all worth | Computed, never stored as a fact | `networth.value_holdings` |
 
-### Holdings live in the ledger
+### Holdings live in the books
 
-The ledger is the source of truth for every financial fact, and the quantity of a fund someone owns is one.
+The books are the source of truth for every financial fact, and the quantity of a fund someone owns is one.
 A security is a beancount commodity named by its ticker.
-Each purchase is a lot, a posting at cost on an `Assets` account; each sale reduces it.
+In a ledger a household keeps, each purchase is a lot, a posting at cost on an `Assets` account; each sale reduces it.
 The units held on a day are the sum of those postings up to and including that day, which is what `holdings_at` computes from entries loaded with beancount's loader.
 Cash and liabilities are holdings of the operating currency and are worth exactly their units.
 
-Today's ledgers model brokerage cash only, not positions.
-Positions reach the ledger through the import pipeline and its review queue, as any other entry does: an opening lot per security from the earliest holdings snapshot, then each buy, sell and reinvestment from the brokerage's activity, whether that arrives by Plaid's Investments product or a statement download.
-Writing those entries is the import pipeline's job; this module only reads.
+In hearth's own books, a brokerage account holds what its brokerage last reported, each security as units dated the day it was reported, as a bank account holds the balance its bank reports (`docs/books.md`, "What a brokerage holds").
+No buy, sell or reinvestment is ever booked: Plaid's trades are a separate call hearth does not make, so the books say what is held from that day, never what was held before it or how it came to be.
+Writing those entries is `hearth.plaid.opening`'s job; this module only reads.
 
-The ledger records quantities and cost, never market value.
+The books record quantities and cost, never market value.
 A price is a fact about the market on a day, not about the household, so prices live in the app database next to their provenance.
 
 ### Prices live in the app database, with provenance
@@ -79,8 +79,8 @@ That is the normal state until a plan is bought, so `refresh_prices` records not
 
 The household chose to value holdings at each brokerage's own daily price (`plaid-only`), with no market data feed.
 `valuation.institution` reads a parsed `/investments/holdings/get` response, takes each holding's `institution_price` and `institution_price_as_of`, and stores it under source `plaid`, with the Plaid `security_id` as `source_ref` and the time it was fetched.
-A holding is matched to a ledger commodity by its security's ticker.
-One with no ticker, no price, no date or no ISO currency is listed with its reason, never stored on a guess; two holdings of one ticker that disagree on a day are both listed and neither stored.
+A holding is matched to a ledger commodity by its security's ticker, or, with no ticker beancount can name it by, by the name hearth's own books hold it as, made from its Plaid security (`institution.commodity`): a match, never a guess.
+One with no price, no date or no ISO currency is listed with its reason, never stored on a guess; two holdings of one ticker that disagree on a day are both listed and neither stored.
 The response must be parsed with `parse_float=Decimal`; a float is refused.
 
 A Plaid security is matched by its `security_id` and its ticker; its CUSIP is never used, as Plaid sends it only under a licence.

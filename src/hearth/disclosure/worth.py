@@ -22,6 +22,7 @@ from hearth.months import Month
 from hearth.plaid.opening import anchors
 from hearth.reports.common import units
 from hearth.sharing import Facet
+from hearth.valuation import institution
 from hearth.valuation.networth import Freshness, NetWorth, Valued
 
 
@@ -51,6 +52,8 @@ class Move:
 @dataclass(frozen=True, slots=True)
 class Position:
     commodity: str
+    ticker: str | None
+    """What the security trades as, or None for one with no ticker, held by a made-up name."""
     units: Decimal
     value: Decimal | None
     price: Decimal | None
@@ -231,7 +234,10 @@ def _crossing(h: Household, accounts: frozenset[str], start: date, end: date) ->
 
 
 def _holdings(h: Household, part: Part) -> list[Holding]:
+    """Each of the part's accounts with its positions: its securities by what they are called,
+    then its cash, as the design lists them."""
     ref = h.part_ref(part)
+    names = _names(h, [part])
     return [
         Holding(
             account_id=account.id,
@@ -239,9 +245,14 @@ def _holdings(h: Household, part: Part) -> list[Holding]:
             owners=tuple(h.ref(m) for m in h.members if m.id in account.owners),
             part=ref,
             held=tuple(
-                _position(p, h.books.currency)
-                for p in h.books.today.positions
-                if p.holding.account == account.ledger_account
+                sorted(
+                    (
+                        _position(p, h.books.currency)
+                        for p in h.books.today.positions
+                        if p.holding.account == account.ledger_account
+                    ),
+                    key=lambda p: (p.is_cash, names.get(p.commodity, p.commodity).casefold()),
+                )
             ),
         )
         for account in part.accounts
@@ -252,6 +263,7 @@ def _position(valued: Valued, currency: str) -> Position:
     quote = valued.quote
     return Position(
         commodity=valued.holding.commodity,
+        ticker=institution.ticker(valued.holding.commodity),
         units=valued.holding.units,
         value=valued.value,
         price=quote.price if quote else None,

@@ -284,6 +284,11 @@ class Household:
         """The part's accounts hearth sees: every one but those it holds by name alone."""
         return tuple(a for a in part.accounts if a.ledger_account not in self.books.unseen)
 
+    def spends(self, part: Part) -> tuple[Account, ...]:
+        """The part's accounts that could show what it spent or earned: every one hearth sees
+        but brokerages (`books.invested`), which Plaid sends no transactions for."""
+        return tuple(a for a in self.seen(part) if a.ledger_account not in self.books.invested)
+
     def unpriced(self, valuation: NetWorth, part: Part) -> tuple[str, ...]:
         """Name the unpriced positions, or only count them when holdings are not shown."""
         missing = valuation.unpriced

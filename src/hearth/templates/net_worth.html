@@ -165,7 +165,7 @@
         <svg aria-hidden="true"><use href="#i-clock"/></svg>
         <div class="alert-body">
           <p style="color: var(--ink); font-weight: 600">{{ names_by_symbol.get(p.commodity, p.commodity) }} has no price since {{ p.price_day.strftime("%a") }}, {{ p.price_day | day }}.</p>
-          <p>The price source has not returned a quote for {{ p.commodity }} since then. Its value below uses that day's close of {{ p.price | money }}, so it may be off. Every price is stored with its source and day, so this one will not pass as current.</p>
+          <p>The price source has not returned a quote for {{ p.ticker or names_by_symbol.get(p.commodity, p.commodity) }} since then. Its value below uses that day's close of {{ p.price | money }}, so it may be off. Every price is stored with its source and day, so this one will not pass as current.</p>
           <div class="alert-actions">
             <form method="post" action="/net-worth/prices/refresh">
               <input type="hidden" name="csrf" value="{{ session.csrf }}">
@@ -190,7 +190,7 @@
       <div class="alert alert-warn mt-3">
         <svg aria-hidden="true"><use href="#i-warn"/></svg>
         <div class="alert-body">
-          <p style="color: var(--ink); font-weight: 600">{{ p.commodity }} has no price at all.</p>
+          <p style="color: var(--ink); font-weight: 600">{{ names_by_symbol.get(p.commodity, p.commodity) }} has no price at all.</p>
           <p>Its {{ p.units | units }} units are left out, so every total that includes {{ holding.name }} is a floor, labelled "at least".</p>
         </div>
       </div>
@@ -213,7 +213,7 @@
           {% set stale = p.freshness == "stale" %}
           {% set unpriced = p.freshness == "unpriced" %}
           <tr{% if stale or unpriced %} class="is-flag"{% endif %}>
-            <th scope="row"><span class="primary">{{ "Cash" if p.is_cash else names_by_symbol.get(p.commodity, p.commodity) }}</span><span class="second">{{ "Uninvested" if p.is_cash else p.commodity }}</span></th>
+            <th scope="row"><span class="primary">{{ "Cash" if p.is_cash else names_by_symbol.get(p.commodity, p.commodity) }}</span><span class="second">{{ "Uninvested" if p.is_cash else p.ticker or "No ticker" }}</span></th>
             <td class="num col-hide-sm{% if p.is_cash %} faint{% endif %}">{{ "–" if p.is_cash else p.units | units }}</td>
             {% if p.is_cash %}
             <td class="num faint">&ndash;</td>

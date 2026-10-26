@@ -16,11 +16,16 @@ Plaid: ``hearth.plaid.holdings`` asks each connected brokerage for its holdings,
 holdings is approved, and hands every response to `read_many`.
 """
 
+import base64
+import hashlib
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
+
+from beancount.core.amount import CURRENCY_RE
 
 from hearth.valuation.pricestore import PriceStore, Recorded
 from hearth.valuation.quotes import Quote
@@ -46,11 +51,40 @@ class InstitutionPrices:
     unpriceable: tuple[Unpriceable, ...]
 
 
-NO_TICKER = "no ticker to match a ledger commodity"
 NO_PRICE = "no institution price"
 NO_DATE = "no date the institution price was current"
 NO_CURRENCY = "not priced in an ISO currency"
 CONFLICT = "another holding of the same ticker was priced differently that day"
+
+
+UNTICKERED = "PLAID."
+"""How the commodity of a security with no ticker a ledger can name begins (`commodity`)."""
+
+
+def commodity(security_id: str, ticker: str | None) -> str:
+    """The ledger commodity a Plaid security is held and priced as: its ticker, or, for one
+    with none a commodity can be named by, such as a trust fund that is not listed, a name
+    made from its Plaid `security_id` alone, the same every time it is asked.
+
+    A ticker matches a commodity an inherited ledger already holds; a made name matches the
+    position hearth's own books hold of that security (``hearth.plaid.opening``), and nothing
+    else, so it is never a guess.
+    """
+    if ticker and re.fullmatch(CURRENCY_RE, ticker):
+        return ticker
+    digest = base64.b32encode(hashlib.sha256(security_id.encode()).digest()).decode()
+    return f"{UNTICKERED}{digest[:10]}"
+
+
+def ticker(security: str) -> str | None:
+    """The ticker a ledger commodity is named by, or None for one `commodity` made up."""
+    return None if security.startswith(UNTICKERED) else security
+
+
+def is_cash(security: Mapping[str, Any]) -> bool:
+    """Whether a Plaid security is money, or as good as money: cash and money market funds,
+    which are an account's cash, not a priced security."""
+    return security.get("type") == "cash" or security.get("is_cash_equivalent") is True
 
 
 def read_holdings(payload: Mapping[str, Any], *, fetched_at: datetime) -> InstitutionPrices:
@@ -64,10 +98,11 @@ def read_many(payloads: Iterable[Mapping[str, Any]], *, fetched_at: datetime) ->
     Each payload must have been parsed with `parse_float=Decimal`: a float here has already
     lost the price it held, so it is refused rather than converted.
 
-    A holding is matched to a ledger commodity by its security's ticker; Plaid's `security_id`
-    is kept beside it, never the CUSIP, which Plaid sends only under a licence. A price with no
-    day is not stored: taking it as today's would claim a freshness nobody vouched for. Cash
-    holdings are the account's balance, not a priced security, and are skipped.
+    A holding is matched to a ledger commodity by its security's ticker, or by its Plaid
+    `security_id` when it has no ticker a commodity can be named by (`commodity`); the
+    `security_id` is kept beside it, never the CUSIP, which Plaid sends only under a licence.
+    A price with no day is not stored: taking it as today's would claim a freshness nobody
+    vouched for. Cash holdings are the account's cash, not a priced security, and are skipped.
 
     Two brokerages can hold one fund, and the store holds one price for it a day, so they are
     read together: where they disagree, neither is chosen.
@@ -83,25 +118,24 @@ def read_many(payloads: Iterable[Mapping[str, Any]], *, fetched_at: datetime) ->
             security = securities.get(security_id)
             if security is None:
                 raise HoldingsMalformedError(f"a holding names an unlisted security {security_id}")
-            if security.get("is_cash_equivalent") is True or security.get("type") == "cash":
+            if is_cash(security):
                 continue
             ticker = security.get("ticker_symbol")
+            symbol = commodity(security_id, ticker if isinstance(ticker, str) else None)
             price = _decimal(holding, "institution_price")
             as_of = _day(holding, "institution_price_as_of") or _moment(
                 holding, "institution_price_datetime"
             )
             currency = holding.get("iso_currency_code")
-            if not isinstance(ticker, str) or not ticker:
-                unpriceable.append(Unpriceable(security_id, NO_TICKER))
-            elif price is None or price <= 0:
+            if price is None or price <= 0:
                 unpriceable.append(Unpriceable(security_id, NO_PRICE))
             elif as_of is None:
                 unpriceable.append(Unpriceable(security_id, NO_DATE))
             elif not isinstance(currency, str) or not currency:
                 unpriceable.append(Unpriceable(security_id, NO_CURRENCY))
             else:
-                quote = Quote(ticker, as_of, price, currency, SOURCE, security_id, fetched_at)
-                found.setdefault((ticker, as_of), []).append(quote)
+                quote = Quote(symbol, as_of, price, currency, SOURCE, security_id, fetched_at)
+                found.setdefault((symbol, as_of), []).append(quote)
     quotes = []
     for same_day in found.values():
         # The store holds one price per ticker a day. Two holdings that disagree on it are

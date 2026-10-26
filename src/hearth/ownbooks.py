@@ -17,6 +17,11 @@ An account a member names rather than connects (``hearth.accounts.name_account``
 marked `seen: "moves-only"`: hearth sees only the rows members move into it from their
 connected accounts, so nothing in the books says what it holds (``books.unseen``).
 
+A brokerage account holds what its brokerage last said it holds, as of the day it said it
+(``hearth.plaid.opening``), and each security held is declared with what it is called. Plaid
+sends no trades, so no transaction ever moves a security: the books say what is held, never
+how it came to be.
+
 Every recompute also writes these entries to a beancount file, so every figure traces to an
 entry that exists, one a person can open in fava, query, diff and check against a statement.
 The file is an output, never an input: hearth does not read it, and says so at its top. A
@@ -33,7 +38,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 
-from beancount.core.data import Directive, Open, Transaction, new_metadata
+from beancount.core.data import Commodity, Directive, Open, Transaction, new_metadata
 from beancount.parser import printer
 
 from hearth.accounts import Account, all_accounts
@@ -66,11 +71,12 @@ _SIGNATURE = "; hearth wrote everything above; its sha256 is "
 
 @dataclass(frozen=True, slots=True)
 class Derived:
-    """Hearth's own entries, and each account whose opening balance could not be derived,
-    with why (``hearth.plaid.opening``)."""
+    """Hearth's own entries, each account whose opening balance could not be derived, with
+    why, and each account a brokerage account feeds (``hearth.plaid.opening``)."""
 
     entries: list[Directive]
     unknown: Mapping[str, opening.Unknown] = field(default_factory=dict)
+    invested: frozenset[str] = frozenset()
 
 
 def derive(
@@ -78,11 +84,14 @@ def derive(
     feed: Feed,
     *,
     opened: Collection[str] = (),
+    declared: Collection[str] = (),
     since: date | None = None,
 ) -> Derived:
     """Hearth's own entries: an `open` for each ledger account a confirmed mapping feeds,
     every transaction the import books for them (``hearth.plaid.booking``), and each one's
-    opening balance with the balance its bank reported (``hearth.plaid.opening``).
+    opening balance with the balance its bank reported (``hearth.plaid.opening``), or for a
+    brokerage account, what it holds as its brokerage reported it, with a `commodity` for
+    each security held that `declared`, the inherited ledger's, does not already declare.
 
     Each is dated at the start of the history its connection asked for, or at the earliest
     transaction Plaid sent for it if that is earlier, or on its opening balance if that is
@@ -128,10 +137,29 @@ def derive(
     entries += [u.entry(0) for u in named_first]
     if first is not None:
         entries += [Open(new_metadata(ORIGIN, 0), first, a, [], None) for a in sorted(extra)]
+    entries += _securities(openings, declared)
     entries += [entry for anchor in openings.anchors for entry in anchor.entries()]
     entries += booked.entries
     filed = [_filed(entry, lineno) for lineno, entry in enumerate(entries, start=1)]
-    return Derived(filed, openings.unknown)
+    return Derived(filed, openings.unknown, openings.invested)
+
+
+def _securities(openings: opening.Openings, declared: Collection[str]) -> list[Commodity]:
+    """A `commodity` for each security a brokerage account holds, saying what it is called,
+    on the first day one is held; one the inherited ledger declares is left to it."""
+    days: dict[str, date] = {}
+    for anchor in openings.anchors:
+        for amount in anchor.opening:
+            if amount.currency in openings.securities:
+                days[amount.currency] = min(anchor.day, days.get(amount.currency, anchor.day))
+    found = []
+    for security, day in sorted(days.items()):
+        if security in declared:
+            continue
+        meta = new_metadata(ORIGIN, 0)
+        meta["name"] = openings.securities[security]
+        found.append(Commodity(meta, day, security))
+    return found
 
 
 def _ruled(conn: sqlite3.Connection) -> set[str]:
@@ -261,14 +289,16 @@ def render(entries: Sequence[Directive], *, inherits: Path | None) -> str:
             "\n; One account for each bank account a member connected, opened on the first day"
             "\n; of the history asked for, each account a member named that hearth does not see"
             '\n; (seen: "moves-only": what it holds is not known, only what moved in and out),'
-            "\n; and each category the transactions below name.\n"
+            "\n; each category the transactions below name, and each security a brokerage holds.\n"
         )
         parts.extend(f"\n{printer.format_entry(entry)}" for entry in opens)
     if anchors:
         parts.append(
             "\n; What each account held before the first transaction below, worked out from the"
             "\n; balance its bank reported less every transaction it sent, and that balance, which"
-            "\n; beancount checks the transactions add up to.\n"
+            "\n; beancount checks the transactions add up to. A brokerage account holds what its"
+            '\n; brokerage said it held on the day it said it (balance: "holdings"), and nothing'
+            "\n; says what it held before: no trades are brought in.\n"
         )
         parts.extend(f"\n{printer.format_entry(entry)}" for entry in anchors)
     if booked:

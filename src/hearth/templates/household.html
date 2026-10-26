@@ -90,7 +90,8 @@
             </tbody>
           </table>
         </div>
-        {% elif h.history %}
+        {# One point is a line only with the note saying why it starts there. #}
+        {% elif h.history | length > 1 or h.priced_from %}
         <figure>
           <figcaption>
             <h3 id="nw-t" style="font-size: var(--t-sm); line-height: var(--lh-sm)">Net worth, end of each month</h3>
@@ -120,7 +121,7 @@
     <section class="panel" aria-labelledby="sp-h">
       <div class="panel-head">
         <h2 id="sp-h">Spending by month</h2>
-        <p class="finding">{% if not sp.spent_counted %}Not known yet: nothing behind this figure that you can see is connected.{% elif sp.covered %}{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% else %}Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.{% endif %}{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
+        <p class="finding">{% if not sp.spent_counted %}Not known yet: none of the accounts behind this figure that you can see shows hearth what was spent.{% elif sp.covered %}{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% else %}Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.{% endif %}{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
       </div>
       <div class="panel-body">
         <div class="figs" style="margin-bottom: var(--s-5)">
@@ -149,6 +150,8 @@
             <p class="fig-value muted">&ndash;</p>
             {% if sp.saved_without %}
             <p class="fig-sub">{{ private("Not shared by " ~ (sp.saved_without | names("name"))) }}</p>
+            {% elif not sp.earned_counted %}
+            <p class="fig-sub">Not known yet</p>
             {% elif not sp.saved_covered %}
             <p class="fig-sub">History incomplete</p>
             {% else %}
@@ -208,7 +211,7 @@
           <div class="cat is-withheld" role="listitem">
             <span class="name">{{ slice.part.name }}</span>
             <span class="track"><i aria-hidden="true"></i><svg aria-hidden="true"><use href="#i-lock"/></svg>Total only, not by category</span>
-            <span class="val">{{ slice.value | money }}</span>
+            {% if slice.value is none %}<span class="val muted">Not known yet</span>{% else %}<span class="val">{{ slice.value | money }}</span>{% endif %}
           </div>
           {% endfor %}
         </div>

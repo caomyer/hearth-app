@@ -165,6 +165,9 @@ class AccountView:
     unseen: UnseenAccount | None = None
     """What else there is to say of an account a member named that hearth does not see
     (`books.unseen`); None for any other account."""
+    priced: date | None = None
+    """For a brokerage account whose balance the viewer may see, the day of the newest price
+    its holdings are valued at."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,6 +300,7 @@ class Disclosure:
                 if account.ledger_account in h.books.unseen
                 else None
             ),
+            priced=row.priced if isinstance(row, AccountRow) and row.invested else None,
         )
 
     def _unseen(self, h: Household, account: Account, rulings: RulingStore | None) -> UnseenAccount:

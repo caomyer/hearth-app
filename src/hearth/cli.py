@@ -289,16 +289,16 @@ def _sync_daily(settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkee
 def sync_then_recompute(
     settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper, clock: Clock
 ) -> None:
-    """Sync every working connection and store today's price of every brokerage's holdings,
-    each refused for a real connection unless approved, then recompute the books, which record
-    how current each connection is: the morning's recompute starts with the sync, so it may
-    finish first.
+    """Sync every working connection and keep every brokerage's holdings and today's price of
+    each, each refused for a real connection unless approved, then recompute the books, which
+    record how current each connection is: the morning's recompute starts with the sync, so it
+    may finish first.
 
-    A brokerage's price is today's only (``hearth.plaid.holdings``), so it is asked for every
-    morning: a morning missed is a day with no price, for good. That holds too for a fund no
-    position in the books holds yet, as in hearth's own books, which book no brokerage's
-    positions: its price is kept for the day they are, and the log says so rather than
-    leaving a live call that values nothing today unexplained."""
+    A brokerage's holdings and prices are today's only (``hearth.plaid.holdings``), so they are
+    asked for every morning: a morning missed is a day with neither, for good. That holds too
+    for a fund no position in the books holds, as when an inherited ledger keeps the brokerage
+    account and holds none of the fund: its price is kept for the day it does, and the log says
+    so rather than leaving a live call that values nothing today unexplained."""
     priced: Priced | None = None
     conn = db.connect(settings.database)
     try:
@@ -306,7 +306,7 @@ def sync_then_recompute(
     except Exception:
         _log.exception("the daily sync stopped")
     try:
-        priced = price_holdings(conn, plaid, clock)
+        priced = price_holdings(conn, settings.feed_database, plaid, clock)
     except Exception:
         _log.exception("reading holdings stopped")
     finally:
@@ -514,5 +514,6 @@ def _demo_from_zero(host: str, port: int) -> None:
         for username, password in passwords.items():
             print(f"  {username:<8} {password}", flush=True)
         print(f"Hearth writes its books to {settings.books_file}", flush=True)
-        establish = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))
+        # Nothing is priced until a brokerage connected through the stand-in gives its prices.
+        establish = books.from_household(settings, rulings=rulings_in)
         _run(settings, establish, host, port, setup)

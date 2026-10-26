@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -15,6 +16,7 @@ from hearth.plaid.client import (
     PlaidMalformedError,
     PlaidRejectedError,
     PlaidUnreachableError,
+    held,
     https_transport,
 )
 from hearth.plaid.fake import FakePlaid
@@ -164,6 +166,72 @@ def test_holdings_are_read_with_every_number_a_decimal_and_no_cusip(
     assert all(isinstance(h["institution_price"], Decimal) for h in held["holdings"])
     assert all(isinstance(h["quantity"], Decimal) for h in held["holdings"])
     assert all(s["cusip"] is None for s in held["securities"])
+
+
+HOLDINGS = """{
+  "accounts": [
+    {"account_id": "acct-brk", "type": "investment"},
+    {"account_id": "acct-empty", "type": "investment"},
+    {"account_id": "acct-chk", "type": "depository"}
+  ],
+  "holdings": [
+    {"account_id": "acct-brk", "security_id": "sec-fund", "quantity": 10.125,
+     "institution_value": 1012.50, "iso_currency_code": "USD"},
+    {"account_id": "acct-brk", "security_id": "sec-fund", "quantity": 0.5,
+     "institution_value": 50.00, "iso_currency_code": "USD"},
+    {"account_id": "acct-brk", "security_id": "sec-cash", "quantity": 75.25,
+     "institution_value": 75.25, "iso_currency_code": "USD"},
+    {"account_id": "acct-brk", "security_id": "sec-mmf", "quantity": 300,
+     "institution_value": 300.00, "iso_currency_code": "USD"}
+  ],
+  "securities": [
+    {"security_id": "sec-fund", "ticker_symbol": "ZQFND", "name": "Zq Fund", "type": "etf"},
+    {"security_id": "sec-cash", "ticker_symbol": "CUR:USD", "type": "cash"},
+    {"security_id": "sec-mmf", "ticker_symbol": "ZQMMF", "type": "mutual fund",
+     "is_cash_equivalent": true}
+  ]
+}"""
+"""An investment account holding a fund twice over, cash and a money market fund; another
+holding nothing; and a checking account the answer lists beside them. Every value invented."""
+
+
+def test_what_each_investment_account_holds_is_read_as_its_brokerage_said_it() -> None:
+    found = held(json.loads(HOLDINGS, parse_float=Decimal))
+
+    # One that holds nothing is listed, as that is what its brokerage said of it.
+    assert found.accounts == ("acct-brk", "acct-empty")
+    fund, cash, mmf = found.positions
+    # Two holdings of one fund are one position.
+    assert (fund.ticker, fund.name, fund.quantity, fund.value, fund.cash) == (
+        "ZQFND",
+        "Zq Fund",
+        Decimal("10.625"),
+        Decimal("1062.50"),
+        False,
+    )
+    assert (cash.quantity, cash.value, cash.cash) == (Decimal("75.25"), Decimal("75.25"), True)
+    assert (mmf.ticker, mmf.cash) == ("ZQMMF", True)
+    assert all(isinstance(p.quantity, Decimal) for p in found.positions)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda raw: raw["holdings"][0].update(account_id="acct-chk"),
+        lambda raw: raw["holdings"][0].update(security_id="sec-unlisted"),
+        lambda raw: raw["holdings"][0].update(quantity=None),
+        lambda raw: raw["holdings"][0].update(quantity=10.125),
+    ],
+    ids=["not an investment account", "unlisted security", "no quantity", "a float"],
+)
+def test_a_holding_that_cannot_be_read_as_sent_is_refused_never_read_as_nothing(
+    change: Callable[[dict[str, Any]], None],
+) -> None:
+    raw: dict[str, Any] = json.loads(HOLDINGS, parse_float=Decimal)
+    change(raw)
+
+    with pytest.raises(PlaidMalformedError):
+        held(raw)
 
 
 def test_an_item_that_offers_investments_is_read_with_no_new_sign_in(

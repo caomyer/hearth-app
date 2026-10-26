@@ -46,6 +46,7 @@ from hearth.plaid.client import (
 from hearth.plaid.credentials import Capacity, CredentialSet, CredentialStore
 from hearth.plaid.feed import Balance, Coverage, Feed, Outcome, Run
 from hearth.plaid.feed import Held as HeldRows
+from hearth.plaid.holdings import price_holdings
 from hearth.plaid.mapping import Problem
 from hearth.plaid.owner import is_alive
 from hearth.plaid.registry import (
@@ -1392,9 +1393,14 @@ def _follow(
 ) -> None:
     """Sync a working Item, and again after each of `check_waits` while Plaid has not sent all
     its history, telling `setup.synced` after each sync. Each sync is a read like any other,
-    refused unless approved."""
+    refused unless approved.
+
+    After its first sync, an Item reaching a brokerage account is asked for its holdings too,
+    when reading holdings is approved, so what the account holds is in the figures that sync
+    brings rather than waiting for the morning's ask (``hearth.plaid.holdings``)."""
     registry = Registry(conn)
     waits = check_waits()
+    asked = False
     while True:
         item = registry.item(item_id)
         if item is None or item.state is not ItemState.WORKING:
@@ -1402,6 +1408,9 @@ def _follow(
         registry.next_check(item_id, None)
         with contextlib.suppress(SyncBusyError):
             _sync(conn, feed_path, setup, clock, item)
+        if not asked:
+            asked = True
+            price_holdings(conn, feed_path, setup, clock, only={item_id})
         setup.synced()
         item = registry.item(item_id)
         if item is None or item.state is not ItemState.WORKING:

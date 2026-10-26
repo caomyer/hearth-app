@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from hearth import figures
 from hearth.accounts import Account
+from hearth.books import Books
 from hearth.disclosure.common import (
     DataEnds,
     Household,
@@ -29,7 +30,6 @@ from hearth.disclosure.household import CategoryPanel, category_panel
 from hearth.figures import Line, MonthFlows, Part
 from hearth.members import Member
 from hearth.months import Month
-from hearth.plaid.opening import Unknown
 from hearth.reports.common import root
 from hearth.reports.coverage import AccountCoverage, Span
 from hearth.sharing import DESCRIPTIONS, Facet, FacetDescription
@@ -62,6 +62,11 @@ class AccountRow:
     """Where an account hearth does not see is: its bank's name, or a person's."""
     mask: str | None = None
     """The last digits of an account hearth does not see, when its owner gave them."""
+    invested: bool = False
+    """Whether it is a brokerage account (`books.invested`): its value is what it holds, which
+    no history of its own will ever explain, as Plaid sends none."""
+    priced: date | None = None
+    """The day of the newest price its holdings are valued at, as a brokerage's are."""
 
     @property
     def is_owed(self) -> bool:
@@ -93,6 +98,10 @@ class Totals:
     typical_spent: Decimal | None
     spent_unreviewed: Disclosed[Unreviewed]
     earned_unreviewed: Disclosed[Unreviewed]
+    spends: bool = True
+    """Whether any of the accounts behind it could show spending: not when every one is a
+    brokerage, which Plaid sends no transactions for, so no figure will ever arrive. What kind
+    each account is goes with its balance, so a page says so to the part's owners alone."""
 
     @property
     def over_typical(self) -> Decimal | None:
@@ -236,6 +245,7 @@ def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
         month=h.books.month,
         to_day=h.books.as_of.day,
         covered=figures.flows_cover(h.books, part.accounts, h.books.month),
+        spends=bool(h.spends(part)),
         spent=spent,
         earned=gate.disclose(
             Facet.MONTHLY_INCOME_TOTAL, part.owners, lambda: this_month.earned(part.owners)
@@ -283,12 +293,11 @@ def account_rows(h: Household, accounts: Sequence[Account]) -> tuple[AccountRow,
 
 def _account_row(h: Household, account: Account, coverage: AccountCoverage | None) -> AccountRow:
     positions = [p for p in h.books.today.positions if p.holding.account == account.ledger_account]
-    unknown = h.books.unknown.get(account.ledger_account)
     unseen = account.ledger_account in h.books.unseen
     return AccountRow(
         id=account.id,
         name=account.name,
-        kind=_kind(account, positions, h.books.currency, unknown),
+        kind=_kind(account, positions, h.books),
         owners=tuple(h.ref(m) for m in h.members if m.id in account.owners),
         value=Worth(
             sum((p.value for p in positions if p.value is not None), Decimal(0)),
@@ -310,16 +319,18 @@ def _account_row(h: Household, account: Account, coverage: AccountCoverage | Non
         unseen=unseen,
         where=account.named.institution if unseen and account.named else None,
         mask=account.named.mask if unseen and account.named else None,
+        invested=account.ledger_account in h.books.invested,
+        priced=max((p.quote.as_of for p in positions if p.quote), default=None),
     )
 
 
-def _kind(
-    account: Account, positions: Sequence[Valued], currency: str, unknown: Unknown | None
-) -> str:
+def _kind(account: Account, positions: Sequence[Valued], books: Books) -> str:
     if root(account.ledger_account) == "Liabilities":
         return "Credit"
-    # An investment account whose holdings are not in yet holds no position to tell it by.
-    if unknown is Unknown.INVESTMENT or any(p.holding.commodity != currency for p in positions):
+    # A brokerage account is one whatever it holds: its holdings may not be in yet, or be cash.
+    if account.ledger_account in books.invested or any(
+        p.holding.commodity != books.currency for p in positions
+    ):
         return "Investments"
     return "Cash"
 

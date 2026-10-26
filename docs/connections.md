@@ -226,9 +226,10 @@ The daily sync and `hearth plaid sync` also leave alone an Item whose history is
 
 ### Holdings
 
-A brokerage's price for each holding is today's and no other, so hearth asks for it at start-up and every morning when started with `holdings` approved, after the sync, and whenever `hearth plaid holdings --approved` is run (`hearth.plaid.holdings`).
+What a brokerage account holds, and its brokerage's price for each holding, are today's and no other, so hearth asks for them when the connection is first synced, at start-up and every morning when started with `holdings` approved, after the sync, and whenever `hearth plaid holdings --approved` is run (`hearth.plaid.holdings`).
 Every working connection that reaches an investment account is asked, whoever holds it: a price is a fact about the market, and pages show it only beside a position its viewer may see.
-It is asked even when no position in the books holds what it prices, as in hearth's own books, which book no brokerage's positions yet: a day not asked can never be priced later, so the price is kept for when they are, and the morning's log names each such fund and says why.
+What each account holds is kept in the feed with when it was said, every answer of it, and the books hold the latest (`docs/books.md`, "What a brokerage holds").
+A price is kept even when no position in the books holds what it prices, as when an inherited ledger keeps the account and holds none of the fund: a day not asked can never be priced later, so the price is kept for when one does, and the morning's log names each such fund and says why.
 Each price is stored in the app database's `price` table under source `plaid`, with the Plaid security it priced, the day it was current and the time it was fetched (`docs/valuation.md`).
 A connection that cannot be asked stops only itself and says why with Plaid's own error code: an institution without the product (`PRODUCTS_NOT_SUPPORTED`), an Item whose member never consented to share investments (`ADDITIONAL_CONSENT_REQUIRED`, which only Link can ask for), or data Plaid is still preparing (`PRODUCT_NOT_READY`, collected the next morning).
 
@@ -236,15 +237,16 @@ An Item that lists `investments` among its available products, as Plaid's `/item
 New Items ask for it as an optional product at Link for the same reason.
 
 This is `/investments/holdings/get` only: positions and their prices.
-A brokerage's trades and dividends are `/investments/transactions/get`, a separate call that Plaid bills separately, and hearth does not make it, so no brokerage's trade history arrives, whatever value its holdings now show.
+A brokerage's trades and dividends are `/investments/transactions/get`, a separate call that Plaid bills separately, and hearth does not make it.
+So a brokerage account now shows a value, and still shows no trades: what it holds is known from the day it was asked, and how it came to hold it is not known at all.
 
 ## Where it is kept
 
 - The app database holds connections, never money: Items, their accounts and mappings, credential sets' allowances, and uploaded statements' names (`hearth.db`).
-- The feed store, `feed.sqlite3` beside it, holds what Plaid sent: transactions, balances and the record of every sync (`hearth.plaid.feed`).
+- The feed store, `feed.sqlite3` beside it, holds what Plaid sent: transactions, balances, every answer of what each brokerage account holds, and the record of every sync (`hearth.plaid.feed`).
   It is a staging store for the import, not a second store of record.
 - A brokerage's price for each holding is in the app database's `price` table with its provenance, beside every other price: a price is a fact about the market, not about the household (`docs/valuation.md`).
-  The holdings it came with are not kept.
+  What the household holds is the household's, so it stays in the feed.
 - Access tokens and Plaid keys are in the vault, sealed under the Keychain's master key.
 - Uploaded statements are in `statements/` in the data directory, readable only by their owner on the machine.
 - What hearth asked of Plaid, and how it went, is in `hearth.log` in the data directory (see the runtime log, above).
@@ -253,6 +255,6 @@ A brokerage's trades and dividends are `/investments/transactions/get`, a separa
 
 - Booking uploaded statements: what a connection fetches is booked (`docs/books.md`), what a member uploads is kept but not yet read.
 - Carrying an account an inherited ledger holds on from where that ledger stops: the import leaves such an account to the ledger.
-- Booking a brokerage's positions into hearth's own books: hearth stores the price each holding has, but only an inherited ledger holds positions to value at it.
+- Valuing a brokerage at a month end from the holdings kept that day: the books hold the latest holdings only, so no net worth history is drawn through a part that holds a brokerage.
 - Bringing in a brokerage's trades and dividends (`/investments/transactions/get`).
 - Reading an account its bank sent no transactions for in a complete history as quiet: its balance is known (`docs/books.md`), its months are not.

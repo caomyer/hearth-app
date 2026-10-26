@@ -28,10 +28,21 @@ are exactly the rows the books hold.
 
 An opening that cannot be derived is never guessed. The account's balance stays not known,
 never zero, and `Unknown` says why, so the account's page can.
+
+An investment account is anchored the same way at what its brokerage last said it holds
+(``Feed.holdings``), not at its current balance: that balance is what its holdings are worth
+at prices hearth keeps apart (``docs/valuation.md``), not units of anything. Each security is
+held as a commodity, named by its ticker or made from its Plaid security
+(``valuation.institution.commodity``), and the account's cash as money. Plaid sends no trades,
+so nothing says how the account came to hold them, or what it held on any day before it was
+asked: the whole anchor is dated on the day the brokerage reported it, and every day before
+reads as not known rather than as an account that held nothing (``books.positioned``). Any
+rows that did reach it are money, and its cash is derived from them as a bank account's is.
 """
 
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -49,16 +60,28 @@ from beancount.core.data import (
 from hearth.connections import plaid_balance_source
 from hearth.plaid import booking
 from hearth.plaid.client import Transaction as Row
-from hearth.plaid.feed import Feed, Outcome
+from hearth.plaid.feed import Feed, Outcome, Report
 from hearth.plaid.registry import Item, LinkedAccount, Registry
+from hearth.valuation.institution import commodity
 
 EQUITY = "Equity:Opening-Balances"
 """What an opening balance is balanced against: beancount's own name for it."""
 
 NARRATION = "Opening balance"
+HELD = "Holdings as reported"
 
 _PROVENANCE = "balance"
-"""Which of the balances a bank reports an anchor was derived from: Plaid's current balance."""
+"""Which of the balances a bank reports an anchor was derived from (`Basis`)."""
+
+
+class Basis(StrEnum):
+    """What a bank reported that an anchor was derived from."""
+
+    CURRENT = "current"
+    """Plaid's current balance: the money an account holds, or owes."""
+    HOLDINGS = "holdings"
+    """What a brokerage said an investment account holds (``Feed.holdings``)."""
+
 
 BALANCED = frozenset({"depository", "credit", "loan"})
 """Kinds of account whose current balance is money held or owed, which their rows move."""
@@ -68,8 +91,9 @@ class Unknown(StrEnum):
     """Why an account's opening balance could not be derived."""
 
     INVESTMENT = "investment"
-    """An investment account's balance is what its holdings are worth, which its rows do not
-    move: Plaid sends no investment transactions without its Investments product."""
+    """An investment account whose brokerage has not said what it holds yet. Its balance is
+    what its holdings are worth, which no row moves, so only its holdings can anchor it, and
+    hearth asks for them only once reading holdings is approved (``hearth.plaid.holdings``)."""
     KIND = "kind"
     """An account of a kind whose balance is not plainly money held or owed."""
     SHARED = "shared"
@@ -85,61 +109,71 @@ class Unknown(StrEnum):
     """The account was connected again, and the rows between its connections are not all in."""
 
 
-PASSING = frozenset({Unknown.NO_BALANCE, Unknown.UNFINISHED, Unknown.CURRENCY, Unknown.GAP})
-"""Reasons an opening is not known yet that a later sync can clear: an account unknown only
-for one of these is, like one anchored, an account whose balance is, or will be, its bank's."""
+PASSING = frozenset(
+    {Unknown.INVESTMENT, Unknown.NO_BALANCE, Unknown.UNFINISHED, Unknown.CURRENCY, Unknown.GAP}
+)
+"""Reasons an opening is not known yet that a later sync, or a later ask for a brokerage's
+holdings, can clear: an account unknown only for one of these is, like one anchored, an
+account whose balance is, or will be, its bank's."""
 
 
 @dataclass(frozen=True, slots=True)
 class Anchor:
-    """An account's opening balance, and the balance its bank reported, as the books hold them."""
+    """What an account held before its history, and what its bank reported it holds, as the
+    books hold them: an amount of each commodity it holds, which for a bank account is one."""
 
     account: str
     day: date
     """The day before the first row booked for the account, or `as_of` if there is none yet:
-    the opening is what it held at the end of it."""
-    opening: Amount
-    reported: Amount
-    """The bank's current balance, in the books' sign."""
+    the opening is what it held at the end of it. For holdings, the day they were reported."""
+    opening: tuple[Amount, ...]
+    reported: tuple[Amount, ...]
+    """The bank's current balance, in the books' sign, or each holding a brokerage reported."""
     as_of: date
     """The last day the reported balance covers: the later of the day it was reported and the
-    day of the last row booked for the account."""
+    day of the last row booked for the account. For holdings, the day they were reported, as
+    a brokerage's report says nothing of rows after it."""
     reported_at: datetime
     institution: str
     item_id: str
+    basis: Basis = Basis.CURRENT
 
-    def entries(self) -> tuple[Transaction, Balance]:
-        """The opening entry, and the assertion of the balance the bank reported."""
+    def entries(self) -> tuple[Transaction | Balance, ...]:
+        """The opening entry, and the assertion of each amount the bank reported."""
         opening = Transaction(
             {**self._provenance(), "source": plaid_balance_source(self.item_id)},
             self.day,
             "*",
             None,
-            NARRATION,
+            HELD if self.basis is Basis.HOLDINGS else NARRATION,
             EMPTY_SET,
             EMPTY_SET,
             [
-                Posting(self.account, self.opening, None, None, None, None),
-                Posting(EQUITY, -self.opening, None, None, None, None),
+                *(Posting(self.account, amount, None, None, None, None) for amount in self.opening),
+                *(Posting(EQUITY, -amount, None, None, None, None) for amount in self.opening),
             ],
         )
-        asserted = Balance(
-            self._provenance(),
-            self.as_of + timedelta(days=1),
-            self.account,
-            self.reported,
-            # Written `~ 0`: beancount would otherwise infer a tolerance from how many places
-            # Plaid gave, five cents for a round `9120.0`. Checked exactly, as hearth does.
-            Decimal(0),
-            None,
+        asserted = tuple(
+            Balance(
+                self._provenance(),
+                self.as_of + timedelta(days=1),
+                self.account,
+                amount,
+                # Written `~ 0`: beancount would otherwise infer a tolerance from how many
+                # places Plaid gave, five cents for a round `9120.0`. Checked exactly, as
+                # hearth does.
+                Decimal(0),
+                None,
+            )
+            for amount in self.reported
         )
-        return opening, asserted
+        return (opening, *asserted)
 
     def _provenance(self) -> dict[str, object]:
         # No `source` on the assertion: it is dated after the sync it came from, and a
         # connection vouches only for what the books hold up to its sync (`books.vouched`).
         meta = new_metadata(booking.ORIGIN, 0)
-        meta[_PROVENANCE] = "current"
+        meta[_PROVENANCE] = self.basis.value
         meta["reported-by"] = self.institution
         meta["reported-at"] = self.reported_at.isoformat()
         return meta
@@ -151,25 +185,50 @@ def anchors(entry: Directive) -> bool:
     return isinstance(entry, Transaction | Balance) and _PROVENANCE in (entry.meta or {})
 
 
+def held(entry: Directive) -> bool:
+    """Whether `entry` is one of the anchor of what a brokerage reported an account holds."""
+    return anchors(entry) and (entry.meta or {}).get(_PROVENANCE) == Basis.HOLDINGS.value
+
+
 @dataclass(frozen=True, slots=True)
 class Openings:
     anchors: tuple[Anchor, ...]
     unknown: Mapping[str, Unknown]
     """Each ledger account whose opening could not be derived, and why."""
+    invested: frozenset[str] = frozenset()
+    """Each ledger account an investment account feeds, anchored or not."""
+    securities: Mapping[str, str] = field(default_factory=dict)
+    """What each security an anchor holds is called, by the commodity it is held as."""
 
 
 def derive(registry: Registry, feed: Feed, booked: booking.Booked) -> Openings:
     """Every ledger account the import feeds, anchored or with the reason it is not."""
     anchors: list[Anchor] = []
     unknown: dict[str, Unknown] = {}
+    invested: set[str] = set()
+    securities: dict[str, str] = {}
     twice = [{a.account_id for a in group} for group in registry.connected_twice()]
     for account, linked in sorted(booked.fed.items()):
         found = _anchor(registry, feed, account, linked, booked.taken[account], twice)
+        if isinstance(found, Invested):
+            invested.add(account)
+            securities = {**found.securities, **securities}
+            found = found.anchor
         if isinstance(found, Anchor):
             anchors.append(found)
         elif found is not None:
             unknown[account] = found
-    return Openings(tuple(anchors), unknown)
+            if found is Unknown.INVESTMENT:
+                invested.add(account)
+    return Openings(tuple(anchors), unknown, frozenset(invested), securities)
+
+
+@dataclass(frozen=True, slots=True)
+class Invested:
+    """An investment account's anchor, or why it has none, and what its securities are called."""
+
+    anchor: Anchor | Unknown
+    securities: Mapping[str, str] = field(default_factory=dict)
 
 
 def _anchor(
@@ -179,16 +238,19 @@ def _anchor(
     linked: Sequence[LinkedAccount],
     rows: Sequence[Row],
     twice: Sequence[set[str]],
-) -> Anchor | Unknown | None:
+) -> Anchor | Invested | Unknown | None:
     items = {a.item_id: registry.item(a.item_id) for a in linked}
     newest = max(linked, key=lambda a: _newness(items[a.item_id]))
     item = items[newest.item_id]
-    if newest.is_investment:
-        return Unknown.INVESTMENT
-    if newest.type not in BALANCED:
+    if not newest.is_investment and newest.type not in BALANCED:
         return Unknown.KIND
     if len(linked) > 1 and not any({a.account_id for a in linked} <= group for group in twice):
-        return Unknown.SHARED
+        return Invested(Unknown.SHARED) if newest.is_investment else Unknown.SHARED
+    if newest.is_investment:
+        report = feed.holdings(newest.account_id)
+        if item is None or report is None:
+            return Invested(Unknown.INVESTMENT)
+        return _holdings(account, report, rows, item, feed)
     balance = feed.balance(newest.account_id)
     if item is None or balance is None or balance.current is None:
         return Unknown.NO_BALANCE
@@ -207,12 +269,62 @@ def _anchor(
     return Anchor(
         account=account,
         day=day,
-        opening=Amount(reported - moved, balance.currency),
-        reported=Amount(reported, balance.currency),
+        opening=(Amount(reported - moved, balance.currency),),
+        reported=(Amount(reported, balance.currency),),
         as_of=as_of,
         reported_at=balance.recorded_at,
         institution=item.institution,
         item_id=item.item_id,
+    )
+
+
+def _holdings(
+    account: str, report: Report, rows: Sequence[Row], item: Item, feed: Feed
+) -> Invested:
+    """An investment account anchored at what its brokerage last said it holds.
+
+    Each security is held as its commodity, and cash, and money as good as cash, as money at
+    what the brokerage says it is worth. One whose worth the brokerage did not say is held
+    as a security instead, so it is valued at a price or not at all, never at a guess. Rows
+    on the account are money, and its cash before them is derived as a bank account's is,
+    from the rows up to the day of the report: a row after it is not in the report, so it is
+    added to what the report says rather than taken from the opening.
+    """
+    if any(not row.currency for row in rows):
+        return Invested(Unknown.CURRENCY)
+    reported: defaultdict[str, Decimal] = defaultdict(Decimal)
+    securities: dict[str, str] = {}
+    for position in report.positions:
+        if position.cash and position.value is not None and position.currency:
+            reported[position.currency] += position.value
+            continue
+        security = commodity(position.security_id, position.ticker)
+        reported[security] += position.quantity
+        if position.name:
+            securities[security] = position.name
+    day = report.reported_at.astimezone().date()
+    moved: defaultdict[str, Decimal] = defaultdict(Decimal)
+    for row in rows:
+        if row.day <= day:
+            moved[str(row.currency)] -= row.amount
+    if not reported and not moved:
+        # It holds nothing, as its brokerage said: a figure of zero someone established.
+        balance = feed.balance(report.account_id)
+        reported[(balance.currency if balance else None) or "USD"] = Decimal(0)
+    held = sorted({*reported, *moved})
+    return Invested(
+        Anchor(
+            account=account,
+            day=day,
+            opening=tuple(Amount(reported[c] - moved[c], c) for c in held),
+            reported=tuple(Amount(reported[c], c) for c in held),
+            as_of=day,
+            reported_at=report.reported_at,
+            institution=item.institution,
+            item_id=item.item_id,
+            basis=Basis.HOLDINGS,
+        ),
+        securities,
     )
 
 

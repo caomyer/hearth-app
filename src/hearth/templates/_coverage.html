@@ -6,7 +6,7 @@
 <div class="row between wrap">
   <p><span style="font-weight: 500">{{ a.kind }}</span>{% if a.mask %} <span class="faint sm">&bull;&bull;&nbsp;{{ a.mask }}</span>{% endif %}{% if a.name != a.kind %} <span class="faint sm">&middot; {{ a.name }}</span>{% endif %}</p>
   {% if a.is_investment and not held.transactions %}
-  <span class="tag tag-outline"><svg aria-hidden="true"><use href="#i-info"/></svg>Today's balance only</span>
+  <span class="tag tag-outline"><svg aria-hidden="true"><use href="#i-info"/></svg>Today's holdings only</span>
   {% elif not cov.complete %}
   <span class="tag tag-outline"><svg aria-hidden="true"><use href="#i-clock"/></svg>History arriving</span>
   {% elif cov.is_short %}
@@ -21,7 +21,7 @@
   <div class="cov-scale"><span>{{ cov.requested_from | month_year }}</span><span>{{ (cov.requested_from.replace(year=cov.requested_from.year + 1)) | month_year }}</span><span>Today</span></div>
 </div>
 {% if a.is_investment and not held.transactions %}
-<p class="sm muted mt-2">Hearth asks this brokerage each morning for the price it gives each holding, once the household's admin approves it, and keeps each price with its day: Plaid gives today's only, so no earlier day can ever be valued from it. Hearth does not keep the positions themselves yet, and a brokerage's buys, sells and dividends come from a separate part of Plaid that Hearth does not use, so no trade history arrives. Statements uploaded as CSV can fill the history.</p>
+<p class="sm muted mt-2">Hearth asks this brokerage what the account holds and the price it gives each holding, once the household's admin approves it: when it is connected, then each morning. Plaid gives both as of today only, so the account is valued from the day it was first asked, never for earlier days. A brokerage's buys, sells and dividends come from a separate part of Plaid that Hearth does not use, so no trade history arrives, even once the account shows a value. Statements uploaded as CSV can fill the history.</p>
 {% if a.statements %}<p class="sm muted mt-1">{{ plural(a.statements, "statement file") }} waiting for the import.</p>{% endif %}
 {% with upload_class = "row wrap mt-3", later = false %}{% include "_upload.html" %}{% endwith %}
 {% elif not cov.complete %}
