@@ -6,10 +6,11 @@ never poses as the whole; and because each part in the sum is one the viewer may
 own, nothing shown can be taken apart into something withheld.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from functools import partial
 
 from hearth import figures
 from hearth.disclosure.common import (
@@ -95,14 +96,78 @@ class MonthPoint:
 
 
 @dataclass(frozen=True, slots=True)
-class MonthBar:
+class InOut:
+    """One whole month's money in and money out, over the parts a figure adds up."""
+
     month: Month
-    spent: Decimal
+    money_in: Decimal
+    money_out: Decimal
     covered: bool
+    """Whether the books hold the whole month for every part behind the figures; if not,
+    they are only what the books hold of it so far, never the month's."""
+
+    @property
+    def left_over(self) -> Decimal:
+        return self.money_in - self.money_out
+
+
+@dataclass(frozen=True, slots=True)
+class LeftOver:
+    """What was left over in the last complete month, and in each of the eleven before it.
+
+    Money in, money out and what was left cover the same parts, those whose income total and
+    spending total the viewer may both see, so the three add up and say "without" each other
+    part once. A part sharing only its spending is in "Where <month> went" instead.
+    """
+
+    months: tuple[InOut, ...]
+    """The twelve complete months before this one, oldest first; the last one leads."""
+    parts: tuple[PartRef, ...]
+    without: tuple[PartRef, ...]
+    typical: Decimal | None
+    """What is typically left over: the median of the complete months among the six before
+    the one that leads, and None with fewer than three."""
+    in_unreviewed: Unreviewed
+    out_unreviewed: Unreviewed
+    counted: bool = True
+    """Whether any part behind the figures has an account that could show money moving
+    (`SpendingPanel.spent_counted`)."""
+    leaves_out_unassigned: bool = False
+    """Some money went through accounts nobody owns, or several owners at once
+    (`SpendingPanel.leaves_out_unassigned`)."""
+
+    @property
+    def last(self) -> InOut:
+        return self.months[-1]
+
+    @property
+    def covered(self) -> bool:
+        return self.counted and bool(self.parts) and self.last.covered
+
+    @property
+    def against_typical(self) -> Decimal | None:
+        """How much more was left over than in a typical month; less when negative."""
+        if not self.covered or self.typical is None:
+            return None
+        return self.last.left_over - self.typical
+
+    @property
+    def share(self) -> Decimal | None:
+        """What was left over as a share of money in; None without money in to share."""
+        if not self.covered or self.last.money_in <= 0:
+            return None
+        return self.last.left_over / self.last.money_in
+
+    @property
+    def charted(self) -> bool:
+        """Whether any month is known in full, so a chart would draw a month that happened."""
+        return self.counted and bool(self.parts) and any(m.covered for m in self.months)
 
 
 @dataclass(frozen=True, slots=True)
 class SpendingPanel:
+    """The month in progress, so far: small, and compared with typical only from the 8th."""
+
     month: Month
     to_day: int
     covered: bool
@@ -114,16 +179,9 @@ class SpendingPanel:
     earned: Decimal
     earned_without: tuple[PartRef, ...]
     earned_unreviewed: Unreviewed
-    saved_rate: Decimal | None
-    """Last month's saving as a share of its income; None when there was no income, or when
-    whether there was is not known (`saved_covered`)."""
-    saved_month: Month
-    saved_without: tuple[PartRef, ...]
-    saved_covered: bool
-    """Whether last month is known in full for every part behind `saved_rate`, so that no
-    income in it is an established fact rather than history that has not come in."""
-    bars: tuple[MonthBar, ...]
     typical: Decimal | None
+    """What a whole month of `spent` typically totals: the median of the complete months
+    among the six before. Only a sum of monthly totals, so it needs nothing finer."""
     leaves_out_unassigned: bool
     """Some spending went through accounts nobody owns, or several owners at once. It is in
     no part, so it is not counted, and its amount is not shown: it may be anyone's."""
@@ -137,10 +195,9 @@ class SpendingPanel:
     """`spent_counted`, for `earned`."""
 
     @property
-    def charted(self) -> bool:
-        """Whether any month is known in full. Until one is, a chart would draw months nobody
-        knows as months of nothing, so none is drawn; nor while no account is behind it."""
-        return self.spent_counted and any(bar.covered for bar in self.bars)
+    def compares(self) -> bool:
+        """Whether the month is far enough along to set against a typical one."""
+        return figures.compares(self.to_day)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,10 +205,12 @@ class CategoryRow:
     name: str
     amount: Decimal
     typical: Decimal | None
+    """Typical by this date for the month in progress; a typical whole month for one that is
+    over."""
 
     @property
     def over_by(self) -> Decimal | None:
-        """How far above typical-by-this-date the category is, when it is notably above.
+        """How far above typical the category is, when it is notably above.
 
         Nothing is "over" a typical of nothing: a category usually paid later in the month
         has a typical of zero by now, and paying it early is not overspending.
@@ -184,6 +243,9 @@ class CategoryPanel:
     totals_only: tuple[Slice, ...]
     unreviewed: Unreviewed
     """What of the categories shown rests on unreviewed rows, at their suggested category."""
+    compares: bool = True
+    """Whether the month is far enough along to set against typical (`figures.compares`):
+    before then no row carries a typical, so nothing reads as over it."""
 
     @property
     def scale(self) -> Decimal:
@@ -203,6 +265,62 @@ class CategoryPanel:
 
 
 @dataclass(frozen=True, slots=True)
+class MonthCategories:
+    """Where a whole month went: spending by category from parts that share it, each against
+    a typical whole month, and every part that shares only its total as one row.
+
+    A whole month against whole months reads nothing off when money went out, so it needs
+    only the category facet (design/reporting.md, decision 1).
+    """
+
+    month: Month
+    covered: bool
+    """Whether the books hold the whole month for every part on the panel."""
+    parts: tuple[PartRef, ...]
+    """The parts whose categories are in `rows`."""
+    rows: tuple[CategoryRow, ...]
+    totals_only: tuple[Slice, ...]
+    without: tuple[PartRef, ...]
+    """Parts the viewer may see neither the categories nor the spending total of."""
+    unreviewed: Unreviewed
+    counted: bool = True
+    """`SpendingPanel.spent_counted`, for the parts on the panel."""
+
+    @property
+    def on_panel(self) -> bool:
+        """Whether any part is on the panel, by category or by its total."""
+        return bool(self.parts or self.totals_only)
+
+    @property
+    def known(self) -> bool:
+        return self.covered and self.counted
+
+    @property
+    def total(self) -> Decimal | None:
+        """Everything on the panel; None while a row's total is not known."""
+        slices = [s.value for s in self.totals_only]
+        if any(value is None for value in slices):
+            return None
+        rows = sum((row.amount for row in self.rows), Decimal(0))
+        return rows + sum((value for value in slices if value is not None), Decimal(0))
+
+    @property
+    def scale(self) -> Decimal:
+        values = [r.amount for r in self.rows] + [r.typical for r in self.rows if r.typical]
+        return max(values, default=Decimal(0))
+
+    @property
+    def has_typical(self) -> bool:
+        return any(row.typical is not None for row in self.rows)
+
+    @property
+    def over(self) -> tuple[CategoryRow, ...]:
+        """The categories notably above a typical month, the furthest first."""
+        rows = [row for row in self.rows if row.over_by is not None and row.name != OTHER]
+        return tuple(sorted(rows, key=lambda row: row.over_by or 0, reverse=True))
+
+
+@dataclass(frozen=True, slots=True)
 class MemberRow:
     part: PartRef
     shares: tuple[str, ...]
@@ -219,8 +337,12 @@ class HouseholdView:
     history: tuple[MonthPoint, ...]
     priced_from: date | None
     """Where `history` starts when earlier month ends had no prices to value them at."""
-    spending: SpendingPanel
-    categories: CategoryPanel
+    left_over: LeftOver
+    """The last complete month: money in, money out and what was left."""
+    went: MonthCategories
+    """Where the last complete month went."""
+    so_far: SpendingPanel
+    """The month in progress, so far."""
     members: tuple[MemberRow, ...]
     joint: tuple[MemberRow, ...]
 
@@ -234,13 +356,16 @@ class HouseholdView:
 def household(h: Household) -> HouseholdView:
     parts = [part for part in h.parts if part.accounts]
     this_month = figures.month_flows(h.books, h.ownership, h.books.month, to_day=h.books.as_of.day)
+    past = figures.past_months(h.books.month, 12)
+    full = {m: figures.month_flows(h.books, h.ownership, m) for m in past}
     return HouseholdView(
         headline=headline(h, parts),
         composition=_composition(h, parts),
         history=_history(h, parts),
         priced_from=h.priced_from(_charted(h, parts)),
-        spending=_spending(h, parts, this_month),
-        categories=_categories(h, parts, this_month),
+        left_over=_left_over(h, parts, full),
+        went=_went(h, parts, full),
+        so_far=_so_far(h, parts, this_month, full),
         members=tuple(_member_row(h, part) for part in h.parts if not part.is_joint),
         joint=tuple(_member_row(h, part) for part in h.parts if part.is_joint),
     )
@@ -338,25 +463,55 @@ def _split(
     return shown, hidden
 
 
-def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> SpendingPanel:
+def _left_over(h: Household, parts: Sequence[Part], full: Mapping[Month, MonthFlows]) -> LeftOver:
+    """Each complete month's money in and out, over the parts the viewer may see both of.
+
+    Each part's figures are asked of the gate, and so computed, only once it has said the
+    viewer may see both its totals."""
+    savers, without = _split(h, parts, [Facet.MONTHLY_SPENDING_TOTAL, Facet.MONTHLY_INCOME_TOTAL])
+    months = tuple(
+        InOut(
+            month=m,
+            money_in=_disclosed_sum(
+                h, savers, Facet.MONTHLY_INCOME_TOTAL, flows, MonthFlows.earned
+            ),
+            money_out=_disclosed_sum(
+                h, savers, Facet.MONTHLY_SPENDING_TOTAL, flows, MonthFlows.spent
+            ),
+            covered=_covers(h, savers, m),
+        )
+        for m, flows in full.items()
+    )
+    last = full[months[-1].month]
+    return LeftOver(
+        months=months,
+        parts=tuple(h.part_ref(part) for part in savers),
+        without=without,
+        typical=figures.typical(
+            [m.left_over for m in months[-1 - figures.TYPICAL_MONTHS : -1] if m.covered]
+        ),
+        in_unreviewed=_unreviewed(h, savers, last, MonthFlows.earned_unreviewed),
+        out_unreviewed=_unreviewed(h, savers, last, MonthFlows.spent_unreviewed),
+        counted=any(h.spends(part) for part in savers) or not _explained(h, savers),
+        leaves_out_unassigned=bool(last.spending.unattributed or last.income.unattributed),
+    )
+
+
+def _so_far(
+    h: Household,
+    parts: Sequence[Part],
+    this_month: MonthFlows,
+    full: Mapping[Month, MonthFlows],
+) -> SpendingPanel:
     spenders, spent_without = _split(h, parts, [Facet.MONTHLY_SPENDING_TOTAL])
     earners, earned_without = _split(h, parts, [Facet.MONTHLY_INCOME_TOTAL])
-    savers, saved_without = _split(
-        h, parts, [Facet.MONTHLY_SPENDING_TOTAL, Facet.MONTHLY_INCOME_TOTAL]
-    )
     month = h.books.month
-    past = figures.past_months(month, 12)
-    full = {m: figures.month_flows(h.books, h.ownership, m) for m in past}
-    last = full[past[-1]]
-    saved_covered = _covers(h, savers, past[-1])
-    earned_last = sum((last.earned(p.owners) for p in savers), Decimal(0))
-    spent_last = sum((last.spent(p.owners) for p in savers), Decimal(0))
-    bars = [
-        MonthBar(m, _sum(full[m], spenders, MonthFlows.spent), _covers(h, spenders, m))
-        for m in past
-    ]
-    bars.append(
-        MonthBar(month, _sum(this_month, spenders, MonthFlows.spent), _covers(h, spenders, month))
+    typical = figures.typical(
+        [
+            _sum(full[m], spenders, MonthFlows.spent)
+            for m in figures.past_months(month, figures.TYPICAL_MONTHS)
+            if _covers(h, spenders, m)
+        ]
     )
     return SpendingPanel(
         month=month,
@@ -368,18 +523,28 @@ def _spending(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> Sp
         earned=_sum(this_month, earners, MonthFlows.earned),
         earned_without=earned_without,
         earned_unreviewed=_unreviewed(h, earners, this_month, MonthFlows.earned_unreviewed),
-        saved_rate=(
-            (earned_last - spent_last) / earned_last if saved_covered and earned_last > 0 else None
-        ),
-        saved_month=past[-1],
-        saved_without=saved_without,
-        saved_covered=saved_covered,
-        bars=tuple(bars),
-        typical=figures.typical([bar.spent for bar in bars[:-1] if bar.covered]),
+        typical=typical,
         leaves_out_unassigned=bool(this_month.spending.unattributed),
         spent_counted=any(h.spends(part) for part in spenders) or not _explained(h, spenders),
         earned_counted=any(h.spends(part) for part in earners) or not _explained(h, earners),
     )
+
+
+def _disclosed_sum(
+    h: Household,
+    parts: Sequence[Part],
+    facet: Facet,
+    flows: MonthFlows,
+    measure: Callable[[MonthFlows, Owners], Decimal],
+) -> Decimal:
+    """The sum of `measure` over `parts`, each part's asked of the gate before it is added."""
+    total = Decimal(0)
+    for part in parts:
+        figure = h.gate.disclose(facet, part.owners, partial(measure, flows, part.owners))
+        if isinstance(figure, Withheld):
+            raise ValueError("a part the viewer may not see was added up")
+        total += figure
+    return total
 
 
 def _sum(
@@ -407,14 +572,73 @@ def _explained(h: Household, parts: Sequence[Part]) -> bool:
     return all(h.gate.may(Facet.ACCOUNT_BALANCES, part.owners) for part in parts)
 
 
-def _categories(h: Household, parts: Sequence[Part], this_month: MonthFlows) -> CategoryPanel:
-    """Spending by category from parts that share it; parts that share only the total appear
-    as one labelled row each, so the panel adds up without opening up their categories."""
+def _went(h: Household, parts: Sequence[Part], full: Mapping[Month, MonthFlows]) -> MonthCategories:
+    """Where the last complete month went: categories from parts that share them, against a
+    typical whole month; parts that share only the total as one labelled row each, so the
+    panel adds up without opening up their categories."""
+    month = max(full)
     detailed, _ = _split(h, parts, [Facet.CATEGORY_BREAKDOWN])
     totals = [
         p for p in parts if p not in detailed and h.gate.may(Facet.MONTHLY_SPENDING_TOTAL, p.owners)
     ]
-    return category_panel(h, detailed, totals, this_month)
+    without = tuple(h.part_ref(p) for p in parts if p not in detailed and p not in totals)
+    history = [
+        _shared_categories(h, detailed, full[m])
+        for m in figures.past_months(month, figures.TYPICAL_MONTHS)
+        if _covers(h, detailed, m)
+    ]
+    flows = full[month]
+    by_category = _shared_categories(h, detailed, flows)
+    names = category_names(list(by_category))
+
+    def typical(categories: Sequence[str]) -> Decimal | None:
+        return figures.typical(
+            [sum((past.get(c, Decimal(0)) for c in categories), Decimal(0)) for past in history]
+        )
+
+    ranked = sorted(by_category, key=lambda category: by_category[category], reverse=True)
+    shown, rest = ranked[:CATEGORY_ROWS], ranked[CATEGORY_ROWS:]
+    rows = [CategoryRow(names[c], by_category[c], typical([c])) for c in shown]
+    if rest:
+        rows.append(
+            CategoryRow(OTHER, sum((by_category[c] for c in rest), Decimal(0)), typical(rest))
+        )
+    return MonthCategories(
+        month=month,
+        covered=_covers(h, [*detailed, *totals], month),
+        parts=tuple(h.part_ref(p) for p in detailed),
+        rows=tuple(rows),
+        # A part that cannot have spent anything hearth sees has no total to show, not $0.
+        totals_only=tuple(
+            Slice(
+                h.part_ref(p),
+                _disclosed_sum(h, [p], Facet.MONTHLY_SPENDING_TOTAL, flows, MonthFlows.spent)
+                if h.spends(p)
+                else None,
+            )
+            for p in totals
+        ),
+        without=without,
+        unreviewed=_unreviewed(h, [*detailed, *totals], flows, MonthFlows.spent_unreviewed),
+        counted=any(h.spends(p) for p in [*detailed, *totals])
+        or not _explained(h, [*detailed, *totals]),
+    )
+
+
+def _shared_categories(
+    h: Household, parts: Sequence[Part], flows: MonthFlows
+) -> dict[str, Decimal]:
+    """Spending by category over `parts`, each part's asked of the gate before it is added."""
+    total: dict[str, Decimal] = {}
+    for part in parts:
+        mine = h.gate.disclose(
+            Facet.CATEGORY_BREAKDOWN, part.owners, partial(flows.spent_by_category, part.owners)
+        )
+        if isinstance(mine, Withheld):
+            raise ValueError("a part the viewer may not see was added up")
+        for category, amount in mine.items():
+            total[category] = total.get(category, Decimal(0)) + amount
+    return total
 
 
 def category_panel(
@@ -446,7 +670,7 @@ def category_panel(
         history = [
             figures.month_flows(h.books, h.ownership, m, to_day=today)
             for m in figures.past_months(h.books.month, figures.TYPICAL_MONTHS)
-            if _covers(h, detailed, m)
+            if figures.compares(today) and _covers(h, detailed, m)
         ]
     by_category = _by_category(this_month, detailed)
     names = category_names([*by_category, *fixed])
@@ -475,6 +699,7 @@ def category_panel(
             for p in totals
         ),
         unreviewed=_unreviewed(h, [*detailed, *totals], this_month, MonthFlows.spent_unreviewed),
+        compares=figures.compares(today),
     )
 
 

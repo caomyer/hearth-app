@@ -49,6 +49,7 @@ def sharing_page(
         tab="sharing",
         rows=[(facet, DESCRIPTIONS[facet], facet in shared) for facet in Facet],
         preview=view.preview() if view.books is not None else None,
+        history_from=view.history_from(),
         resets=resets,
         just_saved=just_saved,
         descriptions=DESCRIPTIONS,

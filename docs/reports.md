@@ -1,6 +1,7 @@
 # Ledger reports
 
-`hearth.reports` answers the household-wide questions the dashboards ask of the ledger: the income statement, whether each account's balance reproduces its statements, and how much history each account holds.
+`hearth.reports` answers household-wide questions of the ledger: the income statement, whether each account's balance reproduces its statements, and how much history each account holds.
+No page shows the income statement: it adds up every account at once, and every dashboard figure is a sum of parts, each asked of the gate on its own, so the pages read income and spending through `figures.month_flows`, which keeps each part apart (`docs/dashboards.md`).
 Figures attributed to a member or to a joint account are `hearth.figures`'s, which owns that model: a member's figures cover the accounts they own alone, and each joint account is figured on its own (`docs/privacy-boundary.md`).
 Every function takes beancount entries loaded with beancount's loader and the explicit date or period it answers for.
 None of them reads a clock.

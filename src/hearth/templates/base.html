@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
 <title>{% block title %}{% endblock %} - Hearth</title>
-<link rel="stylesheet" href="/static/design.css">
-<link rel="stylesheet" href="/static/app.css">
-<script src="/static/vendor/htmx-2.0.7.min.js" defer></script>
-<script src="/static/design.js" defer></script>
+<link rel="stylesheet" href="{{ asset("design.css") }}">
+<link rel="stylesheet" href="{{ asset("app.css") }}">
+<script src="{{ asset("vendor/htmx-2.0.7.min.js") }}" defer></script>
+<script src="{{ asset("design.js") }}" defer></script>
 </head>
 <body{% block body_class %}{% endblock %}{% if session %} hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'{% endif %}>
 {% include "_sprite.html" %}

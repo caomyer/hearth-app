@@ -671,6 +671,6 @@ def test_a_month_not_known_in_full_has_no_savings_rate(tmp_path: Path, clock: Fa
 
     page = shown(fresh.signed_in("avery").get("/").text)
 
-    saved = page[page.index("Saved in September") :][:120]
+    saved = page[page.index("Left over in September") :][:400]
     assert "%" not in saved
-    assert "History incomplete" in saved
+    assert "Not known yet: hearth does not have all of September" in saved

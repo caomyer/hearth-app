@@ -9,10 +9,17 @@ from decimal import Decimal
 
 from markupsafe import Markup
 
-from hearth.disclosure import Disclosure, HouseholdView, NetWorthView, Pace, PersonView
+from hearth.disclosure import (
+    COMPARE_FROM_DAY,
+    Disclosure,
+    HouseholdView,
+    NetWorthView,
+    Pace,
+    PersonView,
+)
 from hearth.members import Member
 from hearth.web import charts
-from hearth.web.templating import compact, dollars
+from hearth.web.templating import dollars
 
 YEAR_TICK_EVERY = 3
 
@@ -24,19 +31,21 @@ def hue_of(view: Disclosure, member: Member) -> int:
 
 def household_page(view: HouseholdView) -> dict[str, object]:
     """Everything the household template draws beyond the view itself: charts and labels."""
-    spending = view.spending
-    month = date(spending.month.year, spending.month.month, 1)
-    last_full = date(spending.saved_month.year, spending.saved_month.month, 1)
-    bars = spending.bars
+    so_far = view.so_far
+    month = date(so_far.month.year, so_far.month.month, 1)
+    last = view.left_over.last.month
+    went = view.went
+    on_panel = {*went.parts, *(s.part for s in went.totals_only)}
     return {
         "charts": household_charts(view),
         "since": f"since {month:%b} 1",
         "month_name": f"{month:%B}",
         "month_abbr": f"{month:%b}",
-        "saved_month_name": f"{last_full:%B}",
-        "ordinal_today": ordinal(spending.to_day),
-        "first_bar_label": _month_label(bars[0].month.year, bars[0].month.month, True),
-        "last_bar_label": _month_label(bars[-1].month.year, bars[-1].month.month, True),
+        "last_name": f"{date(last.year, last.month, 1):%B}",
+        "ordinal_today": ordinal(so_far.to_day),
+        "compare_from": ordinal(COMPARE_FROM_DAY),
+        "in_out_finding": _in_out_finding(view),
+        "spent_elsewhere": [part for part in view.left_over.without if part in on_panel],
         "history_rows": [
             (
                 _day_label(point.day, with_year=i == 0 or point.day.month == 1)
@@ -45,42 +54,62 @@ def household_page(view: HouseholdView) -> dict[str, object]:
             )
             for i, point in enumerate(view.history)
         ],
-        "spending_rows": [
-            (
-                _month_label(bar.month.year, bar.month.month, i == 0 or bar.month.month == 1)
-                + (f", to the {ordinal(spending.to_day)}" if i == len(bars) - 1 else "")
-                + ("" if bar.covered else " (history incomplete)"),
-                dollars(bar.spent),
-            )
-            for i, bar in enumerate(bars)
-        ],
     }
+
+
+def _in_out_finding(view: HouseholdView) -> str:
+    """One sentence on the twelve months: whether something was left each month, and the
+    thinnest. Months not known are counted out loud, never read as months of nothing."""
+    months = view.left_over.months
+    known = [m for m in months if m.covered]
+    if not known:
+        return ""
+    thinnest = min(known, key=lambda m: m.left_over)
+    kept = sum(1 for m in known if m.left_over > 0)
+    whole = len(known) == len(months)
+    if kept == len(known):
+        how = "something was left over in each"
+    elif kept == 0:
+        how = "more went out than came in, in each"
+    else:
+        how = f"something was left over in {kept}"
+    opening = (
+        f"{how[:1].upper()}{how[1:]} of the last {len(months)} months."
+        if whole
+        else f"Of the {len(known)} months hearth has in full, {how}."
+    )
+    if len(known) == 1:
+        return opening
+    name = f"{date(thinnest.month.year, thinnest.month.month, 1):%B}"
+    if thinnest.left_over >= 0:
+        return f"{opening} {name} was the thinnest, at {dollars(thinnest.left_over)}."
+    return f"{opening} {name} was the hardest: {dollars(-thinnest.left_over)} more went out."
 
 
 def household_charts(view: HouseholdView) -> dict[str, Markup]:
     out = {"net_worth": _month_end_line(view, "nw-t")} if view.history else {}
-    bars = view.spending.bars
-    points = [
-        charts.ChartPoint(
-            on=date(bar.month.year, bar.month.month, 1),
-            value=bar.spent,
-            axis_label=f"{date(bar.month.year, bar.month.month, 1):%b}",
-            tip=dollars(bar.spent),
-            tip_label=_month_label(bar.month.year, bar.month.month, i == 0 or bar.month.month == 1)
-            + (f", to the {ordinal(view.spending.to_day)}" if i == len(bars) - 1 else "")
-            + ("" if bar.covered else ", history incomplete"),
-            incomplete=not bar.covered,
+    left_over = view.left_over
+    if left_over.charted:
+        months = left_over.months
+        points = [
+            charts.InOutPoint(
+                axis_label=f"{date(m.month.year, m.month.month, 1):%b}",
+                money_in=m.money_in,
+                money_out=m.money_out,
+                tip=f"{dollars(m.left_over)} left" if m.covered else "Not known yet",
+                tip_label=m.month.label
+                + (
+                    f": in {dollars(m.money_in)}, out {dollars(m.money_out)}"
+                    if m.covered
+                    else ": hearth does not have the whole month"
+                ),
+                known=m.covered,
+            )
+            for m in months
+        ]
+        out["in_out"] = charts.in_and_out(
+            points, labelled_by="io-t", ticks=_ticks(len(points)), selected=len(points) - 1
         )
-        for i, bar in enumerate(bars)
-    ]
-    out["spending"] = charts.monthly_bars(
-        points,
-        labelled_by="sp-t",
-        ticks=_ticks(len(points)),
-        median=view.spending.typical,
-        current=len(points) - 1,
-        current_label=compact(bars[-1].spent) if view.spending.covered else "\u2013",
-    )
     return out
 
 
@@ -110,6 +139,7 @@ def person_page(view: PersonView) -> dict[str, object]:
         "month_name": f"{month:%B}",
         "month_abbr": f"{month:%b}",
         "ordinal_today": ordinal(view.totals.to_day),
+        "compare_from": ordinal(COMPARE_FROM_DAY),
     }
 
 

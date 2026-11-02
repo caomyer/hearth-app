@@ -11,10 +11,11 @@ from markupsafe import Markup
 
 from hearth.web.charts import (
     ChartPoint,
+    InOutPoint,
     MovePoint,
     cumulative_pace,
+    in_and_out,
     month_end_line,
-    monthly_bars,
     saved_vs_market,
 )
 
@@ -65,27 +66,33 @@ def months(values: Sequence[str]) -> list[ChartPoint]:
 
 
 NET_WORTH = months(["1142300", "1158900", "1171400", "1186200", "1179800", "1284898"])
-SPENDING = months(["10920", "11640", "14210", "10480", "9870", "8214"])
 
 
 def line(points: Sequence[ChartPoint] = NET_WORTH) -> Markup:
     return month_end_line(points, labelled_by="nw-t", ticks=[0, len(points) - 1])
 
 
-def bars(
-    points: Sequence[ChartPoint] = SPENDING,
-    *,
-    median: Decimal | None = Decimal("11130"),
-    current: int | None = -1,
-    current_label: str | None = "$8.2K",
-) -> Markup:
-    return monthly_bars(
+def flow(month: str, money_in: str, money_out: str, *, known: bool = True) -> InOutPoint:
+    left = Decimal(money_in) - Decimal(money_out)
+    tip = f"${left} left" if known else "Not known yet"
+    return InOutPoint(month, Decimal(money_in), Decimal(money_out), tip, f"{month} 2026", known)
+
+
+FLOWS = [
+    flow("Jun", "7915", "5160"),
+    flow("Jul", "7915", "8530"),
+    flow("Aug", "7914", "5166"),
+    flow("Sep", "7914", "5147"),
+    flow("Oct", "7915", "5968"),
+]
+
+
+def in_out(points: Sequence[InOutPoint] = FLOWS, *, selected: int | None = -1) -> Markup:
+    return in_and_out(
         points,
-        labelled_by="sp-t",
+        labelled_by="io-t",
         ticks=[0, len(points) - 1],
-        median=median,
-        current=None if current is None else current % len(points),
-        current_label=current_label,
+        selected=None if selected is None else selected % len(points),
     )
 
 
@@ -115,7 +122,7 @@ MOVES = [
 
 def every_chart() -> list[Markup]:
     moves = saved_vs_market(MOVES, labelled_by="chg-t")
-    return [line(), bars(), pace(), moves]
+    return [line(), in_out(), pace(), moves]
 
 
 @pytest.mark.parametrize("markup", every_chart())
@@ -125,7 +132,7 @@ def test_each_chart_comes_wide_and_narrow_labelled_by_its_title(markup: Markup) 
     assert narrow.attrib["class"] == "chart only-narrow"
     for svg in (wide, narrow):
         assert svg.attrib["role"] == "img"
-        assert svg.attrib["aria-labelledby"] in {"nw-t", "sp-t", "pace-t", "chg-t"}
+        assert svg.attrib["aria-labelledby"] in {"nw-t", "io-t", "pace-t", "chg-t"}
     assert wide.attrib["aria-labelledby"] == narrow.attrib["aria-labelledby"]
 
 
@@ -154,54 +161,58 @@ def test_the_line_ends_at_today_with_the_dot() -> None:
     assert float(dot.attrib["cy"]) == pytest.approx(to_y(wide, NET_WORTH[-1].value), abs=0.1)
 
 
-def test_spending_axis_starts_at_zero_and_clears_the_tallest_month() -> None:
-    for svg in svgs(bars()):
+def test_money_in_and_out_axis_encloses_every_month_and_what_was_left() -> None:
+    for svg in svgs(in_out()):
         axis = y_axis(svg)
-        assert axis[0][0] == 0
-        assert axis[-1][0] >= max(p.value for p in SPENDING)
+        assert axis[-1][0] >= max(max(p.money_in, p.money_out) for p in FLOWS)
+        assert to_y(svg, min(p.left_over for p in FLOWS)) <= 192
 
 
-def test_the_current_month_is_inked_and_labelled_above_its_bar() -> None:
-    for svg in svgs(bars()):
-        (now,) = by_class(svg, "is-now")
-        assert now.tag == "path"
-        assert by_class(svg, "bar").index(now) == len(SPENDING) - 1
-        (label,) = by_class(svg, "lbl")
-        assert label.text == "$8.2K"
-        top = to_y(svg, SPENDING[-1].value)
-        assert float(label.attrib["y"]) < top
+def test_each_month_draws_money_in_beside_money_out_at_their_heights() -> None:
+    for svg in svgs(in_out()):
+        ins, outs = by_class(svg, "in"), by_class(svg, "out")
+        assert len(ins) == len(outs) == len(FLOWS)
+        for drawn_in, drawn_out, point in zip(ins, outs, FLOWS, strict=True):
+            assert _extent(drawn_in)[0] == pytest.approx(to_y(svg, point.money_in), abs=0.2)
+            assert _extent(drawn_out)[0] == pytest.approx(to_y(svg, point.money_out), abs=0.2)
+            assert _left(drawn_in) < _left(drawn_out)
 
 
-def test_the_median_line_sits_at_the_median() -> None:
-    for svg in svgs(bars()):
-        (median,) = by_class(svg, "median")
-        assert float(median.attrib["y1"]) == pytest.approx(to_y(svg, Decimal("11130")), abs=0.1)
-        (base,) = by_class(svg, "base")
-        assert float(base.attrib["y1"]) == pytest.approx(to_y(svg, Decimal(0)), abs=0.1)
+def test_what_was_left_is_a_line_through_every_month_and_a_month_short_is_red() -> None:
+    for svg in svgs(in_out()):
+        (polyline,) = by_class(svg, "left")
+        ys = [float(xy.split(",")[1]) for xy in polyline.attrib["points"].split()]
+        assert ys == pytest.approx([to_y(svg, p.left_over) for p in FLOWS], abs=0.2)
+        dots = by_class(svg, "left-dot")
+        assert len(dots) == len(FLOWS)
+        assert [("is-bad" in d.attrib["class"]) for d in dots] == [p.left_over < 0 for p in FLOWS]
 
 
-def test_no_median_and_no_current_month_draw_neither() -> None:
-    wide, _ = svgs(bars(median=None, current=None, current_label=None))
-    assert by_class(wide, "median") == []
-    assert by_class(wide, "is-now") == []
-    assert by_class(wide, "lbl") == []
+def test_a_month_not_known_is_an_outline_off_the_line() -> None:
+    points = [*FLOWS[:2], flow("Aug", "7914", "2000", known=False), *FLOWS[3:]]
+    for svg in svgs(in_out(points)):
+        assert len(by_class(svg, "bar-gap")) == 2
+        assert len(by_class(svg, "in")) == len(points) - 1
+        assert len(by_class(svg, "left-dot")) == len(points) - 1
+        lines = by_class(svg, "left")
+        assert [len(polyline.attrib["points"].split()) for polyline in lines] == [2, 2]
+        (_, _, gap, *_) = by_class(svg, "hit")
+        assert gap.attrib["data-tip"] == "Not known yet|Aug 2026"
 
 
-def test_a_month_with_missing_history_is_marked_partial() -> None:
-    points = [
-        *SPENDING[:-1],
-        ChartPoint(date(2026, 3, 1), Decimal(900), "Mar", "$900", "Mar", True),
-    ]
-    wide, _ = svgs(bars(points))
-    (partial,) = by_class(wide, "is-partial")
-    assert partial.attrib["class"].split() == ["bar", "is-now", "is-partial"]
-    assert len(by_class(wide, "is-partial")) == 1
+def test_the_month_the_panel_reads_is_outlined() -> None:
+    for svg in svgs(in_out()):
+        (sel,) = by_class(svg, "sel")
+        hits = by_class(svg, "hit")
+        assert float(sel.attrib["x"]) > float(hits[-1].attrib["x"])
+    wide, _ = svgs(in_out(selected=None))
+    assert by_class(wide, "sel") == []
 
 
 def test_every_month_has_a_hover_target_with_its_tip() -> None:
-    wide, _ = svgs(bars())
+    wide, _ = svgs(in_out())
     tips = [hit.attrib["data-tip"] for hit in by_class(wide, "hit")]
-    assert tips == [f"{p.tip}|{p.tip_label}" for p in SPENDING]
+    assert tips == [f"{p.tip}|{p.tip_label}" for p in FLOWS]
 
 
 def test_labels_and_tips_from_the_ledger_are_escaped() -> None:
@@ -209,7 +220,7 @@ def test_labels_and_tips_from_the_ledger_are_escaped() -> None:
     points = [ChartPoint(date(2026, 1, 1), Decimal(5), hostile, hostile, f'x" onload="{hostile}')]
     for markup in (
         month_end_line(points, labelled_by='t"><script>', ticks=[0]),
-        bars(points, current=0, current_label=hostile),
+        in_out([InOutPoint(hostile, Decimal(5), Decimal(1), hostile, f'x" onload="{hostile}')]),
         saved_vs_market(
             [MovePoint(hostile, Decimal(1), Decimal(1), hostile, hostile)], labelled_by="t"
         ),
@@ -223,8 +234,8 @@ def test_labels_and_tips_from_the_ledger_are_escaped() -> None:
 
 
 def test_a_bar_in_the_tip_cannot_split_it_early() -> None:
-    points = [ChartPoint(date(2026, 1, 1), Decimal(5), "Jan", "$5", "Rent | Utilities")]
-    wide, _ = svgs(bars(points, current=None, current_label=None))
+    points = [InOutPoint("Jan", Decimal(5), Decimal(1), "$4 left", "Rent | Utilities")]
+    wide, _ = svgs(in_out(points, selected=None))
     (hit,) = by_class(wide, "hit")
     assert hit.attrib["data-tip"].count("|") == 1
 
@@ -294,6 +305,13 @@ def test_moves_axis_signs_its_labels() -> None:
     assert any(label.startswith(MINUS) for label in labels)
 
 
+def _left(element: ET.Element) -> float:
+    """Where a bar drawn as a path starts across."""
+    shape = re.match(r"M([\d.]+),", element.attrib["d"])
+    assert shape, element.attrib["d"]
+    return float(shape[1])
+
+
 def _extent(element: ET.Element) -> tuple[float, float]:
     """(top, bottom) of a segment, drawn as a rect or as a bar with a rounded end."""
     if element.tag == "rect":
@@ -310,7 +328,7 @@ def _extent(element: ET.Element) -> tuple[float, float]:
     "markup",
     [
         line(NET_WORTH[:1]),
-        bars(SPENDING[:1]),
+        in_out(FLOWS[:1]),
         saved_vs_market(MOVES[:1], labelled_by="chg-t"),
     ],
 )
@@ -321,12 +339,15 @@ def test_a_single_point_draws(markup: Markup) -> None:
 
 @pytest.mark.parametrize("value", ["0", "1000", "-500"])
 def test_equal_values_still_get_an_axis(value: str) -> None:
-    flat = [ChartPoint(p.on, Decimal(value), p.axis_label, p.tip, p.tip_label) for p in SPENDING]
-    for markup in (line(flat), bars(flat, median=None)):
-        for svg in svgs(markup):
-            axis = y_axis(svg)
-            assert len({v for v, _ in axis}) >= 2
-            assert 10 <= to_y(svg, Decimal(value)) <= 172
+    flat = [ChartPoint(p.on, Decimal(value), p.axis_label, p.tip, p.tip_label) for p in NET_WORTH]
+    for svg in svgs(line(flat)):
+        axis = y_axis(svg)
+        assert len({v for v, _ in axis}) >= 2
+        assert 10 <= to_y(svg, Decimal(value)) <= 172
+    level = [InOutPoint("M", Decimal(value), Decimal(value), "t", "l")] * 3
+    for svg in svgs(in_out(level)):
+        assert len({v for v, _ in y_axis(svg)}) >= 2
+        assert 10 <= to_y(svg, Decimal(value)) <= 192
     moves = [MovePoint("M", Decimal(value), Decimal(value), "t", "l")] * 3
     for svg in svgs(saved_vs_market(moves, labelled_by="t")):
         assert 10 <= to_y(svg, 2 * Decimal(value)) <= 192

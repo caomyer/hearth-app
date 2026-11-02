@@ -40,7 +40,7 @@
         <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
           {% for label, value, u in [("Spent", m.totals.spent, m.totals.spent_unreviewed), ("Income", m.totals.earned, m.totals.earned_unreviewed)] %}
           <div>
-            <p class="fig-label">{{ label }}, {{ month_abbr }} 1&ndash;{{ m.totals.to_day }}</p>
+            <p class="fig-label">{{ label }}, {{ month_abbr }} 1{% if m.totals.to_day > 1 %}&ndash;{{ m.totals.to_day }}{% endif %}</p>
             {% if value is withheld %}
             <p class="fig-value">{{ private("Not shared") }}</p>
             {% elif not m.connected %}

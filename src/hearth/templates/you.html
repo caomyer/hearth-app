@@ -96,7 +96,7 @@
         {% set reasons = ([{"kind": "brokerage", "account": "a brokerage account", "transactions": "Plaid does not send a brokerage's transactions."}] if totals.brokerages else []) + ([{"kind": "unconnected", "account": "one hearth does not see", "transactions": "Accounts hearth does not see are not connected, so none of their transactions are here."}] if totals.unseen else []) %}
         <div class="figs mt-6" style="border-top: 1px solid var(--line); padding-top: var(--s-5)">
           <div>
-            <div class="row between"><p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p></div>
+            <div class="row between"><p class="fig-label">Spent, {{ month_abbr }} 1{% if totals.to_day > 1 %}&ndash;{{ totals.to_day }}{% endif %}</p></div>
             {% if totals.covered %}
             <p class="fig-value">{{ totals.spent | hero }}</p>
             {% if totals.over_typical is not none %}
@@ -107,7 +107,7 @@
             <p class="fig-sub">{{ "History incomplete" if totals.spends else reasons | map(attribute="kind") | join(" and ") | capitalize ~ " accounts only" }}</p>{% endif %}
           </div>
           <div>
-            <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ totals.to_day }}</p>
+            <p class="fig-label">Income, {{ month_abbr }} 1{% if totals.to_day > 1 %}&ndash;{{ totals.to_day }}{% endif %}</p>
             {% if totals.covered %}
             <p class="fig-value">{{ totals.earned | hero }}</p>
             <p class="fig-sub">{% if totals.payments_in == 0 %}Nothing paid in yet{% else %}{{ plural(totals.payments_in, "payment") }} in{% endif %}</p>
@@ -160,6 +160,8 @@
         <p class="finding">Not known: every account of yours here is {{ reasons | map(attribute="account") | join(" or ") }}, so nothing shows hearth what you spend. Connect the bank account or card you spend from to see it.</p>
         {% elif not totals.covered %}
         <p class="finding">Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.</p>
+        {% elif not totals.compares %}
+        <p class="finding">{{ plural(totals.to_day, "day") }} in. Too early to compare with a typical month: that starts on the {{ compare_from }}.</p>
         {% elif totals.over_typical is not none %}
         {% set off = (totals.over_typical | abs) | dollars %}
         <p class="finding">{% if off == "$0" %}You are right where a typical {{ month_name }} is at this point.{% else %}You are <strong class="tnum">{{ off }}</strong> {{ "above" if totals.over_typical > 0 else "below" }} a typical {{ month_name }} at this point.{% endif %}</p>
@@ -226,7 +228,7 @@
           {% endfor %}
         </div>
         <div class="chart-legend mt-4" aria-hidden="true">
-          <span class="k"><i class="fill"></i>{{ month_abbr }} 1&ndash;{{ cats.to_day }}</span>
+          <span class="k"><i class="fill"></i>{{ month_abbr }} 1{% if cats.to_day > 1 %}&ndash;{{ cats.to_day }}{% endif %}</span>
           {% if cats.has_typical %}<span class="k"><i class="tick"></i>Typical by the {{ ordinal_today }}</span>{% endif %}
         </div>
         {% elif not cats.fixed %}

@@ -42,6 +42,17 @@ TYPICAL_MONTHS = 6
 MIN_TYPICAL_MONTHS = 3
 """Fewer complete past months than this, and there is no typical to compare with."""
 
+COMPARE_FROM_DAY = 8
+"""The first day of the month in progress that is compared with a typical month. Before it,
+a single purchase is most of the month so far, and setting a week's first days against
+typical reads one payment as overspending."""
+
+
+def compares(day: int) -> bool:
+    """Whether the month in progress, `day` days in, is far enough along to compare."""
+    return day >= COMPARE_FROM_DAY
+
+
 QUIET_START = timedelta(days=10)
 """How long an account may go without a transaction at the start of a month and still count as
 covered: a quiet week is normal, a history that starts weeks late is not."""
@@ -476,6 +487,9 @@ def flows_cover(books: Books, accounts: Sequence[Account], month: Month) -> bool
     So does an account with no history in the books yet (`books.awaiting`): nothing says yet
     what it spends, so it is judged as one that might.
 
+    A month that ends before the history of every account that can move the figure begins
+    is not covered either (`_begun`).
+
     Accounts that are all brokerages (`books.invested`), or all ones hearth does not see
     (`books.unseen`), cover no month at all: Plaid sends a brokerage no transactions, and
     hearth is told nothing of an account it does not see, so nothing says what they spent or
@@ -485,7 +499,22 @@ def flows_cover(books: Books, accounts: Sequence[Account], month: Month) -> bool
     if all(a.ledger_account in books.invested for a in seen):
         return False
     judged = books.flowing | books.awaiting
-    return _history_covers(books, [a for a in accounts if a.ledger_account in judged], month)
+    moving = [a for a in accounts if a.ledger_account in judged]
+    if moving and not _begun(books, moving, month):
+        return False
+    return _history_covers(books, moving, month)
+
+
+def _begun(books: Books, accounts: Sequence[Account], month: Month) -> bool:
+    """Whether the books' history of any of `accounts` has begun by the end of `month`.
+
+    Before it has, the books hold nothing of what they spent or earned, which is not the same
+    as their having spent or earned nothing: a month from before the history starts is one
+    the books have not reached, never a month of $0 to draw or to take a typical month from.
+    """
+    last = date(month.year, month.month, calendar.monthrange(month.year, month.month)[1])
+    opened = {coverage.account: coverage.opened for coverage in books.coverage}
+    return any(opened.get(a.ledger_account, date.max) <= last for a in accounts)
 
 
 FIXED_MONTHS = 3

@@ -111,8 +111,18 @@ class Totals:
     """Whether any of the accounts behind it is one hearth does not see (`books.unseen`)."""
 
     @property
+    def compares(self) -> bool:
+        """Whether the month is far enough along to set against typical (`figures.compares`)."""
+        return figures.compares(self.to_day)
+
+    @property
     def over_typical(self) -> Decimal | None:
-        if not self.covered or self.typical_spent is None or not isinstance(self.spent, Decimal):
+        if (
+            not self.covered
+            or not self.compares
+            or self.typical_spent is None
+            or not isinstance(self.spent, Decimal)
+        ):
             return None
         return self.spent - self.typical_spent
 

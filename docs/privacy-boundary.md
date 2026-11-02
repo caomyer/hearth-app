@@ -47,6 +47,10 @@ Day-by-day spending, and "typical by the 18th", read off when money went out, so
 The same holds for categories: a category's "typical by this date", and the day a fixed bill was paid with its single payment, appear only where the viewer may see the transactions of every part in the panel.
 Anyone who sees only the category facet gets each category's amount for the month so far, with a fixed bill as an ordinary category row.
 
+Spending by category covers every month the books hold, not only the month in progress (`design/reporting.md`, decision 1), and the sharing page says how far back, "for every month hearth holds, back to August 2025", so a member turning it on sees what they agree to.
+A whole past month's categories, and each one's typical whole month, are a category a month, so they need the category facet alone: Household's "Where October went" asks it of each part before that part's figures are worked out (`disclosure.household._shared_categories`), and a part sharing only its spending total is one labelled row.
+Last month's money in, money out and what was left cover only the parts whose income and spending totals the viewer may both see, so the three add up and say "without" each other part once.
+
 The day a member's data stops is the day their money last moved, which is transaction detail too.
 A viewer who may see the transactions of every part behind a figure is told that day, once it is more than a week ago, and whose accounts stop there when they may see those accounts.
 Anyone else reads one fixed sentence on every such figure, whatever the day: "The accounts behind this figure end in October 2026."

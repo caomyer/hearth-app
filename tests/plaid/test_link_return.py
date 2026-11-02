@@ -82,7 +82,7 @@ def test_the_way_back_carries_link_on_and_holds_no_token(world: World, relay: Re
     assert "data-link-token" not in page
     assert "link-demo-" not in page
     assert 'src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"' in page
-    assert 'src="/static/connect.js"' in page
+    assert 'src="/static/connect.js?v=' in page
     # Whatever Link finishes is posted to the same steps as a window that never left.
     for action in ("/connect/exchange", "/connect/reconnected", "/connect/exited"):
         assert f'action="{action}"' in page

@@ -65,6 +65,22 @@ SCENARIOS: dict[str, dict[str, frozenset[Facet]]] = {
     "everyone shares categories only": dict.fromkeys(
         household.USERNAMES, frozenset({Facet.CATEGORY_BREAKDOWN})
     ),
+    # Last month's report: a member who shares nothing, one who shares only a spending total,
+    # and one who shares categories, all at once.
+    "casey shares nothing, avery only a spending total, blake categories too": {
+        "casey": NOTHING,
+        "avery": frozenset({Facet.MONTHLY_SPENDING_TOTAL}),
+        "blake": DEFAULT_SHARED | {Facet.CATEGORY_BREAKDOWN},
+    },
+    "both joint owners share categories and income, casey shares nothing": {
+        "avery": DEFAULT_SHARED | {Facet.CATEGORY_BREAKDOWN, Facet.MONTHLY_INCOME_TOTAL},
+        "blake": DEFAULT_SHARED | {Facet.CATEGORY_BREAKDOWN, Facet.MONTHLY_INCOME_TOTAL},
+        "casey": NOTHING,
+    },
+    "blake shares income but no spending total, casey only categories": {
+        "blake": frozenset({Facet.NET_WORTH_TOTAL, Facet.MONTHLY_INCOME_TOTAL}),
+        "casey": frozenset({Facet.CATEGORY_BREAKDOWN}),
+    },
 }
 
 # Pages that change state are attacked in test_tampering; the crawl reads.

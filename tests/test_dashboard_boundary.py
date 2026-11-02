@@ -240,7 +240,10 @@ def _payment(day: str, category: str, amount: str) -> str:
 def test_paid_days_and_typical_by_date_need_the_transactions_facet(world: World) -> None:
     """A fixed bill's paid day is one transaction, and typical by this date reads off when money
     went out. Casey, who sees Blake's categories but not his transactions, gets each category's
-    amount so far and nothing finer; Blake, and anyone he shares transactions with, get both."""
+    amount so far and nothing finer; Blake, and anyone he shares transactions with, get both.
+    A whole past month against whole months is a category a month, which the category facet
+    shares (design/reporting.md, decision 1), so Casey's household page sets September's
+    categories against a typical month, and still names no day."""
     _blakes_history(world, "777.77")
     world.choose("blake", DEFAULT_SHARED | {Facet.CATEGORY_BREAKDOWN})
 
@@ -249,19 +252,21 @@ def test_paid_days_and_typical_by_date_need_the_transactions_facet(world: World)
         assert "777.77" in page
         assert "Fixed:" not in page
         assert "paid Oct" not in page
-        assert 'class="typ"' not in page
+        assert "paid Sep" not in page
         assert "over typical" not in page
         assert "Typical by the" not in page
+    assert 'class="typ"' not in world.signed_in("casey").get("/members/blake").text
+    household_page = world.signed_in("casey").get("/").text
+    assert "Where September went" in household_page
+    assert 'class="typ"' in household_page
+    assert "A typical month" in household_page
 
-    for username, shares in (
-        ("blake", DEFAULT_SHARED | {Facet.CATEGORY_BREAKDOWN}),
-        ("casey", DEFAULT_SHARED | {Facet.CATEGORY_BREAKDOWN, Facet.TRANSACTIONS}),
-    ):
-        world.choose("blake", shares)
-        page = world.signed_in(username).get("/").text
-        assert "Fixed:</span> Zither, paid Oct 2" in page
-        assert 'class="typ"' in page
-        assert "Typical by the" in page
+    blake = world.signed_in("blake").get("/you").text
+    assert "Fixed:</span> Zither, paid Oct 2" in blake
+    assert 'class="typ"' in blake
+    assert "Typical by the" in blake
+    world.choose("blake", DEFAULT_SHARED | {Facet.CATEGORY_BREAKDOWN, Facet.TRANSACTIONS})
+    assert "Fixed:</span> Zither, paid Oct 2" in world.signed_in("casey").get("/members/blake").text
 
 
 def test_a_fixed_bill_paid_twice_this_month_is_still_counted(world: World) -> None:
@@ -337,24 +342,31 @@ def test_a_month_with_only_a_fixed_bill_so_far_is_not_an_empty_panel(world: Worl
     world.recompute()
     blake = world.signed_in("blake")
 
-    for page in (blake.get("/").text, blake.get("/you").text):
-        assert "Fixed:</span> Zither, paid Oct 2" in page
-        assert "Nobody shares spending by category yet" not in page
-        assert "No spending yet this month" not in page
-        assert "not enough history" not in page
-        assert "close to typical" not in page
+    page = blake.get("/you").text
+    assert "Fixed:</span> Zither, paid Oct 2" in page
+    assert "No spending yet this month" not in page
+    assert "not enough history" not in page
+    assert "close to typical" not in page
+    household_page = blake.get("/").text
+    assert "Where September went" in household_page
+    assert "Nobody shares spending by category" not in household_page
 
 
 def test_a_savings_rate_withheld_by_others_never_reads_as_no_income(world: World) -> None:
-    """At the defaults nobody shares income, so September's savings rate cannot be worked out
-    for Casey: the tile says whose income is not shared, not that there was none."""
+    """At the defaults nobody shares income, so what the household left over in September
+    covers Casey alone, who took none in, and says so of Casey and whose income it is
+    without, never that the household had none."""
     page = world.signed_in("casey").get("/").text
-    assert "No income that month" not in page
-    assert "Not shared by Avery, Blake and Joint accounts" in page
+    assert "No money in that month" not in page
+    assert "No money in for Casey" in page
+    assert "without Avery, Blake and the joint accounts" in page
+    assert "Avery, Blake and the joint accounts do not share both money in and money out" in page
 
     for username in household.USERNAMES:
         world.choose(username, DEFAULT_SHARED | {Facet.MONTHLY_INCOME_TOTAL})
-    assert "No income that month" in world.signed_in("casey").get("/").text
+    page = world.signed_in("casey").get("/").text
+    assert "% of money in" in page
+    assert "without Avery" not in page
 
 
 def test_without_enough_history_no_category_claims_a_typical(world: World) -> None:
@@ -378,3 +390,13 @@ def test_the_sharing_preview_lists_a_fixed_bill(world: World) -> None:
     preview = world.signed_in("blake").get("/settings/sharing").text
 
     assert "Zither $778" in preview
+
+
+def test_the_sharing_page_says_how_far_back_categories_reach(world: World) -> None:
+    """Sharing categories shares every month the books hold (design/reporting.md, decision 1),
+    so each member reads how far back that is for their own accounts before turning it on."""
+    for username in household.USERNAMES:
+        page = world.signed_in(username).get("/settings/sharing").text
+        assert (
+            "Food, transport and so on, for every month hearth holds, back to August 2026." in page
+        ), username

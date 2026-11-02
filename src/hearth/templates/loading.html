@@ -43,18 +43,34 @@
     </div>
   </section>
 
-  <div class="grid grid-2 mt-4" aria-hidden="true">
-    <section class="panel">
-      <div class="panel-head"><h2>Spending by month</h2></div>
-      <div class="panel-body">
-        <span class="skel" style="width: 90%; height: 14px"></span>
-        <div class="skel-bars mt-6">
-          <span class="skel" style="height: 72%"></span><span class="skel" style="height: 77%"></span><span class="skel" style="height: 94%"></span><span class="skel" style="height: 70%"></span><span class="skel" style="height: 66%"></span><span class="skel" style="height: 74%"></span><span class="skel" style="height: 76%"></span><span class="skel" style="height: 72%"></span><span class="skel" style="height: 86%"></span><span class="skel" style="height: 79%"></span><span class="skel" style="height: 75%"></span><span class="skel" style="height: 72%"></span><span class="skel" style="height: 55%"></span>
+  {% set previous = today.replace(day=1, month=12, year=today.year - 1) if today.month == 1 else today.replace(day=1, month=today.month - 1) %}
+  <section class="panel mt-4" aria-hidden="true">
+    <div class="panel-body" style="padding-top: var(--s-6)">
+      <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
+        <div>
+          <h2 style="font-size: var(--t-h3); line-height: var(--lh-h3)">Left over in {{ previous.strftime('%B') }}</h2>
+          <span class="skel mt-3" style="width: 200px; height: 16px"></span>
+          <div class="row mt-4" style="gap: var(--s-6)">
+            <span class="skel" style="width: 96px; height: 40px"></span>
+            <span class="skel" style="width: 96px; height: 40px"></span>
+            <span class="skel" style="width: 96px; height: 40px"></span>
+          </div>
+          <span class="skel mt-4" style="width: 340px; max-width: 100%; height: 14px"></span>
+        </div>
+        <div>
+          <p class="sm" style="font-weight: 600">Money in and out, each month</p>
+          <span class="skel mt-2" style="width: 75%; height: 12px"></span>
+          <div class="skel-bars mt-4">
+            <span class="skel" style="height: 72%"></span><span class="skel" style="height: 77%"></span><span class="skel" style="height: 94%"></span><span class="skel" style="height: 70%"></span><span class="skel" style="height: 66%"></span><span class="skel" style="height: 74%"></span><span class="skel" style="height: 76%"></span><span class="skel" style="height: 72%"></span><span class="skel" style="height: 86%"></span><span class="skel" style="height: 79%"></span><span class="skel" style="height: 75%"></span><span class="skel" style="height: 72%"></span>
+          </div>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
+
+  <div class="grid grid-2 mt-4" aria-hidden="true">
     <section class="panel">
-      <div class="panel-head"><h2>Where {{ today.strftime('%B') }} went</h2></div>
+      <div class="panel-head"><h2>Where {{ previous.strftime('%B') }} went</h2></div>
       <div class="panel-body">
         <span class="skel" style="width: 80%; height: 14px"></span>
         <div class="cats mt-6">
@@ -63,6 +79,16 @@
           <div class="cat"><span class="skel" style="height: 14px; width: 62%"></span><span class="skel" style="height: 8px; width: 36%"></span><span class="skel" style="height: 14px"></span></div>
           <div class="cat"><span class="skel" style="height: 14px; width: 66%"></span><span class="skel" style="height: 8px; width: 33%"></span><span class="skel" style="height: 14px"></span></div>
           <div class="cat"><span class="skel" style="height: 14px; width: 48%"></span><span class="skel" style="height: 8px; width: 26%"></span><span class="skel" style="height: 14px"></span></div>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>{{ today.strftime('%B') }} so far</h2></div>
+      <div class="panel-body">
+        <span class="skel" style="width: 80%; height: 14px"></span>
+        <div class="row mt-6" style="gap: var(--s-6)">
+          <span class="skel" style="width: 96px; height: 40px"></span>
+          <span class="skel" style="width: 96px; height: 40px"></span>
         </div>
       </div>
     </section>

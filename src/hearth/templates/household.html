@@ -116,122 +116,165 @@
     </div>
   </section>
 
-  <div class="grid grid-2 mt-4">
-    {% set sp = h.spending %}
-    <section class="panel" aria-labelledby="sp-h">
-      <div class="panel-head">
-        <h2 id="sp-h">Spending by month</h2>
-        <p class="finding">{% if not sp.spent_counted %}Not known yet: none of the accounts behind this figure that you can see shows hearth what was spent.{% elif sp.covered %}{{ month_name }} so far is <strong class="tnum">{{ sp.spent | dollars }}</strong>, {{ plural(sp.to_day, "day") }} into a month{% if sp.typical %} that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>{% endif %}.{% else %}Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.{% endif %}{% if sp.spent_without %} Leaves out {{ sp.spent_without | names("name") }}, who {{ "does" if sp.spent_without | length == 1 else "do" }} not share spending with you.{% endif %}{{ unreviewed_caveat(sp.spent_unreviewed) }}</p>
-      </div>
-      <div class="panel-body">
-        <div class="figs" style="margin-bottom: var(--s-5)">
-          <div>
-            <p class="fig-label">Spent, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
-            {% if not sp.spent_counted %}<p class="fig-value muted">&ndash;</p>
-            {% elif sp.covered %}<p class="fig-value">{{ sp.spent | hero }}</p>{% else %}<p class="fig-value muted">&ndash;</p>
-            <p class="fig-sub">History incomplete</p>{% endif %}
-            {% if sp.spent_without %}<p class="fig-sub">{{ private("Without " ~ (sp.spent_without | names("name"))) }}</p>{% endif %}
-            {% if sp.covered and sp.spent_counted %}{{ unreviewed_sub(sp.spent_unreviewed) }}{% endif %}
+  {% set lo = h.left_over %}
+  {% set last = lo.last %}
+  <section class="panel mt-4" aria-labelledby="lo-h">
+    <div class="panel-body" style="padding-top: var(--s-6)">
+      <div class="grid grid-main" style="gap: var(--s-8); align-items: start">
+        <div>
+          <div class="hero-partial">
+            <h2 id="lo-h" style="font-size: var(--t-h3); line-height: var(--lh-h3)">Left over in {{ last_name }}</h2>
+            {% if lo.without %}<span class="missing-chip">without {{ lo.without | names("in_prose") }}</span>{% endif %}
           </div>
-          <div>
-            <p class="fig-label">Income, {{ month_abbr }} 1&ndash;{{ sp.to_day }}</p>
-            {% if not sp.earned_counted %}<p class="fig-value muted">&ndash;</p>
-            {% elif sp.covered %}<p class="fig-value">{{ sp.earned | hero }}</p>{% else %}<p class="fig-value muted">&ndash;</p>
-            <p class="fig-sub">History incomplete</p>{% endif %}
-            {% if sp.earned_without %}<p class="fig-sub">{{ private("Without " ~ (sp.earned_without | names("name"))) }}</p>{% endif %}
-            {% if sp.covered and sp.earned_counted %}{{ unreviewed_sub(sp.earned_unreviewed) }}{% endif %}
+          {% if not lo.parts %}
+          <p class="muted mt-2 measure">Nobody shares both money in and money out with you, so there is nothing here to add up.</p>
+          {% elif not lo.covered %}
+          <p class="muted mt-2 measure">{% if not lo.counted %}Not known: none of the accounts behind these figures that you can see shows hearth money coming in or going out.{% else %}Not known yet: hearth does not have all of {{ last_name }} for the accounts behind these figures. They appear once it is in, never as a quiet month.{% endif %}</p>
+          <div class="inout mt-4">
+            <div><p class="fig-label">Money in</p><p class="fig-value muted">&ndash;</p><p class="fig-sub">Not known{% if lo.counted %} yet{% endif %}</p></div>
+            <div><p class="fig-label"><span class="op" aria-hidden="true">&minus; </span>Money out</p><p class="fig-value muted">&ndash;</p><p class="fig-sub">Not known{% if lo.counted %} yet{% endif %}</p></div>
+            <div><p class="fig-label"><span class="op" aria-hidden="true">= </span>Left over</p><p class="fig-value muted">&ndash;</p><p class="fig-sub">Not known{% if lo.counted %} yet{% endif %}</p></div>
           </div>
-          <div>
-            <p class="fig-label">Saved in {{ saved_month_name }}</p>
-            {% if sp.saved_rate is not none %}
-            <p class="fig-value">{{ sp.saved_rate | percent }}<span style="font-size: 0.64em; font-weight: 500; color: var(--ink-2)">%</span></p>
-            <p class="fig-sub">of income{% if sp.saved_without %}, without {{ sp.saved_without | names("name") }}{% endif %}</p>
-            {% else %}
-            <p class="fig-value muted">&ndash;</p>
-            {% if sp.saved_without %}
-            <p class="fig-sub">{{ private("Not shared by " ~ (sp.saved_without | names("name"))) }}</p>
-            {% elif not sp.earned_counted %}
-            <p class="fig-sub">Not known yet</p>
-            {% elif not sp.saved_covered %}
-            <p class="fig-sub">History incomplete</p>
-            {% else %}
-            <p class="fig-sub">No income that month</p>
-            {% endif %}
-            {% endif %}
+          {% else %}
+          {% set versus = lo.against_typical %}
+          {% if versus is not none %}
+          <div class="hero-meta mt-1">
+            {% if versus == 0 %}<span class="delta is-flat">Right where a typical month is</span>{% else %}{{ delta(versus, ("above" if versus > 0 else "below") ~ " a typical month") }}{% endif %}
           </div>
+          {% endif %}
+          <div class="inout mt-4">
+            <div><p class="fig-label">Money in</p><p class="fig-value">{{ last.money_in | hero }}</p><p class="fig-sub">{{ lo.parts | names("in_prose") | capitalize_first }}</p></div>
+            <div><p class="fig-label"><span class="op" aria-hidden="true">&minus; </span>Money out</p><p class="fig-value">{{ last.money_out | hero }}</p><p class="fig-sub">Spending</p></div>
+            <div><p class="fig-label"><span class="op" aria-hidden="true">= </span>Left over</p><p class="fig-value">{{ last.left_over | hero }}</p><p class="fig-sub">{% if lo.share is not none %}{{ lo.share | percent }}% of money in{% elif lo.without %}No money in for {{ lo.parts | names("in_prose") }}{% else %}No money in that month{% endif %}</p></div>
+          </div>
+          {% endif %}
+          {% if lo.parts %}
+          <p class="sm muted mt-4 measure">{{ lo.parts | names("in_prose") | capitalize_first }} {{ "is" if lo.parts | length == 1 and not lo.parts[0].is_joint else "are" }} in all three.{% if lo.typical is not none and lo.covered %} A typical month is the middle of the six complete months before.{% endif %}{% if lo.without %} {{ lo.without | names("in_prose") | capitalize_first }} {{ "does" if lo.without | length == 1 else "do" }} not share both money in and money out with you, so {{ "is" if lo.without | length == 1 else "are" }} in none of these three{% if spent_elsewhere %}; the spending of {{ spent_elsewhere | names("in_prose") }} is under "Where {{ last_name }} went"{% endif %}.{% endif %}{% if lo.covered and (lo.in_unreviewed.leans or lo.out_unreviewed.leans) %} Includes {% if lo.in_unreviewed.leans %}<span class="tnum">{{ (lo.in_unreviewed.amount | abs) | dollars }}</span> of money in{% endif %}{% if lo.in_unreviewed.leans and lo.out_unreviewed.leans %} and {% endif %}{% if lo.out_unreviewed.leans %}<span class="tnum">{{ (lo.out_unreviewed.amount | abs) | dollars }}</span> of spending{% endif %} not yet reviewed, at its suggested category.{% endif %}{% if lo.covered %}{{ unreviewed_caveat(lo.out_unreviewed) }}{% endif %}</p>
+          {% endif %}
+          {% if lo.covered %}<p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>{{ last_name }} is complete for every account behind these figures. Computed {{ when(books.computed_at, today) }}.</p>{% endif %}
+          {% if lo.leaves_out_unassigned %}<p class="sm muted mt-2 measure">Some money went through accounts nobody has claimed, or several people's at once. It is in nobody's figures, so it is not counted here. <a href="/settings/connections">Assign accounts</a></p>{% endif %}
         </div>
-        {% if sp.charted %}
+        {% if lo.charted %}
         <figure>
-          <figcaption class="vh" id="sp-t">Household spending per month, {{ first_bar_label }} to {{ last_bar_label }}</figcaption>
-          <div class="chart-wrap">
-{{ charts.spending }}
+          <figcaption>
+            <h3 id="io-t" style="font-size: var(--t-sm); line-height: var(--lh-sm)">Money in and out, each month</h3>
+            <p class="xs faint">{{ in_out_finding }}</p>
+          </figcaption>
+          <div class="chart-wrap mt-3">
+{{ charts.in_out }}
           </div>
           <div class="chart-legend" aria-hidden="true">
-            <span class="k"><i></i>Full month</span>
-            <span class="k"><i class="now"></i>{{ month_name }} so far</span>
-            {% if sp.typical %}<span class="k"><i class="mline"></i>Typical: median of complete months</span>{% endif %}
-            {% if sp.bars | rejectattr("covered") | list %}<span class="k"><i class="partial"></i>History incomplete</span>{% endif %}
+            <span class="k"><i class="in"></i>Money in</span>
+            <span class="k"><i class="out"></i>Money out</span>
+            <span class="k"><i class="left"></i>Left over</span>
+            {% if lo.months | rejectattr("covered") | list %}<span class="k"><i class="partial"></i>Not known yet</span>{% endif %}
           </div>
-          {{ as_table("Household spending per month", ("Month", "Spent"), spending_rows) }}
+          <details class="as-table">
+            <summary>Show as a table</summary>
+            <table class="table">
+              <caption class="vh">Money in, money out and left over, each month{% if lo.without %}, without {{ lo.without | names("in_prose") }}{% endif %}</caption>
+              <thead><tr><th scope="col">Month</th><th scope="col" class="num">In</th><th scope="col" class="num">Out</th><th scope="col" class="num">Left over</th></tr></thead>
+              <tbody>
+                {% for m in lo.months %}
+                {% if m.covered %}
+                <tr><td>{{ m.month.label }}</td><td class="num">{{ m.money_in | dollars }}</td><td class="num">{{ m.money_out | dollars }}</td><td class="num">{{ m.left_over | dollars }}</td></tr>
+                {% else %}
+                <tr><td>{{ m.month.label }}</td><td class="num muted" colspan="3">Not known yet</td></tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
         </figure>
-        {% else %}
-        <p class="sm muted">The chart appears once hearth has a whole month of spending from every account behind it.</p>
+        {% elif lo.parts %}
+        <div>
+          <h3 class="sm" style="font-weight: 600">Money in and out, each month</h3>
+          <p class="sm muted mt-2">The chart appears once hearth has a whole month of money in and out from every account behind it.</p>
+        </div>
         {% endif %}
       </div>
-      {% if sp.leaves_out_unassigned %}
-      <div class="panel-foot"><span>Some spending went through accounts nobody has claimed, or several people's at once. It is in nobody's total, so it is not counted here.</span><a href="/settings/connections">Assign accounts</a></div>
-      {% endif %}
-    </section>
+    </div>
+  </section>
 
-    {% set cats = h.categories %}
+  <div class="grid grid-2 mt-4">
+    {% set went = h.went %}
     <section class="panel" aria-labelledby="cat-h">
       <div class="panel-head">
-        <h2 id="cat-h">Where {{ month_name }} went</h2>
-        {% set over = cats.most_over %}
-        {% if sp.covered %}<p class="finding">{% if over %}{{ over.name }} is <strong class="tnum">{{ over.over_by | dollars }}</strong> above where it usually is by the {{ ordinal_today }}.{% elif cats.has_typical %}Everything is close to typical for this point in the month.{% elif cats.rows or cats.fixed %}By category, {{ month_abbr }} 1&ndash;{{ cats.to_day }}.{% if cats.timed and cats.rows %} There is not enough history yet to compare with a typical month.{% endif %}{% else %}Nobody shares spending by category yet.{% endif %}</p>{% endif %}
+        <h2 id="cat-h">Where {{ last_name }} went</h2>
+        {% if went.known and (went.rows or went.totals_only) %}
+        {% set over = went.over %}
+        <p class="finding">{% if over %}{% if over | length == 1 %}One thing was above a typical month: {{ over[0].name }}, by <strong class="tnum">{{ over[0].over_by | dollars }}</strong>.{% else %}{{ over | length | number_word | capitalize }} things were above a typical month: {% for row in over %}{{ row.name }}, by <strong class="tnum">{{ row.over_by | dollars }}</strong>{% if not loop.last %}{{ ", and " if loop.revindex == 2 else ", " }}{% endif %}{% endfor %}.{% endif %}{% elif went.has_typical %}Every category was close to a typical month.{% elif went.rows %}By category, the whole of {{ last_name }}. There is not enough history yet to compare with a typical month.{% elif went.parts %}Nothing that you can see by category was spent in {{ last_name }}.{% else %}Nobody shares spending by category with you yet.{% endif %}</p>
+        {% endif %}
       </div>
       <div class="panel-body">
-        {% if not sp.covered %}
-        <p class="muted">History incomplete.</p>
+        {% if not went.on_panel %}
+        <p class="muted">Nobody shares spending with you.</p>
+        {% elif not went.counted %}
+        <p class="muted">Not known: none of the accounts behind this that you can see shows hearth what was spent.</p>
+        {% elif not went.known %}
+        <p class="muted">Not known yet: hearth does not have all of {{ last_name }} for the accounts behind this. It appears once it is in, never as a quiet month.</p>
+        {% elif not (went.rows or went.totals_only) %}
+        <p class="muted">Nothing was spent in {{ last_name }}.</p>
         {% else %}
-        {% set scale = cats.scale if cats.scale > 0 else 1 %}
-        {% for bill in cats.fixed %}
-        <p class="fixed-row"><span><span class="muted">Fixed:</span> {{ bill.name }}, paid {{ bill.paid_on | day }}</span><span class="tnum">{{ bill.amount | money }}</span></p>
-        {% endfor %}
+        {% set scale = went.scale if went.scale > 0 else 1 %}
         <div class="cats" role="list">
-          {% for row in cats.rows %}
+          {% for row in went.rows %}
           <div class="cat{% if row.over_by %} is-over{% endif %}" role="listitem">
             <span class="name">{{ row.name }}</span>
             <span class="track" aria-hidden="true"><span class="fill" style="width: {{ '%.1f' | format(row.amount / scale * 100) }}%"></span>{% if row.typical is not none %}<span class="typ" style="left: {{ '%.1f' | format(row.typical / scale * 100) }}%"></span>{% endif %}</span>
             <span class="val">{{ row.amount | money }}</span>
-            {% if row.over_by %}<span class="note"><span aria-hidden="true">&#9650;</span> {{ row.over_by | dollars }} over typical for this date</span>{% endif %}
+            {% if row.over_by %}<span class="note"><span aria-hidden="true">&#9650;</span> {{ row.over_by | dollars }} above a typical month</span>{% endif %}
           </div>
           {% endfor %}
-          {% for slice in cats.totals_only %}
+          {% for slice in went.totals_only %}
           <div class="cat is-withheld" role="listitem">
             <span class="name">{{ slice.part.name }}</span>
             <span class="track"><i aria-hidden="true"></i><svg aria-hidden="true"><use href="#i-lock"/></svg>Total only, not by category</span>
-            {% if slice.value is none %}<span class="val muted">Not known yet</span>{% else %}<span class="val">{{ slice.value | money }}</span>{% endif %}
+            {% if slice.value is none %}<span class="val muted">Not known</span>{% else %}<span class="val">{{ slice.value | money }}</span>{% endif %}
           </div>
           {% endfor %}
         </div>
-        {% if cats.rows or cats.fixed %}
+        {% if went.rows %}
         <div class="chart-legend mt-4" aria-hidden="true">
-          <span class="k"><i class="fill"></i>{{ month_abbr }} 1&ndash;{{ cats.to_day }}</span>
-          {% if cats.has_typical %}<span class="k"><i class="tick"></i>Typical by the {{ ordinal_today }}</span>{% endif %}
+          <span class="k"><i class="fill"></i>{{ last_name }}, in full</span>
+          {% if went.has_typical %}<span class="k"><i class="tick"></i>A typical month</span>{% endif %}
         </div>
         {% endif %}
         {% endif %}
       </div>
-      {% if sp.covered and (cats.unreviewed.leans or cats.unreviewed.unknown) %}
+      {% if went.known and (went.rows or went.totals_only) %}
       <div class="panel-foot">
-        <span>{% if cats.unreviewed.leans %}Includes <span class="tnum">{{ cats.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ unreviewed_caveat(cats.unreviewed) }}</span>
-        {% if review_count %}<a href="/review">Review yours</a>{% endif %}
+        <span>{% if went.total is not none %}<span class="tnum">{{ went.total | dollars }}</span> in all{% if went.without %}, without {{ went.without | names("in_prose") }}{% endif %}.{% endif %}{% if went.has_typical %} Typical is the middle of the six months before.{% endif %}{% if went.unreviewed.leans %} Includes <span class="tnum">{{ went.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ unreviewed_caveat(went.unreviewed) }}</span>
+        {% if review_count and went.unreviewed.leans %}<a href="/review">Review yours</a>{% endif %}
       </div>
       {% endif %}
     </section>
-  </div>
 
+    {% set sp = h.so_far %}
+    <section class="panel" aria-labelledby="sf-h">
+      <div class="panel-head">
+        <h2 id="sf-h">{{ month_name }} so far</h2>
+        <p class="finding">{% if not sp.spent_counted %}Not known: none of the accounts behind this figure that you can see shows hearth what was spent.{% elif not sp.covered %}Not known yet: hearth does not have all of {{ month_name }}'s transactions for the accounts behind this. The figures appear once they are in.{% elif not sp.compares %}{{ plural(sp.to_day, "day") }} in. Too early to compare with a typical month: that starts on the {{ compare_from }}.{% elif sp.typical %}<strong class="tnum">{{ sp.spent | dollars }}</strong> spent, {{ plural(sp.to_day, "day") }} into a month that typically totals <span class="tnum">{{ sp.typical | dollars }}</span>.{% else %}{{ plural(sp.to_day, "day") }} in. There is not enough history yet to say what a typical month totals.{% endif %}</p>
+      </div>
+      <div class="panel-body">
+        <div class="figs">
+          <div>
+            <p class="fig-label">Spent, {{ month_abbr }} 1{% if sp.to_day > 1 %}&ndash;{{ sp.to_day }}{% endif %}</p>
+            {% if sp.covered and sp.spent_counted %}<p class="fig-value">{{ sp.spent | hero }}</p>{{ unreviewed_sub(sp.spent_unreviewed) }}{% else %}<p class="fig-value muted">&ndash;</p><p class="fig-sub">Not known{% if sp.spent_counted %} yet{% endif %}</p>{% endif %}
+            {% if sp.spent_without %}<p class="fig-sub">{{ private("Without " ~ (sp.spent_without | names("in_prose"))) }}</p>{% endif %}
+          </div>
+          <div>
+            <p class="fig-label">Money in, {{ month_abbr }} 1{% if sp.to_day > 1 %}&ndash;{{ sp.to_day }}{% endif %}</p>
+            {% if sp.covered and sp.earned_counted %}<p class="fig-value">{{ sp.earned | hero }}</p>{{ unreviewed_sub(sp.earned_unreviewed) }}{% else %}<p class="fig-value muted">&ndash;</p><p class="fig-sub">Not known{% if sp.earned_counted %} yet{% endif %}</p>{% endif %}
+            {% if sp.earned_without %}<p class="fig-sub">{{ private("Without " ~ (sp.earned_without | names("in_prose"))) }}</p>{% endif %}
+          </div>
+        </div>
+      </div>
+      {% if sp.covered and (sp.spent_unreviewed.unknown or sp.earned_unreviewed.unknown) or sp.leaves_out_unassigned %}
+      <div class="panel-foot"><span>{% if sp.leaves_out_unassigned %}Some spending went through accounts nobody has claimed, or several people's at once. It is in nobody's total, so it is not counted here.{% endif %}{% if sp.covered %}{{ unreviewed_caveat(sp.spent_unreviewed) }}{% endif %}</span>{% if sp.leaves_out_unassigned %}<a href="/settings/connections">Assign accounts</a>{% endif %}</div>
+      {% endif %}
+    </section>
+  </div>
   {% endif %}
 
   <section class="panel mt-4" aria-labelledby="mem-h">

@@ -358,7 +358,7 @@ def test_a_brokerage_alone_holds_back_nobody_elses_spending_for_whoever_sees_it(
 
     assert re.search(r"Spent, Oct 1.15 \$\s*\d", page)
     assert "History incomplete" not in page
-    assert "Avery Total only, not by category Not known yet" in page
+    assert "Avery Total only, not by category Not known" in page
 
 
 _ALONE = FakeAccount(

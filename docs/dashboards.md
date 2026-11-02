@@ -25,7 +25,7 @@ A stale price is used, and marked in amber with its close day and "may be off", 
 
 **Income is private by default.**
 Firstmate reversed its earlier acceptance on 2026-10-18: the captain approved "the top two shared, everything else private", and a third default-shared facet exceeds that, for the most sensitive number after net worth, and would apply silently to every member added later.
-Household income and the savings rate are labelled "without" each member who has not turned income on, through the same partial figures as net worth.
+Household income, and what the household left over, are labelled "without" each member who has not turned income on, through the same partial figures as net worth.
 
 **Partial household figures are shown, labelled "without".**
 Decision 3, as firstmate amended it on 2026-10-18, shows the known part with the withheld part attached to the number, never a range.
@@ -38,18 +38,20 @@ Showing its amount could show part of someone's private spending, so the househo
 **Day-level detail needs the transactions facet.**
 The day-by-day pace chart and "typical by the 18th" show when money went out, which is finer than "one number a month".
 On someone else's page they appear only when that member shares transactions.
-The category panel follows the same rule: per-category typical ticks, "over typical" notes and fixed bills with their paid day appear only when the viewer may see the transactions of every part the panel covers, and otherwise each category shows only its amount so far.
+The category panel of the month in progress follows the same rule: per-category typical ticks, "over typical" notes and fixed bills with their paid day appear only when the viewer may see the transactions of every part the panel covers, and otherwise each category shows only its amount so far.
+A whole past month against a typical whole month reads nothing off when money went out, so "Where October went" draws its ticks and "above a typical month" notes for anyone who may see the categories (`design/reporting.md`, decision 1).
 Firstmate made this call on 2026-10-18: a single payment's day and amount is an individual transaction, which the category facet promises not to show.
 
 **"Typical" needs three complete months.**
 It is the median of up to six covered months, and is not shown at all with fewer than three.
 A month whose history starts late is not covered, so a new account or a gap in the books never drags typical down.
+Nor is a month that ended before the history of every account that could move the figure began (`figures.flows_cover`): the books hold nothing of it, which is not a month of $0, so it is drawn as "Not known yet" and never taken into typical.
 A category paid once a month at a steady amount, such as a mortgage, is shown as a fixed line with the day it was paid, not as a bar against a pace, so paying it on the 1st is never "over typical".
 A fixed category paid more or less than once this month is shown as an ordinary category row, so its spending is always counted.
 
 **Coverage is shown per account, by source.**
 The accounts table lists each source's span ("Statements: Jan 3 to Jun 5"), so a ledger whose history changes source part way through the year shows the seam instead of smoothing it.
-Spending bars for months the books do not fully hold are drawn in outline and labelled "history incomplete".
+Money in and out for months the books do not fully hold is drawn in outline, off the left-over line, and labelled "Not known yet", with no figure in its tooltip.
 
 **Connections come from the Plaid connections hearth holds.**
 `hearth.connections` describes each member's connections and whether they still update, read from `hearth.plaid`'s registry (`docs/connections.md`).
@@ -64,6 +66,29 @@ The queue at backfill size, its orders, filters, keyboard and reminders are in `
 
 **The household page shows the members' totals, not their account counts.**
 The design shows "3 institutions, 5 accounts" for everyone; a count of someone's accounts is shown only to those who may see that member's balances.
+
+**Household reads last month (`design/reporting.md`, stage 1).**
+The last complete month leads every day of the month (decision 4), beneath the net worth hero (decision 2): "Left over in October" with money in, money out and its difference from a typical month, then "Where October went" and a small "November so far".
+Each is built in `disclosure.household` from the twelve months of `figures.month_flows` the page already computed, each part's figures asked of the gate before they are added.
+The calls the plan and its mock did not settle:
+
+- Money in, money out and left over, and the chart of each month beside them, cover the parts whose spending and income totals the viewer may both see; the twelve months are drawn over the same parts as the month that leads, so the chart never mixes in a part the figures leave out.
+  A part sharing only its spending is named once as "without", and its spending is under "Where October went".
+- A typical left over, and a typical whole month for a category, is the median of the covered months among the six before the month that leads, as everywhere else, with "above a typical month" at the same thresholds as the month in progress ($50 and a quarter).
+  The "Other" row, everything past the eighth category, has a typical of its own, the median of what those categories added up to.
+- A whole month has no fixed-bill line: a bill paid once is an ordinary row of the whole month, and its paid day is transaction detail.
+- Coverage stays one answer per figure, the same for every viewer: when any part on "Where October went" is not whole for the month, the panel reads "Not known yet", whoever is looking (stage 6 names parts instead).
+- Nothing in the month in progress is set against typical before the 8th, on Household or on You (`figures.COMPARE_FROM_DAY`); from the 8th, Household compares spending so far with what a whole month typically totals, a sum of monthly totals, so it needs no finer facet.
+- The mock draws the net worth hero without its month-end line; the line stays, because "Net worth stays the hero" is the captain's decision, the plan calls the hero unchanged in substance, and nothing else in the app draws net worth over time.
+- The twelve grey spending bars and "Saved in October" are gone: what was left, as a share of money in, is the third figure of the left-over panel, over the same parts and month as the other two.
+- Rows and months are not links yet: Explore, which they open, is stage 2.
+- `reports.statement.income_statement` is not used: it adds up the whole household at once, where every figure here must be a sum of parts the viewer may see one by one; `month_flows` already gives the same figures by part.
+
+**The sharing page says how far back categories reach.**
+Its description of "Spending by category" names the first month the books hold of any account the member owns, alone or jointly (`Disclosure.history_from`), so turning it on says it shares that whole history.
+
+**Static files carry a digest of their contents.**
+Each page links its stylesheets and scripts with `?v=` and the start of their SHA-256 (`templating.asset`), so a browser that cached an earlier hearth's styles fetches the new ones rather than drawing new markup with old classes.
 
 ## Where the design is followed but something was added
 

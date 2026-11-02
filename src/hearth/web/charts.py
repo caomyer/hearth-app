@@ -1,7 +1,7 @@
 """Chart SVG for the pages, drawn on the server to the design system's own markup.
 
 The approved charts are hand-placed SVG in ``design/screens``: household.html draws
-net worth at each month end and spending by month, me.html draws a month's spending
+net worth at each month end, me.html draws a month's spending
 day by day against a typical month, and net-worth.html splits each month's change
 into money saved and market movement. Each function here emits the elements those
 files use, in the same order and with the same classes, so ``design/hearth.css``
@@ -31,7 +31,9 @@ _TIP_SEPARATOR = "|"  # design.js splits data-tip into value and label here
 _BAR_WIDTH = 18.0  # "bars no wider than 18px"
 _RADIUS = 3.0
 _DOT_RADIUS = "4.5"
-_GAP = 2.0  # between a market segment and the saving it moves against
+_GAP = 2.0  # between a market segment and the saving it moves against, or money in and out
+_PAIR_WIDTH = 12.6  # each of a month's two bars, money in and money out
+_PAIR_GAP = 3.0  # either side of a month's pair of bars
 _STEPS = 4  # gridlines a scale aims for
 _CHAR_WIDTH = 6  # an 11px tabular figure, rounded up
 _LABEL_SPACE = 30.0  # the narrowest band that still fits a month name
@@ -63,6 +65,27 @@ class MovePoint:
     market: Decimal
     tip: str
     tip_label: str
+
+
+@dataclass(frozen=True, slots=True)
+class InOutPoint:
+    """One whole month of money in and money out, and what was left.
+
+    A month that is not ``known`` is drawn in outline at the height of what the books hold of
+    it, with no point on the left-over line; its tooltip is the caller's, and should carry no
+    value, as the figure is not the month's.
+    """
+
+    axis_label: str
+    money_in: Decimal
+    money_out: Decimal
+    tip: str
+    tip_label: str
+    known: bool = True
+
+    @property
+    def left_over(self) -> Decimal:
+        return self.money_in - self.money_out
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,49 +154,70 @@ def month_end_line(
     return _pair(labelled_by, _frame(420, 200, left, 8, 172), _frame(320, 200, left, 8, 172), draw)
 
 
-def monthly_bars(
-    points: Sequence[ChartPoint],
+def in_and_out(
+    months: Sequence[InOutPoint],
     *,
     labelled_by: str,
     ticks: Sequence[int],
-    median: Decimal | None,
-    current: int | None,
-    current_label: str | None,
+    selected: int | None,
 ) -> Markup:
-    """One bar per month, the month in progress in ink and labelled (household.html)."""
-    _require_points(points)
-    _require_indices([*ticks, *([] if current is None else [current])], len(points))
-    values = [p.value for p in points]
-    scale = _scale([*values, *([] if median is None else [median])], top=10, bottom=172)
+    """Money in and money out side by side each month, what was left over as a line through
+    them, and the month a panel reads outlined (reporting-household.html)."""
+    if not months:
+        raise ValueError("a chart needs at least one month")
+    _require_indices([*ticks, *([] if selected is None else [selected])], len(months))
+    values = [v for m in months for v in (m.money_in, m.money_out)]
+    values += [m.left_over for m in months if m.known]
+    scale = _scale(values, top=10, bottom=192)
     labels = _axis_labels(scale.ticks)
-    left = _left_margin(labels, 34)
+    left = _left_margin(labels, 44)
 
     def draw(frame: _Frame) -> list[str]:
-        band = (frame.right - frame.left) / len(points)
-        width = _bar_width(band)
+        band = (frame.right - frame.left) / len(months)
+        width = min(_PAIR_WIDTH, (band - 2 * _PAIR_GAP - _GAP * 2) / 2)
         base = scale.y(Decimal(0))
-        body = _grid(frame, scale, labels, skip_zero=True)
-        for i, point in enumerate(points):
+        body = _grid(frame, scale, labels, skip_zero=False)
+        centres = [frame.left + (i + 0.5) * band for i in range(len(months))]
+        for i, month in enumerate(months):
             start = frame.left + i * band
-            css = _bar_class(is_now=i == current, partial=point.incomplete)
-            if point.value:
-                body.append(
-                    _bar_path(css, start + (band - width) / 2, width, base, scale.y(point.value))
-                )
-            body.append(_band_hit(start, band, frame, point.tip, point.tip_label))
-        body += [
-            _centred(frame.left + (i + 0.5) * band, frame, points[i].axis_label) for i in ticks
-        ]
+            x = start + (band - 2 * width - _GAP) / 2
+            marks = []
+            for css, value, at in (
+                ("in", month.money_in, x),
+                ("out", month.money_out, x + width + _GAP),
+            ):
+                if value > 0:
+                    kind = f"bar {css}" if month.known else "bar-gap"
+                    marks.append(_bar_path(kind, at, width, base, scale.y(value)))
+            if i == selected:
+                top = min(scale.y(month.money_in), scale.y(month.money_out), base) - 4
+                box = {"x": _c(start + 2), "y": _c(top), "width": _c(band - 4)}
+                box |= {"height": _c(base - top), "rx": "4"}
+                marks.append(_tag("rect", {"class": "sel", **box}))
+            marks.append(_band_hit(start, band, frame, month.tip, month.tip_label))
+            body.append("<g>" + "".join(marks) + "</g>")
+            if i in ticks:
+                body.append(_centred(centres[i], frame, month.axis_label))
         body.append(_rule("base", frame, base))
-        if median is not None:
-            body.append(_rule("median", frame, scale.y(median)))
-        if current is not None and current_label is not None:
-            top = min(scale.y(points[current].value), base)
-            x = frame.left + (current + 0.5) * band
-            body.append(_text(x, top - 8, current_label, "middle", css="lbl"))
+        run: list[int] = []
+        for i, entry in enumerate([*months, None]):
+            if entry is not None and entry.known:
+                run.append(i)
+                continue
+            if len(run) > 1:
+                xs, ys = [centres[j] for j in run], [scale.y(months[j].left_over) for j in run]
+                body.append(_tag("polyline", {"class": "left", "points": _points(xs, ys)}))
+            run = []
+        for i, month in enumerate(months):
+            if month.known:
+                css = "left-dot is-bad" if month.left_over < 0 else "left-dot"
+                y = _c(scale.y(month.left_over))
+                body.append(
+                    _tag("circle", {"class": css, "cx": _c(centres[i]), "cy": y, "r": "3.5"})
+                )
         return body
 
-    return _pair(labelled_by, _frame(480, 200, left, 4, 172), _frame(320, 200, left, 4, 172), draw)
+    return _pair(labelled_by, _frame(520, 220, left, 4, 192), _frame(320, 220, left, 4, 192), draw)
 
 
 def cumulative_pace(
@@ -522,10 +566,6 @@ def _day_labels(
             text = f"{month_abbr} 1" if day == 1 else str(day)
             marks.append(_text(xs[day], frame.label_y, text, anchor))
     return marks
-
-
-def _bar_class(*, is_now: bool, partial: bool) -> str:
-    return " ".join(["bar", *(["is-now"] if is_now else []), *(["is-partial"] if partial else [])])
 
 
 def _bar_path(css: str, x: float, width: float, inner: float, outer: float) -> str:

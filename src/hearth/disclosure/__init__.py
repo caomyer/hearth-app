@@ -52,7 +52,7 @@ from hearth.disclosure.people import (
     person_of,
 )
 from hearth.disclosure.worth import NetWorthView, net_worth
-from hearth.figures import Pace, covers, lines
+from hearth.figures import COMPARE_FROM_DAY, Pace, covers, lines
 from hearth.members import Member, MemberId
 from hearth.months import Month
 from hearth.reports.balances import AssertionCheck
@@ -74,6 +74,7 @@ if TYPE_CHECKING:
     from hearth.review.rulings import RulingStore
 
 __all__ = [
+    "COMPARE_FROM_DAY",
     "WITHHELD",
     "AccountRow",
     "ActivityLine",
@@ -380,6 +381,21 @@ class Disclosure:
             Gate(OUTSIDER, self._choices), self._members, self._accounts, self._require_books()
         )
         return person_of(outsider, self._viewer)
+
+    def history_from(self) -> Month | None:
+        """The first month the books hold of any account the viewer owns, alone or jointly:
+        how far back what they share month by month reaches, which the sharing page says so
+        a member turning a facet on sees what they agree to (design/reporting.md, decision
+        1). None before the books hold any of it."""
+        if self.books is None:
+            return None
+        mine = {
+            a.ledger_account
+            for a in self._accounts
+            if self._viewer.id in a.owners and a.ledger_account not in self.books.unseen
+        }
+        days = [c.spans[0].earliest for c in self.books.coverage if c.account in mine and c.spans]
+        return Month.of(min(days)) if days else None
 
     def notice(self) -> FailureNotice | None:
         failure = self.status.failure

@@ -51,11 +51,11 @@ def test_at_the_defaults_everyone_sees_net_worth_and_spending(world: World) -> N
     assert [worth(row) for row in view.joint] == [Decimal("20000.42")]
     assert not view.headline.is_partial
     assert view.headline.value == amount(household.HOUSEHOLD_NET_WORTH)
-    assert view.spending.spent == amount(household.HOUSEHOLD_SPENDING)
-    assert not view.spending.spent_without
-    assert view.spending.earned == amount(household.INCOME["casey"])
-    assert [p.name for p in view.spending.earned_without] == ["Avery", "Blake", "Joint accounts"]
-    assert [p.name for p in view.spending.saved_without] == ["Avery", "Blake", "Joint accounts"]
+    assert view.so_far.spent == amount(household.HOUSEHOLD_SPENDING)
+    assert not view.so_far.spent_without
+    assert view.so_far.earned == amount(household.INCOME["casey"])
+    assert [p.name for p in view.so_far.earned_without] == ["Avery", "Blake", "Joint accounts"]
+    assert [p.name for p in view.left_over.without] == ["Avery", "Blake", "Joint accounts"]
 
 
 def test_household_income_is_whole_only_once_everyone_shares_it(world: World) -> None:
@@ -64,9 +64,9 @@ def test_household_income_is_whole_only_once_everyone_shares_it(world: World) ->
 
     view = household_for(world, "casey")
 
-    assert view.spending.earned == amount(household.HOUSEHOLD_INCOME)
-    assert not view.spending.earned_without
-    assert not view.spending.saved_without
+    assert view.so_far.earned == amount(household.HOUSEHOLD_INCOME)
+    assert not view.so_far.earned_without
+    assert not view.left_over.without
 
 
 def test_no_member_figure_moves_when_only_a_joint_account_does(world: World) -> None:
@@ -128,7 +128,7 @@ def test_the_joint_balance_cannot_be_had_by_subtraction(world: World) -> None:
     assert blake.worth.value == Decimal("73519.27")
     assert view.headline.is_partial
     assert view.headline.value == Decimal("73519.27") + Decimal("4505.37")
-    assert view.spending.spent == amount(household.SPENDING["blake"]) + amount(
+    assert view.so_far.spent == amount(household.SPENDING["blake"]) + amount(
         household.SPENDING["casey"]
     )
     assert blake.joint == ()

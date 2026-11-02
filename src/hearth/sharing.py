@@ -15,6 +15,7 @@ from hearth import audit
 from hearth.audit import EventKind
 from hearth.db import transaction
 from hearth.members import MemberId
+from hearth.months import Month
 
 
 class Facet(StrEnum):
@@ -26,12 +27,26 @@ class Facet(StrEnum):
     ACCOUNT_BALANCES = "account_balances"
 
 
+HISTORY_SPAN = "{history}"
+"""Where an explanation says how far back the facet reaches (`FacetDescription.explained`)."""
+
+
 @dataclass(frozen=True, slots=True)
 class FacetDescription:
     title: str
     explanation: str
     tag: str
     """The one word the household page uses for it, as in "Shares: Net worth, Spending"."""
+    reaches_back: bool = False
+    """Whether turning it on shares every month the books hold, not only those to come, so
+    its explanation names the month it reaches back to (`explained`)."""
+
+    def explained(self, history_from: Month | None) -> str:
+        """The explanation, saying how far back the facet reaches when it reaches back:
+        "..., for every month hearth holds, back to August 2025. ..."."""
+        if not self.reaches_back or history_from is None:
+            return self.explanation.replace(HISTORY_SPAN, "")
+        return self.explanation.replace(HISTORY_SPAN, f", back to {history_from.label}")
 
 
 DESCRIPTIONS: Mapping[Facet, FacetDescription] = {
@@ -53,8 +68,10 @@ DESCRIPTIONS: Mapping[Facet, FacetDescription] = {
     ),
     Facet.CATEGORY_BREAKDOWN: FacetDescription(
         "Spending by category",
-        "Food, transport and so on, per month. No merchants, no individual transactions.",
+        f"Food, transport and so on, for every month hearth holds{HISTORY_SPAN}."
+        " No merchants, no individual transactions.",
         "Categories",
+        reaches_back=True,
     ),
     Facet.TRANSACTIONS: FacetDescription(
         "Transactions",

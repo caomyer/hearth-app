@@ -108,7 +108,12 @@ def _today(world: World, day: date) -> None:
 
 
 def _covered(world: World, username: str) -> list[tuple[int, bool]]:
-    return [(bar.month.month, bar.covered) for bar in household_for(world, username).spending.bars]
+    """Whether each month is whole on the viewer's household page: the twelve complete months
+    of what was left over, over the parts the viewer sees both totals of, then this month."""
+    view = household_for(world, username)
+    return [(m.month.month, m.covered) for m in view.left_over.months] + [
+        (view.so_far.month.month, view.so_far.covered)
+    ]
 
 
 def test_a_card_whose_connection_stopped_leaves_its_months_incomplete_however_current_the_rest(
@@ -149,8 +154,12 @@ def test_how_complete_a_month_is_is_the_same_answer_for_everyone(world: World) -
 
     for shared in (frozenset(), *WITHOUT_TRANSACTIONS, EVERYTHING):
         world.choose("casey", shared | {Facet.MONTHLY_SPENDING_TOTAL})
+        assert _covered(world, "casey")[-3:] == expected, sorted(shared)
         for viewer in ("avery", "blake", "casey"):
-            assert _covered(world, viewer)[-3:] == expected, (viewer, sorted(shared))
+            # Every household figure Casey's spending is in reads alike for every viewer.
+            view = household_for(world, viewer)
+            assert not view.went.covered, (viewer, sorted(shared))
+            assert not view.so_far.covered, (viewer, sorted(shared))
             assert not disclosure_for(world, viewer).person("casey").totals.covered, viewer
 
 

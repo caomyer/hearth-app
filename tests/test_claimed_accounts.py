@@ -123,7 +123,8 @@ def test_the_household_total_and_its_history_go_on_drawing_what_hearth_sees(
     assert "Net worth, end of each month" in page
     assert "Month end Net worth Sep 30" in page
     assert f"Without {left_out} hearth does not see." in page
-    assert "Not known yet" not in page
+    # The net worth panel, that is: months before the books' history are not known below it.
+    assert "Not known yet" not in page[: page.index("Left over in")]
     hero = re.compile(r"hearth does not see (\$[\d,]+)")
     found, was = hero.search(page), hero.search(before)
     assert found is not None

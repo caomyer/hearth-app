@@ -135,6 +135,11 @@ TRANSACTIONS = (
     (OCT, "Payee Curlew Stipend", "", "Income:Curlew", "Assets:Zq:CaseyChecking", "1418.77"),
     (OCT, "Payee Kestrel Kites", "", "Expenses:Kites", "Liabilities:Zq:CaseyCard", "-12.34"),
     (OCT, "Payee Oriole Unowned", "", "Expenses:Orphanage", "Assets:Zq:Orphan", "-17.36"),
+    # Last month, one row a part, so each part's September is one category and one total.
+    (SEP, "Payee Bunting Barrow", "", "Expenses:Bunting", "Assets:Zq:BlakeSolo", "-246.13"),
+    (SEP, "Payee Bittern September", "", "Income:Bittern", "Assets:Zq:BlakeSolo", "2222.71"),
+    (SEP, "Payee Cormorant Coast", "", "Expenses:Cormorants", "Assets:Zq:CaseyChecking", "-357.24"),
+    (SEP, "Payee Juniper Joint", "", "Expenses:Junipers", "Assets:Zq:Joint", "-468.35"),
 )
 
 # A row the import set aside for Casey to review: nothing could be proposed for it.
@@ -258,6 +263,10 @@ def any_of(*rules: Rule) -> Rule:
 
 def all_of(*rules: Rule) -> Rule:
     return lambda viewer, choices: all(rule(viewer, choices) for rule in rules)
+
+
+def but_not(rule: Rule, unless: Rule) -> Rule:
+    return lambda viewer, choices: rule(viewer, choices) and not unless(viewer, choices)
 
 
 def never(viewer: str, choices: Choices) -> bool:
@@ -428,15 +437,60 @@ def secrets(account_ids: Mapping[str, str]) -> Iterator[Secret]:
         ("Cartography", "casey_checking"),
         ("Kites", "casey_card"),
         ("12.34", "casey_card"),
-        ("Jointery", "joint"),
     ):
         yield secret(text, f"{key} spending detail", _detail(key))
-    # Last month's detail: the dashboards show this month, so it is reached only through the
-    # account's own transactions, month by month.
+    # Last month's detail. Sharing categories shares every month the books hold
+    # (design/reporting.md, decision 1), so September's categories reach Household's "Where
+    # September went" as well as each account's own month of transactions.
     for text in ("Umbrellas", "19.06", "88.83"):
+        yield secret(text, "avery_solo last month", _detail("avery_solo"))
+    for text, key in (("Bunting", "blake_solo"), ("Cormorants", "casey_checking")):
+        yield secret(text, f"{key} last month's category", _detail(key))
+    yield secret("Junipers", "joint last month's category", _detail("joint"))
+    # One row a part last month, so its September spending is its only category and its only
+    # transaction too: seen as a category row, as the part's one labelled row when it shares
+    # only its total, or in the account's own month.
+    for text, username, key in (
+        ("246.13", "blake", "blake_solo"),
+        ("357.24", "casey", "casey_checking"),
+    ):
         yield secret(
-            text, "avery_solo last month", shared(Facet.TRANSACTIONS, owners_of("avery_solo"))
+            text,
+            f"{username}'s September spending",
+            _total(Facet.MONTHLY_SPENDING_TOTAL, username, key),
         )
+    yield secret(
+        "468.35",
+        "joint September spending",
+        any_of(shared(Facet.MONTHLY_SPENDING_TOTAL, JOINT), _detail("joint")),
+    )
+    # Avery's September is two categories on one day, so its total is shown as Avery's one
+    # labelled row, to whoever sees the total but not the categories, and as that day's
+    # spending in the account's own month of transactions.
+    yield secret(
+        "107.89",
+        "avery's September spending as one row or one day",
+        any_of(
+            but_not(
+                shared(Facet.MONTHLY_SPENDING_TOTAL, frozenset({"avery"})),
+                shared(Facet.CATEGORY_BREAKDOWN, frozenset({"avery"})),
+            ),
+            shared(Facet.TRANSACTIONS, owners_of("avery_solo")),
+        ),
+    )
+    # Blake's is the only money in last month, so what the household took in is Blake's,
+    # wherever Blake is in it: among the parts whose both totals the viewer sees.
+    yield secret(
+        "2,222.71",
+        "blake's September income",
+        any_of(
+            all_of(
+                shared(Facet.MONTHLY_INCOME_TOTAL, frozenset({"blake"})),
+                shared(Facet.MONTHLY_SPENDING_TOTAL, frozenset({"blake"})),
+            ),
+            shared(Facet.TRANSACTIONS, owners_of("blake_solo")),
+        ),
+    )
     for _, payee, set_aside_from, _, _, _ in PILE:
         rule = shared(Facet.TRANSACTIONS, owners_of(_key_of(set_aside_from)))
         yield secret(payee, "a set-aside row's payee", rule)
@@ -482,10 +536,14 @@ def secrets(account_ids: Mapping[str, str]) -> Iterator[Secret]:
         "casey spending",
         shared(Facet.MONTHLY_SPENDING_TOTAL, frozenset({"casey"})),
     )
+    # This month's joint spending is in Household's "so far" only as part of a sum, and its
+    # categories only in last month's panel: on its own, it is the joint account's own month
+    # of transactions, or the joint line's change in net worth since Oct 1, which it is all of.
+    yield secret("Jointery", "joint spending detail", shared(Facet.TRANSACTIONS, JOINT))
     yield secret(
         JOINT_SPENDING,
         "joint spending",
-        any_of(shared(Facet.MONTHLY_SPENDING_TOTAL, JOINT), _detail("joint")),
+        any_of(shared(Facet.NET_WORTH_TOTAL, JOINT), shared(Facet.TRANSACTIONS, JOINT)),
     )
     for username, key in (
         ("avery", "avery_solo"),

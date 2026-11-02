@@ -5,6 +5,8 @@ dollars, line items to the cent, a true minus sign everywhere, and the dollar si
 on hero figures.
 """
 
+import functools
+import hashlib
 from datetime import date, datetime
 from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -160,6 +162,34 @@ def price_source(source: str) -> str:
     return PRICE_SOURCES.get(source, source)
 
 
+def capitalize_first(text: str) -> Markup:
+    """The first letter in capitals and nothing else changed: "the joint accounts and Avery"
+    reads "The joint accounts and Avery". Text that is not markup yet is escaped."""
+    escaped = escape(text)
+    return Markup(escaped[:1].upper() + escaped[1:])  # noqa: S704 - escaped above
+
+
+NUMBER_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+
+
+def number_word(count: int) -> str:
+    """ "two", "nine", and "10" from ten on, as prose writes small counts."""
+    return NUMBER_WORDS[count] if 0 <= count < len(NUMBER_WORDS) else f"{count:,}"
+
+
+STATIC = Path(__file__).parent.parent / "static"
+
+
+@functools.cache
+def asset(name: str) -> str:
+    """A static file's address, carrying a digest of its contents, so a browser that cached
+    an earlier hearth's stylesheet or script fetches the new one rather than drawing today's
+    pages with yesterday's styles. The digest is read once per process, as files under
+    ``static`` only change with hearth itself."""
+    digest = hashlib.sha256((STATIC / name).read_bytes()).hexdigest()[:12]
+    return f"/static/{name}?v={digest}"
+
+
 def _is_withheld(value: object) -> bool:
     return isinstance(value, Withheld)
 
@@ -187,10 +217,12 @@ environment.filters.update(
     category=category,
     origin=origin,
     names=names,
+    capitalize_first=capitalize_first,
+    number_word=number_word,
     left_out=left_out,
     price_source=price_source,
 )
-environment.globals.update(when=when, close=close, plural=plural, MINUS=MINUS)
+environment.globals.update(when=when, close=close, plural=plural, MINUS=MINUS, asset=asset)
 environment.tests["withheld"] = _is_withheld
 
 

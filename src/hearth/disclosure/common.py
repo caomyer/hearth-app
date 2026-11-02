@@ -48,6 +48,11 @@ class PartRef:
         return self.owners[0].display_name
 
     @property
+    def in_prose(self) -> str:
+        """The part's name inside a sentence or a list: "Avery", "the joint accounts"."""
+        return "the joint accounts" if self.is_joint else self.owners[0].display_name
+
+    @property
     def owner_names(self) -> str:
         names = [owner.display_name for owner in self.owners]
         return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]

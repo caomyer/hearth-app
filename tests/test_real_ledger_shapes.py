@@ -10,8 +10,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from itertools import product
 
-from hearth import accounts, figures
-from hearth.disclosure.household import category_names
+from hearth import accounts
+from hearth.disclosure.household import HouseholdView, category_names
 from hearth.months import Month
 from hearth.sharing import Facet
 from hearth.valuation.pricestore import PriceStore
@@ -99,14 +99,21 @@ def test_months_the_ledger_has_not_reached_read_as_incomplete_not_as_nothing(
 
     view = household_for(world, "avery")
 
-    assert [(bar.month.month, bar.covered) for bar in view.spending.bars[-3:]] == [
-        (9, True),
-        (10, False),
-        (11, False),
-    ]
+    assert _months(view)[-3:] == [(9, True), (10, False), (11, False)]
     assert view.headline.since_month_start is None
     assert [point.day for point in view.history] == [date(2026, 9, 30), date(2026, 11, 14)]
-    assert "History incomplete" in world.signed_in("avery").get("/").text
+    assert (
+        "Not known yet: hearth does not have all of October"
+        in world.signed_in("avery").get("/").text
+    )
+
+
+def _months(view: HouseholdView) -> list[tuple[int, bool]]:
+    """Whether each month is whole on the household page: the twelve complete months of what
+    was left over, then the month in progress."""
+    return [(m.month.month, m.covered) for m in view.left_over.months] + [
+        (view.so_far.month.month, view.so_far.covered)
+    ]
 
 
 def _claim(world: World, ledger_account: str, owners: tuple[str, ...], entries: str) -> None:
@@ -143,13 +150,9 @@ def test_an_account_that_only_takes_transfers_never_leaves_spending_incomplete(
 
     view = household_for(world, "avery")
 
-    assert [(bar.month.month, bar.covered) for bar in view.spending.bars[-3:]] == [
-        (8, True),
-        (9, True),
-        (10, True),
-    ]
-    assert view.spending.covered
-    assert view.spending.typical is not None
+    assert _months(view)[-3:] == [(8, True), (9, True), (10, True)]
+    assert view.so_far.covered
+    assert view.went.covered
     assert [point.day for point in view.history] == [date(2026, 10, 15)]
 
 
@@ -164,13 +167,13 @@ def test_a_quiet_card_still_leaves_its_months_incomplete(world: World) -> None:
 
     view = household_for(world, "avery")
 
-    assert [(bar.month.month, bar.covered) for bar in view.spending.bars[-3:]] == [
-        (8, False),
-        (9, False),
-        (10, False),
-    ]
-    assert not view.spending.covered
-    assert "History incomplete" in world.signed_in("avery").get("/").text
+    assert _months(view)[-3:] == [(8, False), (9, False), (10, False)]
+    assert not view.so_far.covered
+    assert not view.went.covered
+    assert (
+        "Not known yet: hearth does not have all of September"
+        in world.signed_in("avery").get("/").text
+    )
 
 
 def test_a_month_missing_from_the_middle_of_the_history_is_no_move_at_all(world: World) -> None:
@@ -215,19 +218,19 @@ def test_a_statement_closing_on_the_last_day_of_a_month_leaves_that_month_whole(
 
     view = household_for(world, "avery")
 
-    *past, october = view.spending.bars
-    september = past[-1]
+    september = view.left_over.last
     assert september.month == Month(2026, 9)
     assert september.covered
-    assert view.spending.typical == figures.typical([bar.spent for bar in past if bar.covered])
+    assert view.went.covered
     assert date(2026, 9, 30) in [point.day for point in view.history]
     assert view.headline.since_month_start is not None
-    assert october.month == Month(2026, 10)
-    assert not october.covered
+    assert view.so_far.month == Month(2026, 10)
+    assert not view.so_far.covered
     page = world.signed_in("avery").get("/").text
-    assert "History incomplete" in page
-    assert "Oct, to the 18th (history incomplete)" in page
-    assert "October so far is" not in page
+    assert "Left over in September" in page
+    assert "Where September went" in page
+    assert "September is complete for every account behind these figures" in page
+    assert "spent, 18 days into a month" not in page
     assert "hearth does not have all of October's transactions" in page
 
 
@@ -259,8 +262,10 @@ def test_without_the_closing_assertion_the_month_cannot_be_told_whole(world: Wor
 
     view = household_for(world, "avery")
 
-    september = next(bar for bar in view.spending.bars if bar.month == Month(2026, 9))
+    september = view.left_over.last
+    assert september.month == Month(2026, 9)
     assert not september.covered
+    assert not view.went.covered
     assert view.headline.since_month_start is None
 
 
@@ -530,6 +535,8 @@ def _blakes_history_starts_on_oct_14(world: World) -> None:
         )
     for payee in ("Payee Bittern Nursery", "Payee Bittern Wages"):
         text = text.replace(f'{household.OCT} * "{payee}"', f'2026-10-14 * "{payee}"')
+    for payee in ("Payee Bunting Barrow", "Payee Bittern September"):
+        text = text.replace(f'{household.SEP} * "{payee}"', f'2026-10-14 * "{payee}"')
     world.ledger.write_text(text)
     world.recompute()
 
@@ -542,10 +549,10 @@ def test_a_month_the_ledger_has_not_reached_shows_no_categories_on_any_page(
     _blakes_history_starts_on_oct_14(world)
     world.choose("blake", EVERYTHING)
 
-    assert not household_for(world, "avery").spending.covered
+    assert not household_for(world, "avery").so_far.covered
     page = world.signed_in("avery").get("/").text
     assert "Bonsai" not in page
-    assert "Total only, not by category" not in page
+    assert "Where October went" not in page
     assert not disclosure_for(world, "avery").person("blake").totals.covered
     member = world.signed_in("avery").get("/members/blake").text
     assert "History incomplete" in member
