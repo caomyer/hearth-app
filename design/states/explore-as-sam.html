@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Explore - Sam&#x27;s view - Hearth</title>
+<link rel="stylesheet" href="../hearth.css">
+</head>
+<body>
+<!-- @sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-mark" viewBox="0 0 24 24"><path d="M3.5 10.6 12 3.8l8.5 6.8V20a.9.9 0 0 1-.9.9H4.4a.9.9 0 0 1-.9-.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 18.4c-1.9 0-3.1-1.3-3.1-3 0-1.9 1.6-2.7 2.2-4.6.2.9.9 1.5 1.5 1.9.5-.6.7-1.2.7-1.9 1.3 1 1.8 2.7 1.8 3.7 0 2.3-1.3 3.9-3.1 3.9Z" fill="currentColor"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.6 14.7c.6-.2 1.2-.3 1.9-.3 2.3 0 4 1.5 4.5 4.6"/></g></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.8 3.6-6 7-6s6.2 2.2 7 6"/></g></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13.5h4l1.5 2.5h5l1.5-2.5h4"/><path d="M5.6 6.2 4 13.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5.5l-1.6-7.3a1 1 0 0 0-1-.7H6.6a1 1 0 0 0-1 .7Z"/></g></symbol>
+    <symbol id="i-worth" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16h16"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></g></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></g></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.3 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9.5v4"/><path d="M12 17h.01"/></g></symbol>
+    <symbol id="i-error" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-unlink" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 7.7 16.3a2.9 2.9 0 0 1-4-4l2.6-2.6a2.9 2.9 0 0 1 3.4-.5"/><path d="m14.5 9.5 1.8-1.8a2.9 2.9 0 0 1 4 4l-2.6 2.6a2.9 2.9 0 0 1-3.4.5"/><path d="M4 4l2 2M18 18l2 2M9 3v2M15 21v-2"/></g></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1"/><path d="M17.5 3.5v3.4h-3.4M6.5 20.5v-3.4h3.4"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v3.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15"/></g></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M14 10a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1"/></g></symbol>
+    <symbol id="i-explore" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/><path d="M8 12.5v-2M10.5 12.5v-4M13 12.5v-3"/></g></symbol>
+    <pattern id="hatch-priv" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill: var(--priv-bg)"/><rect width="1.6" height="6" style="fill: var(--priv)"/></pattern>
+    <pattern id="hatch-gap" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1" height="6" style="fill: var(--line-strong)"/></pattern>
+  </defs>
+</svg>
+<!-- /@sprite -->
+<a class="skip" href="#main">Skip to content</a>
+<!-- @dstrip name="Explore, seen by Sam" -->
+<div class="dstrip" role="note" aria-label="Design review">
+  <div class="dstrip-in">
+    <span><a href="../index.html">Hearth design</a> / <span class="dname">Explore, seen by Sam</span></span>
+    <span>Viewer: Sam (shares categories; Jordan shares nothing)</span>
+    <span>Reporting proposal, not built</span>
+    <span class="dspacer"></span>
+    <a href="#design-notes">Design notes</a>
+    <button type="button" data-theme-toggle>Theme: system</button>
+  </div>
+</div>
+<!-- /@dstrip -->
+<div class="app">
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="../screens/reporting-household.html"><svg aria-hidden="true"><use href="#i-mark"/></svg>Hearth</a>
+    <nav class="nav" aria-label="Primary">
+      <a href="../screens/reporting-household.html">Household</a>
+      <a href="../screens/me.html">You</a>
+      <a href="../screens/explore.html" aria-current="page">Explore</a>
+      <a href="../screens/review.html">Review <span class="count" aria-label="23 to review">23</span></a>
+      <a href="../screens/net-worth.html">Net worth</a>
+      <a href="../screens/sharing.html">Settings</a>
+    </nav>
+    <div class="topbar-end">
+      <a class="me-chip" href="../screens/sharing.html"><span class="me-name">Sam</span><span class="avatar who-2" aria-hidden="true">S</span><span class="vh">Signed in as Sam. Account settings</span></a>
+    </div>
+  </div>
+</header>
+<main id="main" class="page">
+
+  <div class="page-head"><div><h1>Explore</h1><p class="sub">Ask your household's money a question. Change any part of it; every step can be taken back.</p></div></div>
+
+  <form class="panel" action="explore.html" method="get" aria-label="Your question">
+    <div class="panel-body" style="padding-top: var(--s-5); padding-bottom: var(--s-5)">
+      <div class="lens">
+        <span>Show</span>
+        <select class="select" name="measure" aria-label="What to show"><option selected>Money out</option><option>Money in</option><option>Money in and out</option><option>Left over</option></select>
+        <span>for</span>
+        <select class="select" name="who" aria-label="Whose"><option selected>Everyone you can see</option><option>You</option><option>You and joint</option><option>Alex</option><option>Jordan</option><option>Joint accounts</option></select>
+
+        <span>by</span>
+        <select class="select" name="by" aria-label="Group by"><option selected>Category</option><option>Who</option><option>Place (yours and joint)</option><option>Account (yours and joint)</option><option>Month</option></select>
+        <span>over</span>
+        <select class="select" name="months" aria-label="When"><option>The last 12 months</option><option>This year</option><option>Last year</option><option>The last 3 months</option><option selected>October 2026</option><option>September 2026</option></select>
+        <noscript><button class="btn btn-primary" type="submit">Show</button></noscript>
+      </div>
+      <div class="lens-foot">
+        <span class="sm muted">Compare with</span>
+        <select class="select" name="compare" aria-label="Compare with" style="height: 32px; width: auto; font-size: var(--t-sm)"><option selected>A typical month</option><option>The month before</option><option>A year earlier</option><option>Nothing</option></select>
+        <span class="sm muted">Show</span>
+        <div class="seg" role="group" aria-label="Time steps"><button type="button" aria-pressed="true">Months</button><button type="button" aria-pressed="false">Quarters</button><button type="button" aria-pressed="false">Years</button></div>
+      </div>
+    </div>
+  </form>
+  <ol class="trail mt-4" aria-label="How you got here"><li><span class="chip is-root">Money out, everyone you can see, October 2026</span></li></ol>
+
+  <div class="grid grid-main mt-4">
+    <section class="panel" aria-labelledby="c-h">
+      <div class="panel-head">
+        <h2 id="c-h">October, by category and who</h2>
+        <span class="missing-chip"><svg aria-hidden="true"><use href="#i-lock"/></svg>without Jordan</span>
+        <p class="finding">Jordan shares nothing with you, so Jordan is in no figure on this page, and every total says so.</p>
+      </div>
+      <div class="panel-body" style="padding: 0 0 var(--s-2)">
+        <div class="table-scroll">
+          <table class="pivot">
+            <caption class="vh">Money out in October by category, for Sam, Alex and the joint accounts</caption>
+            <thead><tr><th scope="col">Category</th><th scope="col">Sam (you)</th><th scope="col">Alex</th><th scope="col">Joint</th><th scope="col" class="col-total">Together</th></tr></thead>
+            <tbody><tr><th scope="row">Housing</th><td>&ndash;</td><td>&ndash;</td><td>$2,150.00</td><td class="col-total">$2,150.00</td></tr><tr><th scope="row">Transport</th><td>$141.60</td><td>$812.45</td><td>&ndash;</td><td class="col-total">$954.05</td></tr><tr><th scope="row">Groceries</th><td>$93.80</td><td>$126.85</td><td>$662.35</td><td class="col-total">$883.00</td></tr><tr><th scope="row">Dining</th><td>$186.40</td><td>$384.00</td><td>&ndash;</td><td class="col-total">$570.40</td></tr><tr><th scope="row">Shopping</th><td>$251.90</td><td>$228.15</td><td>&ndash;</td><td class="col-total">$480.05</td></tr><tr><th scope="row">Health</th><td>$117.85</td><td>$58.95</td><td>&ndash;</td><td class="col-total">$176.80</td></tr><tr><th scope="row">Utilities</th><td>&ndash;</td><td>&ndash;</td><td>$172.40</td><td class="col-total">$172.40</td></tr><tr><th scope="row">Home</th><td>&ndash;</td><td>&ndash;</td><td>$124.65</td><td class="col-total">$124.65</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel-foot"><span>Top eight categories of October. Alex reviews Alex's own transactions, so Alex's share may include some not yet checked.</span></div>
+    </section>
+    <section class="panel" aria-labelledby="iv-h">
+      <div class="panel-head"><h2 id="iv-h">Who is in this view</h2></div>
+      <div class="panel-body">
+        <ul class="inview" role="list"><li class=""><span class="avatar who-2" aria-hidden="true">S</span><span>Sam (you)</span><span class="grain">Every category, place and payment</span></li><li class=""><span class="avatar who-joint" aria-hidden="true">J</span><span>Joint accounts</span><span class="grain">Every category, place and payment</span></li><li class=""><span class="avatar " aria-hidden="true">A</span><span>Alex</span><span class="grain">By category</span></li><li class="is-out"><span class="avatar who-3" aria-hidden="true">J</span><span>Jordan</span><span class="grain"><svg aria-hidden="true"><use href="#i-lock"/></svg>Shares nothing with you</span></li></ul>
+        <p class="sm muted mt-4">The same words appear for Jordan whether Jordan spent a lot, a little or nothing.</p>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid grid-2 mt-4">
+    <section class="panel" aria-labelledby="pl-h">
+      <div class="panel-head">
+        <h2 id="pl-h">Dining in October, by place</h2>
+        <p class="finding">You chose "by place": your places are listed, and Alex is one row.</p>
+      </div>
+      <div class="panel-body">
+        <div class="cats" role="list">
+          <a class="cat" role="listitem" href="#explore"><span class="name">Greenleaf Bistro</span><span class="track" aria-hidden="true"><span class="fill" style="width: 100.0%"></span></span><span class="val">$92.40</span><span class="note">3 visits</span></a><a class="cat" role="listitem" href="#explore"><span class="name">Harbor Noodle</span><span class="track" aria-hidden="true"><span class="fill" style="width: 58.7%"></span></span><span class="val">$54.20</span><span class="note">2 visits</span></a><a class="cat" role="listitem" href="#explore"><span class="name">Cafe Tern</span><span class="track" aria-hidden="true"><span class="fill" style="width: 43.1%"></span></span><span class="val">$39.80</span><span class="note">4 visits</span></a><div class="cat is-withheld" role="listitem"><span class="name">Alex</span><span class="track"><i aria-hidden="true"></i><svg aria-hidden="true"><use href="#i-lock"/></svg>By category only, not by place</span><span class="val">$384.00</span></div>
+        </div>
+      </div>
+      <div class="panel-foot"><span>Alex shares categories, not transactions. Alex's dining is never split by place, and never left out of the total: $570.40.</span></div>
+    </section>
+    <section class="panel" aria-labelledby="ask-h">
+      <div class="panel-head"><h2 id="ask-h">Asking for more than is shared</h2></div>
+      <div class="panel-body">
+        <ol class="changes" role="list">
+          <li><span class="what">"Alex, by place"</span><span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>One row</span><span class="why">Alex appears as one row per category: the figure Alex already shares. The choice is not refused, so refusing cannot say anything either.</span></li>
+          <li><span class="what">"Alex, by week" or a range of days</span><span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Whole months</span><span class="why">Alex's part is shown by whole month. Days are when money went out, which is transaction detail.</span></li>
+          <li><span class="what">"Jordan", anything</span><span class="tag tag-private"><svg aria-hidden="true"><use href="#i-lock"/></svg>Not shared</span><span class="why">One sentence: Jordan shares nothing with you. The same page whatever Jordan's money did.</span></li>
+          <li><span class="what">A payment page of Alex's, by its address</span><span class="tag tag-outline">Not found</span><span class="why">The page every missing thing gets, byte for byte.</span></li>
+        </ol>
+      </div>
+    </section>
+  </div>
+
+</main>
+<nav class="tabbar" aria-label="Primary">
+  <a href="../screens/reporting-household.html"><svg aria-hidden="true"><use href="#i-home"/></svg>Household</a>
+  <a href="../screens/me.html"><svg aria-hidden="true"><use href="#i-user"/></svg>You</a>
+  <a href="../screens/explore.html" aria-current="page"><svg aria-hidden="true"><use href="#i-explore"/></svg>Explore</a>
+  <a href="../screens/review.html"><svg aria-hidden="true"><use href="#i-review"/></svg><span class="count" aria-hidden="true">23</span>Review<span class="vh">, 23 to review</span></a>
+  <a href="../screens/net-worth.html"><svg aria-hidden="true"><use href="#i-worth"/></svg>Net worth</a>
+</nav>
+</div>
+
+<section class="dnotes" id="design-notes" aria-labelledby="dn-h">
+  <div class="dnotes-in">
+    <h2 id="dn-h">Design notes</h2>
+    <ol>
+      <li><strong>The same page, a different viewer.</strong> Sam shares categories with Alex; Alex shares categories with Sam; Jordan shares nothing. The question Sam asks is built from the same lists; what comes back is decided part by part.</li>
+      <li><strong>Nothing is refused; everything degrades to the grain it may have.</strong> A refusal ("too few transactions to show") would itself be an answer about the data. Instead each part enters at the finest grain its owner shares, which depends only on sharing choices, so the shape of the page says nothing the sharing page does not.</li>
+      <li><strong>A member who shares nothing is named once and counted nowhere.</strong> "without Jordan" on every total, the same words whether Jordan spent a lot or nothing.</li>
+      <li><strong>The who list names every member,</strong> because membership is already on Household. Choosing Jordan returns one sentence.</li>
+    </ol>
+  </div>
+</section>
+<script src="../design.js"></script>
+</body>
+</html>

@@ -12,3 +12,5 @@ Every figure and name is invented.
 - `hearth.css` holds every token and component; `design.js` adds chart tooltips and a light and dark switch for review.
 - `screens/` holds the eleven MVP screens; `states/` holds the seven states.
 - Money between accounts, a proposal for review, adds `screens/where-it-went.html`, `screens/add-account.html`, `states/not-connected-account.html` and `states/connected-later.html`, and changes onboarding steps 2 and 4; `money-between-accounts.md` is the plan behind it.
+- Reporting and Explore, a proposal for review, adds `screens/reporting-household.html` (open it first), `screens/explore.html`, `screens/coming-up.html` and six states under `states/explore-*.html`, one per step of a drill and one per viewer; `reporting.md` is the assessment and plan behind them.
+  It adds the reporting classes to `hearth.css` (section 14b), which no template uses yet.
