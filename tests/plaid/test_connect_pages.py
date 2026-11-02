@@ -151,7 +151,7 @@ def test_connecting_asks_for_730_days_and_shows_what_each_account_came_with(
     assert "Gryphon Mutual" in page
     assert "9 of 10 connections remaining" in page
     # The invented bank sent one transaction from today: far short of two years, and said so.
-    assert "Gryphon Mutual sent 1 days" in page or "1 days only" in page
+    assert "Gryphon Mutual sent 1 day," in page or "1 day only" in page
     assert "Upload CSV statements" in page
 
 

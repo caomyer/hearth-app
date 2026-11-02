@@ -10,7 +10,6 @@ directory (``hearth.runlog``).
 """
 
 import argparse
-import logging
 import sqlite3
 import sys
 import tempfile
@@ -25,19 +24,16 @@ from beancount.core.data import Open
 from hearth import accounts, auth, books, comparison, db, demo, members, runlog
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
-from hearth.clock import Clock, system_clock
+from hearth.clock import system_clock
 from hearth.config import Settings, data_dir_from_environment
 from hearth.disclosure import rulings_in
 from hearth.members import MemberRejectedError
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid import feed
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
-from hearth.plaid.connector import sync_all
-from hearth.plaid.holdings import Priced, price_holdings
 from hearth.plaid.setup import PlaidSetup
+from hearth.refresh import sync_then_recompute
 from hearth.reports.common import is_balance_sheet
-
-_log = logging.getLogger(__name__)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -255,7 +251,9 @@ def _run(
     plaid: PlaidSetup,
     tls: Tls | None = None,
 ) -> None:
-    """Serve, recomputing at start-up and then every morning (decision 6).
+    """Serve, recomputing at start-up and then every morning (decision 6), and whenever what
+    the books are computed from changes without this process, as when `hearth plaid sync` is
+    run by hand (`books.Bookkeeper.recompute_on_change`).
 
     The app is created first, as that brings both databases up to date, so the first
     recompute and the first sync never find a database part way through being created.
@@ -263,9 +261,12 @@ def _run(
     log = runlog.configure(settings.data_dir)
     print(f"Hearth notes what it asks of Plaid in {log}", flush=True)
     try:
-        bookkeeper = books.Bookkeeper(establish, system_clock)
+        bookkeeper = books.Bookkeeper(
+            establish, system_clock, standing=lambda: books.standing(settings)
+        )
         app = create_app(settings, bookkeeper, plaid=plaid)
         bookkeeper.recompute_daily()
+        bookkeeper.recompute_on_change()
         if plaid.approval.allows(Operation.READ) or plaid.approval.allows(Operation.HOLDINGS):
             _sync_daily(settings, plaid, bookkeeper)
         cert, key = tls if tls is not None else (None, None)
@@ -284,44 +285,6 @@ def _sync_daily(settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkee
             threading.Event().wait(books.seconds_until(books.DAILY_AT, datetime.now()))
 
     threading.Thread(target=run, name="hearth-daily-sync", daemon=True).start()
-
-
-def sync_then_recompute(
-    settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper, clock: Clock
-) -> None:
-    """Sync every working connection and keep every brokerage's holdings and today's price of
-    each, each refused for a real connection unless approved, then recompute the books, which
-    record how current each connection is: the morning's recompute starts with the sync, so it
-    may finish first.
-
-    A brokerage's holdings and prices are today's only (``hearth.plaid.holdings``), so they are
-    asked for every morning: a morning missed is a day with neither, for good. That holds too
-    for a fund no position in the books holds, as when an inherited ledger keeps the brokerage
-    account and holds none of the fund: its price is kept for the day it does, and the log says
-    so rather than leaving a live call that values nothing today unexplained."""
-    priced: Priced | None = None
-    conn = db.connect(settings.database)
-    try:
-        sync_all(conn, settings.feed_database, plaid, clock)
-    except Exception:
-        _log.exception("the daily sync stopped")
-    try:
-        priced = price_holdings(conn, settings.feed_database, plaid, clock)
-    except Exception:
-        _log.exception("reading holdings stopped")
-    finally:
-        conn.close()
-    bookkeeper.recompute()
-    computed = bookkeeper.status.books
-    if priced is not None and computed is not None:
-        held = {valued.holding.commodity for valued in computed.today.positions}
-        if unheld := sorted(set(priced.symbols) - held):
-            _log.info(
-                "kept today's price of %s, which no position in the books holds yet: a"
-                " brokerage's price is today's only, so a day not asked can never be priced"
-                " later",
-                ", ".join(unheld),
-            )
 
 
 def _add_member(username: str, name: str, *, is_admin: bool) -> None:

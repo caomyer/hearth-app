@@ -13,7 +13,7 @@ from itertools import product
 
 import pytest
 
-from hearth import accounts, cli
+from hearth import accounts, refresh
 from hearth.connections import plaid_source
 from hearth.months import Month
 from hearth.plaid.connector import NEW, Mapping
@@ -393,7 +393,7 @@ def test_the_morning_sync_brings_the_figures_up_to_date_with_it(world: World) ->
     world.recompute()
     _today(world, date(2026, 11, 1))
 
-    cli.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
+    refresh.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
 
     books = world.bookkeeper.status.books
     assert books is not None

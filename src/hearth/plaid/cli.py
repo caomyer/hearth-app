@@ -1,9 +1,10 @@
 """``hearth plaid``: the household's connections, for whoever runs hearth on this Mac.
 
     hearth plaid items                     every connection and every allowance; no live call
-    hearth plaid sync --approved           bring every working connection up to date
+    hearth plaid sync --approved           bring every working connection up to date, then
+                                           recompute the books
     hearth plaid holdings --approved       store today's price of every connected brokerage's
-                                           holdings
+                                           holdings, then recompute the books
     hearth plaid remove ITEM --approved    end one connection at Plaid, freeing its slot
     hearth plaid adopt --member USERNAME --token-file PATH --approved
                                            what an Item made outside hearth offers; nothing kept
@@ -16,6 +17,11 @@ each member only their own.
 
 A command that calls Plaid refuses, before anything is sent, unless given ``--approved``.
 
+A command that brings anything in recomputes the books after it, as `hearth serve` does, and
+says whether they now hold it; one whose recompute fails says what went wrong and exits
+non-zero, and the books stay as they were (``hearth.books``). A `hearth serve` running beside it
+takes the change into its pages within seconds (`books.Bookkeeper.recompute_on_change`).
+
 An access token is read from a file, or from standard input given ``-``, never from the
 command line, where it would be kept in the shell's history and shown to every process on the
 machine. It is never printed.
@@ -27,11 +33,11 @@ import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from hearth import db, members
+from hearth import books, db, members
 from hearth.books import Status
 from hearth.clock import Clock, system_clock
 from hearth.config import Settings
-from hearth.disclosure import Disclosure
+from hearth.disclosure import Disclosure, rulings_in
 from hearth.plaid import feed
 from hearth.plaid.approval import Approval, ApprovalRequired, Operation
 from hearth.plaid.client import PlaidError
@@ -42,18 +48,22 @@ from hearth.plaid.connector import (
     Refusal,
     Refused,
     Unadoptable,
-    sync_all,
 )
 from hearth.plaid.credentials import CredentialStore
+from hearth.plaid.feed import Outcome
 from hearth.plaid.holdings import price_holdings
 from hearth.plaid.registry import Registry
 from hearth.plaid.setup import DAYS_REQUESTED, PlaidSetup
-from hearth.plaid.sync import Skipped, SyncStoppedError
+from hearth.plaid.sync import Failed, Skipped, SyncStoppedError
+from hearth.refresh import sync_then_recompute
 from hearth.valuation.pricestore import Recorded
 from hearth.vault.errors import VaultError
 from hearth.vault.secret import Secret
 from hearth.vault.tokens import TokenVault
 
+FAILED = 1
+"""Something asked for was not done: a connection did not sync, or the books were not
+recomputed, so they do not hold what was brought in."""
 REFUSED = 2
 STDIN = "-"
 
@@ -65,7 +75,18 @@ def run(arguments: argparse.Namespace, settings: Settings) -> int:
         case "items":
             return items(settings)
         case "sync":
-            return sync(settings, approved=arguments.approved)
+            if not arguments.approved:
+                print(
+                    "hearth plaid sync makes live Plaid calls against real accounts; pass"
+                    " --approved once the captain has approved it. Nothing was sent."
+                )
+                return REFUSED
+            return sync(
+                settings,
+                PlaidSetup(approval=Approval.of([Operation.READ])),
+                system_clock,
+                books.from_household(settings, rulings=rulings_in),
+            )
         case "remove":
             return remove(settings, arguments.item_id, approved=arguments.approved)
         case "holdings":
@@ -77,7 +98,10 @@ def run(arguments: argparse.Namespace, settings: Settings) -> int:
                 )
                 return REFUSED
             return holdings(
-                settings, PlaidSetup(approval=Approval.of([Operation.HOLDINGS])), system_clock
+                settings,
+                PlaidSetup(approval=Approval.of([Operation.HOLDINGS])),
+                system_clock,
+                books.from_household(settings, rulings=rulings_in),
             )
         case "adopt":
             if not arguments.approved:
@@ -135,33 +159,86 @@ def _saved(conn: sqlite3.Connection) -> set[str]:
     return {row[0] for row in conn.execute("SELECT scope FROM plaid_credentials")}
 
 
-def sync(settings: Settings, *, approved: bool) -> int:
-    if not approved:
+def sync(settings: Settings, setup: PlaidSetup, clock: Clock, establish: books.Establish) -> int:
+    """Bring every working connection up to date, then recompute the books, through the same
+    path as `hearth serve`'s morning (``hearth.refresh``), and say how both went."""
+    refreshed = sync_then_recompute(settings, setup, books.Bookkeeper(establish, clock), clock)
+    code = 0
+    if refreshed.synced is None:
+        print("hearth: the sync stopped on an unexpected error; hearth.log says where.")
+        code = FAILED
+    elif not refreshed.synced:
+        print("No working connection reaches anything to sync.")
+    for synced in refreshed.synced or ():
+        if isinstance(synced, Skipped):
+            print(f"{synced.item_id}: skipped, {synced.reason}")
+            continue
+        if isinstance(synced, Failed):
+            print(f"{synced.item_id}: could not be synced; hearth.log says why")
+            code = FAILED
+            continue
+        run = synced.run
         print(
-            "hearth plaid sync makes live Plaid calls against real accounts; pass --approved"
-            " once the captain has approved it. Nothing was sent."
+            f"{synced.item_id}: {run.outcome.value}, {run.pages} page(s),"
+            f" +{run.added} ~{run.modified} -{run.removed}"
+            + (f" ({run.problem})" if run.problem else "")
         )
-        return REFUSED
-    setup = PlaidSetup(approval=Approval.of([Operation.READ]))
-    conn = db.connect(settings.database)
+        if run.outcome is not Outcome.COMPLETE:
+            code = FAILED
+    # A connection that could not be synced brought nothing, so the books are said to hold
+    # only what the others fetched, or, when none fetched anything, nothing new.
+    brought: str | None = "what was fetched"
+    if any(isinstance(synced, Failed) for synced in refreshed.synced or ()):
+        fetched = any(not isinstance(s, Failed | Skipped) for s in refreshed.synced or ())
+        brought = "what was fetched from the connections that synced" if fetched else None
+    return _recomputed(refreshed.status, settings, brought) or code
+
+
+def _recomputed(status: Status, settings: Settings, brought: str | None) -> int:
+    """Say whether the books hold what was `brought` in, and how to exit for it; None when
+    nothing was brought in.
+
+    A failed recompute establishes nothing: the books file stays as it was last written, so it
+    is named with the time it was, beside what went wrong."""
+    failure = status.failure
+    if failure is None and status.books is not None:
+        at = status.books.computed_at.astimezone()
+        held = (
+            f"The books hold {brought} now"
+            if brought is not None
+            else "Nothing was fetched, so the books hold nothing new"
+        )
+        print(
+            f"{held}: recomputed {at:%Y-%m-%d %H:%M}, written to"
+            f" {settings.books_file}. A running hearth serve shows it within seconds."
+        )
+        return 0
+    summary = failure.summary if failure is not None else "nothing was established."
+    if brought is None:
+        print(f"hearth: nothing was fetched, and the books were not recomputed: {summary}")
+    else:
+        print(f"hearth: the books were not recomputed, so they do not hold {brought}: {summary}")
     try:
-        for synced in sync_all(conn, settings.feed_database, setup, system_clock):
-            if isinstance(synced, Skipped):
-                print(f"{synced.item_id}: skipped, {synced.reason}")
-                continue
-            run = synced.run
-            print(
-                f"{synced.item_id}: {run.outcome.value}, {run.pages} page(s),"
-                f" +{run.added} ~{run.modified} -{run.removed}"
-                + (f" ({run.problem})" if run.problem else "")
-            )
-    finally:
-        conn.close()
-    return 0
+        written = datetime.fromtimestamp(settings.books_file.stat().st_mtime).astimezone()
+    except FileNotFoundError:
+        kept = "No books have been written yet."
+    else:
+        kept = f"{settings.books_file} stays as it was written {written:%Y-%m-%d %H:%M}."
+    told = (
+        " What was brought in is kept, and is in the books from the first recompute that"
+        " succeeds; the pages say"
+        if brought is not None
+        else " The pages say"
+    )
+    print(f"{kept}{told} what went wrong to whoever may see it.")
+    return FAILED
 
 
-def holdings(settings: Settings, setup: PlaidSetup, clock: Clock) -> int:
-    """Store the price each connected brokerage gives each of its holdings today."""
+def holdings(
+    settings: Settings, setup: PlaidSetup, clock: Clock, establish: books.Establish
+) -> int:
+    """Store the price each connected brokerage gives each of its holdings today, then
+    recompute the books, which hold what each brokerage said."""
     conn = db.connect(settings.database)
     try:
         priced = price_holdings(conn, settings.feed_database, setup, clock)
@@ -183,11 +260,11 @@ def holdings(settings: Settings, setup: PlaidSetup, clock: Clock) -> int:
     )
     for unpriceable in priced.unpriceable:
         print(f"Not priced: {unpriceable.security_id}, {unpriceable.reason}.")
-    print(
-        "The books take them in at their next recompute. Plaid gives today's price only, so a"
-        " day nobody asks has no price, for good."
-    )
-    return 0
+    print("Plaid gives today's price only, so a day nobody asks has no price, for good.")
+    bookkeeper = books.Bookkeeper(establish, clock)
+    bookkeeper.recompute(wait=True)
+    code = _recomputed(bookkeeper.status, settings, "what each brokerage said it holds")
+    return code or (FAILED if any(a.problem is not None for a in priced.asked) else 0)
 
 
 def remove(settings: Settings, item_id: str, *, approved: bool) -> int:

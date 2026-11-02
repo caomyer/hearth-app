@@ -58,7 +58,7 @@ from hearth.plaid.registry import (
     Registry,
 )
 from hearth.plaid.setup import DAYS_REQUESTED, PlaidSetup
-from hearth.plaid.sync import Skipped, SyncBusyError, Synced, check_waits, look, sync_item
+from hearth.plaid.sync import Failed, Skipped, SyncBusyError, Synced, check_waits, look, sync_item
 from hearth.vault.errors import VaultError
 from hearth.vault.secret import Secret
 from hearth.vault.tokens import TokenVault
@@ -1427,17 +1427,18 @@ def _follow(
 
 def sync_all(
     conn: sqlite3.Connection, feed_path: Path, setup: PlaidSetup, clock: Clock
-) -> list[Synced | Skipped]:
+) -> list[Synced | Skipped | Failed]:
     """Sync every working connection in the household, for the daily run and the command line.
 
     A connection already being followed for its history, here or in a `hearth serve` waiting
     to ask again, is left to its follower; one another sync is running is left to that sync.
-    One connection that cannot be synced, say because its key is missing, stops only itself.
+    One connection that cannot be synced, say because its key is missing, stops only itself, and
+    is said to have failed.
     A connection is not asked unless reading is approved for its environment in this run, so a
     run that approved only reading holdings sends nothing here and records no sync.
     """
     store = CredentialStore(conn, TokenVault(conn, setup.keys()))
-    done: list[Synced | Skipped] = []
+    done: list[Synced | Skipped | Failed] = []
     for item in Registry(conn).all_items():
         if item.state is not ItemState.WORKING:
             continue
@@ -1459,6 +1460,7 @@ def sync_all(
             done.append(Skipped(item.item_id, "another sync is running"))
         except Exception:
             _log.exception("could not sync a connection")
+            done.append(Failed(item.item_id))
     return done
 
 

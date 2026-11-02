@@ -5,11 +5,13 @@ This document records how they get their figures and every decision the design d
 
 ## Where the figures come from
 
-`hearth.books` recomputes the household's books, hearth's own over a ledger it inherits if there is one (`docs/books.md`): at start-up, every morning at 6:00, when someone presses "Recompute now", and when a member confirms where a connected account goes.
+`hearth.books` recomputes the household's books, hearth's own over a ledger it inherits if there is one (`docs/books.md`): at start-up, every morning at 6:00, when someone presses "Recompute now", when a member confirms where a connected account goes, and after every sync, the morning's or one run by hand with `hearth plaid sync` (`hearth.refresh`).
+A serving hearth also recomputes within seconds of a change it did not make to what its books are computed from, such as a sync or holdings fetched by `hearth plaid` in another process, which cannot reach the books the pages show, only the two databases both read (`books.standing`, `Bookkeeper.recompute_on_change`).
 A page never recomputes, so every figure has an as-of time, which every page states.
 
 A recompute that cannot trust the ledger establishes nothing.
 Beancount reporting an error, or a balance assertion the postings do not reproduce, keeps the previous books on screen, labelled with their time, beside what went wrong.
+The page a member lands on once every account is confirmed says whether the books took them in: while the recompute runs it says so, and when it fails it shows the failure and the time of the figures still shown, never that the accounts are in the figures.
 Before the first recompute finishes, pages show skeletons in the shape of what is coming and poll quietly until it lands.
 A household with no account in the books yet sees no figure at all on Household and Net worth, but a page that says nothing is connected and offers to connect a bank: a total over nothing is not a total of zero.
 A figure that includes an account whose balance the books do not hold reads "Not known yet" rather than counting it as zero (`docs/books.md`).

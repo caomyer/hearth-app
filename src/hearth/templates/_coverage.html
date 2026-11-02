@@ -10,7 +10,7 @@
   {% elif not cov.complete %}
   <span class="tag tag-outline"><svg aria-hidden="true"><use href="#i-clock"/></svg>History arriving</span>
   {% elif cov.is_short %}
-  <span class="tag tag-warn"><svg aria-hidden="true"><use href="#i-warn"/></svg>{% if cov.days %}{{ cov.days }} days only{% else %}No history{% endif %}</span>
+  <span class="tag tag-warn"><svg aria-hidden="true"><use href="#i-warn"/></svg>{% if cov.days %}{{ plural(cov.days, "day") }} only{% else %}No history{% endif %}</span>
   {% else %}
   <span class="tag tag-ok"><svg aria-hidden="true"><use href="#i-check"/></svg>{{ connect.days_requested }} days</span>
   {% endif %}
@@ -33,7 +33,7 @@
   <svg aria-hidden="true"><use href="#i-warn"/></svg>
   <div class="alert-body">
     {% if held.earliest %}
-    <p style="color: var(--ink); font-weight: 600">{{ item.institution }} sent {{ cov.days }} days, from {{ held.earliest | year_day }}.</p>
+    <p style="color: var(--ink); font-weight: 600">{{ item.institution }} sent {{ plural(cov.days, "day") }}, from {{ held.earliest | year_day }}.</p>
     <p>That is what this bank gave when asked for two years, and connecting again will not widen it. If the account is newer than that, nothing is missing. Otherwise, upload statements as CSV to fill {{ cov.requested_from | month_year }} to {{ held.earliest | month_year }}, now or later. Until then, this account's history is marked as starting in {{ held.earliest | month_year }} wherever it appears.</p>
     {% else %}
     <p style="color: var(--ink); font-weight: 600">{{ item.institution }} sent no history for this account.</p>

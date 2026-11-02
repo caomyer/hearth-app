@@ -34,7 +34,7 @@ import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from hearth import accounts, cli
+from hearth import accounts, refresh
 from hearth.plaid.fake import FakeAccount, FakeHolding, FakeInstitution
 from hearth.plaid.registry import Registry
 from hearth.web.routes import ROUTERS
@@ -201,7 +201,7 @@ def first_day_steps(fresh: FirstDay) -> Iterator[Visit]:
     until_booked(fresh, "Assets:Avery:Quarry:Brokerage")
     yield from walk(fresh, BROKERAGE)
     # The next morning's ask finds them ready.
-    cli.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
+    refresh.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
     yield from walk(fresh, HOLDINGS)
 
 

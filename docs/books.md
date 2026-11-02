@@ -39,7 +39,8 @@ The file is an output, never an input.
 Hearth never reads it back, and its first lines say so.
 An edit made to it changes nothing hearth shows and would be lost at the next recompute, so before writing it again hearth checks whether the file is still exactly as it wrote it.
 A file someone edited is renamed beside it, to `books.edited-<when>.beancount`, and never discarded.
-Books that have not changed leave the file untouched, so a fava watching it reloads only when they do.
+Books that have not changed leave the file untouched, so a fava watching it reloads only when they do, and its modification time is when the books last changed, not when they were last recomputed.
+`hearth serve` and a `hearth plaid` command run beside it may both write it, each through a temporary file of its own that replaces it whole.
 
 ## Inheriting a ledger
 

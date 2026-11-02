@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from beancount.core.data import Balance, Commodity, Transaction
 
-from hearth import accounts, cli, figures, sharing
+from hearth import accounts, figures, refresh, sharing
 from hearth.books import Books
 from hearth.months import Month
 from hearth.plaid import feed
@@ -244,7 +244,7 @@ def test_a_brokerage_that_has_not_said_what_it_holds_is_not_known_never_empty(
     assert "Not known yet." in page
     assert "its brokerage has not said what they are yet" in page
 
-    cli.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
+    refresh.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
 
     assert held_now(fresh.books())["ZQGR"] == Decimal("37.0625")
 
@@ -258,7 +258,7 @@ def test_each_morning_the_books_hold_the_latest_holdings_and_every_report_is_kep
     fresh.plaid.hold(item_id, "brk", (replace(HOLDINGS[0], quantity=Decimal(30)),))
     fresh.clock.now += timedelta(days=1)
 
-    cli.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
+    refresh.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
 
     found = fresh.books()
     tomorrow = (household.NOW + timedelta(days=1)).astimezone().date()
@@ -459,7 +459,7 @@ def test_a_deposit_after_the_latest_report_is_added_to_what_it_reported(
     fresh.plaid.change(item_id, "added", deposit, "brk")
     fresh.plaid.fail_next("/investments/holdings/get", "PRODUCT_NOT_READY")
 
-    cli.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
+    refresh.sync_then_recompute(fresh.settings, fresh.setup, fresh.bookkeeper, fresh.clock)
 
     assert fresh.bookkeeper.status.failure is None
     found = fresh.books()

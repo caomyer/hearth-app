@@ -79,6 +79,13 @@ class Skipped:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class Failed:
+    """An Item a sync tried and could not bring up to date; ``hearth.log`` says why."""
+
+    item_id: str
+
+
 def sync_item(
     item: Item,
     *,

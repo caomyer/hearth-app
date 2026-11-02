@@ -73,13 +73,13 @@
 
 {# Today's figures failed. The detail names an account and amounts, so only those who may see
    that account's balance get it; everyone else gets one sentence that names nobody. #}
-{% macro failure_alert(notice, today) %}
+{% macro failure_alert(notice, today, showing="Everything below is") %}
 {% if notice %}
 <div class="alert alert-err mb-4" role="alert">
   <svg aria-hidden="true"><use href="#i-error"/></svg>
   <div class="alert-body">
     {% if notice.showing_from %}
-    <p style="color: var(--ink); font-weight: 600">Today's figures could not be computed. Everything below is from {{ when(notice.showing_from, today) }}.</p>
+    <p style="color: var(--ink); font-weight: 600">Today's figures could not be computed. {{ showing }} from {{ when(notice.showing_from, today) }}.</p>
     {% else %}
     <p style="color: var(--ink); font-weight: 600">The figures could not be computed.</p>
     {% endif %}

@@ -223,10 +223,14 @@ A run whose owner is alive holds its Item until 15 minutes after its last page; 
 A run that no longer holds its Item is shown as interrupted, so no page waits on a run that cannot finish.
 The daily sync and `hearth plaid sync` also leave alone an Item whose history is being followed by a process that is still alive.
 `hearth serve` re-syncs every working connection at start-up and every morning when started with `read` approved.
+`hearth plaid sync --approved` runs the same sync and recompute as the morning's, through one path (`hearth.refresh`), and says both what each connection fetched and whether the books now hold it.
+A sync is only worth what it changes in the books, so there is no fetch-only sync.
+When the recompute after it fails, the command says what went wrong and when the books file was last written, which stays as it was, and exits 1, as it does when any connection did not sync; what was fetched is kept and is in the books from the first recompute that succeeds.
+A `hearth serve` running beside it takes the change into its pages within seconds (`docs/dashboards.md`).
 
 ### Holdings
 
-What a brokerage account holds, and its brokerage's price for each holding, are today's and no other, so hearth asks for them when the connection is first synced, at start-up and every morning when started with `holdings` approved, after the sync, and whenever `hearth plaid holdings --approved` is run (`hearth.plaid.holdings`).
+What a brokerage account holds, and its brokerage's price for each holding, are today's and no other, so hearth asks for them when the connection is first synced, at start-up and every morning when started with `holdings` approved, after the sync, and whenever `hearth plaid holdings --approved` is run (`hearth.plaid.holdings`), which recomputes after it and reports the books as `hearth plaid sync` does.
 Every working connection that reaches an investment account is asked, whoever holds it: a price is a fact about the market, and pages show it only beside a position its viewer may see.
 What each account holds is kept in the feed with when it was said, every answer of it, and the books hold the latest (`docs/books.md`, "What a brokerage holds").
 A price is kept even when no position in the books holds what it prices, as when an inherited ledger keeps the account and holds none of the fund: a day not asked can never be priced later, so the price is kept for when one does, and the morning's log names each such fund and says why.

@@ -202,7 +202,11 @@ def first_day(
             member_ids[username] = member.id
     finally:
         conn.close()
-    bookkeeper = Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
+    bookkeeper = Bookkeeper(
+        books.from_household(settings, rulings=rulings_in),
+        clock,
+        standing=lambda: books.standing(settings),
+    )
     fake = FakePlaid(institutions, today=lambda: clock().date())
     keys = MemoryKeyStore()
     setup = PlaidSetup(stand_in=fake, keys=lambda: keys, wait=Waits())

@@ -297,6 +297,16 @@ class Feed:
         finally:
             conn.close()
 
+    def standing(self) -> tuple[object, ...]:
+        """Where the feed stands: changes with each sync that ends and each holdings report,
+        whichever process made it, and says nothing of what any of them brought."""
+        runs = self._db.execute(
+            "SELECT max(id), count(finished_at), max(finished_at) FROM feed_run"
+        ).fetchone()
+        reports = self._db.execute("SELECT max(id) FROM feed_holdings_report").fetchone()
+        balances = self._db.execute("SELECT max(recorded_at) FROM feed_balance").fetchone()
+        return (*runs, *reports, *balances)
+
     def cursor(self, item_id: str) -> str | None:
         row = self._db.execute(
             "SELECT cursor FROM feed_cursor WHERE item_id = ?", (item_id,)

@@ -22,7 +22,7 @@ Nothing here decides who may see what; pages reach the books only through
 import logging
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -67,6 +67,9 @@ _log = logging.getLogger(__name__)
 CURRENCY = "USD"
 HISTORY_MONTHS = 12
 DAILY_AT = time(6, 0)
+WATCH_EVERY = 5.0
+"""How often, in seconds, a serving hearth asks whether what its books are computed from has
+changed without it, as when `hearth plaid sync` is run by hand in another process."""
 
 REVIEW_EQUITY = "Equity:Review:"
 """Where a row waits for review (``hearth.review.pile.WAITING``): never what an account held."""
@@ -602,11 +605,19 @@ class Bookkeeper:
 
     A recompute asked for while one is running is not dropped: the running one goes round once
     more when it finishes, so a ruling made mid-recompute is in the books that follow it.
+
+    `standing` says where what the books are computed from stands (`standing`): each recompute
+    notes it as it starts, so `recompute_on_change` can tell when something changed it since,
+    whichever process did.
     """
 
-    def __init__(self, establish: Establish, clock: Clock) -> None:
+    def __init__(
+        self, establish: Establish, clock: Clock, *, standing: Standing | None = None
+    ) -> None:
         self._establish = establish
         self._clock = clock
+        self._standing = standing
+        self._noted: Hashable = _UNNOTED
         self._lock = threading.Lock()
         self._wanted = threading.Event()
         self._state = Status(books=None, failure=None, recomputing=False)
@@ -637,6 +648,9 @@ class Bookkeeper:
 
     def _once(self) -> None:
         self._state = Status(self._state.books, self._state.failure, recomputing=True)
+        # Noted before anything is read, never after: a change made while this one runs is
+        # one it may have missed, so it is still a change the next look finds.
+        self._noted = self._where()
         now = self._clock()
         try:
             books = self._establish(now)
@@ -666,6 +680,46 @@ class Bookkeeper:
 
         threading.Thread(target=run, name="hearth-daily-recompute", daemon=True).start()
 
+    def recompute_on_change(self, every: float = WATCH_EVERY) -> threading.Event:
+        """Every `every` seconds, recompute if what the books are computed from changed since
+        the last recompute started, in a background thread.
+
+        This is how books a page shows take in what another process brought, as `hearth plaid
+        sync` run by hand brings it: that process cannot reach these books, only the databases
+        both read. A change this process made is noted by the recompute it starts, so it is
+        not recomputed twice; a recompute that failed is not retried until something changes.
+        A change is taken up only once it has settled, unchanged across two looks: a sync
+        writes in steps, its run, the balances, its end and the connection's last sync, and
+        books recomputed between them would hold half of it. Setting the event returned stops
+        it.
+        """
+        if self._standing is None:
+            raise ValueError("a bookkeeper told nothing to watch cannot watch it")
+
+        stop = threading.Event()
+
+        def run() -> None:
+            seen: Hashable = _UNNOTED
+            while not stop.wait(every):
+                if self._noted is _UNNOTED:
+                    continue  # the first recompute has not started; it notes where things stand
+                where = self._where()
+                if where != self._noted and where == seen:
+                    self.recompute()
+                seen = where
+
+        threading.Thread(target=run, name="hearth-recompute-on-change", daemon=True).start()
+        return stop
+
+    def _where(self) -> Hashable:
+        if self._standing is None:
+            return None
+        try:
+            return self._standing()
+        except Exception:
+            _log.exception("could not tell where the books' sources stand")
+            return _UNKNOWN
+
     def _fail(self, failure: Failure) -> None:
         self._state = Status(self._state.books, failure, recomputing=False)
 
@@ -689,6 +743,15 @@ def stored_prices(store: PriceStore, sources: Sequence[str] = PRICE_SOURCES) -> 
 
 
 type Establish = Callable[[datetime], Books]
+
+type Standing = Callable[[], Hashable]
+"""Where what the books are computed from stands now (`standing`)."""
+
+_UNNOTED: Hashable = object()
+"""No recompute has started yet, so nothing is noted."""
+
+_UNKNOWN: Hashable = object()
+"""Where things stand could not be read; never equal to anything but itself."""
 
 type Rulings = Callable[[sqlite3.Connection], Decide]
 """How the rulings recorded in a database decide review rows (``hearth.disclosure``)."""
@@ -735,6 +798,46 @@ def from_household(
         return books
 
     return establish
+
+
+def standing(settings: Settings) -> Hashable:
+    """Where everything a recompute reads stands: it changes whenever something that could
+    change the books changes, in either database, made by this process or another. Cheap
+    enough to ask every few seconds, and it says nothing of what any row holds.
+
+    The feed's runs, holdings reports and balances (``Feed.standing``); and in the app database
+    the stored prices, every connection and the account each of its accounts feeds, the
+    household's accounts and their owners, each named account, each ruling and each uploaded
+    statement. An inherited ledger is the household's, read on every recompute, so its size and
+    modification time are part of it too.
+    """
+    with feed.Feed.open(settings.feed_database) as fed:
+        fed_at = fed.standing()
+    conn = db.connect(settings.database)
+    try:
+        app = tuple(
+            tuple(tuple(row) for row in conn.execute(query).fetchall())
+            for query in (
+                "SELECT max(id) FROM price",
+                "SELECT item_id, state, last_synced_at, history FROM plaid_items ORDER BY item_id",
+                "SELECT account_id, hearth_account FROM plaid_accounts ORDER BY account_id",
+                "SELECT id, ledger_account, name FROM accounts ORDER BY id",
+                "SELECT account_id, member_id FROM account_owners ORDER BY account_id, member_id",
+                "SELECT account_id FROM named_accounts ORDER BY account_id",
+                "SELECT max(id) FROM review_rulings",
+                "SELECT max(id) FROM statement_uploads",
+            )
+        )
+    finally:
+        conn.close()
+    ledger: tuple[int, int] | None = None
+    if settings.ledger is not None:
+        try:
+            stat = settings.ledger.stat()
+            ledger = (stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            ledger = None
+    return (fed_at, app, ledger)
 
 
 @dataclass(frozen=True, slots=True)

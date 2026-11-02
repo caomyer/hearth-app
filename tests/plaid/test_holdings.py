@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from hearth import cli
+from hearth import refresh
 from hearth.config import Settings
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid.approval import Approval, Operation
@@ -161,7 +161,10 @@ def test_a_fund_with_no_price_is_valued_at_its_brokerages_price_once_asked(
     forget_prices(world)
     assert freshness(world, "ZQAA") is Freshness.UNPRICED
 
-    assert plaid_cli.holdings(world.settings, world.setup, world.clock) == 0
+    assert (
+        plaid_cli.holdings(world.settings, world.setup, world.clock, world.bookkeeper_establish)
+        == 0
+    )
     world.recompute()
 
     books = world.bookkeeper.status.books
@@ -186,7 +189,7 @@ def test_the_morning_sync_asks_every_brokerage_for_its_prices(unpriced: World) -
     connected(world, SECOND, "blake")
     forget_prices(world)
 
-    cli.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
+    refresh.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
 
     assert freshness(world, "ZQAA") is Freshness.CURRENT
     assert freshness(world, "ZQBB") is Freshness.CURRENT
@@ -203,8 +206,8 @@ def test_the_morning_says_why_it_kept_a_price_no_position_holds_yet(
     connected(world, BROKERAGE)
     connected(world, UNHELD, "blake")
 
-    with caplog.at_level(logging.INFO, logger="hearth.cli"):
-        cli.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
+    with caplog.at_level(logging.INFO, logger="hearth.refresh"):
+        refresh.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
 
     (said,) = [r.getMessage() for r in caplog.records if "no position" in r.getMessage()]
     assert said.startswith("kept today's price of ")
@@ -332,7 +335,7 @@ def test_a_morning_approved_only_for_holdings_syncs_no_real_connection(unpriced:
         world.setup, approval=Approval.of([Operation.HOLDINGS]), transport=recorder
     )
 
-    cli.sync_then_recompute(world.settings, holdings_only, world.bookkeeper, world.clock)
+    refresh.sync_then_recompute(world.settings, holdings_only, world.bookkeeper, world.clock)
 
     assert recorder.paths == ["/investments/holdings/get"]
     assert _runs(world, item_id) == runs
@@ -355,7 +358,7 @@ def test_the_page_names_where_each_price_came_from(unpriced: World) -> None:
     world = unpriced
     connected(world, BROKERAGE)
     connected(world, SECOND, "blake")
-    cli.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
+    refresh.sync_then_recompute(world.settings, world.setup, world.bookkeeper, world.clock)
 
     page = world.signed_in("avery").get("/net-worth").text
 

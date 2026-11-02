@@ -344,7 +344,8 @@ def write(path: Path, text: str, *, now: datetime) -> Path | None:
             return None
         if _edited(current):
             kept = _keep(path, now)
-    temporary = path.with_name(f".{path.name}.writing")
+    # Named for this process: `hearth plaid sync` recomputes beside a serving hearth.
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.writing")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as file:
         file.write(signed)
