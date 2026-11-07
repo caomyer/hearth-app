@@ -244,6 +244,23 @@ This is `/investments/holdings/get` only: positions and their prices.
 A brokerage's trades and dividends are `/investments/transactions/get`, a separate call that Plaid bills separately, and hearth does not make it.
 So a brokerage account now shows a value, and still shows no trades: what it holds is known from the day it was asked, and how it came to hold it is not known at all.
 
+## Handing rows to a ledger kept elsewhere
+
+A household that keeps its own beancount ledger in fava takes the connections and the rows from hearth and nothing else.
+`hearth export --member USERNAME` writes one file, by default `export.json` in the data directory, and makes no live call.
+
+```sh
+uv run hearth plaid sync --approved
+uv run hearth export --member <username>
+```
+
+The file (`buzz.plaid.v2`, `hearth.plaid.export`) holds, for every account the member owns: what the account is, how its connection stands, what the bank last said it holds, and every posted row, each transaction once.
+Amounts are Plaid's own strings, positive for money out.
+A row's `pair` carries what `hearth.plaid.pairing` knows, because a card's side of a payment rarely has Plaid's payment category.
+
+Hearth reads no ledger to write it, so choosing which rows a ledger still lacks is the other side's job.
+The file holds one member's accounts, is readable only by its owner, and names the other side of a pair only if the same member owns it, because a ledger outside hearth has no privacy boundary of its own.
+
 ## Where it is kept
 
 - The app database holds connections, never money: Items, their accounts and mappings, credential sets' allowances, and uploaded statements' names (`hearth.db`).

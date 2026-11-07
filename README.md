@@ -54,6 +54,12 @@ It reads both, writes nothing, and prints where they differ and which rows make 
 uv run hearth compare <ledger.beancount> --cycles <run.json> --monthly
 ```
 
+A household that keeps its own ledger in fava can take the connections and rows from hearth and nothing else ([docs/connections.md](docs/connections.md#handing-rows-to-a-ledger-kept-elsewhere)):
+
+```sh
+uv run hearth export --member <username>
+```
+
 Hearth never writes an inherited ledger. It recomputes at start-up, every morning at 6:00 and on request, never on page load, and writes its books to `books.beancount` in its data directory each time.
 
 No live Plaid call is made unless approved for this run, operation by operation:

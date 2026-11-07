@@ -1,5 +1,5 @@
 """Command-line entry point: ``hearth serve``, ``hearth add-member``, ``hearth add-account``,
-``hearth accounts``, ``hearth plaid``, ``hearth compare`` and ``hearth demo``.
+``hearth accounts``, ``hearth plaid``, ``hearth compare``, ``hearth export`` and ``hearth demo``.
 
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
 --approve-plaid OPERATION`` for the web pages, and ``--approved`` for each ``hearth plaid``
@@ -27,9 +27,9 @@ from hearth.app import create_app
 from hearth.clock import system_clock
 from hearth.config import Settings, data_dir_from_environment
 from hearth.disclosure import rulings_in
-from hearth.members import MemberRejectedError
+from hearth.members import MemberRejectedError, normalise_username
+from hearth.plaid import booking, export, feed
 from hearth.plaid import cli as plaid_cli
-from hearth.plaid import feed
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
 from hearth.plaid.setup import PlaidSetup
 from hearth.refresh import sync_then_recompute
@@ -149,6 +149,19 @@ def main(argv: list[str] | None = None) -> None:
         " differ; give it once per account",
     )
 
+    handover = commands.add_parser(
+        "export",
+        help="write one member's accounts and posted rows to a file a ledger kept outside hearth"
+        " can import from (no live call; reads no ledger)",
+    )
+    handover.add_argument("--member", required=True, metavar="USERNAME")
+    handover.add_argument(
+        "--out",
+        type=Path,
+        metavar="PATH",
+        help="where to write it; by default export.json in the data directory",
+    )
+
     try_it = commands.add_parser(
         "demo", help="serve an invented household from a throwaway directory"
     )
@@ -192,6 +205,8 @@ def main(argv: list[str] | None = None) -> None:
                 monthly=arguments.monthly or arguments.cycles is None,
                 accounts=arguments.account,
             )
+        case "export":
+            _export(arguments.member, arguments.out)
         case "demo":
             if arguments.from_zero:
                 _demo_from_zero(arguments.host, arguments.port)
@@ -365,6 +380,28 @@ def _list_accounts() -> None:
         account = claimed.get(ledger_account)
         owners = ", ".join(sorted(names[o] for o in account.owners)) if account else ""
         print(f"{ledger_account}  {account.name if account else '-'}  {owners or 'unclaimed'}")
+
+
+def _export(username: str, out: Path | None) -> None:
+    """Write `username`'s accounts and posted rows for a ledger kept outside hearth, and say
+    where (``hearth.plaid.export``)."""
+    settings = Settings.from_environment()
+    path = out or export.default_path(settings.data_dir)
+    db.initialise(settings.database)
+    feed.initialise(settings.feed_database)
+    conn = db.connect(settings.database)
+    try:
+        found = members.find(conn, normalise_username(username))
+        if found is None:
+            sys.exit(f"hearth: no member called {username}.")
+        with feed.Feed.open(settings.feed_database) as held:
+            document = export.export(conn, held, found.id, now=system_clock())
+    except booking.Refused as refused:
+        sys.exit(f"hearth: {refused}")
+    finally:
+        conn.close()
+    export.write(path, document)
+    print(path)
 
 
 def _compare(ledger: Path, cycles: Path | None, *, monthly: bool, accounts: list[str]) -> None:

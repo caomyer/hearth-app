@@ -106,20 +106,7 @@ def book(conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()) 
     Accounts in `opened`, which an inherited ledger opens, are left to it. Raises `Refused`
     while any account is connected twice.
     """
-    registry = Registry(conn)
-    before = _gives_way(registry, feed)
-    named = {account.id: account.ledger_account for account in all_accounts(conn)}
-    feeds: dict[str, tuple[LinkedAccount, str]] = {}
-    for linked in registry.confirmed():
-        ledger_account = named.get(linked.hearth_account or "")
-        if ledger_account is not None and ledger_account not in opened:
-            feeds[linked.account_id] = (linked, ledger_account)
-    rows = [
-        row
-        for account_id in sorted(feeds)
-        for row in feed.transactions(account_id)
-        if not row.pending and (account_id not in before or row.day < before[account_id])
-    ]
+    feeds, rows = taken_once(conn, feed, opened=opened)
     paired = pairing.staged(conn, rows)
     entries: list[Entry] = []
     for row in sorted(rows, key=lambda r: (r.day, r.transaction_id)):
@@ -150,6 +137,28 @@ def book(conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()) 
         ledger_account = feeds[row.account_id][1]
         taken[ledger_account] = (*taken[ledger_account], row)
     return Booked(tuple(entries), frozenset(accounts), fed, taken)
+
+
+def taken_once(
+    conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()
+) -> tuple[dict[str, tuple[LinkedAccount, str]], list[Transaction]]:
+    """Each connected account a member mapped, with its ledger account, and every posted row
+    on them, each transaction once. Raises `Refused` while any account is connected twice."""
+    registry = Registry(conn)
+    before = _gives_way(registry, feed)
+    named = {account.id: account.ledger_account for account in all_accounts(conn)}
+    feeds: dict[str, tuple[LinkedAccount, str]] = {}
+    for linked in registry.confirmed():
+        ledger_account = named.get(linked.hearth_account or "")
+        if ledger_account is not None and ledger_account not in opened:
+            feeds[linked.account_id] = (linked, ledger_account)
+    rows = [
+        row
+        for account_id in sorted(feeds)
+        for row in feed.transactions(account_id)
+        if not row.pending and (account_id not in before or row.day < before[account_id])
+    ]
+    return feeds, rows
 
 
 def _gives_way(registry: Registry, feed: Feed) -> dict[str, date]:
