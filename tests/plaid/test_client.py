@@ -176,11 +176,11 @@ HOLDINGS = """{
   ],
   "holdings": [
     {"account_id": "acct-brk", "security_id": "sec-fund", "quantity": 10.125,
-     "institution_value": 1012.50, "iso_currency_code": "USD"},
+     "institution_value": 1012.50, "cost_basis": 900.10, "iso_currency_code": "USD"},
     {"account_id": "acct-brk", "security_id": "sec-fund", "quantity": 0.5,
-     "institution_value": 50.00, "iso_currency_code": "USD"},
+     "institution_value": 50.00, "cost_basis": 40.05, "iso_currency_code": "USD"},
     {"account_id": "acct-brk", "security_id": "sec-cash", "quantity": 75.25,
-     "institution_value": 75.25, "iso_currency_code": "USD"},
+     "institution_value": 75.25, "cost_basis": null, "iso_currency_code": "USD"},
     {"account_id": "acct-brk", "security_id": "sec-mmf", "quantity": 300,
      "institution_value": 300.00, "iso_currency_code": "USD"}
   ],
@@ -212,6 +212,26 @@ def test_what_each_investment_account_holds_is_read_as_its_brokerage_said_it() -
     assert (cash.quantity, cash.value, cash.cash) == (Decimal("75.25"), Decimal("75.25"), True)
     assert (mmf.ticker, mmf.cash) == ("ZQMMF", True)
     assert all(isinstance(p.quantity, Decimal) for p in found.positions)
+
+
+def test_what_a_holding_cost_is_read_as_its_brokerage_said_it_or_as_not_known() -> None:
+    found = held(json.loads(HOLDINGS, parse_float=Decimal))
+
+    fund, cash, mmf = found.positions
+    # Two holdings of one fund cost what both did together.
+    assert fund.cost_basis == Decimal("940.15")
+    # Sent as null, or not sent at all: not known, never nothing.
+    assert cash.cost_basis is None
+    assert mmf.cost_basis is None
+
+
+def test_a_position_costs_what_is_not_known_when_one_of_its_holdings_does() -> None:
+    raw: dict[str, Any] = json.loads(HOLDINGS, parse_float=Decimal)
+    del raw["holdings"][1]["cost_basis"]
+
+    fund, _, _ = held(raw).positions
+
+    assert fund.cost_basis is None
 
 
 @pytest.mark.parametrize(

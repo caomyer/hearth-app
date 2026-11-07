@@ -142,6 +142,11 @@ MIGRATIONS: tuple[str, ...] = (
         PRIMARY KEY (report, security_id)
     ) STRICT;
     """,
+    """
+    -- What the brokerage says each holding cost, as decimal text; null where it did not say,
+    -- and for every holding reported before hearth kept it.
+    ALTER TABLE feed_holding ADD COLUMN cost_basis TEXT;
+    """,
 )
 
 
@@ -519,7 +524,7 @@ class Feed:
                 ).lastrowid
                 self._db.executemany(
                     "INSERT INTO feed_holding (report, security_id, ticker, name, cash, quantity,"
-                    " value, currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    " value, currency, cost_basis) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [
                         (
                             report,
@@ -530,6 +535,7 @@ class Feed:
                             str(p.quantity),
                             None if p.value is None else str(p.value),
                             p.currency,
+                            None if p.cost_basis is None else str(p.cost_basis),
                         )
                         for p in found.positions
                         if p.account_id == account_id
@@ -561,6 +567,7 @@ class Feed:
                     quantity=Decimal(row["quantity"]),
                     value=_decimal(row["value"]),
                     currency=row["currency"],
+                    cost_basis=_decimal(row["cost_basis"]),
                 )
                 for row in rows
             ),

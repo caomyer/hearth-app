@@ -230,7 +230,7 @@ class Transaction:
 @dataclass(frozen=True, slots=True)
 class Position:
     """One holding in an investment account, as its brokerage reported it: how much of which
-    security, never what it was bought for, nor how it came to be held."""
+    security, and what the brokerage says it cost, never how it came to be held."""
 
     account_id: str
     security_id: str
@@ -243,6 +243,9 @@ class Position:
     value: Decimal | None
     """Plaid's ``institution_value``: what the brokerage says the holding is worth."""
     currency: str | None
+    cost_basis: Decimal | None = None
+    """Plaid's ``cost_basis``: what the brokerage says was paid for every unit of the holding
+    together, or None where it did not say. One figure for the position, never its lots."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -559,11 +562,14 @@ def held(payload: Mapping[str, Any]) -> Holdings:
         if account_id not in investments or security is None or quantity is None:
             raise PlaidMalformedError("Plaid sent a holding it does not account for")
         value = _decimal(raw, "institution_value")
+        cost = _decimal(raw, "cost_basis")
         known = positions.get((account_id, security_id))
         if known is not None:
-            both = None if known.value is None or value is None else known.value + value
             positions[account_id, security_id] = replace(
-                known, quantity=known.quantity + quantity, value=both
+                known,
+                quantity=known.quantity + quantity,
+                value=_together(known.value, value),
+                cost_basis=_together(known.cost_basis, cost),
             )
             continue
         positions[account_id, security_id] = Position(
@@ -576,8 +582,14 @@ def held(payload: Mapping[str, Any]) -> Holdings:
             value=value,
             currency=_optional_text(raw, "iso_currency_code")
             or _optional_text(raw, "unofficial_currency_code"),
+            cost_basis=cost,
         )
     return Holdings(investments, tuple(positions.values()))
+
+
+def _together(one: Decimal | None, other: Decimal | None) -> Decimal | None:
+    """Two holdings' figures as one position's: not known if either is not."""
+    return None if one is None or other is None else one + other
 
 
 def _transaction(raw: Mapping[str, Any]) -> Transaction:
