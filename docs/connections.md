@@ -266,11 +266,12 @@ uv run hearth plaid sync --approved
 uv run hearth export --member <username>
 ```
 
-The file (`buzz.plaid.v3`, `hearth.plaid.export`) holds, for every account the member owns: what the account is, how its connection stands, what the bank last said it holds, and every posted row, each transaction once.
+The file (`buzz.plaid.v4`, `hearth.plaid.export`) holds, for every account the member owns: what the account is, how its connection stands, what the bank last said it holds, and every posted row, each transaction once.
 Amounts are Plaid's own strings, positive for money out.
 A row's `pair` carries what `hearth.plaid.pairing` knows, because a card's side of a payment rarely has Plaid's payment category.
 An investment account also carries its activity (see "Investment activity", above), the day that activity is complete through, and what its brokerage last said it holds, cost basis included.
 Each activity on a security carries `market_price`, hearth's own price for that security on that day when hearth asked for one then: a brokerage reports a vest as shares with no value, and the holdings asked for each morning are the only record of what a share was worth that day.
+The file also carries every price hearth has kept from a brokerage (`docs/valuation.md`), one a day, for each security the member's accounts hold or have traded, so the ledger can value its holdings at market; a price for a security only another member holds is left out, as it would say what they hold.
 
 Hearth reads no ledger to write it, so choosing which rows a ledger still lacks is the other side's job.
 The file holds one member's accounts, is readable only by its owner, and names the other side of a pair only if the same member owns it, because a ledger outside hearth has no privacy boundary of its own.

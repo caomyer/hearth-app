@@ -19,6 +19,11 @@ activity on a security carries hearth's own record of that security's price on i
 hearth asked for one that day: a brokerage sends a vest as shares with no value, and the
 holdings hearth asks for each morning are the only record of what a share was worth then.
 
+The file also carries every price hearth has kept from a brokerage for each security the
+member's accounts hold or have traded, one per day, so the ledger can value what it holds at
+market without asking anyone. It is limited to those securities because a price hearth kept for
+another member's holding would say what that member holds.
+
 The file holds one member's accounts, because a ledger outside hearth has no privacy boundary
 of its own. A pair names its other account only if that member owns it too; otherwise the row
 is a leg with nothing on the other side, exactly as if that account were not connected, so the
@@ -33,6 +38,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from hearth.accounts import all_accounts
 from hearth.members import MemberId
@@ -45,7 +51,7 @@ from hearth.valuation.pricestore import PriceStore
 PRICE_SOURCE = "plaid"
 """Whose prices an activity's `market_price` is read from: what a brokerage gave hearth."""
 
-SCHEMA = "buzz.plaid.v3"
+SCHEMA = "buzz.plaid.v4"
 """Checked by the importer that reads the file, so a change of shape fails loudly there."""
 
 AMOUNT_CONVENTION = "plaid-native: positive = money out of the account."
@@ -118,6 +124,7 @@ def export(
         "generated_at": now.isoformat(),
         "amount_convention": AMOUNT_CONVENTION,
         "accounts": accounts,
+        "prices": _prices(accounts, prices),
     }
 
 
@@ -191,6 +198,26 @@ def _account(
             "positions": [_position(p) for p in report.positions],
         },
     }
+
+
+def _prices(accounts: list[dict[str, Any]], prices: PriceStore) -> list[dict[str, str]]:
+    """Every day's price kept for the securities these accounts hold or have traded."""
+    held: set[str] = set()
+    for account in accounts:
+        report = account["holdings"]
+        positions = report["positions"] if report else []
+        held.update(p["ticker"] for p in positions if p["ticker"] and not p["cash"])
+        held.update(a["ticker"] for a in account["activity"] if a["ticker"])
+    return [
+        {
+            "symbol": quote.symbol,
+            "date": quote.as_of.isoformat(),
+            "price": _text(quote.price),
+            "currency": quote.currency,
+        }
+        for symbol in sorted(held)
+        for quote in prices.history(symbol, PRICE_SOURCE)
+    ]
 
 
 def _activity(

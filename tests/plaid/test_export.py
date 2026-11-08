@@ -49,7 +49,8 @@ def _row(account: dict[str, Any], name: str) -> dict[str, Any]:
 
 def test_every_posted_row_is_there_once_as_the_bank_sent_it(filed: FirstDay) -> None:  # noqa: F811
     document = _export(filed)
-    assert document["schema"] == "buzz.plaid.v3"
+    assert document["schema"] == "buzz.plaid.v4"
+    assert document["prices"] == [], "no brokerage, no prices"
 
     wren = _account(document, WREN)
     assert wren["account_type"] == "credit"
@@ -125,7 +126,7 @@ def test_a_file_is_written_whole_and_only_its_owner_can_read_it(
 ) -> None:
     path = tmp_path / "held" / "export.json"
     export.write(path, _export(filed))
-    assert json.loads(path.read_text())["schema"] == "buzz.plaid.v3"
+    assert json.loads(path.read_text())["schema"] == "buzz.plaid.v4"
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert [p.name for p in path.parent.iterdir()] == ["export.json"]
 
@@ -194,3 +195,41 @@ def test_a_brokerage_carries_its_activity_holdings_and_the_price_hearth_kept_eac
     assert [a["date"] for a in brokerage["activity"]] == sorted(
         a["date"] for a in brokerage["activity"]
     )
+
+
+def test_the_file_carries_each_days_price_for_what_the_member_holds_and_nothing_else(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    fresh = first_day(tmp_path, clock, institutions=(BROKERAGE,))
+    fresh.link("avery", BROKERAGE.id)
+    fresh.map(fresh.signed_in("avery"), {"6021": SORREL})
+    conn = fresh.connect()
+    try:
+        fetch_activity(conn, fresh.settings.feed_database, fresh.setup, fresh.clock)
+        store = PriceStore(conn)
+        today = fresh.clock().date()
+        earlier = today.replace(day=1)
+        for symbol, day, price in (
+            ("ZQAA", earlier, "1200.00"),
+            ("ZQAA", today, "1240.00"),
+            ("ZQAA", today, "1250.00"),
+            ("ZQZZ", today, "77.00"),
+        ):
+            store.record(Quote(symbol, day, Decimal(price), "USD", "plaid", "sec", fresh.clock()))
+    finally:
+        conn.close()
+
+    prices = _export(fresh)["prices"]
+
+    zqaa = {p["date"]: p for p in prices if p["symbol"] == "ZQAA"}
+    assert len(zqaa) == len([p for p in prices if p["symbol"] == "ZQAA"]), "one price a day"
+    assert zqaa[earlier.isoformat()]["price"] == "1200.00"
+    assert zqaa[today.isoformat()] == {
+        "symbol": "ZQAA",
+        "date": today.isoformat(),
+        "price": "1250.00",
+        "currency": "USD",
+    }, "the current price, never the one it corrected"
+    order = [(p["symbol"], p["date"]) for p in prices]
+    assert order == sorted(order)
+    assert all(p["symbol"] != "ZQZZ" for p in prices), "a price for what nobody here holds"

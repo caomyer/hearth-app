@@ -83,6 +83,15 @@ class PriceStore:
         ).fetchone()
         return None if row is None else _row_to_quote(row)
 
+    def history(self, symbol: str, source: str) -> list[Quote]:
+        """The current price from `source` for every day it priced `symbol`, oldest first."""
+        rows = self._db.execute(
+            f"SELECT {_COLUMNS} FROM price"  # noqa: S608 - constant fragments
+            f" WHERE symbol = ? AND source = ? AND {_IS_CURRENT} ORDER BY as_of",
+            (symbol, source),
+        ).fetchall()
+        return [_row_to_quote(row) for row in rows]
+
     def revisions(self, symbol: str, as_of: date, source: str) -> list[Quote]:
         """Every price `source` has given for the day, oldest first; the last one is current."""
         rows = self._db.execute(
