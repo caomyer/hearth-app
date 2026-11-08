@@ -123,6 +123,11 @@ PRODUCTS_NOT_SUPPORTED = "PRODUCTS_NOT_SUPPORTED"
 """The institution does not offer the product asked for, here Investments."""
 ADDITIONAL_CONSENT_REQUIRED = "ADDITIONAL_CONSENT_REQUIRED"
 """The member never consented to share the product's data: only Link can ask them to."""
+PRODUCT_NOT_READY = "PRODUCT_NOT_READY"
+"""Plaid is still gathering what was asked for; asking again later finds it."""
+
+ACTIVITY_PAGE_SIZE = 500
+"""The most investment transactions Plaid sends in one page."""
 
 
 class _Payload(dict[str, Any]):
@@ -257,6 +262,53 @@ class Holdings:
 
     accounts: tuple[str, ...]
     positions: tuple[Position, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Security:
+    """A security Plaid names in an answer about investments."""
+
+    security_id: str
+    ticker: str | None
+    name: str | None
+    type: str | None
+    """Plaid's security type: "equity", "etf", "mutual fund", "derivative", "cash" and so on."""
+
+
+@dataclass(frozen=True, slots=True)
+class Activity:
+    """One investment transaction, as the brokerage reported it: a trade, a dividend, a
+    contribution, a fee, a transfer of cash or of shares.
+
+    Amounts keep Plaid's sign: positive is cash leaving the account, as for a purchase."""
+
+    activity_id: str
+    account_id: str
+    security_id: str | None
+    day: date
+    name: str
+    type: str
+    """Plaid's type: "buy", "sell", "cancel", "cash", "fee" or "transfer"."""
+    subtype: str | None
+    """Plaid's subtype, such as "dividend", "contribution" or "dividend reinvestment"."""
+    quantity: Decimal | None
+    """Units of the security; positive bought or received, negative sold or sent."""
+    price: Decimal | None
+    amount: Decimal | None
+    fees: Decimal | None
+    currency: str | None
+    cancels: str | None
+    """The activity this one cancels, when it is a cancellation."""
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityPage:
+    """One page of an Item's investment activity over a window of days."""
+
+    activity: tuple[Activity, ...]
+    securities: tuple[Security, ...]
+    total: int
+    """How many there are in the whole window, so a caller knows when it has them all."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -397,13 +449,31 @@ class PlaidClient:
         every number a `Decimal` (``hearth.valuation.institution`` reads it).
 
         This is ``/investments/holdings/get``: positions and the institution's price for each,
-        today's only. A brokerage's trades and dividends are ``/investments/transactions/get``,
-        which hearth does not call."""
+        today's only. A brokerage's trades and dividends are `activity_page`."""
         self._approval.require(Operation.HOLDINGS, "reading an Item's holdings")
         payload = self._call("/investments/holdings/get", {}, {"access_token": access_token})
         _list(payload, "holdings")
         _list(payload, "securities")
         return payload
+
+    def activity_page(
+        self, access_token: Secret, start: date, end: date, offset: int
+    ) -> ActivityPage:
+        """One page of the Item's investment activity dated `start` to `end`, from `offset`.
+
+        This is ``/investments/transactions/get``, its own subscription at Plaid (`ACTIVITY`).
+        Plaid sends the newest first, in an order that holds from page to page."""
+        self._approval.require(Operation.ACTIVITY, "reading an Item's investment activity")
+        payload = self._call(
+            "/investments/transactions/get",
+            {
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+                "options": {"count": ACTIVITY_PAGE_SIZE, "offset": offset},
+            },
+            {"access_token": access_token},
+        )
+        return activity_page(payload)
 
     def remove(self, access_token: Secret) -> None:
         """End the Item at Plaid. Its access token stops working and its slot is freed.
@@ -617,3 +687,55 @@ def _transaction(raw: Mapping[str, Any]) -> Transaction:
         pending=raw.get("pending") is True,
         pending_transaction_id=_optional_text(raw, "pending_transaction_id"),
     )
+
+
+def activity_page(payload: Mapping[str, Any]) -> ActivityPage:
+    """A page of investment activity, read with every number a `Decimal`. A row naming an
+    account the answer does not list as an investment account, or a security it does not
+    list, is refused, never read as some other account's or as cash."""
+    investments = {
+        _text(account, "account_id")
+        for account in _list(payload, "accounts")
+        if account.get("type") == "investment"
+    }
+    securities = tuple(
+        Security(
+            security_id=_text(raw, "security_id"),
+            ticker=_optional_text(raw, "ticker_symbol"),
+            name=_optional_text(raw, "name"),
+            type=_optional_text(raw, "type"),
+        )
+        for raw in _list(payload, "securities")
+    )
+    listed = {security.security_id for security in securities}
+    total = payload.get("total_investment_transactions")
+    if isinstance(total, bool) or not isinstance(total, int):
+        raise PlaidMalformedError("Plaid sent investment activity without its total")
+    found: list[Activity] = []
+    for raw in _list(payload, "investment_transactions"):
+        account_id = _text(raw, "account_id")
+        security_id = _optional_text(raw, "security_id")
+        day = _day(raw, "date")
+        if account_id not in investments or (security_id is not None and security_id not in listed):
+            raise PlaidMalformedError("Plaid sent investment activity it does not account for")
+        if day is None:
+            raise PlaidMalformedError("Plaid sent investment activity without a date")
+        found.append(
+            Activity(
+                activity_id=_text(raw, "investment_transaction_id"),
+                account_id=account_id,
+                security_id=security_id,
+                day=day,
+                name=_optional_text(raw, "name") or "",
+                type=_text(raw, "type"),
+                subtype=_optional_text(raw, "subtype"),
+                quantity=_decimal(raw, "quantity"),
+                price=_decimal(raw, "price"),
+                amount=_decimal(raw, "amount"),
+                fees=_decimal(raw, "fees"),
+                currency=_optional_text(raw, "iso_currency_code")
+                or _optional_text(raw, "unofficial_currency_code"),
+                cancels=_optional_text(raw, "cancel_transaction_id"),
+            )
+        )
+    return ActivityPage(tuple(found), securities, total)

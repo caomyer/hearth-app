@@ -174,7 +174,7 @@ Each of these syncs is a `read` like any other, refused unless approved.
 The thread keeps going when the member leaves the page; the import page says whether a sync is running, when hearth asks next, and when it has stopped asking.
 Once complete, an account that started more than 14 days after the day asked for is marked short, with its first day, and the member is offered a CSV statement upload to fill the gap, now or later.
 A short account warns and never blocks.
-An investment account's transactions do not come through `/transactions/sync`; its holdings' prices come through Plaid's Investments product instead (see "Holdings" below), and its trades and dividends not at all.
+An investment account's transactions do not come through `/transactions/sync`; its holdings' prices come through Plaid's Investments product instead (see "Holdings" below), and its trades and dividends through the same product's activity, only when approved (see "Investment activity" below).
 Plaid prices positions for today only, so nothing here implies a price history.
 
 ## Mapping, confirmed
@@ -243,8 +243,18 @@ An Item that lists `investments` among its available products, as Plaid's `/item
 New Items ask for it as an optional product at Link for the same reason.
 
 This is `/investments/holdings/get` only: positions and their prices.
-A brokerage's trades and dividends are `/investments/transactions/get`, a separate call that Plaid bills separately, and hearth does not make it.
-So a brokerage account now shows a value, and still shows no trades: what it holds is known from the day it was asked, and how it came to hold it is not known at all.
+A brokerage's trades and dividends are `/investments/transactions/get`, a separate call that Plaid bills separately (see "Investment activity", below).
+So a brokerage account shows a value, and no trades: in hearth's books what it holds is known from the day it was asked, and how it came to hold it is not known at all.
+
+### Investment activity
+
+A brokerage's activity, each buy and sell, dividend, interest payment, contribution, fee and transfer, is `/investments/transactions/get`: its own operation, `activity`, because its first call adds Plaid's Investments Transactions subscription to the Item, which Plaid bills apart from holdings for as long as the Item lasts.
+It is asked for with the morning's sync when started with `--approve-plaid activity`, and whenever `hearth plaid activity --approved` is run (`hearth.plaid.activity`), which recomputes after it as every fetch does.
+Plaid keeps no cursor for it, so the first ask reaches back the two years Plaid keeps and each later one starts a month before the last day asked for, since a brokerage corrects and cancels what it sent recently.
+Everything found is kept in the feed by Plaid's own id as it was last sent, with the securities it names; a trade is withdrawn by its cancellation, never by being left out, so nothing found is ever deleted.
+An ask that fails keeps nothing of itself, and the next one asks again from where the last complete one left off; `PRODUCT_NOT_READY`, which Plaid answers while it gathers the history, is collected the next morning.
+Hearth's own books never read it: a brokerage there is anchored at what it last reported holding (`docs/books.md`, "What a brokerage holds").
+It is kept for a ledger outside hearth, which needs each trade and dividend to keep the account row by row.
 
 ## Handing rows to a ledger kept elsewhere
 
@@ -256,9 +266,11 @@ uv run hearth plaid sync --approved
 uv run hearth export --member <username>
 ```
 
-The file (`buzz.plaid.v2`, `hearth.plaid.export`) holds, for every account the member owns: what the account is, how its connection stands, what the bank last said it holds, and every posted row, each transaction once.
+The file (`buzz.plaid.v3`, `hearth.plaid.export`) holds, for every account the member owns: what the account is, how its connection stands, what the bank last said it holds, and every posted row, each transaction once.
 Amounts are Plaid's own strings, positive for money out.
 A row's `pair` carries what `hearth.plaid.pairing` knows, because a card's side of a payment rarely has Plaid's payment category.
+An investment account also carries its activity (see "Investment activity", above), the day that activity is complete through, and what its brokerage last said it holds, cost basis included.
+Each activity on a security carries `market_price`, hearth's own price for that security on that day when hearth asked for one then: a brokerage reports a vest as shares with no value, and the holdings asked for each morning are the only record of what a share was worth that day.
 
 Hearth reads no ledger to write it, so choosing which rows a ledger still lacks is the other side's job.
 The file holds one member's accounts, is readable only by its owner, and names the other side of a pair only if the same member owns it, because a ledger outside hearth has no privacy boundary of its own.
@@ -279,5 +291,4 @@ The file holds one member's accounts, is readable only by its owner, and names t
 - Booking uploaded statements: what a connection fetches is booked (`docs/books.md`), what a member uploads is kept but not yet read.
 - Carrying an account an inherited ledger holds on from where that ledger stops: the import leaves such an account to the ledger.
 - Valuing a brokerage at a month end from the holdings kept that day: the books hold the latest holdings only, so no net worth history is drawn through a part that holds a brokerage.
-- Bringing in a brokerage's trades and dividends (`/investments/transactions/get`).
 - Reading an account its bank sent no transactions for in a complete history as quiet: its balance is known (`docs/books.md`), its months are not.

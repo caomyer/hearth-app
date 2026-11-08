@@ -22,7 +22,7 @@ The units held on a day are the sum of those postings up to and including that d
 Cash and liabilities are holdings of the operating currency and are worth exactly their units.
 
 In hearth's own books, a brokerage account holds what its brokerage last reported, each security as units dated the day it was reported, as a bank account holds the balance its bank reports (`docs/books.md`, "What a brokerage holds").
-No buy, sell or reinvestment is ever booked: Plaid's trades are a separate call hearth does not make, so the books say what is held from that day, never what was held before it or how it came to be.
+No buy, sell or reinvestment is ever booked: Plaid's trades, when fetched at all, are kept in the feed for a ledger outside hearth and never read here, so the books say what is held from that day, never what was held before it or how it came to be.
 Writing those entries is `hearth.plaid.opening`'s job; this module only reads.
 
 The books record quantities and cost, never market value.
@@ -90,7 +90,7 @@ Two brokerages pricing one ticker differently on a day are both listed and neith
 It is today-only: Plaid keeps no history of it, so a day nobody asked is a day with no price, and nothing before the first ask can ever be had.
 Nothing in `valuation` calls Plaid: `hearth.plaid.holdings` asks every connected brokerage each morning, when `holdings` is approved, and hands every answer to `institution.read_many` (`docs/connections.md`, "Holdings").
 An Item whose institution offers Investments lists it among its available products and needs no new sign-in or purchase decision to be asked; the first ask adds the product to the Item, which is why it is approved on its own.
-It is holdings only: a brokerage's trades and dividends come from another call that hearth does not make.
+It is holdings only: a brokerage's trades and dividends come from another call, approved apart as `activity`, which nothing here reads.
 
 Net worth history therefore starts after the last month end at which a holding priced today had no price, and both charts say so, rather than drawing earlier months at what the cash alone was worth and a rise on the day the first price arrived.
 A holding with no price even today has had none at any month end, so it is left out of every point alike, each a labelled floor, and never holds back the months the rest can be valued at.

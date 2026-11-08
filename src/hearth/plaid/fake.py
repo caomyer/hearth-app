@@ -31,6 +31,7 @@ from hearth.plaid.client import (
     MUTATED_DURING_PAGINATION,
     NO_INVESTMENT_ACCOUNTS,
     PRIMARIES,
+    PRODUCT_NOT_READY,
     PRODUCTS_NOT_SUPPORTED,
 )
 
@@ -326,6 +327,7 @@ class FakePlaid:
             "/accounts/get": self._accounts_get,
             "/transactions/sync": self._sync,
             "/investments/holdings/get": self._holdings,
+            "/investments/transactions/get": self._activity,
             "/item/remove": self._remove,
         }
 
@@ -511,6 +513,90 @@ class FakePlaid:
             }
         )
 
+    def _activity(self, request: dict[str, Any]) -> tuple[int, bytes]:
+        """An invented brokerage's activity over the days asked for, newest first, a page at a
+        time: each holding bought on one day, a dividend each quarter on every fund with a
+        ticker, and a contribution each month, all at the holding's own price."""
+        item = self._usable(request)
+        if not isinstance(item, _Item):
+            return item
+        if not _invests(item):
+            return _error(400, "ITEM_ERROR", NO_INVESTMENT_ACCOUNTS)
+        item.investments = True
+        start = date.fromisoformat(request["start_date"])
+        end = date.fromisoformat(request["end_date"])
+        options = request.get("options", {})
+        count, offset = int(options.get("count", 100)), int(options.get("offset", 0))
+        accounts = [a for a in item.institution.accounts if a.type == "investment"]
+        rows, securities = [], {}
+        for account in accounts:
+            account_id = f"{item.item_id}-{account.key}"
+            bought = self._today() - timedelta(days=400)
+            for held in account.holdings:
+                security_id = f"sec-{item.institution.id}-{held.ticker or held.name}"
+                securities[security_id] = {
+                    "security_id": security_id,
+                    "name": held.name,
+                    "ticker_symbol": held.ticker,
+                    "type": held.type,
+                }
+                rows.append(
+                    _activity_row(
+                        account_id,
+                        security_id,
+                        bought,
+                        f"BUY {held.name}",
+                        "buy",
+                        "buy",
+                        held.quantity,
+                        held.price,
+                        held.quantity * held.price,
+                    )
+                )
+                if held.ticker is None:
+                    continue
+                for quarter in range(1, 5):
+                    paid = bought + timedelta(days=91 * quarter)
+                    dividend = (held.quantity * held.price / 400).quantize(Decimal("0.01"))
+                    rows.append(
+                        _activity_row(
+                            account_id,
+                            security_id,
+                            paid,
+                            f"DIVIDEND {held.ticker}",
+                            "cash",
+                            "dividend",
+                            Decimal(0),
+                            Decimal(0),
+                            -dividend,
+                        )
+                    )
+            for month in range(13):
+                paid = bought + timedelta(days=30 * month)
+                rows.append(
+                    _activity_row(
+                        account_id,
+                        None,
+                        paid,
+                        "CONTRIBUTION",
+                        "cash",
+                        "contribution",
+                        Decimal(0),
+                        Decimal(0),
+                        Decimal("-250.00"),
+                    )
+                )
+        within = [r for r in rows if start.isoformat() <= r["date"] <= end.isoformat()]
+        within.sort(key=lambda r: (r["date"], r["investment_transaction_id"]), reverse=True)
+        return _ok(
+            {
+                "accounts": [self._account(item, a) for a in item.institution.accounts],
+                "investment_transactions": within[offset : offset + count],
+                "securities": list(securities.values()),
+                "total_investment_transactions": len(within),
+            }
+        )
+
     def _remove(self, request: dict[str, Any]) -> tuple[int, bytes]:
         item = self._by_token(request.get("access_token", ""))
         if item is None or item.client_id != request["client_id"]:
@@ -657,12 +743,43 @@ _STATUSES = ("HISTORICAL_UPDATE_COMPLETE", "INITIAL_UPDATE_COMPLETE", "NOT_READY
 """Plaid's `transactions_update_status`, by how many batches of history are still to come."""
 
 
+def _activity_row(
+    account_id: str,
+    security_id: str | None,
+    day: date,
+    name: str,
+    type_: str,
+    subtype: str,
+    quantity: Decimal,
+    price: Decimal,
+    amount: Decimal,
+) -> dict[str, Any]:
+    """One invented investment transaction, its id fixed by what it is, as Plaid's are."""
+    return {
+        "investment_transaction_id": f"inv-{account_id}-{security_id}-{day}-{subtype}",
+        "account_id": account_id,
+        "security_id": security_id,
+        "date": day.isoformat(),
+        "name": name,
+        "type": type_,
+        "subtype": subtype,
+        "quantity": quantity,
+        "price": price,
+        "amount": amount.quantize(Decimal("0.01")),
+        "fees": Decimal(0),
+        "iso_currency_code": "USD",
+        "cancel_transaction_id": None,
+    }
+
+
 def _type_of(code: str) -> str:
     if code == LOGIN_REQUIRED:
         return "ITEM_ERROR"
     if code == MUTATED_DURING_PAGINATION:
         return "TRANSACTIONS_ERROR"
     if code in {NO_INVESTMENT_ACCOUNTS, PRODUCTS_NOT_SUPPORTED, ADDITIONAL_CONSENT_REQUIRED}:
+        return "ITEM_ERROR"
+    if code == PRODUCT_NOT_READY:
         return "ITEM_ERROR"
     return "API_ERROR"
 

@@ -13,8 +13,9 @@ Every working connection reaching an investment account is asked, whoever holds 
 is a fact about the market, not about the household, and pages show it only beside a position
 their viewer may see. Holdings are ``/investments/holdings/get``, positions and their prices.
 A brokerage's trades and dividends are ``/investments/transactions/get``, a separate call and
-a separate subscription, which hearth does not make: what an account holds is known on the
-day it was asked, and how it came to hold it is not known at all.
+a separate subscription, asked for apart (``hearth.plaid.activity``) and never read by the
+books: what an account holds there is known on the day it was asked, and how it came to hold
+it is not known at all.
 
 Each ask is a `HOLDINGS` call, refused unless approved: the first one adds Plaid's Investments
 product to an Item that only offered it (``hearth.plaid.approval``). An Item that offers it

@@ -24,7 +24,7 @@ when it came, as a day not kept can never be had again. The books take only the 
 """
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -34,7 +34,15 @@ from pathlib import Path
 
 from hearth import db
 from hearth.plaid import owner
-from hearth.plaid.client import BankAccount, Holdings, Position, SyncPage, Transaction
+from hearth.plaid.client import (
+    Activity,
+    BankAccount,
+    Holdings,
+    Position,
+    Security,
+    SyncPage,
+    Transaction,
+)
 
 MIGRATIONS: tuple[str, ...] = (
     """
@@ -146,6 +154,51 @@ MIGRATIONS: tuple[str, ...] = (
     -- What the brokerage says each holding cost, as decimal text; null where it did not say,
     -- and for every holding reported before hearth kept it.
     ALTER TABLE feed_holding ADD COLUMN cost_basis TEXT;
+    """,
+    """
+    -- A brokerage's investment activity: each trade, dividend, contribution, fee and transfer,
+    -- kept by Plaid's id as last sent, with when it was first and last seen.
+    CREATE TABLE feed_activity (
+        activity_id TEXT PRIMARY KEY,
+        item_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        security_id TEXT,
+        day TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        subtype TEXT,
+        quantity TEXT,
+        price TEXT,
+        amount TEXT,
+        fees TEXT,
+        currency TEXT,
+        cancels TEXT,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL
+    ) STRICT;
+    CREATE INDEX feed_activity_by_account ON feed_activity (account_id, day);
+
+    -- The securities activity names, as Plaid last described each.
+    CREATE TABLE feed_security (
+        security_id TEXT PRIMARY KEY,
+        ticker TEXT,
+        name TEXT,
+        type TEXT,
+        seen_at TEXT NOT NULL
+    ) STRICT;
+
+    -- Each time an Item's activity was asked for: the days asked, and how it ended.
+    CREATE TABLE feed_activity_fetch (
+        id INTEGER PRIMARY KEY,
+        item_id TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        start_day TEXT NOT NULL,
+        end_day TEXT NOT NULL,
+        rows INTEGER NOT NULL DEFAULT 0,
+        outcome TEXT NOT NULL CHECK (outcome IN ('complete', 'failed', 'login_required')),
+        problem TEXT
+    ) STRICT;
+    CREATE INDEX feed_activity_fetch_by_item ON feed_activity_fetch (item_id, id);
     """,
 )
 
@@ -287,6 +340,10 @@ def _decimal(text: str | None) -> Decimal | None:
     return Decimal(text) if text is not None else None
 
 
+def _text(number: Decimal | None) -> str | None:
+    return None if number is None else str(number)
+
+
 class Feed:
     """The feed store, over one connection opened with `connect`."""
 
@@ -310,7 +367,8 @@ class Feed:
         ).fetchone()
         reports = self._db.execute("SELECT max(id) FROM feed_holdings_report").fetchone()
         balances = self._db.execute("SELECT max(recorded_at) FROM feed_balance").fetchone()
-        return (*runs, *reports, *balances)
+        fetches = self._db.execute("SELECT max(id) FROM feed_activity_fetch").fetchone()
+        return (*runs, *reports, *balances, *fetches)
 
     def cursor(self, item_id: str) -> str | None:
         row = self._db.execute(
@@ -572,6 +630,129 @@ class Feed:
                 for row in rows
             ),
         )
+
+    def record_activity(
+        self,
+        item_id: str,
+        start: date,
+        end: date,
+        found: Sequence[Activity],
+        securities: Sequence[Security],
+        *,
+        now: datetime,
+    ) -> None:
+        """Keep every activity one complete ask over `start` to `end` found, each as last sent,
+        and the securities it named, and note that those days are asked for. A row asked for
+        before and not found again is kept as it was: Plaid withdraws a trade by sending its
+        cancellation, never by leaving it out."""
+        stamp = now.isoformat()
+        with db.transaction(self._db):
+            self._db.executemany(
+                "INSERT INTO feed_activity (activity_id, item_id, account_id, security_id, day,"
+                " name, type, subtype, quantity, price, amount, fees, currency, cancels,"
+                " first_seen_at, last_seen_at) VALUES"
+                " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT (activity_id) DO UPDATE SET account_id = excluded.account_id,"
+                " security_id = excluded.security_id, day = excluded.day, name = excluded.name,"
+                " type = excluded.type, subtype = excluded.subtype,"
+                " quantity = excluded.quantity, price = excluded.price,"
+                " amount = excluded.amount, fees = excluded.fees,"
+                " currency = excluded.currency, cancels = excluded.cancels,"
+                " last_seen_at = excluded.last_seen_at",
+                [
+                    (
+                        a.activity_id,
+                        item_id,
+                        a.account_id,
+                        a.security_id,
+                        a.day.isoformat(),
+                        a.name,
+                        a.type,
+                        a.subtype,
+                        _text(a.quantity),
+                        _text(a.price),
+                        _text(a.amount),
+                        _text(a.fees),
+                        a.currency,
+                        a.cancels,
+                        stamp,
+                        stamp,
+                    )
+                    for a in found
+                ],
+            )
+            self._db.executemany(
+                "INSERT INTO feed_security (security_id, ticker, name, type, seen_at)"
+                " VALUES (?, ?, ?, ?, ?) ON CONFLICT (security_id) DO UPDATE SET"
+                " ticker = excluded.ticker, name = excluded.name, type = excluded.type,"
+                " seen_at = excluded.seen_at",
+                [(s.security_id, s.ticker, s.name, s.type, stamp) for s in securities],
+            )
+            self._db.execute(
+                "INSERT INTO feed_activity_fetch (item_id, fetched_at, start_day, end_day, rows,"
+                " outcome) VALUES (?, ?, ?, ?, ?, 'complete')",
+                (item_id, stamp, start.isoformat(), end.isoformat(), len(found)),
+            )
+
+    def activity_failed(
+        self, item_id: str, start: date, end: date, problem: str, *, login: bool, now: datetime
+    ) -> None:
+        """Note an ask for an Item's activity that did not finish; nothing it found is kept."""
+        with db.transaction(self._db):
+            self._db.execute(
+                "INSERT INTO feed_activity_fetch (item_id, fetched_at, start_day, end_day,"
+                " outcome, problem) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    item_id,
+                    now.isoformat(),
+                    start.isoformat(),
+                    end.isoformat(),
+                    "login_required" if login else "failed",
+                    problem,
+                ),
+            )
+
+    def activity_through(self, item_id: str) -> date | None:
+        """The last day an Item's activity was completely asked for, or None if it never was."""
+        row = self._db.execute(
+            "SELECT max(end_day) FROM feed_activity_fetch WHERE item_id = ? AND outcome = ?",
+            (item_id, "complete"),
+        ).fetchone()
+        return date.fromisoformat(row[0]) if row[0] else None
+
+    def activity(self, account_id: str) -> list[Activity]:
+        """Every activity kept for one account, oldest first."""
+        rows = self._db.execute(
+            "SELECT * FROM feed_activity WHERE account_id = ? ORDER BY day, activity_id",
+            (account_id,),
+        )
+        return [
+            Activity(
+                activity_id=row["activity_id"],
+                account_id=row["account_id"],
+                security_id=row["security_id"],
+                day=date.fromisoformat(row["day"]),
+                name=row["name"],
+                type=row["type"],
+                subtype=row["subtype"],
+                quantity=_decimal(row["quantity"]),
+                price=_decimal(row["price"]),
+                amount=_decimal(row["amount"]),
+                fees=_decimal(row["fees"]),
+                currency=row["currency"],
+                cancels=row["cancels"],
+            )
+            for row in rows
+        ]
+
+    def securities(self) -> dict[str, Security]:
+        """Every security activity has named, by its Plaid id."""
+        return {
+            row["security_id"]: Security(
+                row["security_id"], row["ticker"], row["name"], row["type"]
+            )
+            for row in self._db.execute("SELECT * FROM feed_security")
+        }
 
     def recorded_by(self, balance: Balance, item_id: str) -> Run | None:
         """The run that recorded `balance`, an Item's: its latest run started by then. A run

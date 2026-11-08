@@ -28,6 +28,11 @@ class Operation(StrEnum):
     adds Plaid's Investments product to an Item that only offered it, which Plaid then bills
     for that Item from then on, and no later call takes it off again."""
 
+    ACTIVITY = "activity"
+    """Reading a brokerage's investment activity: its trades, dividends, contributions, fees
+    and transfers. Not `HOLDINGS`: the first ask adds Plaid's Investments Transactions
+    subscription to the Item, billed apart from holdings for as long as the Item lasts."""
+
 
 DESCRIPTIONS = {
     Operation.LINK: "connect a bank (creates a Plaid Item, which uses one connection)",
@@ -35,6 +40,8 @@ DESCRIPTIONS = {
     Operation.REMOVE: "remove a connection at Plaid (frees its slot)",
     Operation.HOLDINGS: "read connected brokerages' holdings and today's prices"
     " (adds Plaid's Investments product to each brokerage's Item)",
+    Operation.ACTIVITY: "read connected brokerages' trades, dividends and other activity"
+    " (adds Plaid's Investments Transactions subscription to each brokerage's Item)",
 }
 
 

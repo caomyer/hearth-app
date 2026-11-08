@@ -39,6 +39,7 @@ from hearth.clock import Clock, system_clock
 from hearth.config import Settings
 from hearth.disclosure import Disclosure, rulings_in
 from hearth.plaid import feed
+from hearth.plaid.activity import fetch_activity
 from hearth.plaid.approval import Approval, ApprovalRequired, Operation
 from hearth.plaid.client import PlaidError
 from hearth.plaid.connector import (
@@ -100,6 +101,20 @@ def run(arguments: argparse.Namespace, settings: Settings) -> int:
             return holdings(
                 settings,
                 PlaidSetup(approval=Approval.of([Operation.HOLDINGS])),
+                system_clock,
+                books.from_household(settings, rulings=rulings_in),
+            )
+        case "activity":
+            if not arguments.approved:
+                print(
+                    "hearth plaid activity makes live Plaid calls, and the first one for a"
+                    " brokerage adds Plaid's Investments Transactions subscription to its Item;"
+                    " pass --approved once the captain has approved it. Nothing was sent."
+                )
+                return REFUSED
+            return activity(
+                settings,
+                PlaidSetup(approval=Approval.of([Operation.ACTIVITY])),
                 system_clock,
                 books.from_household(settings, rulings=rulings_in),
             )
@@ -265,6 +280,35 @@ def holdings(
     bookkeeper.recompute(wait=True)
     code = _recomputed(bookkeeper.status, settings, "what each brokerage said it holds")
     return code or (FAILED if any(a.problem is not None for a in priced.asked) else 0)
+
+
+def activity(
+    settings: Settings, setup: PlaidSetup, clock: Clock, establish: books.Establish
+) -> int:
+    """Keep every connected brokerage's investment activity since it was last asked, then
+    recompute the books, as every fetch does (``hearth.plaid.activity``)."""
+    conn = db.connect(settings.database)
+    try:
+        fetched = fetch_activity(conn, settings.feed_database, setup, clock)
+    finally:
+        conn.close()
+    if not fetched.asked:
+        print("No working connection reaches an investment account, so none was asked.")
+        return 0
+    for asked in fetched.asked:
+        days = f"{asked.start:%Y-%m-%d} to {asked.end:%Y-%m-%d}"
+        if asked.problem is None:
+            print(
+                f"{asked.item_id} ({asked.institution}):"
+                f" {_count(asked.activity, 'activity row')} from {days}"
+            )
+        else:
+            print(f"{asked.item_id} ({asked.institution}): not read for {days}, {asked.problem}")
+    bookkeeper = books.Bookkeeper(establish, clock)
+    bookkeeper.recompute(wait=True)
+    kept = "what they held before, as activity is kept for a ledger outside hearth, not booked,"
+    code = _recomputed(bookkeeper.status, settings, kept)
+    return code or (FAILED if any(a.problem is not None for a in fetched.asked) else 0)
 
 
 def remove(settings: Settings, item_id: str, *, approved: bool) -> int:

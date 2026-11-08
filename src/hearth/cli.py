@@ -73,6 +73,14 @@ def main(argv: list[str] | None = None) -> None:
         " first adds Plaid's Investments product to the brokerage's Item)",
     )
     held.add_argument("--approved", action="store_true", help="the captain approved this live call")
+    activity = plaid_commands.add_parser(
+        "activity",
+        help="keep every connected brokerage's trades, dividends and other activity (a live"
+        " call; the first adds Plaid's Investments Transactions subscription to the Item)",
+    )
+    activity.add_argument(
+        "--approved", action="store_true", help="the captain approved this live call"
+    )
     remove = plaid_commands.add_parser(
         "remove", help="remove one connection at Plaid, freeing its slot (live and irreversible)"
     )
@@ -282,7 +290,10 @@ def _run(
         app = create_app(settings, bookkeeper, plaid=plaid)
         bookkeeper.recompute_daily()
         bookkeeper.recompute_on_change()
-        if plaid.approval.allows(Operation.READ) or plaid.approval.allows(Operation.HOLDINGS):
+        if any(
+            plaid.approval.allows(operation)
+            for operation in (Operation.READ, Operation.HOLDINGS, Operation.ACTIVITY)
+        ):
             _sync_daily(settings, plaid, bookkeeper)
         cert, key = tls if tls is not None else (None, None)
         uvicorn.run(app, host=host, port=port, ssl_certfile=cert, ssl_keyfile=key)
@@ -292,7 +303,8 @@ def _run(
 
 def _sync_daily(settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper) -> None:
     """Bring every working connection up to date at start-up and every morning, only when this
-    run was started with reading, or reading holdings, approved (`sync_then_recompute`)."""
+    run was started with reading, reading holdings or reading activity approved
+    (`sync_then_recompute`)."""
 
     def run() -> None:
         while True:

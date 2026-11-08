@@ -194,7 +194,7 @@ What it finds is printed to the terminal and is the household's: keep it out of 
 An investment account opens like any other, but `/transactions/sync` sends it nothing: a brokerage's holdings and its trades come through Plaid's Investments product, a separate product from Transactions.
 Investments is not something a connection lacks: an Item lists it among its available products when its institution offers it, and hearth can then ask for it with no new sign-in, though only when asked, and only once the household approves `holdings` (`docs/connections.md`, "Holdings").
 Hearth asks for holdings, what each account holds and the price the brokerage gives each, and books what each account holds (see "What a brokerage holds", below), valued at those prices (`docs/valuation.md`).
-It never asks for a brokerage's trades and dividends, which are a separate call: a brokerage connected through Plaid shows a value, and still has no buys, sells or dividends in the books.
+Its trades and dividends are a separate call, asked for only once the household approves `activity`, and kept in the feed for a ledger outside hearth (`docs/connections.md`, "Investment activity"); hearth's own books never read them, so a brokerage connected through Plaid shows a value, and still has no buys, sells or dividends in the books.
 Do not read the one as the other: the value says what the account holds, never how it came to hold it.
 Nor is investment history a household once brought in from downloaded statements, which hearth's own books do not read.
 So books driven by Plaid alone hold no investment activity at all; the connect page and the account's own page say so rather than letting it read as empty.

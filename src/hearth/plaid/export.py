@@ -12,6 +12,13 @@ what hearth's pairing knows that a row alone cannot: that it is one side of a ca
 when the same member holds both sides, which account the other side is on. A card's side rarely
 carries Plaid's payment category, so this is the only reliable word on it (``docs/pairing.md``).
 
+An investment account also carries its activity, each trade, dividend, contribution, fee and
+transfer of cash or shares as its brokerage reported it (``hearth.plaid.activity``), the day
+that activity is complete through, and what the brokerage last said the account holds. Each
+activity on a security carries hearth's own record of that security's price on its day, when
+hearth asked for one that day: a brokerage sends a vest as shares with no value, and the
+holdings hearth asks for each morning are the only record of what a share was worth then.
+
 The file holds one member's accounts, because a ledger outside hearth has no privacy boundary
 of its own. A pair names its other account only if that member owns it too; otherwise the row
 is a leg with nothing on the other side, exactly as if that account were not connected, so the
@@ -30,11 +37,15 @@ from pathlib import Path
 from hearth.accounts import all_accounts
 from hearth.members import MemberId
 from hearth.plaid import booking, pairing
-from hearth.plaid.client import Transaction
+from hearth.plaid.client import Activity, Position, Security, Transaction
 from hearth.plaid.feed import Balance, Feed
 from hearth.plaid.registry import Item, LinkedAccount, Registry
+from hearth.valuation.pricestore import PriceStore
 
-SCHEMA = "buzz.plaid.v2"
+PRICE_SOURCE = "plaid"
+"""Whose prices an activity's `market_price` is read from: what a brokerage gave hearth."""
+
+SCHEMA = "buzz.plaid.v3"
 """Checked by the importer that reads the file, so a change of shape fails loudly there."""
 
 AMOUNT_CONVENTION = "plaid-native: positive = money out of the account."
@@ -85,6 +96,8 @@ def export(
             "other_date": other.day.isoformat(),
         }
 
+    prices = PriceStore(conn)
+    securities = feed.securities()
     accounts = []
     for ledger_account in sorted(fed):
         one = _Fed(ledger_account, tuple(fed[ledger_account]))
@@ -95,6 +108,8 @@ def export(
                 registry,
                 feed,
                 [(row, other_side(row)) for row in rows if row.account_id in ids],
+                securities,
+                prices,
             )
         )
     return {
@@ -135,11 +150,24 @@ def _account(
     registry: Registry,
     feed: Feed,
     rows: list[tuple[Transaction, dict[str, object] | None]],
+    securities: dict[str, Security],
+    prices: PriceStore,
 ) -> dict[str, object]:
     """One account: the working connection speaks for it when two have fed it."""
     items = {item.item_id: item for item in registry.all_items()}
     speaks = next((x for x in reversed(fed.linked) if items[x.item_id].active), fed.linked[-1])
     item = items[speaks.item_id]
+    invested = speaks.is_investment
+    activity = (
+        sorted(
+            (a for linked in fed.linked for a in feed.activity(linked.account_id)),
+            key=lambda a: (a.day, a.activity_id),
+        )
+        if invested
+        else []
+    )
+    through = feed.activity_through(speaks.item_id) if invested else None
+    report = feed.holdings(speaks.account_id) if invested else None
     return {
         "ledger_account": fed.ledger_account,
         "account_id": speaks.account_id,
@@ -153,6 +181,55 @@ def _account(
         "balance": _balance(feed.balance(speaks.account_id)),
         "transaction_count": len(rows),
         "transactions": [_row(row, pair) for row, pair in rows],
+        "activity_through": through.isoformat() if through else None,
+        "activity_count": len(activity),
+        "activity": [_activity(a, securities, prices) for a in activity],
+        "holdings": None
+        if report is None
+        else {
+            "reported_at": report.reported_at.isoformat(),
+            "positions": [_position(p) for p in report.positions],
+        },
+    }
+
+
+def _activity(
+    found: Activity, securities: dict[str, Security], prices: PriceStore
+) -> dict[str, object]:
+    security = securities.get(found.security_id) if found.security_id else None
+    ticker = security.ticker if security else None
+    priced = prices.revisions(ticker, found.day, PRICE_SOURCE) if ticker else []
+    return {
+        "activity_id": found.activity_id,
+        "account_id": found.account_id,
+        "date": found.day.isoformat(),
+        "name": found.name,
+        "type": found.type,
+        "subtype": found.subtype,
+        "security_id": found.security_id,
+        "ticker": ticker,
+        "security_name": security.name if security else None,
+        "security_type": security.type if security else None,
+        "quantity": _maybe(found.quantity),
+        "price": _maybe(found.price),
+        "amount": _maybe(found.amount),
+        "fees": _maybe(found.fees),
+        "currency": found.currency,
+        "cancels": found.cancels,
+        "market_price": _text(priced[-1].price) if priced else None,
+    }
+
+
+def _position(held: Position) -> dict[str, object]:
+    return {
+        "security_id": held.security_id,
+        "ticker": held.ticker,
+        "name": held.name,
+        "cash": held.cash,
+        "quantity": _text(held.quantity),
+        "value": _maybe(held.value),
+        "cost_basis": _maybe(held.cost_basis),
+        "currency": held.currency,
     }
 
 
@@ -196,6 +273,10 @@ def _row(row: Transaction, pair: dict[str, object] | None) -> dict[str, object]:
 def _text(amount: Decimal) -> str:
     """A decimal as its digits, never through a float."""
     return format(amount, "f")
+
+
+def _maybe(amount: Decimal | None) -> str | None:
+    return None if amount is None else _text(amount)
 
 
 def default_path(data_dir: Path) -> Path:

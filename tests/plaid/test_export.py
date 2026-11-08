@@ -4,6 +4,7 @@ payee and figure is invented."""
 
 import json
 import stat
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +14,14 @@ from hearth import config
 from hearth.cli import main
 from hearth.members import find
 from hearth.plaid import export
+from hearth.plaid.activity import fetch_activity
 from hearth.plaid.feed import Feed
-from tests.firstday import PATHS, FirstDay
+from hearth.plaid.registry import Registry
+from hearth.valuation.pricestore import PriceStore
+from hearth.valuation.quotes import Quote
+from tests.conftest import FakeClock
+from tests.firstday import PATHS, FirstDay, first_day
+from tests.plaid.test_activity import BROKERAGE
 from tests.test_booking import filed  # noqa: F401 - the fixture
 
 CHECKING = PATHS["6616"]
@@ -42,7 +49,7 @@ def _row(account: dict[str, Any], name: str) -> dict[str, Any]:
 
 def test_every_posted_row_is_there_once_as_the_bank_sent_it(filed: FirstDay) -> None:  # noqa: F811
     document = _export(filed)
-    assert document["schema"] == "buzz.plaid.v2"
+    assert document["schema"] == "buzz.plaid.v3"
 
     wren = _account(document, WREN)
     assert wren["account_type"] == "credit"
@@ -118,7 +125,7 @@ def test_a_file_is_written_whole_and_only_its_owner_can_read_it(
 ) -> None:
     path = tmp_path / "held" / "export.json"
     export.write(path, _export(filed))
-    assert json.loads(path.read_text())["schema"] == "buzz.plaid.v2"
+    assert json.loads(path.read_text())["schema"] == "buzz.plaid.v3"
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert [p.name for p in path.parent.iterdir()] == ["export.json"]
 
@@ -138,3 +145,52 @@ def test_the_command_writes_the_file_and_says_where(
 
     with pytest.raises(SystemExit, match="no member called nobody"):
         main(["export", "--member", "nobody"])
+
+
+SORREL = "Assets:Avery:Sorrel:Individual"
+
+
+def test_a_brokerage_carries_its_activity_holdings_and_the_price_hearth_kept_each_day(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    fresh = first_day(tmp_path, clock, institutions=(BROKERAGE,))
+    item_id = fresh.link("avery", BROKERAGE.id)
+    fresh.map(fresh.signed_in("avery"), {"6021": SORREL})
+    conn = fresh.connect()
+    try:
+        fetch_activity(conn, fresh.settings.feed_database, fresh.setup, fresh.clock)
+        (linked,) = Registry(conn).accounts_of(item_id)
+        with Feed.open(fresh.settings.feed_database) as feed:
+            (bought,) = [
+                a
+                for a in feed.activity(linked.account_id)
+                if a.type == "buy" and a.quantity == Decimal(10)
+            ]
+        PriceStore(conn).record(
+            Quote("ZQAA", bought.day, Decimal("1250.00"), "USD", "plaid", "sec", fresh.clock())
+        )
+    finally:
+        conn.close()
+
+    brokerage = _account(_export(fresh), SORREL)
+
+    assert brokerage["account_type"] == "investment"
+    assert brokerage["transactions"] == []
+    assert brokerage["activity_count"] == len(brokerage["activity"]) == 19
+    assert brokerage["activity_through"] == fresh.clock().date().isoformat()
+    row = next(a for a in brokerage["activity"] if a["activity_id"] == bought.activity_id)
+    assert row["ticker"] == "ZQAA"
+    assert [Decimal(row[k]) for k in ("quantity", "price", "amount")] == [
+        Decimal(10),
+        Decimal("1251.07"),
+        Decimal("12510.70"),
+    ]
+    assert all(isinstance(row[k], str) for k in ("quantity", "price", "amount"))
+    assert row["market_price"] == "1250.00", "hearth's own price for the day"
+    others = [a for a in brokerage["activity"] if a["ticker"] == "ZQAA" and a is not row]
+    assert all(a["market_price"] is None for a in others), "a day hearth did not price"
+    tickers = {p["ticker"] for p in brokerage["holdings"]["positions"]}
+    assert "ZQAA" in tickers
+    assert [a["date"] for a in brokerage["activity"]] == sorted(
+        a["date"] for a in brokerage["activity"]
+    )

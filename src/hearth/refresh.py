@@ -1,5 +1,5 @@
 """Bringing the books up to date with the household's connections: sync each one, keep each
-brokerage's holdings and today's price of each, then recompute.
+brokerage's holdings and today's price of each, and its activity, then recompute.
 
 This is the one path every sync takes: `hearth serve` at start-up and every morning, and
 `hearth plaid sync` run by hand. A sync is only worth running for what it changes in the books,
@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from hearth import books, db
 from hearth.clock import Clock
 from hearth.config import Settings
+from hearth.plaid.activity import Fetched, fetch_activity
 from hearth.plaid.connector import sync_all
 from hearth.plaid.holdings import Priced, price_holdings
 from hearth.plaid.setup import PlaidSetup
@@ -33,6 +34,8 @@ class Refreshed:
     """Each brokerage's holdings, or None when asking for them stopped."""
     status: books.Status
     """The books after the recompute: new ones, or the previous ones beside its failure."""
+    activity: Fetched | None = None
+    """Each brokerage's investment activity, or None when asking for it stopped."""
 
     @property
     def books_failed(self) -> books.Failure | None:
@@ -44,9 +47,9 @@ def sync_then_recompute(
     settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper, clock: Clock
 ) -> Refreshed:
     """Sync every working connection and keep every brokerage's holdings and today's price of
-    each, each refused for a real connection unless approved, then recompute the books, which
-    record how current each connection is: the morning's recompute starts with the sync, so it
-    may finish first.
+    each, and its activity, each refused for a real connection unless approved, then recompute
+    the books, which record how current each connection is: the morning's recompute starts
+    with the sync, so it may finish first.
 
     A brokerage's holdings and prices are today's only (``hearth.plaid.holdings``), so they are
     asked for every morning: a morning missed is a day with neither, for good. That holds too
@@ -55,6 +58,7 @@ def sync_then_recompute(
     so rather than leaving a live call that values nothing today unexplained."""
     synced: list[Synced | Skipped | Failed] | None = None
     priced: Priced | None = None
+    activity: Fetched | None = None
     conn = db.connect(settings.database)
     try:
         synced = sync_all(conn, settings.feed_database, plaid, clock)
@@ -64,6 +68,10 @@ def sync_then_recompute(
         priced = price_holdings(conn, settings.feed_database, plaid, clock)
     except Exception:
         _log.exception("reading holdings stopped")
+    try:
+        activity = fetch_activity(conn, settings.feed_database, plaid, clock)
+    except Exception:
+        _log.exception("reading investment activity stopped")
     finally:
         conn.close()
     bookkeeper.recompute(wait=True)
@@ -78,4 +86,4 @@ def sync_then_recompute(
                 " later",
                 ", ".join(unheld),
             )
-    return Refreshed(synced, priced, status)
+    return Refreshed(synced, priced, status, activity)
