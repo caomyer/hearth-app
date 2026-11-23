@@ -183,12 +183,14 @@ final class FirstLaunchTests: XCTestCase {
 
         let remaining = app.staticTexts["review.remaining"]
         XCTAssertTrue(remaining.waitForExistence(timeout: 30), "Review did not open")
-        XCTAssertEqual(count(in: text(of: remaining)), waiting)
+        // The Overview counts everything waiting; Review counts the fixture's one transfer
+        // apart, under "Where did it go?".
+        XCTAssertEqual(count(in: text(of: remaining)), waiting - 1)
         let groceries = app.buttons["review.acceptGroup.Food and drink: groceries"]
         XCTAssertTrue(groceries.waitForExistence(timeout: 10), "the group that is one decision has no accept")
         XCTAssertEqual(groceries.label, "Accept 2")
         groceries.click()
-        waitFor(remaining, toSay: "\(waiting - 2)")
+        waitFor(remaining, toSay: "\(waiting - 3)")
         let notice = app.staticTexts["review.notice"]
         XCTAssertEqual(text(of: notice), "Accepted 2 as Groceries.")
 
@@ -213,13 +215,209 @@ final class FirstLaunchTests: XCTestCase {
         let decide = app.buttons["review.decide"]
         XCTAssertTrue(decide.label.hasPrefix("Save as "), "\(decide.label) does not book another category")
         decide.click()
-        waitFor(remaining, toSay: "\(waiting - 3)")
+        waitFor(remaining, toSay: "\(waiting - 4)")
         XCTAssertTrue(text(of: notice).hasPrefix("Saved under "), "\(text(of: notice)) is not what was decided")
 
         app.buttons["review.undo"].click()
-        waitFor(remaining, toSay: "\(waiting - 2)")
+        waitFor(remaining, toSay: "\(waiting - 3)")
         XCTAssertEqual(text(of: notice), "Taken back. That transaction is waiting for review again.")
         XCTAssertFalse(app.buttons["review.undo"].exists, "an undo was offered to be taken back")
+    }
+
+    /// "Where did it go?", as a member answers it: the transfer the fixture's bank sent to an
+    /// account nobody connected is one group, answered as someone else's with a category, which
+    /// empties the section, and Undo puts it back as it was, for the household's other tests.
+    @MainActor
+    func testWhereDidItGoAnswersAGroupAndTakesItBack() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let household = environment["HEARTH_FIXTURE_DATA_DIR"],
+            let password = environment["HEARTH_FIXTURE_PASSWORD"]
+        else {
+            throw XCTSkip("no fixture household was made for this run")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HEARTH_DATA_DIR"] = household
+        app.launchEnvironment["HEARTH_SIGN_IN_PASSWORD"] = password
+        app.launchArguments += ["-openBooks", "own", "-signInAs", "avery", "-startScreen", "review"]
+        app.launch()
+
+        let elsewhere = app.buttons["review.elsewhere"]
+        XCTAssertTrue(elsewhere.waitForExistence(timeout: 60), "Review did not say what waits elsewhere")
+        XCTAssertEqual(elsewhere.label, "1 more needs to know where the money went")
+        elsewhere.click()
+
+        let group = app.descendants(matching: .any)["where.group.Online transfer to SAV 0417"].firstMatch
+        XCTAssertTrue(group.waitForExistence(timeout: 30), "the transfer is not a group of its own")
+        let save = app.buttons["where.save"]
+        XCTAssertEqual(save.label, "Save")
+        // Nothing is chosen for the person: the account they would name is not named yet.
+        XCTAssertFalse(save.isEnabled, "an answer was chosen for the person")
+        app.radioButtons["Someone else"].click()
+        let category = app.popUpButtons["where.category"]
+        XCTAssertTrue(category.waitForExistence(timeout: 10), "someone else's offered no category")
+        XCTAssertEqual(category.value as? String, "Groceries")
+        XCTAssertTrue(save.isEnabled, "a category chosen could not be saved")
+        save.click()
+
+        let notice = app.staticTexts["review.notice"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 30), "what the answer did was not said")
+        waitFor(notice, toSay: "Saved under Groceries.")
+        // With nothing left there, the screen is the queue again, and says nothing waits elsewhere.
+        XCTAssertTrue(app.staticTexts["review.remaining"].waitForExistence(timeout: 30))
+        XCTAssertFalse(group.exists)
+        XCTAssertFalse(elsewhere.exists, "an answered transfer still waits elsewhere")
+
+        app.buttons["review.undo"].click()
+        waitFor(notice, toSay: "Taken back. That transaction is waiting for review again.")
+        XCTAssertTrue(elsewhere.waitForExistence(timeout: 30), "the transfer did not come back")
+        XCTAssertEqual(elsewhere.label, "1 more needs to know where the money went")
+    }
+
+    /// The queue from the keyboard alone, as the Review menu offers it: the arrows move, C
+    /// chooses another category by typing it, Return saves it, Command-Z takes it back, Return
+    /// accepts a group that is one decision, S skips and X excludes. The sample waits on two
+    /// rows: Kibble Co, a group one accept settles, and Greenleaf Market, a guess of its own.
+    @MainActor
+    func testTheQueueIsWorkedFromTheKeyboard() {
+        let app = sample(startingOn: "review")
+
+        let remaining = app.staticTexts["review.remaining"]
+        XCTAssertTrue(remaining.waitForExistence(timeout: 60), "Review did not open")
+        waitFor(remaining, toSay: "2")
+        let group = app.staticTexts["review.detail.group"]
+        XCTAssertTrue(group.waitForExistence(timeout: 20), "the queue did not open on its first group")
+        XCTAssertEqual(text(of: group), "Kibble Co")
+
+        // The queue has the keyboard as it opens.
+        app.typeKey(.downArrow, modifierFlags: [])
+        waitFor(group, toSay: "Unsure")
+        app.typeKey(.downArrow, modifierFlags: [])
+        let payee = app.staticTexts["review.detail.payee"]
+        XCTAssertTrue(payee.waitForExistence(timeout: 20), "down did not reach the group's row")
+        XCTAssertEqual(text(of: payee), "Greenleaf Market")
+        app.typeKey(.upArrow, modifierFlags: [])
+        waitFor(group, toSay: "Unsure")
+        app.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(payee.waitForExistence(timeout: 20))
+        let decide = app.buttons["review.decide"]
+        XCTAssertTrue(decide.waitForExistence(timeout: 20), "the row offers no decision")
+        waitFor(decide, toSay: "Accept as Groceries")
+
+        // C opens the chooser, typing narrows it, and Return takes what is left.
+        app.typeKey("c", modifierFlags: [])
+        let field = app.descendants(matching: .any)["review.chooser.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "C did not offer another category")
+        app.typeText("pets")
+        XCTAssertTrue(app.buttons["review.option.Pets"].waitForExistence(timeout: 10), "typing lost the category")
+        XCTAssertFalse(app.buttons["review.option.Groceries"].exists, "typing narrowed nothing")
+        app.typeKey(.return, modifierFlags: [])
+        waitFor(decide, toSay: "Save as Pets")
+        XCTAssertFalse(field.exists, "the chooser stayed open")
+        XCTAssertTrue(app.buttons["review.choice.Pets"].exists, "the category chosen is not shown on")
+
+        // Return, back in the queue, saves it; Command-Z takes it back.
+        app.typeKey(.return, modifierFlags: [])
+        waitFor(remaining, toSay: "1")
+        let notice = app.staticTexts["review.notice"]
+        waitFor(notice, toSay: "Saved under Pets.")
+        app.typeKey("z", modifierFlags: .command)
+        waitFor(remaining, toSay: "2")
+        waitFor(notice, toSay: "Taken back. That transaction is waiting for review again.")
+
+        // The queue is on the item after the one decided, as it was: Kibble Co's group, which
+        // Return accepts whole.
+        waitFor(group, toSay: "Kibble Co")
+        app.typeKey(.return, modifierFlags: [])
+        waitFor(remaining, toSay: "1")
+        waitFor(notice, toSay: "Accepted as Pets.")
+
+        // On to the next group; S leaves it waiting and moves on to its row, and X excludes that.
+        waitFor(group, toSay: "Unsure")
+        app.typeKey("s", modifierFlags: [])
+        waitFor(payee, toSay: "Greenleaf Market")
+        app.typeKey("x", modifierFlags: [])
+        waitFor(notice, toSay: "Marked as not a transaction. It books nothing.")
+        XCTAssertTrue(app.staticTexts["review.caughtUp"].waitForExistence(timeout: 30), "nothing said all is done")
+        app.typeKey("z", modifierFlags: .command)
+        waitFor(notice, toSay: "Taken back. That transaction is waiting for review again.")
+        waitFor(remaining, toSay: "1")
+    }
+
+    /// Choosing another category with the pointer: Other… opens the chooser, typing narrows
+    /// it, a click takes one, and the decision says it books there.
+    @MainActor
+    func testAnotherCategoryIsChosenFromTheChooser() {
+        let app = sample(startingOn: "review")
+
+        let row = app.staticTexts.matching(
+            NSPredicate(format: "identifier == 'review.payee' AND value == 'Greenleaf Market'")
+        ).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 60), "the sample's guess is not in the queue")
+        row.click()
+        let other = app.buttons["review.other"]
+        XCTAssertTrue(other.waitForExistence(timeout: 20), "the row's detail offers no other category")
+        other.click()
+        let field = app.descendants(matching: .any)["review.chooser.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "Other… offered nothing")
+        field.typeText("din")
+        let dining = app.buttons["review.option.Dining"]
+        XCTAssertTrue(dining.waitForExistence(timeout: 10), "typing lost a category the household uses")
+        dining.click()
+
+        let decide = app.buttons["review.decide"]
+        waitFor(decide, toSay: "Save as Dining")
+        XCTAssertTrue(app.buttons["review.choice.Dining"].exists, "the category chosen is not shown on")
+        XCTAssertTrue(app.buttons["review.choice.Groceries"].exists, "the suggestion is no longer offered")
+        decide.click()
+        waitFor(app.staticTexts["review.notice"], toSay: "Saved under Dining.")
+        waitFor(app.staticTexts["review.remaining"], toSay: "1")
+    }
+
+    /// An unreviewed row of the member's own, opened from Transactions, is decided beside the
+    /// journal; what was done and its Undo stay there after the row is no longer unreviewed.
+    @MainActor
+    func testTransactionsDecidesAnUnreviewedRow() {
+        let app = sample(startingOn: "transactions")
+
+        let unreviewed = app.buttons["journal.show.unreviewed"]
+        XCTAssertTrue(unreviewed.waitForExistence(timeout: 60), "the journal did not open")
+        unreviewed.click()
+        let market = app.staticTexts.matching(
+            NSPredicate(format: "identifier == 'journal.payee' AND value == 'Greenleaf Market'")
+        ).firstMatch
+        XCTAssertTrue(market.waitForExistence(timeout: 30), "the unreviewed row is not listed")
+        market.click()
+
+        let decide = app.buttons["review.decide"]
+        XCTAssertTrue(decide.waitForExistence(timeout: 30), "the row's review did not open beside the journal")
+        waitFor(decide, toSay: "Accept as Groceries")
+        XCTAssertFalse(app.buttons["review.skip"].exists, "Skip is the queue's, not the journal's")
+        decide.click()
+
+        let settled = app.staticTexts["review.detail.settled"]
+        XCTAssertTrue(settled.waitForExistence(timeout: 30), "the detail did not say what was decided")
+        waitFor(settled, toSay: "Reviewed: booked as Groceries.")
+        let notice = app.staticTexts["review.notice"]
+        waitFor(notice, toSay: "Accepted as Groceries.")
+        // Reviewed now, it leaves the unreviewed journal; its detail and Undo stay.
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: market)
+        wait(for: [gone], timeout: 30)
+        XCTAssertTrue(notice.exists, "the decision's notice went with the row")
+
+        app.buttons["review.undo"].click()
+        waitFor(notice, toSay: "Taken back. That transaction is waiting for review again.")
+        waitFor(decide, toSay: "Accept as Groceries")
+        XCTAssertTrue(market.waitForExistence(timeout: 30), "the row taken back is not unreviewed again")
+    }
+
+    /// The sample, opened straight onto a screen, in a data directory of no household's.
+    @MainActor
+    private func sample(startingOn screen: String) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["HEARTH_DATA_DIR"] = "/var/empty/no-hearth-\(UUID().uuidString)"
+        app.launchArguments += ["-openBooks", "sample", "-startScreen", screen]
+        app.launch()
+        return app
     }
 
     /// The first whole number in a piece of text.

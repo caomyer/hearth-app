@@ -31,7 +31,10 @@ USERNAMES = ("avery", "blake")
 GROCERIES = "FOOD_AND_DRINK_GROCERIES"
 
 WAITING = 5
-"""How many of Avery's rows wait in Review: everything the bank sent."""
+"""How many of Avery's rows wait in Review's queue: everything the bank sent but the transfer."""
+
+ELSEWHERE = 1
+"""How many wait to be told where their money went: the transfer to savings nobody connected."""
 
 NET_WORTH = Decimal("21038.25")
 """Checking and savings, less what the card owes: what Avery's overview says."""
@@ -39,7 +42,8 @@ NET_WORTH = Decimal("21038.25")
 
 def larkspur(today: date) -> FakeInstitution:
     """Avery's bank. What it sent waits in Review: two market rows of one kind, which one
-    accept settles, beside rows of a kind each, and one Plaid gave no category."""
+    accept settles, beside rows of a kind each, one Plaid gave no category, and a transfer to
+    an account nobody connected, which waits under "Where did it go?"."""
     days = [today - timedelta(days=n) for n in (20, 12, 5, 9)]
     return FakeInstitution(
         "ins_larkspur",
@@ -56,6 +60,12 @@ def larkspur(today: date) -> FakeInstitution:
                     FakeTransaction("Cobble Street Market", Decimal("84.12"), days[0], GROCERIES),
                     FakeTransaction("Cobble Street Market", Decimal("31.06"), days[3], GROCERIES),
                     FakeTransaction("Payroll", Decimal("-2400.00"), days[1], "INCOME_WAGES"),
+                    FakeTransaction(
+                        "Online transfer to SAV 0417",
+                        Decimal("250.00"),
+                        days[1],
+                        "TRANSFER_OUT_ACCOUNT_TRANSFER",
+                    ),
                 ),
             ),
             FakeAccount(

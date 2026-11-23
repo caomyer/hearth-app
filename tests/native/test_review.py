@@ -599,7 +599,7 @@ def test_a_decisions_reply_has_the_shape_the_app_decodes(kites: World) -> None:
     assert differences({"id": 1, **done.wire()}, example) == []
 
 
-def test_the_household_the_mac_app_reviews_has_a_group_one_accept_settles(
+def test_the_household_the_mac_app_reviews_has_a_group_one_accept_settles_and_a_transfer(
     tmp_path: Path, clock: FakeClock
 ) -> None:
     """What the Mac app's end-to-end test of Review counts on, read as ``hearth bridge``
@@ -613,7 +613,12 @@ def test_the_household_the_mac_app_reviews_has_a_group_one_accept_settles(
     answer = ready(door.answer("review"))
 
     assert answer["remaining"]["rows"] == on_disk.WAITING
-    assert ready(door.answer("overview"))["review"]["waiting"] == on_disk.WAITING
+    assert answer["elsewhere"]["rows"] == on_disk.ELSEWHERE
+    waiting = on_disk.WAITING + on_disk.ELSEWHERE
+    assert ready(door.answer("overview"))["review"]["waiting"] == waiting
+    (transfer,) = ready(door.answer("where"))["groups"]
+    assert (transfer["title"], transfer["accounts"]) == ("Online transfer to SAV 0417", [])
+    assert "Expenses:FoodAndDrink:Groceries" in [c["name"] for c in transfer["categories"]]
     first = answer["groups"][0]
     assert (first["name"], first["size"], first["one_decision"]) == (
         "Food and drink: groceries",
