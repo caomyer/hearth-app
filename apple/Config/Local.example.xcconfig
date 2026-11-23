@@ -1,0 +1,6 @@
+// Copy to Config/Local.xcconfig and fill in your Apple team id
+// (Xcode > Settings > Accounts > your Apple ID > Team ID).
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Optional: a bundle id under a domain of your own.
+// HEARTH_BUNDLE_ID = com.example.Hearth

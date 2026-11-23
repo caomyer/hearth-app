@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth for Mac and iPhone</title>
+<style>
+/* Tokens are hearth's own (design/hearth.css), so the mocks read as the same product. */
+:root{
+  color-scheme:light;
+  --bg:#f6f6f3;--surface:#fff;--sunk:#efefeb;--ink:#1b1b19;--ink-2:#4f4f4a;--ink-3:#6a6a64;
+  --line:#e2e2dc;--line-strong:#cfcfc8;--control:#84847d;
+  --accent:#2851c4;--accent-bg:#eaeffb;
+  --pos:#16703e;--pos-bg:#e7f3eb;--neg:#b3261e;--neg-bg:#fbebe9;
+  --warn:#8a5100;--warn-bg:#fcf1da;--warn-line:#d9a441;
+  --priv:#5d4a8c;--priv-bg:#f2eff8;
+  --who-1:#2a78d6;--who-2:#eb6834;--who-3:#1baf7a;
+  --chart-grid:#ebebe6;--chart-muted:#929289;--chart-band:#e9e9e3;--chart-line:#1b1b19;
+  --bezel:#1b1b19;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --e-2:0 6px 24px rgb(27 27 25 / .12),0 1px 3px rgb(27 27 25 / .08);
+}
+@media (prefers-color-scheme:dark){:root{
+  color-scheme:dark;
+  --bg:#121211;--surface:#1c1c1a;--sunk:#252522;--ink:#ecece8;--ink-2:#b9b9b2;--ink-3:#99998f;
+  --line:#33332f;--line-strong:#46463f;--control:#7b7b73;
+  --accent:#8eacff;--accent-bg:#1d2742;
+  --pos:#5fcf8d;--pos-bg:#16301f;--neg:#ff8f84;--neg-bg:#3a1d1a;
+  --warn:#f1b55a;--warn-bg:#33280f;--warn-line:#8a6a2c;
+  --priv:#bba9ef;--priv-bg:#29233a;
+  --who-1:#3987e5;--who-2:#d95926;--who-3:#199e70;
+  --chart-grid:#2c2c29;--chart-muted:#6a6a63;--chart-band:#2a2a27;--chart-line:#ecece8;
+  --bezel:#3d3d38;
+  --e-2:0 8px 28px rgb(0 0 0 / .5),0 1px 3px rgb(0 0 0 / .4);
+}}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.55 var(--font);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p,ul,ol,figure{margin:0}
+ul{padding:0;list-style:none}
+svg{display:block}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 120px}
+.num,td.n,.fig{font-variant-numeric:tabular-nums}
+.eyebrow{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+header.top{padding:72px 0 8px}
+header.top h1{font-size:clamp(34px,5vw,54px);line-height:1.05;letter-spacing:-.025em;font-weight:650;margin:12px 0 20px;max-width:17ch}
+.lede{font-size:19px;line-height:1.5;color:var(--ink-2);max-width:62ch}
+nav.toc{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px}
+nav.toc a{font-size:13px;color:var(--ink-2);text-decoration:none;border:1px solid var(--line-strong);border-radius:999px;padding:5px 12px;background:var(--surface)}
+nav.toc a:hover{color:var(--accent);border-color:var(--accent)}
+section{margin-top:88px}
+section>h2{font-size:30px;line-height:1.15;letter-spacing:-.02em;font-weight:650;margin:8px 0 12px;max-width:26ch}
+section>p.sub{color:var(--ink-2);max-width:68ch;font-size:16px}
+h3{font-size:16px;font-weight:600}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:16px;margin-top:28px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}
+.card h3{margin-bottom:6px}
+.card p{color:var(--ink-2);font-size:14px;line-height:1.5}
+.card .k{font:600 12px var(--mono);color:var(--accent);margin-bottom:10px;display:block}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:20px;margin-top:28px}
+.note{border-left:3px solid var(--warn-line);background:var(--warn-bg);color:var(--ink);padding:12px 16px;border-radius:0 8px 8px 0;font-size:14px;margin-top:20px;max-width:80ch}
+.note b{color:var(--warn)}
+.tag{display:inline-block;font-size:11px;font-weight:600;border-radius:999px;padding:2px 8px;background:var(--sunk);color:var(--ink-2);white-space:nowrap}
+.tag.rec{background:var(--pos-bg);color:var(--pos)}
+.tag.later{background:var(--priv-bg);color:var(--priv)}
+.tag.warn{background:var(--warn-bg);color:var(--warn)}
+
+/* The one picture */
+.flow{margin-top:32px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px 20px}
+.flow{overflow-x:auto}.flow svg{width:100%;min-width:780px;height:auto;max-width:1080px;margin:0 auto}
+.flow text{font-family:var(--font);fill:var(--ink)}
+.flow .s{fill:var(--ink-3);font-size:12px}
+.flow .t{font-size:14px;font-weight:600}
+.flow .box{fill:var(--bg);stroke:var(--line-strong)}
+.flow .hot{fill:var(--accent-bg);stroke:var(--accent)}
+.flow .arr{stroke:var(--ink-3);stroke-width:1.5;fill:none}
+.flow .no{stroke:var(--neg);stroke-width:1.5;fill:none}
+
+/* Mac window */
+.scroller{overflow-x:auto;margin-top:28px;padding:4px 4px 28px}
+.mac{min-width:900px;border:1px solid var(--line-strong);border-radius:12px;background:var(--surface);box-shadow:var(--e-2);overflow:hidden;font-size:13px;line-height:18px}
+.mac-bar{height:40px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--sunk)}
+.mac-bar i{width:12px;height:12px;border-radius:50%;background:var(--line-strong)}
+.mac-bar b{margin-left:12px;font-weight:600}
+.mac-bar .sp{flex:1}
+.mac-bar .ic{color:var(--ink-3);font-size:12px;display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--pos);display:inline-block}
+.dot.w{background:var(--warn-line)}
+.mac-body{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:540px}
+.side{background:var(--sunk);border-right:1px solid var(--line);padding:14px 8px;display:flex;flex-direction:column;gap:1px}
+.side span.h{font-size:11px;font-weight:600;color:var(--ink-3);padding:14px 10px 4px}
+.side a{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-radius:6px;color:var(--ink-2);text-decoration:none}
+.side a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.side a em{font-style:normal;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.side a .cnt{background:var(--accent);color:#fff;border-radius:999px;padding:0 7px;font-size:11px;font-weight:600}
+@media (prefers-color-scheme:dark){.side a .cnt,.btn.p{color:#121211!important}}
+.side .foot{margin-top:auto;padding:10px;font-size:11px;line-height:15px;color:var(--ink-3)}
+.main{padding:26px 30px 30px;min-width:0}
+.main h4{font-size:20px;font-weight:650;letter-spacing:-.01em}
+.main .cap{color:var(--ink-3);font-size:12px}
+.hero{font-size:46px;line-height:50px;font-weight:650;letter-spacing:-.025em;margin:6px 0 4px}
+.hero small{font-size:.55em;color:var(--ink-3);font-weight:500;margin-right:2px}
+.up{color:var(--pos);font-weight:600}.dn{color:var(--neg);font-weight:600}
+.cols{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:28px;margin-top:22px}
+.panel{border-top:1px solid var(--line);padding-top:14px}
+.panel h5{margin:0 0 2px;font-size:13px;font-weight:600}
+.panel .find{color:var(--ink-2);margin-bottom:10px}
+.bar{display:grid;grid-template-columns:92px minmax(0,1fr) 70px;gap:10px;align-items:center;padding:4px 0}
+.bar .trk{height:10px;background:var(--chart-band);border-radius:3px;position:relative}
+.bar .trk b{position:absolute;inset:0 auto 0 0;background:var(--chart-muted);border-radius:3px}
+.bar .trk b.hot{background:var(--neg)}
+.bar .trk u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.bar .n{text-align:right}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--control);background:var(--surface);color:var(--ink);border-radius:6px;padding:5px 12px;font:600 13px var(--font);white-space:nowrap}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.s{padding:3px 10px;font-size:12px}
+.banner{display:flex;align-items:center;gap:12px;background:var(--accent-bg);border-radius:8px;padding:10px 14px;margin-top:18px}
+.banner .sp{flex:1}
+table.t{width:100%;border-collapse:collapse;margin-top:8px}
+table.t th{font-size:11px;font-weight:600;color:var(--ink-3);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line-strong)}
+table.t td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+table.t th.n,table.t td.n{text-align:right}
+table.t tr.g td{font-weight:600;background:var(--sunk)}
+table.t tr.tot td{font-weight:650;border-top:1px solid var(--ink);border-bottom:none}
+table.t td.i{padding-left:24px}
+.chip{display:inline-block;border:1px solid var(--line-strong);border-radius:999px;padding:1px 9px;font-size:12px;color:var(--ink-2);margin-right:4px;background:var(--surface)}
+.chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-bg);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:7px;overflow:hidden;font-size:12px}
+.seg span{padding:4px 10px;color:var(--ink-2)}
+.seg span.on{background:var(--ink);color:var(--surface);font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:10px;margin-top:16px}
+.kpis div{padding:12px 14px;border-right:1px solid var(--line);min-width:0}
+.kpis div:last-child{border-right:none}
+.kpis b{display:block;font-size:20px;line-height:26px;font-weight:650;letter-spacing:-.01em}
+.grp{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;display:flex;align-items:center;gap:14px}
+.grp .sp{flex:1;min-width:0}
+.ok{color:var(--pos);font-weight:600}.wn{color:var(--warn);font-weight:600}
+.fld2{border:1px solid var(--line-strong);border-radius:6px;padding:3px 10px;color:var(--ink-3);font-size:12px;background:var(--surface);white-space:nowrap}
+.lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:16px;margin-top:28px}
+.lane{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;min-width:0}
+.lane h3{margin-bottom:2px}
+.lane .who{font-size:13px;color:var(--ink-3);margin-bottom:12px}
+.lane ol{margin:0;padding:0;list-style:none;counter-reset:s}
+.lane li{counter-increment:s;position:relative;padding:0 0 12px 30px;font-size:14px;line-height:1.45;color:var(--ink-2)}
+.lane li b{color:var(--ink)}
+.lane li::before{content:counter(s);position:absolute;left:0;top:1px;width:20px;height:20px;border-radius:50%;background:var(--accent-bg);color:var(--accent);font:600 11px/20px var(--font);text-align:center}
+.lane li::after{content:"";position:absolute;left:9.5px;top:24px;bottom:2px;width:1px;background:var(--line-strong)}
+.lane li:last-child::after{display:none}
+.lane .end{font-size:13px;font-weight:600;color:var(--pos);border-top:1px solid var(--line);padding-top:10px}
+.pipe{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px;margin-top:28px}
+.pipe .card{position:relative}
+.quote{font-size:clamp(22px,3vw,30px);line-height:1.25;letter-spacing:-.015em;font-weight:650;max-width:30ch;margin:28px 0 0;padding-left:18px;border-left:4px solid var(--accent)}
+.cats{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.cats .chip{font-size:13px;padding:3px 11px;margin:0}
+.steps.small{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+.subh{margin-top:44px}
+table.par{width:100%;border-collapse:collapse;margin-top:24px;font-size:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+table.par th{text-align:left;font-size:12px;color:var(--ink-3);padding:10px 14px;border-bottom:1px solid var(--line-strong);background:var(--sunk)}
+table.par td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2)}
+table.par td:first-child{font-weight:600;color:var(--ink);white-space:nowrap}
+table.par tr:last-child td{border-bottom:none}
+.tblwrap{overflow-x:auto}
+.leg td{background:var(--sunk);color:var(--ink-2);font-size:12px;padding-top:4px!important;padding-bottom:4px!important}
+.settled{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin-top:24px}
+.settled div{border:1px solid var(--line);border-left:3px solid var(--pos);border-radius:8px;padding:10px 14px;font-size:14px;background:var(--surface);min-width:0}
+.settled b{display:block;font-size:12px;color:var(--pos);margin-bottom:2px}
+.mono{font-family:var(--mono);font-size:12px}
+.drop{border:1.5px dashed var(--control);border-radius:10px;padding:14px;text-align:center;color:var(--ink-2);margin-top:14px}
+
+/* Sheets for the first run */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:18px;margin-top:28px}
+.sheet{background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;box-shadow:var(--e-2);padding:20px;font-size:13px;line-height:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.sheet .st{font:600 11px var(--mono);color:var(--ink-3)}
+.sheet h3{font-size:17px;line-height:22px;letter-spacing:-.01em}
+.sheet p{color:var(--ink-2)}
+.sheet .opt{border:1px solid var(--line-strong);border-radius:8px;padding:10px 12px}
+.sheet .opt.on{border-color:var(--accent);background:var(--accent-bg)}
+.sheet .opt b{display:block}
+.sheet .opt span{color:var(--ink-2);font-size:12px}
+.sheet .fld{border:1px solid var(--control);border-radius:6px;padding:6px 10px;font-family:var(--mono);font-size:12px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet label{font-size:11px;font-weight:600;color:var(--ink-3);margin-bottom:-6px}
+.sheet .act{margin-top:auto;display:flex;justify-content:flex-end;gap:8px;padding-top:6px}
+.shw{display:flex;flex-direction:column;min-width:0}.shw .sheet{flex:1}.shcap{font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:8px}
+.why{font-size:13px;color:var(--ink-3);margin-top:8px}
+
+/* Phones */
+.phones{display:flex;flex-wrap:wrap;gap:36px 28px;margin-top:32px}
+.ph{width:288px;min-width:0}
+.ph-frame{height:604px;border-radius:42px;border:9px solid var(--bezel);background:var(--bg);overflow:hidden;display:flex;flex-direction:column;font-size:13px;line-height:18px;box-shadow:var(--e-2)}
+.ph-status{display:flex;justify-content:space-between;padding:12px 24px 2px;font-weight:600;font-size:12px}
+.batt{width:24px;height:11px;border:1.5px solid var(--ink);border-radius:3.5px;position:relative;margin-top:3px;opacity:.85}.batt::before{content:"";position:absolute;inset:1.5px 6px 1.5px 1.5px;background:var(--ink);border-radius:1px}
+.ph-body{flex:1;overflow:hidden;padding:6px 16px 0;min-height:0}
+.ph-body h4{font-size:26px;line-height:30px;font-weight:700;letter-spacing:-.02em;margin:6px 0 10px}
+.ph-tabs{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);background:var(--surface);padding:8px 4px 20px;font-size:10px;line-height:12px;text-align:center;color:var(--ink-3)}
+.ph-tabs div{position:relative}
+.ph-tabs svg{width:22px;height:22px;margin:0 auto 3px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ph-tabs .on{color:var(--accent);font-weight:600}
+.ph-tabs .bdg{position:absolute;top:-3px;left:calc(50% + 4px);background:var(--neg);color:#fff;border-radius:999px;font-size:9px;font-weight:700;padding:0 5px;line-height:14px}
+.pc{background:var(--surface);border-radius:14px;padding:14px;margin-bottom:10px}
+.pc .cap{font-size:11px;color:var(--ink-3)}
+.pc .big{font-size:34px;line-height:38px;font-weight:700;letter-spacing:-.025em;margin:2px 0}
+.pr{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.pr:last-child{border-bottom:none}
+.pr .sp{flex:1;min-width:0}
+.pr .sp b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr .sp span{font-size:11px;color:var(--ink-3);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr .sp span span,.pr .sp b span{display:inline}
+.pr .amt{font-variant-numeric:tabular-nums;font-weight:600}
+.flag{width:7px;height:7px;border-radius:50%;background:var(--warn-line);flex:none}
+.flag.no{background:transparent}
+.dayh{font-size:11px;font-weight:600;color:var(--ink-3);padding:10px 0 2px;display:flex;justify-content:space-between}
+.search{background:var(--sunk);border-radius:10px;padding:7px 12px;color:var(--ink-3);margin-bottom:6px}
+.fresh{font-size:11px;color:var(--ink-3);text-align:center;padding:7px 0;border-top:1px solid var(--line);background:var(--bg)}
+.pbtn{display:block;text-align:center;background:var(--accent);color:#fff;border-radius:12px;padding:11px;font-weight:600;font-size:14px}
+@media (prefers-color-scheme:dark){.pbtn{color:#121211}}
+.pbtn.q{background:var(--sunk);color:var(--ink)}
+.ph-cap{margin-top:14px}
+.ph-cap b{display:block;font-size:14px}
+.ph-cap span{font-size:13px;color:var(--ink-2);line-height:1.45;display:block;margin-top:2px}
+
+/* Lists, milestones, decisions */
+.kv{display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:0;margin-top:24px;border-top:1px solid var(--line)}
+.kv>div{padding:12px 12px 12px 0;border-bottom:1px solid var(--line);font-size:14px;min-width:0}
+.kv>div:nth-child(odd){font-weight:600}
+.kv>div:nth-child(even){color:var(--ink-2)}
+@media (max-width:640px){.kv{grid-template-columns:1fr}.kv>div:nth-child(odd){border-bottom:none;padding-bottom:0}}
+.ms{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:14px;margin-top:28px}
+.ms .card{border-top:3px solid var(--accent)}
+.ms .card ul{margin-top:8px;font-size:13px;color:var(--ink-2);line-height:1.5}
+.ms .card li{padding-left:14px;position:relative}
+.ms .card li::before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:50%;background:var(--line-strong)}
+form.dec{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}
+form.dec h3{margin-bottom:4px}
+form.dec>p{font-size:14px;color:var(--ink-2);margin-bottom:12px}
+form.dec label{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-top:8px;font-size:14px;cursor:pointer}
+form.dec label:has(input:checked){border-color:var(--accent);background:var(--accent-bg)}
+form.dec label span{min-width:0}
+form.dec label small{display:block;color:var(--ink-2);font-size:13px;line-height:1.45}
+form.dec textarea{width:100%;margin-top:10px;border:1px solid var(--control);border-radius:8px;padding:8px 10px;font:14px var(--font);background:var(--surface);color:var(--ink);min-height:44px;resize:vertical}
+form.dec .row{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+form.dec button{font:600 13px var(--font);background:var(--ink);color:var(--surface);border:none;border-radius:7px;padding:7px 14px;cursor:pointer}
+form.dec .queued{font-size:13px;color:var(--pos);font-weight:600}
+
+.glance{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:12px;margin-top:32px}
+.glance div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:14px;line-height:1.5;color:var(--ink-2);min-width:0}
+.glance b{display:block;color:var(--ink);font-size:15px;margin-bottom:2px}
+.risks{margin-top:14px;font-size:14px;color:var(--ink-2);max-width:90ch}
+.risks b{color:var(--warn)}
+.jump{display:inline-block;margin-top:20px;background:var(--ink);color:var(--surface);border-radius:8px;padding:8px 16px;font-weight:600;font-size:14px;text-decoration:none}
+section{margin-top:72px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-today" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/></symbol>
+  <symbol id="i-acct" viewBox="0 0 24 24"><path d="M4 9l8-5 8 5M5 9v9M19 9v9M9.5 11v6M14.5 11v6M3.5 19.5h17"/></symbol>
+</svg>
+<div class="wrap">
+
+
+<header class="top">
+  <div class="eyebrow">Proposal and screens · every figure and name invented</div>
+  <h1>Hearth for Mac and iPhone</h1>
+  <p class="lede">A private, native app for your household's books. The Mac app comes first; the iPhone companion follows.</p>
+  <div class="glance">
+    <div><b>What it is</b>A native Mac app first, an iPhone companion after it, for you, your wife and a few friends. Not an App Store product.</div>
+    <div><b>Engine</b>Beancount with hearth on top, in Python, running inside the Mac app. Nothing is rewritten.</div>
+    <div><b>Screens</b>Fully native, no Fava. Fava's income statement, balance sheet, transactions and holdings, with its click-through and filters, plus your Statements page and Review.</div>
+    <div><b>Getting data in</b>Your existing hearth setup opens as it is: banks, mappings and history kept. New users connect a bank with their own Plaid keys, import statement files, or import a beancount ledger once.</div>
+    <div><b>iPhone, later</b>Shows the books the Mac worked out and sends review decisions back. Only the Mac talks to banks.</div>
+    <div><b>Not in the first release</b>The iPhone app, a second household member, a query page, and documents.</div>
+  </div>
+  <p class="risks"><b>Three risks:</b> Python inside a signed Mac app is unproven for this project, so it is built first. Getting a Plaid account approved for real banks is the hardest step for anyone new. When the phone arrives, it is only as fresh as the Mac.</p>
+  <a class="jump" href="#decide">All decisions are settled ↓</a>
+  <nav class="toc">
+    <a href="#shape">How it fits together</a><a href="#first-run">Getting started</a><a href="#rows">Transactions and categories</a><a href="#mac">Mac screens</a><a href="#iphone">iPhone screens</a><a href="#build">Build plan</a><a href="#decide">Decisions</a>
+  </nav>
+</header>
+
+<section id="shape">
+  <div class="eyebrow">1 · How it fits together</div>
+  <h2>Banks to Mac to iCloud to iPhone</h2>
+    <div class="flow">
+    <svg viewBox="0 0 1080 330" role="img" aria-label="Banks send rows through Plaid, with the user's own keys, or as statement files, to the Mac. The Mac and the iPhone sync through the user's private iCloud database. No Hearth server exists.">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="var(--ink-3)"/></marker></defs>
+      <rect class="box" x="10" y="40" width="190" height="78" rx="10"/>
+      <text class="t" x="28" y="72">Your banks</text><text class="s" x="28" y="94">through Plaid, your keys</text>
+      <rect class="box" x="10" y="150" width="190" height="78" rx="10"/>
+      <text class="t" x="28" y="182">Files</text><text class="s" x="28" y="204">statements, or a ledger</text>
+      <path class="arr" d="M200 79 C 250 79 250 120 300 126" marker-end="url(#ah)"/>
+      <path class="arr" d="M200 189 C 250 189 250 150 300 144" marker-end="url(#ah)"/>
+      <rect class="hot" x="302" y="30" width="270" height="210" rx="14"/>
+      <text class="t" x="322" y="62" style="font-size:16px">Hearth on your Mac</text>
+      <text class="s" x="322" y="84">the desk, and the only engine</text>
+      <text x="322" y="118" font-size="13">Books transactions on arrival</text>
+      <text x="322" y="140" font-size="13">Review, with remembered decisions</text>
+      <text x="322" y="162" font-size="13">Fava's basics, plus Statements</text>
+      <text x="322" y="184" font-size="13">Reads a beancount ledger in</text>
+      <text x="322" y="206" font-size="13">Writes a beancount ledger out</text>
+      <path class="arr" d="M572 135 H 672" marker-end="url(#ah)" marker-start="url(#ah)"/>
+      <rect class="box" x="674" y="80" width="170" height="110" rx="14"/>
+      <text class="t" x="694" y="114">Your iCloud</text><text class="s" x="694" y="136">private database,</text><text class="s" x="694" y="153">only your Apple ID</text><text class="s" x="694" y="170">can read it</text>
+      <path class="arr" d="M844 135 H 908" marker-end="url(#ah)" marker-start="url(#ah)"/>
+      <rect class="hot" x="910" y="50" width="160" height="170" rx="22"/>
+      <text class="t" x="928" y="84" style="font-size:16px">iPhone</text>
+      <text class="s" x="928" y="104">the pocket</text>
+      <text x="928" y="134" font-size="13">Glance</text><text x="928" y="154" font-size="13">Every transaction</text><text x="928" y="174" font-size="13">Review</text><text x="928" y="194" font-size="13">Balances</text>
+      <rect x="392" y="276" width="296" height="40" rx="10" fill="none" stroke="var(--neg)" stroke-dasharray="5 4"/>
+      <text x="540" y="301" text-anchor="middle" font-size="13" style="fill:var(--neg);font-weight:600">No Hearth server. No Hearth account.</text>
+    </svg>
+  </div>
+  <div style="margin-top:20px">
+    <div class="kv">
+    <div>The books <span class="tag">Mac writes</span></div><div>After every recompute the Mac publishes what the phone needs to your private iCloud: transactions, balances, what is waiting in Review, and the Today figures. The phone only reads these.</div>
+    <div>Decisions <span class="tag">phone writes</span></div><div>A review decision made on the phone is saved to iCloud as a request. The Mac applies it through hearth's own review rules, recomputes, and publishes again. Decisions made on the Mac apply at once.</div>
+    <div>On the phone, meanwhile</div><div>A decided transaction shows its new category immediately, marked "waiting for your Mac". Totals change when the Mac has recomputed, and say when that was.</div>
+    <div>Keys and tokens <span class="tag">Mac only</span></div><div>Plaid keys and bank tokens stay in the Mac's Keychain, in the vault hearth already has. They never go to iCloud or the phone.</div>
+    <div>Offline</div><div>The phone opens and shows the last published books with no network. Decisions queue and go up later.</div>
+    <div>Freshness</div><div>Every screen that shows a balance says when the Mac last updated it.</div>
+  </div>
+  </div>
+</section>
+
+<section id="first-run">
+  <div class="eyebrow">2 · Getting started</div>
+  <h2>Two questions, then your books</h2>
+  <p class="sub">Everything inside a window or phone frame is what the person sees. Notes sit outside the frames.</p>
+    <div class="steps small">
+    <div class="shw"><div class="shcap">Question 1</div><div class="sheet"><h3>How do you want to start?</h3>
+      <div class="opt on"><b>Start new books</b><span>Add your accounts and Hearth keeps the books from your transactions.</span></div>
+      <div class="opt"><b>Import a beancount ledger</b><span>Bring your accounts, categories and history from an existing ledger file.</span></div>
+      <div class="opt"><b>Try a sample</b><span>Explore Hearth with example data. You can start your own books at any time.</span></div>
+      <div class="act"><span class="btn p">Continue</span></div></div></div>
+    <div class="shw"><div class="shcap">Question 2</div><div class="sheet"><h3>Add your first account</h3>
+      <div class="opt on"><b>Connect a bank</b><span>Transactions arrive automatically every day. Requires your own Plaid keys.</span></div>
+      <div class="opt"><b>Import a statement file</b><span>OFX, QFX or CSV from your bank's website.</span></div>
+      <div class="opt"><b>Enter a balance</b><span>For cash, property, a loan, or any account without a bank feed.</span></div>
+      <div class="act"><span style="color:var(--accent);margin-right:auto;align-self:center">Skip for now</span><span class="btn p">Continue</span></div></div></div>
+    <div class="card" style="align-self:start"><h3>What is deliberately not asked</h3>
+      <p><b>Your name or an account.</b> Your Apple ID is the account.<br><b>Currency.</b> Taken from the first account, or the Mac's region. Changeable.<br><b>Categories.</b> A short default set is already there, and you shape it as rows arrive (see Default categories).<br><b>iCloud.</b> On if the Mac is signed in, stated in one line, switchable in Settings.<br><b>Budgets, goals, notifications.</b> Nothing is asked before it has a use.</p></div>
+  </div>
+
+  <h3 class="subh">Three more sheets, each shown only when needed</h3>
+    <div class="steps small">
+    <div class="shw"><div class="shcap">Shown the first time a bank is connected</div><div class="sheet"><h3>Paste your Plaid keys</h3><p>Find them at dashboard.plaid.com under Developers, Keys. They are stored in your Keychain and sent only to Plaid.</p>
+      <label>Client ID</label><div class="fld">5f2c •••••••••••••••• 91ab</div>
+      <label>Secret</label><div class="fld">••••••••••••••••••••••••</div>
+      <p style="font-size:12px">No Plaid account yet? <span style="color:var(--accent)">How to get one</span> · <span style="color:var(--accent)">Import a file instead</span></p>
+      <div class="act"><span class="btn p">Check keys</span></div></div></div>
+    <div class="shw"><div class="shcap">Shown after choosing a ledger file</div><div class="sheet"><h3>household.beancount is ready to import</h3><p>9,412 entries · 64 accounts · Mar 2019 to today</p>
+      <div class="opt"><b><span class="ok" style="display:inline">✓</span> 311 of 311 balance checks pass</b><span>Net worth today: $846,684</span></div>
+      <div class="opt"><b><span class="wn" style="display:inline">!</span> 5 lines not used by Hearth</b><span>3 plugins and 2 custom directives. They are kept unchanged when you export. <span style="color:var(--accent);display:inline">Show</span></span></div>
+      <div class="act"><span class="btn">Cancel</span><span class="btn p">Import</span></div></div></div>
+    <div class="shw"><div class="shcap">Shown when a bank is added to imported books</div><div class="sheet"><h3>Match your Harbor Bank accounts</h3><p>New transactions are added from the day after each account's last entry.</p>
+      <div class="opt"><b>Checking ···4417</b><span><b style="display:inline;color:var(--ink)">Assets:Harbor:Checking</b> ▾ · from Nov 13</span></div>
+      <div class="opt"><b>Savings ···0932</b><span><b style="display:inline;color:var(--ink)">Assets:Harbor:Savings</b> ▾ · from Nov 2</span></div>
+      <div class="act"><span style="color:var(--accent);margin-right:auto;align-self:center">Add as new accounts</span><span class="btn p">Connect</span></div></div></div>
+  </div>
+
+
+  <h3 class="subh">If hearth is already set up on this Mac</h3>
+  <p class="why">Your case. The engine is hearth, so the app opens hearth's existing data in place: the bank connections, their sealed tokens, the account mappings, everything the banks have sent, and every review decision. No Plaid keys to paste, no bank to sign in to again, and no extra Plaid connections used. Your ledger already records which bank transaction each entry came from, so matching accounts and skipping what you have already imported needs no setup either.</p>
+  <div class="steps small">
+    <div class="shw"><div class="shcap">Shown instead of Question 1</div><div class="sheet"><h3>Hearth is already set up on this Mac</h3>
+      <div class="opt"><b>3 banks connected</b><span>Harbor Bank, Summit, Northwind · 5 accounts · last updated today, 6:02 AM</span></div>
+      <div class="opt"><b>3,912 transactions received</b><span>Nov 2024 to today · review decisions kept</span></div>
+      <div class="act"><span style="color:var(--accent);margin-right:auto;align-self:center">Start new books instead</span><span class="btn p">Use this setup</span></div></div></div>
+    <div class="shw"><div class="shcap">Then, once</div><div class="sheet"><h3>Do you keep a beancount ledger?</h3>
+      <div class="opt on"><b>Yes, import it</b><span>household.beancount · chosen from your Fava setup</span></div>
+      <div class="opt"><b>No, use Hearth's own books</b><span>Built from your connected accounts.</span></div>
+      <div class="act"><span class="btn p">Continue</span></div></div></div>
+    <div class="shw"><div class="shcap">Accounts matched from the ledger itself</div><div class="sheet"><h3>Your accounts are matched</h3>
+      <div class="opt"><b><span class="ok" style="display:inline">✓</span> 5 of 5 accounts matched</b><span>Checking ···4417 is Assets:Harbor:Checking, and 4 more. <span style="color:var(--accent);display:inline">Show</span></span></div>
+      <div class="opt"><b><span class="ok" style="display:inline">✓</span> 3,898 transactions already in your ledger</b><span>14 new ones are waiting in Review.</span></div>
+      <div class="act"><span class="btn">Change</span><span class="btn p">Open my books</span></div></div></div>
+  </div>
+  <h3 class="subh">The journey for each kind of person</h3>
+    <div class="lanes">
+    <div class="lane"><h3>New, wants it automatic</h3><div class="who">Has, or will make, a Plaid account</div><ol>
+      <li><b>Start new books</b>, then <b>Connect a bank</b>.</li>
+      <li>Paste Plaid keys. Once, ever.</li>
+      <li>Sign in on the bank's own page.</li>
+      <li>Two years of rows arrive, already booked and grouped. Each account opens at the balance the bank reports.</li>
+      <li>Review opens on the biggest groups. A few dozen decisions cover most of two years.</li></ol>
+      <div class="end">Real net worth within minutes. Every day after: a handful of new rows.</div></div>
+    <div class="lane"><h3>New, no outside service</h3><div class="who">Will not use Plaid, or cannot yet</div><ol>
+      <li><b>Start new books</b>, then <b>Import a statement file</b> or <b>Enter a balance</b>.</li>
+      <li>Hearth names the account from the file and asks only what the file does not say.</li>
+      <li>Rows are booked and grouped by merchant, since a file carries no bank category.</li>
+      <li>Next month: drop the next file anywhere on the window. Overlapping rows are recognised and skipped.</li></ol>
+      <div class="end">Same app, same books. Connecting a bank later keeps everything.</div></div>
+    <div class="lane"><h3>Already keeps a beancount ledger</h3><div class="who">Fava users without hearth</div><ol>
+      <li><b>Import a beancount ledger</b>. Hearth reads it and shows the check: entries, accounts, balance checks, net worth.</li>
+      <li>Books open with the full history, the ledger's own accounts and categories, and nothing waiting in Review.</li>
+      <li>Later, <b>Add account</b>, <b>Connect a bank</b>, and say which ledger account each one is.</li>
+      <li>Only rows after each account's last entry arrive. From here it behaves like everyone else's.</li></ol>
+      <div class="end">The ledger comes in whole and can leave whole: export opens in Fava with the same balances.</div></div>
+    <div class="lane"><h3>Already runs hearth</h3><div class="who">You</div><ol>
+      <li>The app finds hearth's data on this Mac. <b>Use this setup</b>.</li>
+      <li><b>Import</b> your beancount ledger, once.</li>
+      <li>Accounts are matched from the ledger. Confirm.</li></ol>
+      <div class="end">Same banks, same mappings, same history. Review holds only what is new.</div></div>
+  </div>
+</section>
+
+<section id="rows">
+  <div class="eyebrow">3 · Transactions and categories</div>
+  <h2>There is no import step</h2>
+  <p class="quote">Transactions arrive on their own and are in the books at once. The only work left for a person is deciding.</p>
+    <div class="pipe">
+    <div class="card"><span class="k">1 · ARRIVE</span><h3>From a bank or a file</h3><p>A connected bank is asked each morning, when the app opens, and when you press the sync control in the toolbar. A file can be dropped anywhere on the window.</p></div>
+    <div class="card"><span class="k">2 · MATCH</span><h3>Never twice</h3><p>A bank row is known by the bank's own id. A file row is matched on its content against what is already there; a near match is shown for a look, not silently dropped. Pending rows wait.</p></div>
+    <div class="card"><span class="k">3 · BOOK</span><h3>In the books, flagged</h3><p>Every row is booked immediately against a suggested category and marked unreviewed. A card payment seen from both sides becomes one transfer, never spending and income at once.</p></div>
+    <div class="card"><span class="k">4 · PROVE</span><h3>Against the bank</h3><p>The account's balance is checked against what the bank says. Agreement shows as a tick on the account. Disagreement is named, with the rows that make the difference.</p></div>
+    <div class="card"><span class="k">5 · DECIDE</span><h3>Review</h3><p>New rows wait in Review. Until you look, totals count them at their suggestion and say how much rests on them.</p></div>
+  </div>
+
+  <h3 class="subh">The first import: two years in a few dozen decisions</h3>
+    <div class="two" style="margin-top:12px">
+    <div class="scroller" style="margin-top:0"><div class="mac" style="min-width:520px">
+      <div class="mac-bar"><i></i><i></i><i></i><b>Review</b><span class="sp"></span><span class="fld2">Largest group first ▾</span><span class="fld2">Groups ▾</span></div>
+      <div class="main" style="padding:18px 20px">
+        <div class="cap">Harbor Bank · Nov 2024 to today</div>
+        <div class="hero fig" style="font-size:36px;line-height:40px">1,284 <span style="font-size:14px;font-weight:500;color:var(--ink-3);letter-spacing:0">to review, in 31 groups</span></div>
+        <div class="bar" style="grid-template-columns:minmax(0,1fr) auto;padding:6px 0 2px"><span class="trk"><b style="width:0%"></b></span><span class="cap">0 of 1,284 reviewed</span></div>
+        <div class="grp"><div class="sp"><b>Meridian Works payroll · 48</b><div class="cap">Bank says Payroll · +$256,800.00</div></div><span class="chip on">Pay</span><span class="btn p s">Accept 48</span></div>
+        <div class="grp"><div class="sp"><b>Groceries · 212</b><div class="cap">Bank says Groceries · 9 stores · −$17,330.40</div></div><span class="btn s">Show</span><span class="btn p s">Accept 212</span></div>
+        <div class="grp"><div class="sp"><b>Restaurants · 187</b><div class="cap">Bank says Restaurants · −$9,430.12</div></div><span class="btn s">Show</span><span class="btn p s">Accept 187</span></div>
+        <div class="grp" style="border-color:var(--accent)"><div class="sp"><b>To savings ···0932 · 24</b><div class="cap">Transfers to Harbor Savings · $36,000.00</div></div><span class="ok">✓ Matched</span></div>
+        <div class="grp"><div class="sp"><b>Transfers to ···7781 · 24</b><div class="cap">Not an account in Hearth · −&#8288;$14,400.00</div></div><span class="btn s">Choose…</span></div>
+        <div class="grp"><div class="sp"><b>No suggestion · 96</b><div class="cap">41 merchants · −&#8288;$8,212.60</div></div><span class="btn s">Open</span></div>
+      </div>
+    </div></div>
+    <div>
+      <div class="card"><h3>Where a suggestion comes from, in order</h3>
+        <p>1. <b>Your own past decisions</b> for the same merchant. "Dining twice before."<br>2. <b>The two sides of a move</b> between your accounts, paired into one transfer. Nothing to review.<br>3. <b>The bank's own category</b>, mapped to yours. "Bank says Restaurants."<br>4. <b>Nothing.</b> Then the row is asked plainly, grouped by merchant so one answer covers all of them.</p>
+        <p style="margin-top:10px">The reason is always given in words, never as a confidence percentage.</p></div>
+      <div class="card" style="margin-top:16px"><h3>What you can do to a row</h3>
+        <p><b>Accept</b> it, or its whole group, as suggested.<br><b>Change</b> its category, including "New category…" typed on the spot.<br><b>Split</b> it across categories.<br><b>Say where it went</b>, when it moved to an account Hearth does not see.<br><b>Note or tag</b> it.<br><b>Undo</b> the last decision, whether one row or two hundred.</p></div>
+      <div class="card" style="margin-top:16px"><h3>What the app remembers</h3>
+        <p>A decision is kept with the transaction's content, so importing the same row again never asks twice. If the bank later changes the amount, the row comes back to Review and says so. Deciding a merchant once makes it the suggestion for that merchant from then on.</p></div>
+    </div>
+  </div>
+  <h3 class="subh">Default categories: short, flat, and never asked about in onboarding</h3>
+    <div class="two">
+    <div class="card"><h3>Money in</h3><div class="cats"><span class="chip">Pay</span><span class="chip">Interest</span><span class="chip">Dividends</span><span class="chip">Other income</span></div>
+      <h3 style="margin-top:18px">Money out</h3><div class="cats"><span class="chip">Housing</span><span class="chip">Groceries</span><span class="chip">Dining</span><span class="chip">Transport</span><span class="chip">Shopping</span><span class="chip">Health</span><span class="chip">Travel</span><span class="chip">Subscriptions</span><span class="chip">Utilities</span><span class="chip">Fun</span><span class="chip">Taxes</span><span class="chip">Fees and interest</span><span class="chip">Other spending</span></div>
+      <h3 style="margin-top:18px">Not categories</h3><p><b>Moves between your accounts</b> are transfers and are never spending or income. <b>A refund</b> goes back against the category it came from.</p></div>
+    <div class="card"><h3>Edited in onboarding? No. Edited in place, always.</h3>
+      <p>Nobody knows which categories they need before seeing their own rows, so a setup screen would be guesswork and a reason to stop. Instead:</p>
+      <p style="margin-top:8px"><b>At the moment of need:</b> the category picker on any row ends in "New category…".<br><b>As a whole:</b> Settings, Categories lets you rename, merge, nest one under another (Housing, then Rent and Repairs), and retire one. History follows the change.<br><b>With a ledger:</b> the defaults are not used at all. The ledger's own accounts are the categories.</p>
+      <p style="margin-top:8px">Each category also carries a kind: pay, investment income, other income, spending, or tax. Statements reads the kind, not the name, so it works on any chart of accounts. For a ledger the kinds are guessed from account names and anything unrecognised reads as "Other spending" or "Other income", so nothing is ever left out.</p></div>
+  </div>
+</section>
+
+<section id="mac">
+  <div class="eyebrow">4 · Mac screens</div>
+  <h2>Fava's basics, natively, plus Statements and Review</h2>
+  <p class="sub">Five places and your accounts in the sidebar. One toolbar on every page: the period, a filter, a new entry, and the bank sync control.</p>
+    <div class="tblwrap"><table class="par">
+    <tr><th>Fava has</th><th>In Hearth</th><th>First release</th></tr>
+    <tr><td>Income statement</td><td>Statements, Income statement: the account tree for any period, months as columns, click through to entries.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Balance sheet</td><td>Statements, Balance sheet: at market value or at cost, end against start.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Journal</td><td>Transactions: every entry, with both sides visible, balance checks in line, filtered by the toolbar.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Account page</td><td>Click any account: its balance over time, its entries, and how it is proved against the bank.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Holdings and prices</td><td>Holdings: units, cost, price with its source and date, value, gain not yet realised.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Import</td><td>No page. Rows arrive and wait in Review; a file is dropped anywhere.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Editor</td><td>No text editor. Every entry opens as a form: date, payee, categories and splits, note, tags. "+ New" adds one by hand. The whole ledger exports as beancount text.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Errors</td><td>Needs attention: a balance that disagrees with its bank, a connection that needs a sign-in, an entry that does not balance. Shown on Overview and on the account.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Trial balance</td><td>Folded into the sidebar and Balance sheet, which already show every account's balance.</td><td><span class="tag">folded in</span></td></tr>
+    <tr><td>Query (BQL)</td><td>The toolbar filter and CSV export cover most uses. Beancount's own query language is available to the engine, so a query page is a screen to build, not a language. Meanwhile the ledger still opens in Fava.</td><td><span class="tag later">later</span></td></tr>
+    <tr><td>Documents, Events</td><td>Attach a file to an entry or account; dated notes.</td><td><span class="tag later">later</span></td></tr>
+    <tr><td>Your Statements page</td><td>Statements, Summary: this year against last, why net worth changed, year by year. The front page of Statements.</td><td><span class="tag rec">yes</span></td></tr>
+    <tr><td>Your Bank sync page</td><td>No longer a page: a sync control in the toolbar, freshness and the balance check on each account, connections in Settings.</td><td><span class="tag rec">yes</span></td></tr>
+  </table></div>
+
+
+  <h3 class="subh">Everything is clickable, and one filter works everywhere</h3>
+  <p class="why">Fava's habit of clicking through and narrowing down carries over whole. The filter stays in the toolbar as you move between pages, and every page, statements included, recalculates under it.</p>
+  <div class="two" style="margin-top:12px">
+    <div class="kv" style="margin-top:0">
+      <div>Any figure</div><div>Opens the transactions that make it up. A cell in the income statement opens that category for that month.</div>
+      <div>Any account or category</div><div>Opens its page: balance or spending over time, and its transactions.</div>
+      <div>Any payee or tag</div><div>Filters to everything from that payee, or with that tag.</div>
+      <div>Any chart bar or point</div><div>Narrows the period to that month.</div>
+      <div>The filter</div><div>Time (a year, quarter, month or any range), account (one, or a whole branch), payee, tag, amount, and free text. They combine.</div>
+      <div>Getting back</div><div>Back and forward as in a browser, and each filter is a token you remove with one click.</div>
+    </div>
+    <div class="scroller" style="margin-top:0"><div class="mac" style="min-width:520px">
+      <div class="mac-bar"><i></i><i></i><i></i><b>Hearth</b><span class="sp"></span><span class="chip on">Nov 2026 ×</span><span class="chip on">Dining ×</span><span class="fld2">Add filter</span></div>
+      <div class="main" style="padding:18px 20px">
+        <div class="cap">‹ Statements · Income statement</div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px"><h4>Dining</h4><span class="cap">Nov 2026 · 9 transactions</span><span style="flex:1"></span><b class="fig" style="font-size:18px">−&#8288;$590.00</b></div>
+        <table class="t" style="margin-top:10px">
+          <tr><th>Date</th><th>Payee</th><th>Account</th><th class="n">Amount</th></tr>
+          <tr><td>Nov 21</td><td><span class="flag" style="display:inline-block;margin-right:6px"></span><b style="color:var(--accent)">Blue Door</b></td><td style="color:var(--accent)">Summit Card</td><td class="n">−46.50</td></tr>
+          <tr><td>Nov 18</td><td><b style="color:var(--accent)">Saffron House</b> <span class="chip" style="margin-left:4px">#date-night</span></td><td style="color:var(--accent)">Summit Card</td><td class="n">−124.80</td></tr>
+          <tr><td>Nov 14</td><td><b style="color:var(--accent)">Coffee Cart</b></td><td style="color:var(--accent)">Harbor Checking</td><td class="n">−30.50</td></tr>
+          <tr><td>Nov 9</td><td><b style="color:var(--accent)">Blue Door</b></td><td style="color:var(--accent)">Summit Card</td><td class="n">−61.20</td></tr>
+        </table>
+        <p class="cap" style="margin-top:8px">5 more</p>
+      </div>
+    </div></div>
+  </div>
+  <h3 class="subh">Overview</h3>
+  <p class="why">One hero, as hearth's design demands. Each chart states its finding in a sentence above it.</p>
+  <div class="scroller"><div class="mac"><div class="mac-bar"><i></i><i></i><i></i><b>Hearth</b><span class="sp"></span><span class="fld2">2026 so far ▾</span><span class="fld2" style="min-width:190px">Filter: account, payee, tag</span><span class="btn s">+ New</span><span class="ic"><span class="dot"></span>Updated 6:02 AM ↻</span></div>
+    <div class="mac-body"><div class="side"><a class="on">Overview</a><a>Review <span class="cnt">14</span></a><a>Transactions</a><a>Statements</a><a>Holdings</a><span class="h">CASH</span><a>Harbor Checking <em>8,412</em></a><a>Harbor Savings <em>42,150</em></a><span class="h">CARDS</span><a>Summit Card <em><span class="dot w"></span> −1,285</em></a><span class="h">INVESTMENTS</span><a>Northwind Brokerage <em>512,906</em></a><a>Northwind Retirement <em>284,500</em></a><a style="color:var(--accent);margin-top:6px">+ Add account</a><div class="foot"><span class="dot"></span> iCloud up to date</div></div><div class="main">
+        <div class="cap">Net worth</div>
+        <div class="hero fig"><small>$</small>846,684</div>
+        <div><span class="up">▲ Up $12,960</span> since Nov 1 &nbsp;·&nbsp; <span class="up">▲ Up $109,850</span> this year</div>
+        <div class="banner"><b>14 transactions to review</b><span>$1,120 of November's spending is not reviewed yet.</span><span class="sp"></span><span class="btn p s">Review</span></div>
+        <div class="cols">
+          <div class="panel"><h5>Net worth, end of each month</h5><p class="find">Up every month this year but April, when the market fell.</p>
+            <svg viewBox="0 0 440 150" width="100%" role="img" aria-label="Net worth line rising from 737 thousand in January to 847 thousand in November with a dip in April">
+              <g stroke="var(--chart-grid)"><path d="M0 30H440M0 75H440M0 120H440"/></g>
+              <path d="M10 124 L52 112 L94 104 L136 116 L178 96 L220 84 L262 72 L304 64 L346 52 L388 44 L430 26" fill="none" stroke="var(--chart-line)" stroke-width="2"/>
+              <circle cx="430" cy="26" r="4" fill="var(--chart-line)"/>
+              <g font-size="10" fill="var(--ink-3)" font-family="-apple-system,sans-serif"><text x="6" y="144">Jan</text><text x="126" y="144">Apr</text><text x="252" y="144">Jul</text><text x="378" y="144">Oct</text><text x="438" y="14" text-anchor="end">$847k</text></g>
+            </svg></div>
+          <div class="panel"><h5>Where November went</h5><p class="find">$5,655 so far. Dining is $180 over where it usually is by the 22nd.</p>
+            <div class="bar"><span>Housing</span><span class="trk"><b style="width:92%"></b><u style="left:92%"></u></span><span class="n num">3,150</span></div>
+            <div class="bar"><span>Groceries</span><span class="trk"><b style="width:24%"></b><u style="left:26%"></u></span><span class="n num">812</span></div>
+            <div class="bar"><span>Dining</span><span class="trk"><b class="hot" style="width:17%"></b><u style="left:12%"></u></span><span class="n num dn">▲ 590</span></div>
+            <div class="bar"><span>Transport</span><span class="trk"><b style="width:9%"></b><u style="left:10%"></u></span><span class="n num">318</span></div>
+            <div class="bar"><span>Other</span><span class="trk"><b style="width:23%"></b><u style="left:24%"></u></span><span class="n num">785</span></div>
+            <p class="cap" style="margin-top:6px">┃ Typical by Nov 22</p></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <h3 style="margin-top:28px">Statements, Summary</h3>
+  <p class="why">The Summary tab is your Statements page from Fava. Colour only when a change is both over $1,000 and over 10%, and colour means good or bad, not up or down.</p>
+  <div class="scroller"><div class="mac"><div class="mac-bar"><i></i><i></i><i></i><b>Hearth</b><span class="sp"></span><span class="fld2">2026 so far ▾</span><span class="fld2" style="min-width:190px">Filter: account, payee, tag</span><span class="btn s">+ New</span><span class="ic"><span class="dot"></span>Updated 6:02 AM ↻</span></div>
+    <div class="mac-body"><div class="side"><a>Overview</a><a>Review <span class="cnt">14</span></a><a>Transactions</a><a class="on">Statements</a><a>Holdings</a><span class="h">CASH</span><a>Harbor Checking <em>8,412</em></a><a>Harbor Savings <em>42,150</em></a><span class="h">CARDS</span><a>Summit Card <em><span class="dot w"></span> −1,285</em></a><span class="h">INVESTMENTS</span><a>Northwind Brokerage <em>512,906</em></a><a>Northwind Retirement <em>284,500</em></a><a style="color:var(--accent);margin-top:6px">+ Add account</a><div class="foot"><span class="dot"></span> iCloud up to date</div></div><div class="main">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h4>Statements</h4><span class="sp" style="flex:1"></span>
+          <span class="seg"><span class="on">Summary</span><span>Income statement</span><span>Balance sheet</span><span>Year by year</span></span>
+          <span class="seg"><span class="on">At market value</span><span>At cost</span></span></div>
+        <p class="cap" style="margin-top:4px">Jan 1 to Nov 22, 2026, against Jan 1 to Nov 22, 2025</p>
+        <div class="kpis">
+          <div><span class="cap">Net worth</span><b class="fig">$846,684</b><span class="up">▲ $109,850</span></div>
+          <div><span class="cap">Savings rate</span><b class="fig">47%</b><span class="cap">47% a year before</span></div>
+          <div><span class="cap">Spending</span><b class="fig">$67,700</b><span>▲ $4,170, 7%</span></div>
+          <div><span class="cap">Market added</span><b class="fig">$41,300</b><span class="cap">gain not yet realised</span></div>
+        </div>
+        <div class="cols" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)">
+          <div><table class="t">
+            <tr><th>Income statement</th><th class="n">2026</th><th class="n">2025</th><th class="n">Change</th></tr>
+            <tr class="g"><td>Take-home pay</td><td class="n">128,400</td><td class="n">119,800</td><td class="n up">▲ 8,600</td></tr>
+            <tr class="g"><td>Spending</td><td class="n">67,700</td><td class="n">63,530</td><td class="n">▲ 4,170</td></tr>
+            <tr><td class="i">Housing</td><td class="n">34,650</td><td class="n">33,000</td><td class="n">▲ 1,650</td></tr>
+            <tr><td class="i">Groceries</td><td class="n">8,920</td><td class="n">8,410</td><td class="n">▲ 510</td></tr>
+            <tr><td class="i">Dining</td><td class="n">5,310</td><td class="n">4,120</td><td class="n dn">▲ 1,190</td></tr>
+            <tr><td class="i">Travel</td><td class="n">6,200</td><td class="n">4,900</td><td class="n dn">▲ 1,300</td></tr>
+            <tr><td class="i">Transport</td><td class="n">3,480</td><td class="n">3,620</td><td class="n">▼ 140</td></tr>
+            <tr><td class="i">Other spending</td><td class="n">9,140</td><td class="n">9,480</td><td class="n">▼ 340</td></tr>
+            <tr class="tot"><td>Saved from work</td><td class="n">60,700</td><td class="n">56,270</td><td class="n up">▲ 4,430</td></tr>
+            <tr><td>Investment income</td><td class="n">7,850</td><td class="n">6,900</td><td class="n">▲ 950</td></tr>
+          </table></div>
+          <div><table class="t">
+            <tr><th>Why net worth changed</th><th class="n">2026</th></tr>
+            <tr><td>Start, Jan 1</td><td class="n">736,834</td></tr>
+            <tr><td class="i">Saved from work</td><td class="n">+60,700</td></tr>
+            <tr><td class="i">Investment income</td><td class="n">+7,850</td></tr>
+            <tr><td class="i">Market movement</td><td class="n">+41,300</td></tr>
+            <tr><td class="i">Other</td><td class="n">0</td></tr>
+            <tr class="tot"><td>Today</td><td class="n">846,684</td></tr>
+          </table><p class="cap" style="margin-top:8px"><span class="ok">✓</span> Matches the balance sheet</p></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <h3 style="margin-top:28px">Statements, Income statement</h3>
+  <p class="why">Fava's income statement as it is today: the account tree, months as columns, a total for the period. Any line opens its transactions. The period and filter come from the toolbar.</p>
+  <div class="scroller"><div class="mac"><div class="mac-bar"><i></i><i></i><i></i><b>Hearth</b><span class="sp"></span><span class="fld2">2026 so far ▾</span><span class="fld2" style="min-width:190px">Filter: account, payee, tag</span><span class="btn s">+ New</span><span class="ic"><span class="dot"></span>Updated 6:02 AM ↻</span></div>
+    <div class="mac-body"><div class="side"><a>Overview</a><a>Review <span class="cnt">14</span></a><a>Transactions</a><a class="on">Statements</a><a>Holdings</a><span class="h">CASH</span><a>Harbor Checking <em>8,412</em></a><a>Harbor Savings <em>42,150</em></a><span class="h">CARDS</span><a>Summit Card <em><span class="dot w"></span> −1,285</em></a><span class="h">INVESTMENTS</span><a>Northwind Brokerage <em>512,906</em></a><a>Northwind Retirement <em>284,500</em></a><a style="color:var(--accent);margin-top:6px">+ Add account</a><div class="foot"><span class="dot"></span> iCloud up to date</div></div>
+      <div class="main">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h4>Statements</h4><span style="flex:1"></span><span class="seg"><span>Summary</span><span class="on">Income statement</span><span>Balance sheet</span><span>Year by year</span></span><span class="seg"><span>Year</span><span class="on">Month</span><span>Quarter</span></span></div>
+        <p class="cap" style="margin-top:4px">Jan 1 to Nov 22, 2026 · showing Jul to Nov</p>
+        <table class="t" style="margin-top:12px">
+          <tr><th>Account</th><th class="n">Jul</th><th class="n">Aug</th><th class="n">Sep</th><th class="n">Oct</th><th class="n">Nov</th><th class="n">2026 so far</th></tr>
+<tr class="g"><td>▾ Income</td><td class="n">10,848</td><td class="n">10,851</td><td class="n">17,819</td><td class="n">10,852</td><td class="n">10,798</td><td class="n">136,250</td></tr><tr><td class="i">Pay</td><td class="n">10,700</td><td class="n">10,700</td><td class="n">16,050</td><td class="n">10,700</td><td class="n">10,700</td><td class="n">128,400</td></tr><tr><td class="i">Interest</td><td class="n">148</td><td class="n">151</td><td class="n">149</td><td class="n">152</td><td class="n">98</td><td class="n">1,590</td></tr><tr><td class="i">Dividends</td><td class="n">0</td><td class="n">0</td><td class="n">1,620</td><td class="n">0</td><td class="n">0</td><td class="n">6,260</td></tr><tr class="g"><td>▾ Expenses</td><td class="n">5,525</td><td class="n">7,703</td><td class="n">5,694</td><td class="n">6,366</td><td class="n">5,655</td><td class="n">67,700</td></tr><tr><td class="i">▸ Housing</td><td class="n">3,150</td><td class="n">3,150</td><td class="n">3,150</td><td class="n">3,150</td><td class="n">3,150</td><td class="n">34,650</td></tr><tr><td class="i">Groceries</td><td class="n">790</td><td class="n">835</td><td class="n">802</td><td class="n">846</td><td class="n">812</td><td class="n">8,920</td></tr><tr><td class="i">Dining</td><td class="n">455</td><td class="n">480</td><td class="n">512</td><td class="n">530</td><td class="n">590</td><td class="n">5,310</td></tr><tr><td class="i">Transport</td><td class="n">310</td><td class="n">298</td><td class="n">325</td><td class="n">340</td><td class="n">318</td><td class="n">3,480</td></tr><tr><td class="i">Travel</td><td class="n">0</td><td class="n">2,150</td><td class="n">0</td><td class="n">640</td><td class="n">0</td><td class="n">6,200</td></tr><tr><td class="i">Other spending</td><td class="n">820</td><td class="n">790</td><td class="n">905</td><td class="n">860</td><td class="n">785</td><td class="n">9,140</td></tr><tr class="tot"><td>Net income</td><td class="n">5,323</td><td class="n">3,148</td><td class="n">12,125</td><td class="n">4,486</td><td class="n">5,143</td><td class="n">68,550</td></tr>
+        </table>
+        <p class="cap" style="margin-top:10px"><span class="flag" style="display:inline-block"></span> Nov includes 14 transactions not reviewed yet, $1,120</p>
+      </div>
+    </div>
+  </div></div>
+
+  <h3 style="margin-top:28px">Statements, Balance sheet</h3>
+  <p class="why">Fava's balance sheet: assets, liabilities, and what is left. Start of the period beside the end, with cost and gain for investments.</p>
+  <div class="scroller"><div class="mac"><div class="mac-bar"><i></i><i></i><i></i><b>Hearth</b><span class="sp"></span><span class="fld2">2026 so far ▾</span><span class="fld2" style="min-width:190px">Filter: account, payee, tag</span><span class="btn s">+ New</span><span class="ic"><span class="dot"></span>Updated 6:02 AM ↻</span></div>
+    <div class="mac-body"><div class="side"><a>Overview</a><a>Review <span class="cnt">14</span></a><a>Transactions</a><a class="on">Statements</a><a>Holdings</a><span class="h">CASH</span><a>Harbor Checking <em>8,412</em></a><a>Harbor Savings <em>42,150</em></a><span class="h">CARDS</span><a>Summit Card <em><span class="dot w"></span> −1,285</em></a><span class="h">INVESTMENTS</span><a>Northwind Brokerage <em>512,906</em></a><a>Northwind Retirement <em>284,500</em></a><a style="color:var(--accent);margin-top:6px">+ Add account</a><div class="foot"><span class="dot"></span> iCloud up to date</div></div>
+      <div class="main">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h4>Statements</h4><span style="flex:1"></span><span class="seg"><span>Summary</span><span>Income statement</span><span class="on">Balance sheet</span><span>Year by year</span></span><span class="seg"><span class="on">At market value</span><span>At cost</span></span></div>
+        <p class="cap" style="margin-top:4px">As of Nov 22, 2026, against Jan 1, 2026 · prices from Fri, Nov 20 close</p>
+        <table class="t" style="margin-top:12px">
+          <tr><th>Account</th><th class="n">Jan 1</th><th class="n">Nov 22</th><th class="n">Change</th><th class="n">Cost</th><th class="n">Gain not yet realised</th></tr>
+<tr class="g"><td>▾ Assets</td><td class="n">738,220.40</td><td class="n">847,968.44</td><td class="n">+109,748.04</td><td class="n">690,762.30</td><td class="n">157,206.14</td></tr><tr><td class="i">▾ Cash</td><td class="n">36,120.40</td><td class="n">50,562.30</td><td class="n">+14,441.90</td><td class="n"></td><td class="n"></td></tr><tr><td class="i">&nbsp;&nbsp;&nbsp;&nbsp;Harbor Checking</td><td class="n">6,120.40</td><td class="n">8,412.30</td><td class="n">+2,291.90</td><td class="n"></td><td class="n"></td></tr><tr><td class="i">&nbsp;&nbsp;&nbsp;&nbsp;Harbor Savings</td><td class="n">30,000.00</td><td class="n">42,150.00</td><td class="n">+12,150.00</td><td class="n"></td><td class="n"></td></tr><tr><td class="i">▾ Investments</td><td class="n">702,100.00</td><td class="n">797,406.14</td><td class="n">+95,306.14</td><td class="n">640,200.00</td><td class="n">157,206.14</td></tr><tr><td class="i">&nbsp;&nbsp;&nbsp;&nbsp;Northwind Brokerage</td><td class="n">452,300.00</td><td class="n">512,906.14</td><td class="n">+60,606.14</td><td class="n">409,200.00</td><td class="n">103,706.14</td></tr><tr><td class="i">&nbsp;&nbsp;&nbsp;&nbsp;Northwind Retirement</td><td class="n">249,800.00</td><td class="n">284,500.00</td><td class="n">+34,700.00</td><td class="n">231,000.00</td><td class="n">53,500.00</td></tr><tr class="g"><td>▾ Liabilities</td><td class="n">−1,386.40</td><td class="n">−1,284.55</td><td class="n">+101.85</td><td class="n"></td><td class="n"></td></tr><tr><td class="i">Summit Card</td><td class="n">−1,386.40</td><td class="n">−1,284.55</td><td class="n">+101.85</td><td class="n"></td><td class="n"></td></tr><tr class="tot"><td>Net worth</td><td class="n">736,834.00</td><td class="n">846,683.89</td><td class="n">+109,849.89</td><td class="n"></td><td class="n"></td></tr>
+        </table>
+      </div>
+    </div>
+  </div></div>
+
+  <h3 style="margin-top:28px">Review</h3>
+  <p class="why">How review works: (1) A transaction arrives already in the books at its suggested category, with an amber dot wherever it appears. (2) Review lists what is waiting, grouped so one decision covers many. (3) You accept the suggestion or pick another category; the dot goes and the transaction counts as checked. (4) Totals stop saying they include unreviewed transactions. (5) The decision is remembered for that merchant, and the last one can always be undone.</p>
+  <div class="scroller"><div class="mac"><div class="mac-bar"><i></i><i></i><i></i><b>Hearth</b><span class="sp"></span><span class="fld2">2026 so far ▾</span><span class="fld2" style="min-width:190px">Filter: account, payee, tag</span><span class="btn s">+ New</span><span class="ic"><span class="dot"></span>Updated 6:02 AM ↻</span></div>
+    <div class="mac-body"><div class="side"><a>Overview</a><a class="on">Review <span class="cnt">14</span></a><a>Transactions</a><a>Statements</a><a>Holdings</a><span class="h">CASH</span><a>Harbor Checking <em>8,412</em></a><a>Harbor Savings <em>42,150</em></a><span class="h">CARDS</span><a>Summit Card <em><span class="dot w"></span> −1,285</em></a><span class="h">INVESTMENTS</span><a>Northwind Brokerage <em>512,906</em></a><a>Northwind Retirement <em>284,500</em></a><a style="color:var(--accent);margin-top:6px">+ Add account</a><div class="foot"><span class="dot"></span> iCloud up to date</div></div>
+      <div class="main" style="padding:0;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)">
+        <div style="padding:22px 22px 0;border-right:1px solid var(--line);display:flex;flex-direction:column">
+          <div style="display:flex;align-items:baseline;gap:10px"><h4>Review</h4><span class="cap">14 to review · −&#8288;$1,120.37</span><span style="flex:1"></span><span class="btn s">Accept all 12 suggested</span></div>
+          <div class="grp"><div class="sp"><b>Subscriptions · 6</b><div class="cap">−&#8288;$77.42 · Subscriptions before</div></div><span class="btn s">Show</span><span class="btn p s">Accept 6</span></div>
+          <div class="grp"><div class="sp"><b>Groceries · 3</b><div class="cap">−&#8288;$171.93 · Groceries before</div></div><span class="btn s">Show</span><span class="btn p s">Accept 3</span></div>
+          <table class="t" style="margin-top:12px">
+            <tr><th>One by one · 5</th><th>Suggested</th><th class="n">Amount</th></tr>
+            <tr><td><b>Corner Hardware</b><div class="cap">Nov 21 · New merchant</div></td><td>Home</td><td class="n">−84.12</td></tr>
+            <tr style="background:var(--accent-bg)"><td><b>TAP*BLUE DOOR</b><div class="cap">Nov 21 · Dining twice before</div></td><td>Dining</td><td class="n">−46.50</td></tr>
+            <tr><td><b>PAYAPP *TRANSFER</b><div class="cap">Nov 18 · Payment or transfer?</div></td><td class="cap">None</td><td class="n">−120.00</td></tr>
+            <tr><td><b>Riverside Clinic</b><div class="cap">Nov 17 · New merchant</div></td><td>Health</td><td class="n">−95.00</td></tr>
+            <tr><td><b>MKTPL*ORDER 4471</b><div class="cap">Nov 15 · New merchant</div></td><td>Shopping</td><td class="n">−67.43</td></tr>
+          </table>
+          <div style="margin-top:auto;border-top:1px solid var(--line);padding:10px 0;display:flex;gap:10px;align-items:center"><span class="ok">✓</span><span>Accepted 4 as Transport</span><span style="flex:1"></span><span style="color:var(--accent);font-weight:600">Undo</span></div>
+        </div>
+        <div style="padding:22px">
+          <div class="cap">Sat, Nov 21 · Summit Card</div>
+          <div class="hero fig" style="font-size:32px;line-height:38px">−&#8288;$46.50</div>
+          <div style="font-size:15px;font-weight:600">Blue Door</div>
+          <div class="cap mono" style="margin-top:2px">TAP*BLUE DOOR 0412 PORTLAND</div>
+          <div class="panel" style="margin-top:16px"><h5>Category</h5>
+            <div style="margin-top:6px;line-height:28px"><span class="chip on">Dining</span><span class="chip">Groceries</span><span class="chip">Fun</span><span class="chip">Other…</span></div>
+            <p class="cap" style="margin-top:6px">Suggested because you chose Dining for Blue Door twice before.</p></div>
+          <div class="panel" style="margin-top:14px;display:flex;gap:8px;align-items:center"><span class="btn s">Split…</span><span class="btn s">It was a transfer…</span><span class="btn s">Add note</span></div>
+          <div class="panel" style="margin-top:14px"><h5>Earlier from Blue Door</h5>
+            <table class="t"><tr><td>Oct 30</td><td>Dining</td><td class="n">−38.20</td></tr><tr><td>Sep 12</td><td>Dining</td><td class="n">−52.75</td></tr></table></div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:18px"><span class="btn p">Accept as Dining</span><span class="btn">Skip</span><span class="cap" style="margin-left:auto;white-space:nowrap">↑↓ · Return · C</span></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <h3 style="margin-top:28px">Transactions</h3>
+  <p class="why">Fava's journal. A row is one line until opened; opened, it shows both sides, so the books stay checkable. Balance checks sit in line, where a statement would end.</p>
+  <div class="scroller"><div class="mac"><div class="mac-bar"><i></i><i></i><i></i><b>Hearth</b><span class="sp"></span><span class="fld2">2026 so far ▾</span><span class="fld2" style="min-width:190px">Filter: account, payee, tag</span><span class="btn s">+ New</span><span class="ic"><span class="dot"></span>Updated 6:02 AM ↻</span></div>
+    <div class="mac-body"><div class="side"><a>Overview</a><a>Review <span class="cnt">14</span></a><a class="on">Transactions</a><a>Statements</a><a>Holdings</a><span class="h">CASH</span><a>Harbor Checking <em>8,412</em></a><a>Harbor Savings <em>42,150</em></a><span class="h">CARDS</span><a>Summit Card <em><span class="dot w"></span> −1,285</em></a><span class="h">INVESTMENTS</span><a>Northwind Brokerage <em>512,906</em></a><a>Northwind Retirement <em>284,500</em></a><a style="color:var(--accent);margin-top:6px">+ Add account</a><div class="foot"><span class="dot"></span> iCloud up to date</div></div>
+      <div class="main">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h4>Transactions</h4><span style="flex:1"></span><span><span class="chip on">Everything</span><span class="chip">Unreviewed 14</span><span class="chip">Transfers</span><span class="chip">Balance checks</span></span></div>
+        <p class="cap" style="margin-top:4px">3,912 entries · Jan 1 to Nov 22, 2026 · all accounts</p>
+        <table class="t" style="margin-top:12px">
+          <tr><th style="width:18px"></th><th>Date</th><th>Payee</th><th>Account</th><th>Category</th><th class="n">Amount</th></tr>
+          <tr><td></td><td>Nov 22</td><td class="ok">✓ Balance matches bank</td><td>Harbor Checking</td><td class="cap">check</td><td class="n">8,412.30</td></tr>
+          <tr><td><span class="flag" style="display:inline-block"></span></td><td>Nov 21</td><td><b>Corner Hardware</b></td><td>Summit Card</td><td>Home <span class="tag warn">suggested</span></td><td class="n">−84.12</td></tr>
+          <tr><td><span class="flag" style="display:inline-block"></span></td><td>Nov 21</td><td><b>TAP*BLUE DOOR</b></td><td>Summit Card</td><td>Dining <span class="tag warn">suggested</span></td><td class="n">−46.50</td></tr>
+          <tr><td></td><td>Nov 20</td><td><b>Meridian Works payroll</b></td><td>Harbor Checking</td><td>Pay</td><td class="n up">+5,350.00</td></tr>
+          <tr><td>▾</td><td>Nov 20</td><td><b>Northfield Store</b> <span class="cap">weekly shop and a lamp</span></td><td>Summit Card</td><td>Split, 2</td><td class="n">−142.10</td></tr>
+          <tr class="leg"><td></td><td></td><td>from Summit Card</td><td></td><td></td><td class="n">−142.10</td></tr>
+          <tr class="leg"><td></td><td></td><td>to Groceries</td><td></td><td></td><td class="n">96.40</td></tr>
+          <tr class="leg"><td></td><td></td><td>to Home</td><td></td><td></td><td class="n">45.70</td></tr>
+          <tr><td></td><td>Nov 19</td><td><b>Card payment</b></td><td>Harbor Checking → Summit Card</td><td class="cap">transfer</td><td class="n" style="color:var(--ink-3)">1,284.55</td></tr>
+          <tr><td></td><td>Nov 19</td><td><b>Lumen Video</b></td><td>Summit Card</td><td>Subscriptions</td><td class="n">−15.49</td></tr>
+        </table>
+      </div>
+    </div>
+  </div></div>
+
+  <h3 style="margin-top:28px">Accounts</h3>
+  <p class="why">Each account says when it was last updated and whether its balance still agrees with its bank.</p>
+  <div style="max-width:640px">
+      <div class="scroller" style="margin-top:12px"><div class="mac" style="min-width:500px">
+        <div class="mac-bar"><i></i><i></i><i></i><b>Accounts</b><span class="sp"></span><span class="btn s">+ Add account</span></div>
+        <div class="main" style="padding:18px 20px">
+          <table class="t">
+            <tr><th>Account</th><th>Last updated</th><th class="n">Balance</th><th>Bank balance</th></tr>
+            <tr><td><b>Harbor Checking</b><div class="cap">Harbor Bank · Plaid</div></td><td><span style="white-space:nowrap">Today, 6:02</span><div class="cap">4 new</div></td><td class="n">8,412.30</td><td class="ok">✓ matches</td></tr>
+            <tr><td><b>Harbor Savings</b><div class="cap">Harbor Bank · Plaid</div></td><td style="white-space:nowrap">Today, 6:02</td><td class="n">42,150.00</td><td class="ok">✓ matches</td></tr>
+            <tr><td><b>Summit Card</b><div class="cap">Summit · Plaid</div></td><td class="wn">Nov 14<div class="cap" style="color:var(--warn)">Sign in again</div></td><td class="n">−1,284.55</td><td class="cap">as of Nov 14</td></tr>
+            <tr><td><b>Northwind Brokerage</b><div class="cap">Northwind · Plaid · holdings</div></td><td style="white-space:nowrap">Today, 6:02</td><td class="n">512,906.14</td><td class="ok">✓ 4 positions match</td></tr>
+            <tr><td><b>Northwind Retirement</b><div class="cap">Files · last statement Oct 31</div></td><td>Nov 3<div class="cap">from a file</div></td><td class="n">284,500.00</td><td class="ok">✓ matches statement</td></tr>
+          </table>
+        </div>
+      </div></div>
+  </div>
+</section>
+
+<section id="iphone">
+  <div class="eyebrow">5 · iPhone screens, after the Mac</div>
+  <h2>Four tabs, nothing to set up</h2>
+  <p class="sub">How am I doing, what was that charge, and is anything waiting for me. Statements, Holdings and all setup stay on the Mac.</p>
+    <div class="phones">
+
+    <div class="ph"><div class="ph-frame">
+      <div class="ph-status"><span>9:41</span><span class="batt"></span></div>
+      <div class="ph-body" style="display:flex;flex-direction:column;justify-content:center;text-align:center;gap:14px;padding:0 26px">
+        <div style="width:64px;height:64px;border-radius:16px;background:var(--accent);margin:0 auto"></div>
+        <div style="font-size:22px;line-height:27px;font-weight:700;letter-spacing:-.02em">Your books are in iCloud</div>
+        <div style="color:var(--ink-2)">From <b>Alex's MacBook</b> · 5 accounts · 3,912 transactions</div>
+        <div class="pbtn">Open them</div>
+        
+      </div></div>
+      <div class="ph-cap"><b>0 · First open</b><span>Same Apple ID, so the books are already there. With no Mac yet, this screen says to start there, and offers the sample household meanwhile.</span></div></div>
+
+    <div class="ph"><div class="ph-frame">
+      <div class="ph-status"><span>9:41</span><span class="batt"></span></div>
+      <div class="ph-body">
+        <h4>Today</h4>
+        <div class="pc"><div class="cap">Net worth</div><div class="big fig">$846,684</div><div><span class="up">▲ Up $12,960</span> since Nov 1</div></div>
+        <div class="pc"><div class="cap">November so far</div><div style="font-size:22px;line-height:28px;font-weight:700" class="fig">$5,655 <span style="font-size:12px;font-weight:400;color:var(--ink-3)">spent</span></div>
+          <div class="bar" style="grid-template-columns:minmax(0,1fr);padding:8px 0 4px"><span class="trk"><b style="width:76%"></b><u style="left:73%"></u></span></div>
+          <div class="cap">Typical by the 22nd is $5,430. Dining is $180 over.</div></div>
+        <div class="pc" style="background:var(--accent-bg);display:flex;align-items:center;gap:10px"><div style="flex:1"><b>14 to review</b><div class="cap">4 arrived this morning</div></div><span class="btn p s">Review</span></div>
+        <div class="pc" style="padding:6px 14px">
+          <div class="pr"><span class="flag"></span><div class="sp"><b>Corner Hardware</b><span>Yesterday · Summit Card</span></div><span class="amt">−84.12</span></div>
+          <div class="pr"><span class="flag no"></span><div class="sp"><b>Harvest Market</b><span>Fri · Groceries</span></div><span class="amt">−58.86</span></div>
+        </div>
+      </div>
+      <div class="fresh">Updated today, 6:02 AM · Alex's MacBook</div>
+      <div class="ph-tabs"><div class="on"><svg><use href="#i-today"/></svg>Today</div><div><svg><use href="#i-list"/></svg>Transactions</div><div><svg><use href="#i-check"/></svg><span class="bdg">14</span>Review</div><div><svg><use href="#i-acct"/></svg>Accounts</div></div></div>
+      <div class="ph-cap"><b>1 · Today</b><span>The glance. One hero, this month against typical, what is waiting. The last line always says how fresh the books are and which device updated them.</span></div></div>
+
+    <div class="ph"><div class="ph-frame">
+      <div class="ph-status"><span>9:41</span><span class="batt"></span></div>
+      <div class="ph-body">
+        <h4>Transactions</h4>
+        <div class="search">Search merchant, amount, note</div>
+        <div><span class="chip on">All accounts</span><span class="chip">Category</span><span class="chip">Unreviewed</span></div>
+        <div class="dayh"><span>YESTERDAY · SAT, NOV 21</span><span class="num">−130.62</span></div>
+        <div class="pr"><span class="flag"></span><div class="sp"><b>Corner Hardware</b><span>Summit Card · Home?</span></div><span class="amt">−84.12</span></div>
+        <div class="pr"><span class="flag"></span><div class="sp"><b>TAP*BLUE DOOR</b><span>Summit Card · Dining?</span></div><span class="amt">−46.50</span></div>
+        <div class="dayh"><span>FRI, NOV 20</span><span class="num">+5,291.14</span></div>
+        <div class="pr"><span class="flag no"></span><div class="sp"><b>Meridian Works payroll</b><span>Harbor Checking · Pay</span></div><span class="amt" style="color:var(--pos)">+5,350.00</span></div>
+        <div class="pr"><span class="flag no"></span><div class="sp"><b>Harvest Market</b><span>Summit Card · Groceries</span></div><span class="amt">−58.86</span></div>
+        <div class="dayh"><span>THU, NOV 19</span><span class="num">−1,284.55</span></div>
+        <div class="pr"><span class="flag no"></span><div class="sp"><b>Card payment</b><span>Harbor Checking → Summit Card · Transfer</span></div><span class="amt" style="color:var(--ink-3)">1,284.55</span></div>
+        <div class="pr"><span class="flag no"></span><div class="sp"><b>Lumen Video</b><span>Summit Card · Subscriptions</span></div><span class="amt">−15.49</span></div>
+      </div>
+      <div class="ph-tabs"><div><svg><use href="#i-today"/></svg>Today</div><div class="on"><svg><use href="#i-list"/></svg>Transactions</div><div><svg><use href="#i-check"/></svg><span class="bdg">14</span>Review</div><div><svg><use href="#i-acct"/></svg>Accounts</div></div></div>
+      <div class="ph-cap"><b>2 · Transactions</b><span>The reason the companion exists. Days as headers, an amber dot on anything unreviewed, a card payment shown once as a transfer and never as spending.</span></div></div>
+
+    <div class="ph"><div class="ph-frame">
+      <div class="ph-status"><span>9:41</span><span class="batt"></span></div>
+      <div class="ph-body">
+        <h4>Review <span style="font-size:15px;font-weight:500;color:var(--ink-3)">14 waiting</span></h4>
+        <div class="pc"><b>Subscriptions · 6</b><div class="cap" style="margin:2px 0 10px">Same merchants as before · −&#8288;$77.42</div><div style="display:flex;gap:8px"><span class="pbtn q" style="flex:1;padding:8px">Show</span><span class="pbtn" style="flex:1.4;padding:8px">Accept 6</span></div></div>
+        <div class="pc"><b>Groceries · 3</b><div class="cap" style="margin:2px 0 10px">Same stores as before · −&#8288;$171.93</div><div style="display:flex;gap:8px"><span class="pbtn q" style="flex:1;padding:8px">Show</span><span class="pbtn" style="flex:1.4;padding:8px">Accept 3</span></div></div>
+        <div class="dayh"><span>UNSURE · 5</span></div>
+        <div class="pc"><div style="display:flex;justify-content:space-between"><b>Corner Hardware</b><b class="num">−84.12</b></div><div class="cap" style="margin:2px 0 8px">Nov 21 · New merchant</div><span class="chip on">Home</span><span class="chip">Shopping</span><span class="chip">Other…</span></div>
+        <div class="pc"><div style="display:flex;justify-content:space-between"><b>TAP*BLUE DOOR</b><b class="num">−46.50</b></div><div class="cap" style="margin:2px 0 8px">Nov 21 · Dining twice before</div><span class="chip on">Dining</span><span class="chip">Groceries</span><span class="chip">Other…</span></div>
+      </div>
+      <div class="ph-tabs"><div><svg><use href="#i-today"/></svg>Today</div><div><svg><use href="#i-list"/></svg>Transactions</div><div class="on"><svg><use href="#i-check"/></svg><span class="bdg">14</span>Review</div><div><svg><use href="#i-acct"/></svg>Accounts</div></div></div>
+      <div class="ph-cap"><b>3 · Review</b><span>The same inbox as the Mac, sized for a thumb. Tap a chip to decide, swipe right to accept the suggestion. A decision made here shows at once on the phone, and the Mac books it the next time it is awake.</span></div></div>
+
+    <div class="ph"><div class="ph-frame">
+      <div class="ph-status"><span>9:41</span><span class="batt"></span></div>
+      <div class="ph-body">
+        <div style="color:var(--accent);padding:4px 0 8px">‹ Transactions</div>
+        <div style="text-align:center;padding:0 0 10px"><div class="cap" style="color:var(--ink-3);font-size:12px">Sat, Nov 21 · Summit Card</div><div style="font-size:34px;line-height:40px;font-weight:700;letter-spacing:-.02em" class="fig">−&#8288;$46.50</div><div style="font-size:16px;font-weight:600">Blue Door</div></div>
+        <div class="pc" style="padding:4px 14px">
+          <div class="pr"><div class="sp"><span>Category · suggested</span><b>Dining</b></div><span style="color:var(--ink-3)">›</span></div>
+          <div class="pr"><div class="sp"><span>Note</span><b style="font-weight:400;color:var(--ink-3)">Add a note</b></div></div>
+          <div class="pr"><div class="sp"><span>Bank description</span><b class="mono" style="font-weight:400">TAP*BLUE DOOR 0412 PORTLAND</b></div></div>
+        </div>
+        <div class="pc" style="display:flex;align-items:center;gap:10px"><div style="flex:1"><b>Suggest Dining for Blue Door</b><div class="cap">Also applies to 2 waiting</div></div><span style="width:40px;height:24px;border-radius:999px;background:var(--pos);position:relative;flex:none"><i style="position:absolute;right:2px;top:2px;width:20px;height:20px;border-radius:50%;background:#fff"></i></span></div>
+        <div class="pbtn">Accept as Dining</div>
+      </div>
+      <div class="ph-tabs"><div><svg><use href="#i-today"/></svg>Today</div><div class="on"><svg><use href="#i-list"/></svg>Transactions</div><div><svg><use href="#i-check"/></svg><span class="bdg">14</span>Review</div><div><svg><use href="#i-acct"/></svg>Accounts</div></div></div>
+      <div class="ph-cap"><b>4 · One transaction</b><span>The cleaned-up name on top, the bank's own text kept underneath, and the reason for the suggestion in words. Remembering a merchant is a switch, not a settings page.</span></div></div>
+
+    <div class="ph"><div class="ph-frame">
+      <div class="ph-status"><span>9:41</span><span class="batt"></span></div>
+      <div class="ph-body">
+        <h4>Accounts</h4>
+        <div class="dayh"><span>CASH</span><span class="num">50,562.30</span></div>
+        <div class="pc" style="padding:4px 14px">
+          <div class="pr"><div class="sp"><b>Harbor Checking</b><span><span class="ok">✓</span> matches bank · today</span></div><span class="amt">8,412.30</span></div>
+          <div class="pr"><div class="sp"><b>Harbor Savings</b><span><span class="ok">✓</span> matches bank · today</span></div><span class="amt">42,150.00</span></div></div>
+        <div class="dayh"><span>CARDS</span><span class="num">−1,284.55</span></div>
+        <div class="pc" style="padding:4px 14px;border:1px solid var(--warn-line)">
+          <div class="pr"><div class="sp"><b>Summit Card</b><span style="color:var(--warn)">Sign in again on your Mac · Nov 14</span></div><span class="amt">−1,284.55</span></div></div>
+        <div class="dayh"><span>INVESTMENTS</span><span class="num">797,406.14</span></div>
+        <div class="pc" style="padding:4px 14px">
+          <div class="pr"><div class="sp"><b>Northwind Brokerage</b><span>4 positions · Fri close</span></div><span class="amt">512,906.14</span></div>
+          <div class="pr"><div class="sp"><b>Northwind Retirement</b><span>From a statement · Oct 31</span></div><span class="amt">284,500.00</span></div></div>
+      </div>
+      <div class="ph-tabs"><div><svg><use href="#i-today"/></svg>Today</div><div><svg><use href="#i-list"/></svg>Transactions</div><div><svg><use href="#i-check"/></svg><span class="bdg">14</span>Review</div><div class="on"><svg><use href="#i-acct"/></svg>Accounts</div></div></div>
+      <div class="ph-cap"><b>5 · Accounts</b><span>Every balance says how it is known and how old it is. A broken connection is named here, with where to fix it, and its last good balance stays visible.</span></div></div>
+  </div>
+</section>
+
+<section id="build">
+  <div class="eyebrow">6 · Build plan</div>
+  <h2>Five milestones, the riskiest piece first</h2>
+  <p class="sub">The Apple side follows Porchlight: a generated Xcode project, tests on GitHub's Mac runners on every push, release from a script. The engine keeps hearth's existing tests.</p>
+    <div class="ms">
+    <div class="card"><span class="k">M0 · Proof</span><h3>Python inside a Mac app</h3><ul><li>A signed Mac app that starts hearth and shows real net worth</li><li>The doorway: screens as data</li><li>CI green on GitHub</li></ul></div>
+    <div class="card"><span class="k">M1 · Your books</span><h3>Opens your existing setup</h3><ul><li>Uses hearth's data in place</li><li>Imports your ledger, matches accounts</li><li>Overview, Transactions, Accounts, sync</li></ul></div>
+    <div class="card"><span class="k">M2 · The whole desk</span><h3>Replaces Fava for you</h3><ul><li>Review</li><li>Statements: Summary, income statement, balance sheet</li><li>Holdings, click-through and filters</li></ul></div>
+    <div class="card"><span class="k">M3 · New users</span><h3>Someone else can start</h3><ul><li>Onboarding from nothing</li><li>Plaid keys, connect a bank, statement files</li><li>Default categories</li></ul></div>
+    <div class="card"><span class="k">M4 · After the Mac</span><h3>iPhone, then household</h3><ul><li>Mac publishes the books to iCloud</li><li>iPhone companion</li><li>Your wife as a second member</li></ul></div>
+  </div>
+  <div class="kv">
+    <div>Repository</div><div>The apps live in the hearth repository, in an <code>apple/</code> folder beside the Python engine, so a change can touch both.</div>
+    <div>Engine</div><div>Hearth's Python package with beancount 3 beneath it, started inside the Mac app, which asks it for each screen as plain data. A Swift rewrite would have meant porting about 30,000 lines of tested Python.</div>
+    <div>License</div><div>Beancount is GPL-2.0-only. That rules out a public App Store release and is fine for a private app whose source is shared with its few users.</div>
+    <div>Release</div><div>The Mac app handed over directly; the iPhone app by TestFlight internal testing or direct install.</div>
+    <div>Plaid</div><div>Each household uses its own Plaid keys, as in hearth today. Keys and bank tokens never leave the Mac. Anything that starts a new Plaid charge, such as reading holdings, is a separate switch with the cost stated.</div>
+    <div>Household, later</div><div>Hearth already has members, joint accounts and sharing rules. Your wife becomes a second member on the same Mac; a friend runs their own Mac and books.</div>
+  </div>
+</section>
+
+<section id="decide">
+  <div class="eyebrow">7 · Decisions</div>
+  <h2>All settled</h2>
+  <p class="sub">Nothing is waiting on you. To change one, annotate it.</p>
+  <div class="settled">
+    <div><b>ENGINE</b>Beancount and hearth, in Python, inside the Mac app. No rewrite.</div>
+    <div><b>ORDER</b>Mac first. iPhone after it.</div>
+    <div><b>AUDIENCE</b>Private: you, your wife, a few friends. No App Store.</div>
+    <div><b>INTERFACE</b>Fully native. No Fava, no web pages.</div>
+    <div><b>REPOSITORY</b>In hearth, apps in an apple/ folder beside the engine.</div>
+    <div><b>LEDGER</b>Imported once; the app is the truth from then on.</div>
+    <div><b>REMEMBERED MERCHANTS</b>Suggest only. Nothing is marked checked that nobody saw.</div>
+    <div><b>DEFAULT CATEGORIES</b>The short flat list, editable any time.</div>
+    <div><b>FAVA CUT</b>As drawn. Query, documents and events later.</div>
+  </div>
+</section>
+
+
+</div>
+<script>
+function q(e, label){
+  e.preventDefault();
+  var f = e.currentTarget, d = new FormData(f), a = d.get('a'), note = (d.get('note') || '').trim();
+  var out = f.querySelector('.queued');
+  if (!a && !note){ out.textContent = 'Pick an option or write a note first.'; return false; }
+  var text = label + ': ' + (a || 'no option picked') + (note ? '. Note: ' + note : '');
+  if (window.lavish && window.lavish.queuePrompt){
+    window.lavish.queuePrompt(text, { tag: 'decision', text: text, element: f, queueKey: label, data: { question: label, answer: a, note: note } });
+    out.textContent = 'Queued. Press Send to Agent when you are done.';
+  } else {
+    out.textContent = 'Selected: ' + (a || note);
+  }
+  return false;
+}
+</script>
+</body>
+</html>

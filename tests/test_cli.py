@@ -1,3 +1,5 @@
+import io
+import json
 from pathlib import Path
 from typing import Any
 
@@ -309,3 +311,31 @@ def test_a_certificate_without_its_key_is_refused(
         main(["serve", "--tls-cert", str(tmp_path / "localhost.pem")])
 
     assert refused.value.code == 2
+
+
+def test_the_bridge_answers_the_app_on_standard_output_and_nothing_else(
+    world: World, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(world.settings.data_dir))
+    monkeypatch.setenv(LEDGER_VARIABLE, str(world.ledger))
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"id": 3, "ask": "overview"}\n'))
+
+    main(["bridge", "--as", "Avery"])
+
+    (line,) = capsys.readouterr().out.splitlines()
+    reply = json.loads(line)
+    assert reply["id"] == 3
+    # The first recompute runs beside the first ask, so either answer is a true one.
+    assert reply["answer"]["state"] in {"loading", "ready"}
+
+
+def test_the_bridge_refuses_to_start_as_someone_who_is_not_a_member(
+    world: World, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(world.settings.data_dir))
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"id": 1, "ask": "overview"}\n'))
+
+    with pytest.raises(SystemExit, match="hearth: there is no member mallory"):
+        main(["bridge", "--as", "mallory"])
+
+    assert capsys.readouterr().out == ""

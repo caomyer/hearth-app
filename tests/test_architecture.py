@@ -11,7 +11,8 @@ The rules, for the package as it is now:
 - ``hearth.access`` is imported by exactly one module, ``hearth.disclosure.gate``, and every
   call into it is made there.
 - Only modules of the ``hearth.disclosure`` package turn the ledger into figures.
-- Pages (``hearth.web``) import no ledger reader and touch none of the books' raw data.
+- Pages (``hearth.web``, and the native app's doorway ``hearth.native``) import no ledger
+  reader and touch none of the books' raw data.
 - Only ``hearth.disclosure`` builds a member's ``Connector``, the one way a page reaches
   connections, so every connection a page shows went past the gate.
 
@@ -30,6 +31,8 @@ import hearth
 
 PACKAGE = Path(hearth.__file__).parent
 GATE = "hearth.disclosure.gate"
+PAGES = ("hearth.web", "hearth.native")
+"""Everything that shows household data to someone."""
 
 LEDGER_READERS = (
     "hearth.figures",
@@ -113,9 +116,15 @@ def test_only_disclosure_turns_the_ledger_into_figures() -> None:
     assert outside == set()
 
 
+def _is_page(name: str) -> bool:
+    """Whether a module shows household data to someone: a web page, or the native app's
+    doorway (``hearth.native``), which is held to everything a page is."""
+    return any(_imports(name, package) for package in PAGES)
+
+
 @pytest.mark.parametrize("reader", LEDGER_READERS)
 def test_pages_import_no_ledger_reader(reader: str) -> None:
-    pages = {name for name in importers_of(reader) if _imports(name, "hearth.web")}
+    pages = {name for name in importers_of(reader) if _is_page(name)}
     assert pages == set()
 
 
@@ -123,7 +132,7 @@ def test_pages_touch_none_of_the_books_raw_data() -> None:
     reaching = sorted(
         (name, node.attr)
         for name, tree in modules()
-        if _imports(name, "hearth.web")
+        if _is_page(name)
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute) and node.attr in RAW_BOOKS
     )

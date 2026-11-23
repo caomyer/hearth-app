@@ -1,5 +1,6 @@
 """Command-line entry point: ``hearth serve``, ``hearth add-member``, ``hearth add-account``,
-``hearth accounts``, ``hearth plaid``, ``hearth compare``, ``hearth export`` and ``hearth demo``.
+``hearth accounts``, ``hearth plaid``, ``hearth compare``, ``hearth export``, ``hearth demo`` and
+``hearth bridge``.
 
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
 --approve-plaid OPERATION`` for the web pages, and ``--approved`` for each ``hearth plaid``
@@ -7,6 +8,9 @@ command that calls Plaid. Without it, they refuse before anything is sent.
 
 ``hearth serve`` and ``hearth plaid`` note what they ask of Plaid in ``hearth.log`` in the data
 directory (``hearth.runlog``).
+
+``hearth bridge`` and ``hearth demo --bridge`` answer the native app over standard input and
+output and open no port (``hearth.native``). They write nothing but replies to standard output.
 """
 
 import argparse
@@ -14,7 +18,9 @@ import sqlite3
 import sys
 import tempfile
 import threading
-from dataclasses import replace
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +34,8 @@ from hearth.clock import system_clock
 from hearth.config import Settings, data_dir_from_environment
 from hearth.disclosure import rulings_in
 from hearth.members import MemberRejectedError, normalise_username
+from hearth.native import stdio
+from hearth.native.doorway import Doorway
 from hearth.plaid import booking, export, feed
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
@@ -185,6 +193,21 @@ def main(argv: list[str] | None = None) -> None:
         help="a household on its first day: members only, no ledger, banks to connect",
     )
 
+    try_it.add_argument(
+        "--bridge",
+        action="store_true",
+        help="answer the native app over standard input and output, as its first member,"
+        " and open no port",
+    )
+
+    bridge = commands.add_parser(
+        "bridge",
+        help="answer the native app over standard input and output, and open no port",
+    )
+    bridge.add_argument(
+        "--as", dest="viewer", required=True, metavar="USERNAME", help="whose view to answer with"
+    )
+
     arguments = parser.parse_args(argv)
     match arguments.command:
         case "serve":
@@ -216,10 +239,16 @@ def main(argv: list[str] | None = None) -> None:
         case "export":
             _export(arguments.member, arguments.out)
         case "demo":
+            if arguments.bridge and arguments.from_zero:
+                parser.error("--bridge does not go with --from-zero")
             if arguments.from_zero:
                 _demo_from_zero(arguments.host, arguments.port)
+            elif arguments.bridge:
+                _demo_bridge(first_review=arguments.first_review)
             else:
                 _demo(arguments.host, arguments.port, first_review=arguments.first_review)
+        case "bridge":
+            _bridge(normalise_username(arguments.viewer))
 
 
 def _add_address(parser: argparse.ArgumentParser) -> None:
@@ -491,7 +520,18 @@ def _snapshot(data_dir: Path, directory: Path) -> Settings:
     return snapshot
 
 
-def _demo(host: str, port: int, *, first_review: bool = False) -> None:
+@dataclass(frozen=True, slots=True)
+class _DemoHousehold:
+    settings: Settings
+    establish: books.Establish
+    plaid: PlaidSetup
+    passwords: dict[str, str]
+    """Each invented member's password, by username, the admin first."""
+
+
+@contextmanager
+def _demo_household(*, first_review: bool) -> Iterator[_DemoHousehold]:
+    """An invented household in a throwaway directory, gone when the block ends."""
     with tempfile.TemporaryDirectory(prefix="hearth-demo-") as directory:
         ledger = Path(directory) / "household.beancount"
         settings = Settings.in_directory(Path(directory), ledger=ledger)
@@ -505,11 +545,57 @@ def _demo(host: str, port: int, *, first_review: bool = False) -> None:
         setup = demo.plaid(lambda: system_clock().astimezone().date(), ledger)
         feed.initialise(settings.feed_database)
         demo.connect(settings, setup, now=now)
-        print("An invented household. Sign in as any of them:")
-        for username, password in passwords.items():
-            print(f"  {username:<8} {password}", flush=True)
         establish = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))
-        _run(settings, establish, host, port, setup)
+        yield _DemoHousehold(settings, establish, setup, passwords)
+
+
+def _demo(host: str, port: int, *, first_review: bool = False) -> None:
+    with _demo_household(first_review=first_review) as household:
+        print("An invented household. Sign in as any of them:")
+        for username, password in household.passwords.items():
+            print(f"  {username:<8} {password}", flush=True)
+        _run(household.settings, household.establish, host, port, household.plaid)
+
+
+def _demo_bridge(*, first_review: bool = False) -> None:
+    with _demo_household(first_review=first_review) as household:
+        viewer = next(iter(household.passwords))
+        _answer_the_app(household.settings, household.establish, viewer)
+
+
+def _bridge(viewer: str) -> None:
+    settings = Settings.from_environment()
+    db.initialise(settings.database)
+    feed.initialise(settings.feed_database)
+    conn = db.connect(settings.database)
+    try:
+        known = members.find(conn, viewer) is not None
+    finally:
+        conn.close()
+    if not known:
+        sys.exit(f"hearth: there is no member {viewer}.")
+    _answer_the_app(settings, books.from_household(settings, rulings=rulings_in), viewer)
+
+
+def _answer_the_app(settings: Settings, establish: books.Establish, viewer: str) -> None:
+    """Answer the native app until it closes its end, recomputing as ``hearth serve`` does: at
+    start-up, every morning, and whenever another process changes what the books are computed
+    from. The first recompute runs in the background, so the app is told the books are loading
+    instead of waiting on a silent process."""
+    bookkeeper = books.Bookkeeper(
+        establish, system_clock, standing=lambda: books.standing(settings)
+    )
+    bookkeeper.recompute_daily()
+    watching = bookkeeper.recompute_on_change()
+    try:
+        stdio.serve(Doorway(settings, bookkeeper, viewer), sys.stdin, _write_reply)
+    finally:
+        watching.set()
+
+
+def _write_reply(line: str) -> None:
+    sys.stdout.write(line)
+    sys.stdout.flush()
 
 
 def _demo_from_zero(host: str, port: int) -> None:

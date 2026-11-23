@@ -1,0 +1,8 @@
+// Shared build settings. What differs from one Mac to the next (your signing team, and a
+// bundle id of your own if you want one) lives in Local.xcconfig, which git ignores.
+// Copy Local.example.xcconfig to start.
+
+// Once the app syncs through iCloud its bundle id can never change, so choose it before then.
+HEARTH_BUNDLE_ID = dev.hearth.Hearth
+
+#include? "Local.xcconfig"

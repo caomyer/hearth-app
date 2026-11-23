@@ -1,0 +1,76 @@
+name: Hearth
+options:
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+settings:
+  base:
+    # The version people see, set here and nowhere else.
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "0"
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+    # The engine's Python and its compiled parts are built for Apple silicon only.
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
+packages:
+  HearthKit:
+    path: HearthKit
+targets:
+  Hearth:
+    type: application
+    platform: macOS
+    sources:
+      - path: Hearth
+    dependencies:
+      - package: HearthKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HEARTH_BUNDLE_ID)
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Hearth
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.finance
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        # The engine is assembled from this checkout and from the uv cache, both outside
+        # what a sandboxed script may read.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    postBuildScripts:
+      - name: Bundle the engine
+        # Python, what hearth depends on, and hearth, signed as the app is signed. The app's
+        # own signature is made after this and seals them in.
+        script: |
+          "$SRCROOT/scripts/bundle-engine.sh" \
+            "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/engine" \
+            "${EXPANDED_CODE_SIGN_IDENTITY:--}"
+        basedOnDependencyAnalysis: false
+  HearthUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: HearthUITests
+    dependencies:
+      - target: Hearth
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HEARTH_BUNDLE_ID).uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Hearth
+schemes:
+  Hearth:
+    build:
+      targets:
+        Hearth: all
+  HearthUI:
+    build:
+      targets:
+        Hearth: all
+        HearthUITests: [test]
+    test:
+      targets:
+        - HearthUITests

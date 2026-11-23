@@ -21,3 +21,33 @@ jobs:
       - run: uv run ruff format --check
       - run: uv run mypy
       - run: uv run pytest
+
+  apple:
+    # The Mac app (apple/README.md): its Swift core, the Python engine it carries, and the app
+    # itself, in the configuration that ships as well as the one tests run in.
+    runs-on: xcode-27
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: brew install xcodegen
+      - name: Swift core
+        run: swift test --package-path apple/HearthKit
+      - name: The engine stands on its own
+        run: |
+          apple/scripts/bundle-engine.sh "$RUNNER_TEMP/engine"
+          "$RUNNER_TEMP/engine/python/bin/python3.14" -I apple/scripts/check-engine.py "$RUNNER_TEMP/engine"
+      - name: Generate the project
+        run: xcodegen generate --spec apple/project.yml
+      - name: Build what ships
+        run: >
+          xcodebuild build -project apple/Hearth.xcodeproj -scheme Hearth -configuration Release
+          -derivedDataPath "$RUNNER_TEMP/derived" CODE_SIGNING_ALLOWED=NO
+      - name: The app shows net worth from the engine it carries
+        run: >
+          xcodebuild test -project apple/Hearth.xcodeproj -scheme HearthUI
+          -derivedDataPath "$RUNNER_TEMP/derived" CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=

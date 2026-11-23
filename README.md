@@ -23,6 +23,11 @@ A bank's payment to a card the household also connects is paired from its two si
 Every posted transaction a connected bank sends is booked into those books, flagged until a member reviews it, and every connected account opens at the balance its bank reports, proved against that balance on every recompute ([docs/books.md](docs/books.md)).
 The calls made along the way are in [docs/foundation-decisions.md](docs/foundation-decisions.md) and [docs/dashboards.md](docs/dashboards.md); `design/` holds the approved design.
 
+## Mac app
+
+A native Mac app over the same engine is being built in `apple/` ([apple/README.md](apple/README.md)).
+It carries hearth's Python inside it and asks it for each screen ([docs/native.md](docs/native.md)); so far it shows the invented household's net worth.
+
 ## Development
 
 ```sh
