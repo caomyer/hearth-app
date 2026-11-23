@@ -210,6 +210,22 @@ Each learns only from accounts all the row's owners own, so the ledger never car
 A row a member ruled on before the ledger was imported keeps what it was suggested without it, so an accept made then still holds.
 Otherwise nothing is suggested and the row is asked plainly, "New merchant".
 
+### What kind of money each category is
+
+Every income and expense account is a kind of money (`hearth.categories`): pay, investment income or other income under Income; spending, tax, or not spending under Expenses.
+"Not spending" is a move booked on the expense side, such as a retirement contribution taken from pay.
+Kinds are guessed from generic words in the account's name: "Salary" or "Wages" is pay, "Interest" or "Dividends" investment income, "Tax" tax, "Retirement", "401k" or "Transfer" not spending; anything else is spending under Expenses and other income under Income, so nothing is ever left out.
+A guess is never stored; a kind is stored only when a person sets one:
+
+```sh
+uv run hearth categories                                            # every income and expense account, its kind, and whether it is set or guessed
+uv run hearth categories --kind Expenses:Payroll:Retirement=not-spending   # say what kind one is
+uv run hearth categories --guess Expenses:Payroll:Retirement               # forget it, and guess from the name again
+```
+
+It refuses an account the books do not name and a kind its root does not take, changing nothing; a serving hearth sees the change at once (`books.standing`).
+Every figure that means spending leaves "not spending" out, and what it leaves out is in what was left over, so the household's figures still add up (`docs/reports.md`).
+
 ## Read-only, and how that is kept
 
 Hearth never writes to the ledger it imports or inherits, or the directory it lives in; what it writes is the base and its own books file, both in its data directory (`docs/books.md`).

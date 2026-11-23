@@ -392,11 +392,7 @@ def days(h: Household, accounts: Sequence[Account], month: Month) -> tuple[Day, 
         Day(
             day=day,
             spent=sum(
-                (
-                    -line.amount
-                    for line in found
-                    if line.category and root(line.category) == "Expenses"
-                ),
+                (-line.amount for line in found if line.category and h.books.spends(line.category)),
                 Decimal(0),
             ),
             lines=tuple(found),

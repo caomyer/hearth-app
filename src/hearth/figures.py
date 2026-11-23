@@ -24,7 +24,7 @@ from hearth.members import Member
 from hearth.months import Month
 from hearth.plaid.booking import moved
 from hearth.plaid.opening import anchors
-from hearth.reports.common import is_balance_sheet, root, units
+from hearth.reports.common import is_balance_sheet, units
 from hearth.reports.flows import (
     Flows,
     Owners,
@@ -121,6 +121,11 @@ class MonthFlows:
     unreviewed_income: Flows
     unreviewed: Mapping[Owners, int]
     """How many unreviewed rows each part paid or received this month."""
+    kept: Flows | None = None
+    """What was booked to expense accounts that are not spending (``hearth.categories``), such
+    as a retirement contribution: left out of `spending`, and so part of what was left over,
+    as money kept somewhere else rather than spent. `spending` and `kept` together are every
+    expense."""
 
     def spent_by_category(self, owners: Owners) -> dict[str, Decimal]:
         return dict(self.spending.by_owners.get(owners, {}))
@@ -162,16 +167,24 @@ def month_flows(
         month=month,
         to_day=to_day,
         spending=spending_by_category(
-            books.entries, ownership, start=start, end=end, currency=currency
+            books.entries, ownership, start=start, end=end, currency=currency, counts=books.spends
         ),
         income=income_by_source(books.entries, ownership, start=start, end=end, currency=currency),
         unreviewed_spending=spending_by_category(
-            flagged, ownership, start=start, end=end, currency=currency
+            flagged, ownership, start=start, end=end, currency=currency, counts=books.spends
         ),
         unreviewed_income=income_by_source(
             flagged, ownership, start=start, end=end, currency=currency
         ),
         unreviewed=dict(unreviewed),
+        kept=spending_by_category(
+            books.entries,
+            ownership,
+            start=start,
+            end=end,
+            currency=currency,
+            counts=lambda account: not books.spends(account),
+        ),
     )
 
 
@@ -255,7 +268,7 @@ def _cumulative(
         if payers(entry, ownership) != owners:
             continue
         for posting in entry.postings:
-            if root(posting.account) == "Expenses":
+            if books.spends(posting.account):
                 amount = units(posting, entry)
                 if amount.currency == books.currency:
                     daily[entry.date.day] += amount.number
@@ -550,7 +563,7 @@ def category_payments(
         if payers(entry, ownership) not in groups:
             continue
         for posting in entry.postings:
-            if root(posting.account) == "Expenses":
+            if books.spends(posting.account):
                 amount = units(posting, entry)
                 if amount.currency == books.currency:
                     found[posting.account].append(Payment(entry.date, amount.number))

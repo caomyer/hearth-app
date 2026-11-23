@@ -293,6 +293,17 @@ MIGRATIONS: tuple[str, ...] = (
         at TEXT NOT NULL
     ) STRICT;
     """,
+    """
+    -- What kind of money an income or expense account is, where a person said so
+    -- (hearth.categories). Every other account's kind is guessed from its name on every
+    -- recompute and never stored, so only a person's word is kept.
+    CREATE TABLE category_kinds (
+        account TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN
+            ('pay', 'investment-income', 'other-income', 'spending', 'tax', 'not-spending')),
+        set_at TEXT NOT NULL
+    ) STRICT;
+    """,
 )
 
 

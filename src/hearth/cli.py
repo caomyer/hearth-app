@@ -1,6 +1,6 @@
 """Command-line entry point: ``hearth serve``, ``hearth add-member``, ``hearth add-account``,
-``hearth accounts``, ``hearth import-ledger``, ``hearth match-accounts``, ``hearth plaid``,
-``hearth compare``, ``hearth export``, ``hearth demo`` and ``hearth bridge``.
+``hearth accounts``, ``hearth categories``, ``hearth import-ledger``, ``hearth match-accounts``,
+``hearth plaid``, ``hearth compare``, ``hearth export``, ``hearth demo`` and ``hearth bridge``.
 
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
 --approve-plaid OPERATION`` for the web pages, ``hearth bridge --approve-plaid OPERATION`` for
@@ -26,12 +26,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import uvicorn
-from beancount.core.data import Open
+from beancount.core.data import Open, Transaction
 
 from hearth import (
     accounts,
     auth,
     books,
+    categories,
     comparison,
     db,
     demo,
@@ -148,6 +149,26 @@ def main(argv: list[str] | None = None) -> None:
     )
     commands.add_parser(
         "accounts", help="list the books' accounts and who owns each (never writes a ledger)"
+    )
+    kinds = commands.add_parser(
+        "categories",
+        help="list the books' income and expense accounts and what kind of money each is, as"
+        " guessed from its name or as set; with --kind or --guess, change one first",
+    )
+    kinds.add_argument(
+        "--kind",
+        action="append",
+        default=[],
+        metavar="ACCOUNT=KIND",
+        help="say what kind an account is: pay, investment-income or other-income under"
+        " Income; spending, tax or not-spending under Expenses; give it once per account",
+    )
+    kinds.add_argument(
+        "--guess",
+        action="append",
+        default=[],
+        metavar="ACCOUNT",
+        help="forget the kind set for an account, and guess it from its name again",
     )
 
     bring = commands.add_parser(
@@ -267,6 +288,8 @@ def main(argv: list[str] | None = None) -> None:
             _add_account(arguments.ledger_account, arguments.name, arguments.owner)
         case "accounts":
             _list_accounts()
+        case "categories":
+            _categories(arguments.kind, arguments.guess)
         case "import-ledger":
             _import_ledger(arguments.ledger)
         case "match-accounts":
@@ -471,6 +494,56 @@ def _list_accounts() -> None:
         account = claimed.get(ledger_account)
         owners = ", ".join(sorted(names[o] for o in account.owners)) if account else ""
         print(f"{ledger_account}  {account.name if account else '-'}  {owners or 'unclaimed'}")
+
+
+def _categories(chosen: list[str], guessed: list[str]) -> None:
+    """Print every income and expense account the books name with its kind, and whether a
+    person set it or it is guessed from the name (``hearth.categories``), after setting each
+    kind `chosen` names and forgetting each one `guessed` names. Refuses an account the books
+    do not name, and a kind its root does not take, changing nothing."""
+    settings = Settings.from_environment()
+    db.initialise(settings.database)
+    feed.initialise(settings.feed_database)
+    try:
+        entries = books.household_entries(settings).entries
+    except books.LedgerError as error:
+        sys.exit(f"hearth: {error.summary}")
+    named = sorted(
+        {e.account for e in entries if isinstance(e, Open)}
+        | {p.account for e in entries if isinstance(e, Transaction) for p in e.postings}
+    )
+    known = {a for a in named if categories.root(a) is not None}
+    wanted: list[tuple[str, categories.Kind]] = []
+    for given in chosen:
+        account, _, kind = given.partition("=")
+        account, kind = account.strip(), kind.strip()
+        if account not in known:
+            sys.exit(f"hearth: the books name no income or expense account {account}.")
+        try:
+            wanted.append((account, categories.Kind(kind)))
+        except ValueError:
+            sys.exit(f"hearth: {kind!r} is not a kind of category.")
+    for account in guessed:
+        if account.strip() not in known:
+            sys.exit(f"hearth: the books name no income or expense account {account.strip()}.")
+    conn = db.connect(settings.database)
+    try:
+        for account, kind in wanted:
+            if kind not in categories.KINDS[categories.root(account) or ""]:
+                allowed = ", ".join(
+                    k.value for k in categories.KINDS[categories.root(account) or ""]
+                )
+                sys.exit(f"hearth: {account} is one of: {allowed}. Nothing was changed.")
+        for account, kind in wanted:
+            categories.set_kind(conn, account, kind, now=system_clock())
+        for account in guessed:
+            categories.forget(conn, account.strip())
+        stored = categories.stored(conn)
+    finally:
+        conn.close()
+    for account, kind in categories.kinds(known, stored).items():
+        how = "set" if account in stored else "guessed"
+        print(f"{account}  {kind.value}  {how}")
 
 
 def _import_ledger(ledger: Path) -> None:

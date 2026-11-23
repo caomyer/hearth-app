@@ -48,9 +48,10 @@ from beancount.ops import validation
 from beancount.parser import booking as beancount_booking
 from beancount.parser import options
 
-from hearth import base, carrying, db, ownbooks
+from hearth import base, carrying, categories, db, ownbooks
 from hearth.base import Base, BaseError
 from hearth.carrying import Carry
+from hearth.categories import Kind
 from hearth.clock import Clock
 from hearth.config import Settings
 from hearth.connections import Connections, RegisteredConnections, item_of
@@ -167,6 +168,19 @@ class Books:
     begun: frozenset[str] = frozenset()
     """Carried accounts with a ruling on one of their review rows (`begun`): from then on the
     match, and the base, are fixed."""
+    kinds: Mapping[str, Kind] = field(default_factory=dict)
+    """Each income and expense account the books name, with what kind of money it is: as a
+    person said, or as its name says (``hearth.categories``)."""
+
+    def kind(self, account: str) -> Kind:
+        """What kind of money an income or expense account is (``hearth.categories``)."""
+        return self.kinds.get(account) or categories.guess(account)
+
+    def spends(self, account: str) -> bool:
+        """Whether money booked to `account` is spending: an expense account of any kind but
+        "not spending", such as a retirement contribution booked as an expense, which is money
+        kept somewhere else. What it leaves out of spending is in what was left over."""
+        return root(account) == "Expenses" and self.kind(account) is not Kind.NOT_SPENDING
 
     @property
     def balance_unknown(self) -> frozenset[str]:
@@ -351,13 +365,15 @@ def compute(
     carried: Mapping[str, Carry] | None = None,
     unproved: Mapping[str, Unknown] | None = None,
     held_back: Mapping[str, tuple[date, date]] | None = None,
+    kinds: Mapping[str, Kind] | None = None,
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
     recent month end. `synced` is each fed ledger account's connection and its last successful
     sync (`synced_through`); `unknown`, each account whose opening balance could not be
     derived, with why; `invested`, each account a brokerage account feeds; `unfed`, each the
     household holds that nothing opens; `carried`, each account of the base hearth carries on;
-    `unproved`, each of those its bank's balance cannot prove yet, with why.
+    `unproved`, each of those its bank's balance cannot prove yet, with why; `kinds`, each
+    income or expense account a person said the kind of (``hearth.categories``).
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
@@ -425,7 +441,15 @@ def compute(
         },
         reconciling=reconciling(entries),
         begun=begun(ledger, carried, {r for r, d in decided.items() if d.ruling is not None}),
+        kinds=categories.kinds(_categories(entries), kinds or {}),
     )
+
+
+def _categories(entries: Sequence[Directive]) -> set[str]:
+    """Every income and expense account `entries` open or post to."""
+    found = {e.account for e in entries if isinstance(e, Open)}
+    found |= {p.account for e in entries if isinstance(e, Transaction) for p in e.postings}
+    return {a for a in found if categories.root(a) is not None}
 
 
 def begun_in(settings: Settings, today: date | None = None) -> frozenset[str]:
@@ -1041,6 +1065,7 @@ def from_household(
                 unfed=household.unfed,
                 carried=household.carried,
                 held_back=household.held_back,
+                kinds=categories.stored(conn),
             )
         finally:
             conn.close()
@@ -1058,10 +1083,11 @@ def standing(settings: Settings) -> Hashable:
 
     The feed's runs, holdings reports and balances (``Feed.standing``); and in the app database
     the stored prices, every connection and the account each of its accounts feeds, the
-    household's accounts and their owners, each named account, each ruling and each uploaded
-    statement. An inherited ledger is the household's, read on every recompute, so its size and
-    modification time are part of it too; and so is the digest of the base hearth imported,
-    which changes when an import, in this process or another, replaces it (``hearth.base``).
+    household's accounts and their owners, each named account, each ruling, each uploaded
+    statement and each kind of category a person set. An inherited ledger is the household's,
+    read on every recompute, so its size and modification time are part of it too; and so is
+    the digest of the base hearth imported, which changes when an import, in this process or
+    another, replaces it (``hearth.base``).
     """
     with feed.Feed.open(settings.feed_database) as fed:
         fed_at = fed.standing()
@@ -1079,6 +1105,7 @@ def standing(settings: Settings) -> Hashable:
                 "SELECT max(id) FROM review_rulings",
                 "SELECT max(id) FROM statement_uploads",
                 "SELECT id, before, after FROM carried_over ORDER BY id",
+                "SELECT account, kind FROM category_kinds ORDER BY account",
             )
         )
     finally:
