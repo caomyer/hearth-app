@@ -343,8 +343,9 @@ final class FirstLaunchTests: XCTestCase {
         waitFor(remaining, toSay: "1")
     }
 
-    /// Choosing another category with the pointer: Other… opens the chooser, typing narrows
-    /// it, a click takes one, and the decision says it books there.
+    /// Choosing another category with the pointer: Other… opens the chooser, which lists the
+    /// categories the member's own rows use (the sample's Avery uses Groceries and Pets) and
+    /// offers any other typed in full; a click takes it, and the decision books there.
     @MainActor
     func testAnotherCategoryIsChosenFromTheChooser() {
         let app = sample(startingOn: "review")
@@ -359,17 +360,19 @@ final class FirstLaunchTests: XCTestCase {
         other.click()
         let field = app.descendants(matching: .any)["review.chooser.field"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Other… offered nothing")
-        field.typeText("din")
-        let dining = app.buttons["review.option.Dining"]
-        XCTAssertTrue(dining.waitForExistence(timeout: 10), "typing lost a category the household uses")
-        dining.click()
+        XCTAssertTrue(app.buttons["review.option.Pets"].exists, "a category the member uses is not offered")
+        field.typeText("Expenses:Garden")
+        let typed = app.buttons["review.option.typed"]
+        XCTAssertTrue(typed.waitForExistence(timeout: 10), "a full name typed was not offered")
+        XCTAssertFalse(app.buttons["review.option.Pets"].exists, "typing narrowed nothing")
+        typed.click()
 
         let decide = app.buttons["review.decide"]
-        waitFor(decide, toSay: "Save as Dining")
-        XCTAssertTrue(app.buttons["review.choice.Dining"].exists, "the category chosen is not shown on")
+        waitFor(decide, toSay: "Save as Garden")
+        XCTAssertTrue(app.buttons["review.choice.Garden"].exists, "the category chosen is not shown on")
         XCTAssertTrue(app.buttons["review.choice.Groceries"].exists, "the suggestion is no longer offered")
         decide.click()
-        waitFor(app.staticTexts["review.notice"], toSay: "Saved under Dining.")
+        waitFor(app.staticTexts["review.notice"], toSay: "Saved under Garden.")
         waitFor(app.staticTexts["review.remaining"], toSay: "1")
     }
 
