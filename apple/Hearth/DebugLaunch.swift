@@ -3,9 +3,11 @@ import Foundation
 import HearthKit
 
 /// Ways to open a debug build straight onto a screen, so each can be looked at without a
-/// click: `-openBooks sample|own`, `-startScreen overview|transactions|accounts|account:<name>`,
-/// `-appearance light|dark`, and, for a household's own books, `-signInAs <username>` with the
-/// password in the environment's `HEARTH_SIGN_IN_PASSWORD`. A Release build reads none of them.
+/// click: `-openBooks sample|own`,
+/// `-startScreen overview|review|transactions|accounts|account:<name>`, `-appearance light|dark`,
+/// `-firstReview YES` for a sample none of whose two years is reviewed yet, and, for a
+/// household's own books, `-signInAs <username>` with the password in the environment's
+/// `HEARTH_SIGN_IN_PASSWORD`. A Release build reads none of them.
 enum DebugLaunch {
     /// Draws the app light or dark whatever the Mac is set to, so each screen can be looked at
     /// both ways.
@@ -29,6 +31,16 @@ enum DebugLaunch {
         #endif
     }
 
+    /// Whether the sample is the one a first import leaves: two years, none of it reviewed
+    /// (`hearth demo --first-review`), to look at Review the size of a real first import.
+    static var firstReview: Bool {
+        #if DEBUG
+            UserDefaults.standard.bool(forKey: "firstReview")
+        #else
+            false
+        #endif
+    }
+
     /// A sign-in to hand the engine instead of the one in the Keychain, which is left alone.
     static var credentials: (any CredentialStore)? {
         #if DEBUG
@@ -48,6 +60,7 @@ enum StartScreen {
         #if DEBUG
             switch UserDefaults.standard.string(forKey: "startScreen") {
             case "overview": .overview
+            case "review": .review
             case "transactions": .transactions
             case "accounts": .accounts
             case let named? where named.hasPrefix("account:"): .accounts

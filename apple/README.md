@@ -6,7 +6,7 @@ Nothing is computed twice: every figure on screen is one hearth worked out.
 
 The plan and the screens it is building towards are in `.lavish/hearth-apple.html`.
 For now the app opens a household's existing hearth data on this Mac in place, for a member who signs in, or the invented sample household.
-It shows the Overview, the journal (Transactions), the accounts and each account's own page, read-only, and brings the household's connections up to date when the person allows it.
+It shows the Overview, the journal (Transactions), the accounts and each account's own page, lets a member review what their banks sent, and brings the household's connections up to date when the person allows it.
 
 ## Opening books
 
@@ -31,11 +31,23 @@ It shows the Overview, the journal (Transactions), the accounts and each account
   When the person asked, it then says what arrived from each of their banks, or what went wrong (`HearthKit.SyncModel`).
 - While the app is open with asking allowed, the engine syncs at start-up and every morning, as `hearth serve` does.
 
+## Review
+
+- The sidebar's Review says how many of the member's own transactions wait, as the pages count them, and the Overview says so too, with how much of this month's own spending is not reviewed yet.
+- Review lists what waits, groups first, largest first: a group that is one decision offers Accept and its count, any other opens to its rows; or every row one by one, in any order `hearth.review.queue` offers, narrowed by account, suggested category or words.
+  Beside it, the row the person is on: its day and account, the amount, the cleaned-up name over the bank's own words, its category, the rows from the same merchant before it, and the decision.
+- Every decision is the engine's, made through the member's own review desk (`docs/native.md`, "Reviewing"), bound to the rows the screen showed; a row that changed in between is left waiting and the person is told.
+  After each, the screen moves on to the next item of the queue as it was, and what the decision did stays pinned under the queue with its Undo, offered until the next decision.
+- The Review menu carries the queue's keys while the queue has the keyboard: the arrows, Return, C, X and S; Command-Z is Edit > Undo.
+- An unreviewed row of the member's own opens the same detail beside Transactions, and is decided there.
+- Rows whose other side Hearth does not see are counted apart and answered a group at a time under "Where did it go?", or a row alone; naming a new account for them stays in Hearth in the browser.
+- There is no auto-accept, and no Split or note: the engine cannot split a row yet, and the review pages write no note.
+
 ## How it fits together
 
-- `HearthKit/` is everything that is not a view: which books are open, who is signed in and what the engine may ask the banks (`Session`, `Setup`, `Consent`), starting the engine, signing in to it, asking it for a screen and asking it to sync (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Banks`, `Money`, `Day`), each screen's state (`Desk`, `ScreenModel`, `SyncModel`, and `JournalModel` with its `JournalFilter`), and how figures and balances are written for a person (`Figures`, `AccountWords`, `SyncWords`).
+- `HearthKit/` is everything that is not a view: which books are open, who is signed in and what the engine may ask the banks (`Session`, `Setup`, `Consent`), starting the engine, signing in to it, asking it for a screen and asking it to sync (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Banks`, `Review`, `Money`, `Day`), each screen's state (`Desk`, `ScreenModel`, `SyncModel`, `JournalModel` with its `JournalFilter`, and `ReviewModel` with its `ReviewQuery`), the review decisions and the one an Undo takes back (`Decisions`), and how figures, balances and decisions are written for a person (`Figures`, `AccountWords`, `SyncWords`, `ReviewWords`).
   It is a Swift package, so it builds and tests without the app.
-- `Hearth/` is the app: one window, with the start screen, signing in, and the books, with the sync control in the toolbar: a sidebar of Overview, Transactions, Accounts and every account the member may see, and the screen chosen.
+- `Hearth/` is the app: one window, with the start screen, signing in, and the books, with the sync control in the toolbar: a sidebar of Overview, Review, Transactions, Accounts and every account the member may see, and the screen chosen.
   An account's name anywhere opens the account; a category opens Transactions narrowed to it.
 - `engine/main.py` and `scripts/bundle-engine.sh` put a pinned Python, everything `uv.lock` names, and `src/hearth` into the app's resources, signed as the app is signed.
 - On the Python side, `hearth.native` is the doorway: `hearth bridge` answers the app over standard input and output, one JSON object a line, with views from `hearth.disclosure` and nothing else (`docs/native.md`).
@@ -73,7 +85,7 @@ The real login keychain is tested only when asked, as it writes to the keychain 
 HEARTH_TEST_KEYCHAIN=1 swift test --package-path apple/HearthKit --filter Keychain
 ```
 
-Run the whole chain, the app starting its engine and showing a net worth, for the sample and for an invented household on disk that a member signs in to:
+Run the whole chain, the app starting its engine and showing a net worth, for the sample and for an invented household on disk that a member signs in to and reviews:
 
 ```sh
 export HEARTH_FIXTURE_PASSWORD=$(openssl rand -hex 16) HEARTH_FIXTURE_DATA_DIR=$(mktemp -d)/household
@@ -89,12 +101,14 @@ A debug build opens straight onto a screen, so each can be looked at without a c
 ```sh
 APP=~/Library/Developer/Xcode/DerivedData/<yours>/Build/Products/Debug/Hearth.app/Contents/MacOS/Hearth
 "$APP" -openBooks sample -startScreen transactions
+"$APP" -openBooks sample -firstReview YES -startScreen review
 HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE_PASSWORD \
   "$APP" -openBooks own -signInAs avery -startScreen "account:Everyday checking"
 ```
 
 - `-openBooks sample|own` opens those books at once.
-- `-startScreen overview|transactions|accounts|account:<name>` opens that screen; an account is found by its name once the accounts are in.
+- `-startScreen overview|review|transactions|accounts|account:<name>` opens that screen; an account is found by its name once the accounts are in.
+- `-firstReview YES` opens the sample as a first import leaves it: two years, over a thousand rows, none reviewed (`hearth demo --first-review`).
 - `-signInAs <username>` hands the engine that member with the password in `HEARTH_SIGN_IN_PASSWORD`, in place of the Keychain, which it leaves alone.
 - `-appearance light|dark` draws the app that way whatever the Mac is set to, to look at each screen both ways.
 
@@ -114,6 +128,6 @@ If `xcodebuild` says it needs Xcode, point it at one: `export DEVELOPER_DIR=/App
 - The fixture household's bank keys were sealed under a vault key its builder kept in memory, so a sync of it in the end-to-end test finds no key in the Keychain and says so; that test is how the app's words for a Keychain that cannot give the keys are checked.
   The sample's sync, against the stand-in for Plaid, is how a sync that works is checked.
 - A new screen is a new entry in `hearth.native.doorway.SCREENS`, a type in `HearthKit` that decodes it, and an example in `tests/native/fixtures` that both sides' tests read.
-- What a screen is asked with travels as `Given`, text and whole numbers only; the engine reads it strictly and answers anything it does not take as missing (`docs/native.md`).
+- What a screen is asked with, or a decision made on, travels as `Given`: text, whole numbers, and the rows a decision showed; the engine reads it strictly and answers anything it does not take as missing (`docs/native.md`).
 - The start screen is the window's content, not a sheet: a modal sheet would keep the app from quitting until it was answered.
 - Beancount is GPL-2.0-only, so the app is for private use and is shared together with its source.

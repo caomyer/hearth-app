@@ -157,6 +157,83 @@ final class FirstLaunchTests: XCTestCase {
         app.typeKey("w", modifierFlags: .command)
     }
 
+    /// Review, as a member works through it: the Overview says what waits and leads there, a
+    /// group that is one decision is accepted in one go and the count falls with the Overview's
+    /// banner following, one row is booked against another category, and Undo takes exactly
+    /// that back. The fixture's bank sent two market rows Plaid filed as groceries
+    /// (`tests/native/on_disk.py`).
+    @MainActor
+    func testReviewSettlesAGroupAndARowAndTakesTheLastBack() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let household = environment["HEARTH_FIXTURE_DATA_DIR"],
+            let password = environment["HEARTH_FIXTURE_PASSWORD"]
+        else {
+            throw XCTSkip("no fixture household was made for this run")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HEARTH_DATA_DIR"] = household
+        app.launchEnvironment["HEARTH_SIGN_IN_PASSWORD"] = password
+        app.launchArguments += ["-openBooks", "own", "-signInAs", "avery"]
+        app.launch()
+
+        let banner = app.staticTexts["overview.review.count"]
+        XCTAssertTrue(banner.waitForExistence(timeout: 60), "the Overview did not say what waits in Review")
+        let waiting = try XCTUnwrap(count(in: text(of: banner)), "\(text(of: banner)) is not a count")
+        app.buttons["overview.review"].click()
+
+        let remaining = app.staticTexts["review.remaining"]
+        XCTAssertTrue(remaining.waitForExistence(timeout: 30), "Review did not open")
+        XCTAssertEqual(count(in: text(of: remaining)), waiting)
+        let groceries = app.buttons["review.acceptGroup.Food and drink: groceries"]
+        XCTAssertTrue(groceries.waitForExistence(timeout: 10), "the group that is one decision has no accept")
+        XCTAssertEqual(groceries.label, "Accept 2")
+        groceries.click()
+        waitFor(remaining, toSay: "\(waiting - 2)")
+        let notice = app.staticTexts["review.notice"]
+        XCTAssertEqual(text(of: notice), "Accepted 2 as Groceries.")
+
+        app.descendants(matching: .any)["sidebar.overview"].firstMatch.click()
+        waitFor(banner, toSay: "\(waiting - 2) transactions to review")
+
+        app.descendants(matching: .any)["sidebar.review"].firstMatch.click()
+        XCTAssertTrue(remaining.waitForExistence(timeout: 30))
+        let payroll = app.staticTexts.matching(
+            NSPredicate(format: "identifier == 'review.payee' AND value == 'Payroll'")
+        ).firstMatch
+        XCTAssertTrue(payroll.waitForExistence(timeout: 10), "the payroll row is not in the queue")
+        payroll.click()
+        let other = app.buttons["review.other"]
+        XCTAssertTrue(other.waitForExistence(timeout: 20), "the row's detail offers no other category")
+        other.click()
+        let field = app.descendants(matching: .any)["review.chooser.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "choosing another category offered nothing")
+        // Return takes the first category the member's own rows use, which is not payroll's.
+        field.typeText("\r")
+        let decide = app.buttons["review.decide"]
+        XCTAssertTrue(decide.label.hasPrefix("Save as "), "\(decide.label) does not book another category")
+        decide.click()
+        waitFor(remaining, toSay: "\(waiting - 3)")
+        XCTAssertTrue(text(of: notice).hasPrefix("Saved under "), "\(text(of: notice)) is not what was decided")
+
+        app.buttons["review.undo"].click()
+        waitFor(remaining, toSay: "\(waiting - 2)")
+        XCTAssertEqual(text(of: notice), "Taken back. That transaction is waiting for review again.")
+        XCTAssertFalse(app.buttons["review.undo"].exists, "an undo was offered to be taken back")
+    }
+
+    /// The first whole number in a piece of text.
+    private func count(in text: String) -> Int? {
+        text.firstMatch(of: /\d[\d,]*/).flatMap { Int($0.output.replacingOccurrences(of: ",", with: "")) }
+    }
+
+    /// Waits until `element` says `words`.
+    @MainActor
+    private func waitFor(_ element: XCUIElement, toSay words: String, timeout: TimeInterval = 30) {
+        let said = expectation(
+            for: NSPredicate(format: "value == %@ OR label == %@", words, words), evaluatedWith: element)
+        wait(for: [said], timeout: timeout)
+    }
+
     /// The start screen is the window's own, so the app quits from it as from anywhere else.
     @MainActor
     func testTheAppQuitsFromTheStartScreen() {

@@ -43,6 +43,8 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(isEnabled ? Palette.onAccent : Palette.ink3)
             .padding(.horizontal, 14)
             .frame(minHeight: 30)

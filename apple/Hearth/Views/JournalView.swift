@@ -49,6 +49,27 @@ struct JournalView: View {
             if model.state == .starting { await model.reload() }
             await model.watch()
         }
+        // An unreviewed row of the viewer's own opens its review beside the journal, decided
+        // there as in Review.
+        .inspector(isPresented: reviewing) {
+            if let id = review {
+                ReviewInspector(desk: navigator.desk, id: id)
+                    .id(id)
+                    .inspectorColumnWidth(min: 300, ideal: 340, max: 420)
+            }
+        }
+    }
+
+    /// The review the selected entry waits on, when it is one of the viewer's own.
+    private var review: String? {
+        guard let selected else { return nil }
+        return model.entries.first { $0.id == selected }?.review
+    }
+
+    private var reviewing: Binding<Bool> {
+        Binding(
+            get: { review != nil },
+            set: { shown in if !shown { selected = nil } })
     }
 
     @ViewBuilder
@@ -575,5 +596,18 @@ private struct AccountMenu: View {
         var filter = model.filter
         filter.account = account
         Task { await model.apply(filter) }
+    }
+}
+
+/// A row of the journal nobody has checked, as Review shows it, decided from here.
+private struct ReviewInspector: View {
+    let desk: Desk
+    let id: String
+    @State private var chosen: Destination?
+    @State private var choosing = false
+
+    var body: some View {
+        RowDetail(desk: desk, id: id, shown: nil, chosen: $chosen, choosing: $choosing, inQueue: false)
+            .background(Palette.surface)
     }
 }
