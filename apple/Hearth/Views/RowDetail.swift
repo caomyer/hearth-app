@@ -181,23 +181,16 @@ struct RowDetail: View {
 
     private func actions(_ row: ReviewRow) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Button(decideLabel(row)) {
-                    guard let chosen else { return }
-                    Task { await desk.decisions.make(.settling(row, to: chosen)) }
+            // The keys beside the buttons where they fit whole, under them where they do not.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    decide(row)
+                    Spacer(minLength: 8)
+                    keys(row)
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .keyboardShortcut(inQueue ? nil : .defaultAction)
-                .disabled(chosen == nil || desk.decisions.isDeciding)
-                .accessibilityIdentifier("review.decide")
-                if inQueue {
-                    Button("Skip") { desk.review.skip() }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("review.skip")
-                }
-                Spacer(minLength: 0)
-                if inQueue {
-                    KeyHint(text: row.excludable ? "↑↓ · Return · C · X" : "↑↓ · Return · C")
+                VStack(alignment: .leading, spacing: 8) {
+                    decide(row)
+                    keys(row)
                 }
             }
             // A row its bank counts in the balance it reports offers no Exclude, which the
@@ -213,6 +206,33 @@ struct RowDetail: View {
             }
         }
         .padding(.top, 4)
+    }
+
+    private func decide(_ row: ReviewRow) -> some View {
+        HStack(spacing: 8) {
+            Button(decideLabel(row)) {
+                guard let chosen else { return }
+                Task { await desk.decisions.make(.settling(row, to: chosen)) }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .keyboardShortcut(inQueue ? nil : .defaultAction)
+            .disabled(chosen == nil || desk.decisions.isDeciding)
+            .accessibilityIdentifier("review.decide")
+            if inQueue {
+                Button("Skip") { desk.review.skip() }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("review.skip")
+            }
+        }
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func keys(_ row: ReviewRow) -> some View {
+        if inQueue {
+            KeyHint(text: row.excludable ? "↑↓ · Return · C · X" : "↑↓ · Return · C")
+                .fixedSize()
+        }
     }
 
     private func decideLabel(_ row: ReviewRow) -> String {

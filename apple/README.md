@@ -130,4 +130,6 @@ If `xcodebuild` says it needs Xcode, point it at one: `export DEVELOPER_DIR=/App
 - A new screen is a new entry in `hearth.native.doorway.SCREENS`, a type in `HearthKit` that decodes it, and an example in `tests/native/fixtures` that both sides' tests read.
 - What a screen is asked with, or a decision made on, travels as `Given`: text, whole numbers, and the rows a decision showed; the engine reads it strictly and answers anything it does not take as missing (`docs/native.md`).
 - The start screen is the window's content, not a sheet: a modal sheet would keep the app from quitting until it was answered.
+- A list is first drawn with at most a page of rows, and the rest follow on the next update (`FirstFill`).
+  AppKit measures a table's rows 200 at a time, and a table filled with more than that on its first update re-enters its own measuring, which it logs as "a reentrant operation in its NSTableView delegate" and means to make an assert.
 - Beancount is GPL-2.0-only, so the app is for private use and is shared together with its source.

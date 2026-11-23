@@ -86,6 +86,18 @@ struct FieldStyle: ViewModifier {
     }
 }
 
+/// How many rows a list is given when it is first drawn; the rest follow on the next update.
+///
+/// A SwiftUI `List` on the Mac is an `NSTableView` whose row heights AppKit measures lazily,
+/// 200 rows around the row it needs (`NSTableRowHeightData`, `_cacheRowSpansAroundRow:`).
+/// Filled with more than that on its first update, the table resizes itself in the middle of
+/// measuring one span and starts measuring the next inside it, which AppKit logs as "a
+/// reentrant operation in its NSTableView delegate" and says will become an assert. A table
+/// already holding rows takes any number more without it, so no list is first drawn with more.
+enum FirstFill {
+    static let rows = 100
+}
+
 /// A screen with one thing happening on it, and nothing to read yet.
 struct Waiting: View {
     let text: String

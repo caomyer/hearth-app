@@ -232,6 +232,24 @@ struct ReviewModelTests {
         #expect(review.selection == .row("k1"))
     }
 
+    @Test("opening or closing a group is seen by whatever drew the items")
+    func toggleIsObserved() async throws {
+        let (review, _) = model(ScriptedReview(["review": [full]]))
+        await review.reload()
+        let kites = try #require(review.queue?.group("Kites"))
+        let changed = Flag()
+        withObservationTracking {
+            _ = review.items
+        } onChange: {
+            changed.raise()
+        }
+
+        review.toggle(kites)
+
+        #expect(changed.raised, "a list drawn from the items would not show the group's rows")
+        #expect(review.items == [.group("Kites"), .row("k1"), .row("k2"), .row("k3"), .group("Unsure"), .row("u1")])
+    }
+
     @Test("Return accepts a group that is one decision, bound to its rows, and lands on the next")
     func acceptsAGroup() async throws {
         let after = queue([("Unsure", ["u1"], false)], rows: [unsure])
@@ -426,4 +444,14 @@ struct ReviewModelTests {
         #expect(desk.review.state == .signedOut)
         #expect(ended)
     }
+}
+
+/// Raised once, from whichever thread observation calls back on.
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    var raised: Bool { lock.withLock { value } }
+
+    func raise() { lock.withLock { value = true } }
 }

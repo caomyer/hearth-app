@@ -159,6 +159,10 @@ private struct WhereCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Picker("Which account", selection: $account) {
+                        // Nothing is chosen for the person unless they chose it for rows like these.
+                        if account == nil {
+                            Text("Choose an account").tag(AccountRef?.none)
+                        }
                         ForEach(group.accounts) { account in
                             Text(account.name).tag(Optional(account))
                         }

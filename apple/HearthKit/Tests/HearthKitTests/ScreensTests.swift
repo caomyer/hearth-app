@@ -247,6 +247,17 @@ struct JournalModelTests {
         #expect(await engine.given.allSatisfy { $0["limit"] == .number(2) })
     }
 
+    @Test("the first entries are laid out a day at a time within so many lines, headings counted")
+    func daysFitting() async {
+        let model = JournalModel(engine: Scripted([journal(offset: 0, count: 4, total: 4)]))
+        await model.reload()
+
+        #expect(model.firstDays(fitting: .max).map(\.entries.count) == [1, 3])
+        #expect(model.firstDays(fitting: 4).map(\.entries.count) == [1, 1])
+        #expect(model.firstDays(fitting: 3).map(\.entries.count) == [1])
+        #expect(model.firstDays(fitting: 1).isEmpty)
+    }
+
     @Test("a change of filter asks again from the first page")
     func filters() async {
         let engine = Scripted([journal(offset: 0, count: 2, total: 2), journal(offset: 0, count: 1, total: 1, payee: "Found")])

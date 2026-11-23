@@ -74,6 +74,10 @@ struct ReviewView: View {
                 }
                 }
                 .onAppear { queueFocused = true }
+                .onChange(of: choosing) { _, open in
+                    // Once a category is chosen the queue has the keyboard again, so Return saves it.
+                    if !open, section == .queue { queueFocused = true }
+                }
                 .onChange(of: queue.elsewhere.rows) { _, rows in
                     if rows == 0 { section = .queue }
                 }
@@ -82,9 +86,9 @@ struct ReviewView: View {
     }
 
     /// The Review menu's commands, while the queue has the keyboard: never while a field
-    /// does, so a letter typed there is only ever a letter.
+    /// does, the chooser's among them, so a letter typed there is only ever a letter.
     private var commands: ReviewCommands? {
-        guard queueFocused, section == .queue, review.state == .ready, !desk.decisions.isDeciding else {
+        guard queueFocused, !choosing, section == .queue, review.state == .ready, !desk.decisions.isDeciding else {
             return nil
         }
         return ReviewCommands(
@@ -403,6 +407,9 @@ private struct ChoiceMenu: View {
 private struct QueueList: View {
     @Bindable var review: ReviewModel
     var focused: FocusState<Bool>.Binding
+    /// Whether the list holds every item yet: a first import's queue is hundreds, and the
+    /// list is first drawn with a page of them (`FirstFill`).
+    @State private var filled = false
 
     var body: some View {
         if let queue = review.queue, !queue.rows.isEmpty {
@@ -410,30 +417,14 @@ private struct QueueList: View {
                 List(selection: $review.selection) {
                     if review.oneByOne {
                         Section {
-                            ForEach(queue.rows) { row in
-                                QueueRow(row: row, currency: queue.currency, asOf: queue.asOf, showsGroup: true)
-                                    .tag(ReviewItem.row(row.id))
-                                    .id(ReviewItem.row(row.id))
-                            }
+                            items(queue)
                         } header: {
                             Text("One by one, \(review.query.order.label.lowercased()) first")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Palette.ink2)
                         }
                     } else {
-                        ForEach(queue.groups) { group in
-                            GroupLine(review: review, group: group, currency: queue.currency)
-                                .tag(ReviewItem.group(group.name))
-                                .id(ReviewItem.group(group.name))
-                            if review.isOpen(group) {
-                                ForEach(review.rows(of: group)) { row in
-                                    QueueRow(row: row, currency: queue.currency, asOf: queue.asOf, showsGroup: false)
-                                        .padding(.leading, 14)
-                                        .tag(ReviewItem.row(row.id))
-                                        .id(ReviewItem.row(row.id))
-                                }
-                            }
-                        }
+                        items(queue)
                     }
                 }
                 .listStyle(.inset)
@@ -441,6 +432,11 @@ private struct QueueList: View {
                 .background(Palette.surface)
                 .focused(focused)
                 .accessibilityIdentifier("review.list")
+                .task { filled = true }
+                .onChange(of: filled) {
+                    // The item the person was on may only now be in the list.
+                    if let item = review.selection { proxy.scrollTo(item) }
+                }
                 .onChange(of: review.selection) { _, item in
                     // The next item after a decision can be a long way down. Scrolled once the
                     // list has taken in what changed, never while it is still doing so.
@@ -452,6 +448,31 @@ private struct QueueList: View {
             }
         } else {
             Spacer()
+        }
+    }
+
+    /// Every item on screen, in the queue's order: a group and then its rows while it is
+    /// open, or every row one by one.
+    private func items(_ queue: ReviewQueue) -> some View {
+        let shown = review.items
+        let groups = Dictionary(queue.groups.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        let rows = Dictionary(queue.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ForEach(filled ? shown : Array(shown.prefix(FirstFill.rows)), id: \.self) { item in
+            switch item {
+            case .group(let name):
+                if let group = groups[name] {
+                    GroupLine(review: review, group: group, currency: queue.currency)
+                        .tag(item)
+                        .id(item)
+                }
+            case .row(let id):
+                if let row = rows[id] {
+                    QueueRow(row: row, currency: queue.currency, asOf: queue.asOf, showsGroup: review.oneByOne)
+                        .padding(.leading, review.oneByOne ? 0 : 14)
+                        .tag(item)
+                        .id(item)
+                }
+            }
         }
     }
 }
@@ -646,6 +667,7 @@ private struct GroupDetail: View {
                     Text(group.name)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Palette.ink)
+                        .accessibilityIdentifier("review.detail.group")
                 }
                 Panel(title: "Suggested") {
                     VStack(alignment: .leading, spacing: 6) {

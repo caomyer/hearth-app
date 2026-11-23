@@ -82,7 +82,7 @@ public final class ReviewModel {
 
     /// Groups opened or closed against how they start: a group that is one decision starts
     /// closed, as its rows are one accept; any other starts open, as each row needs a look.
-    @ObservationIgnored private var toggled: Set<String> = []
+    private var toggled: Set<String> = []
     private let engine: any Asking
     private let pause: @Sendable (Duration) async throws -> Void
     private let signedOut: @MainActor () -> Void
