@@ -37,18 +37,21 @@ uvx fava "$HEARTH_DATA_DIR/books.beancount"
 
 The file is an output, never an input.
 Hearth never reads it back, and its first lines say so.
+It is not the base, the ledger a household imported, which is kept beside it in `ledger-base/`: that one is an input, written once at its import and read on every recompute (`docs/real-ledger.md`).
 An edit made to it changes nothing hearth shows and would be lost at the next recompute, so before writing it again hearth checks whether the file is still exactly as it wrote it.
 A file someone edited is renamed beside it, to `books.edited-<when>.beancount`, and never discarded.
 Books that have not changed leave the file untouched, so a fava watching it reloads only when they do, and its modification time is when the books last changed, not when they were last recomputed.
 `hearth serve` and a `hearth plaid` command run beside it may both write it, each through a temporary file of its own that replaces it whole.
 
-## Inheriting a ledger
+## Over a ledger of the household's own
 
-A household with a ledger of its own sets `HEARTH_LEDGER` to it (`docs/real-ledger.md`).
-Hearth reads it and never writes it, or anything beside it.
-Hearth's own entries go on top of it: an account the inherited ledger already opens is left to it, transactions and all, and an account a member maps to a new name is opened by hearth.
-The import books nothing into an inherited account, since that would count every transaction the ledger already holds a second time; carrying an inherited account on from where its ledger stops is not done yet, and the import page says which accounts it leaves to the household's own records.
-The books file includes the inherited ledger by its full path, so the file alone holds the whole books.
+A household with a ledger of its own imports it once, with `hearth import-ledger` (`docs/real-ledger.md`).
+Hearth keeps a frozen copy of every file it read, its base, in the data directory, and reads that on every recompute, never the original, which it never writes, nor anything beside it (`hearth.base`).
+Until the import is all a household needs, `HEARTH_LEDGER` still names a ledger to inherit where it is, read exactly as a base is; the two together are refused.
+Either is loaded only through `books.load_ledger`, which runs beancount's own plugins and no other.
+Hearth's own entries go on top of it: an account the household's ledger already opens is left to it, transactions and all, and an account a member maps to a new name is opened by hearth.
+The import books nothing into such an account, since that would count every transaction the ledger already holds a second time; carrying it on from where its ledger stops is not done yet, and the import page says which accounts it leaves to the household's own records.
+The books file includes the base, or the inherited ledger, by its full path, so the file alone holds the whole books.
 
 ## What the books hold
 

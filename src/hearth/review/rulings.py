@@ -219,6 +219,12 @@ class RulingStore:
             found.setdefault(row["account"], set()).add(row["review_id"])
         return found
 
+    def newest(self) -> int:
+        """The id of the newest ruling anyone has made, of any kind, or 0 if none: ids only
+        grow, so a ruling made after this call has a greater one."""
+        row = self._db.execute("SELECT coalesce(max(id), 0) AS id FROM review_rulings").fetchone()
+        return int(row["id"])
+
     def latest_by(self, member_id: MemberId) -> datetime | None:
         """When `member_id` last ruled, or `None` if they never have; taking a
         decision back is not reviewing."""

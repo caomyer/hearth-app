@@ -1,6 +1,6 @@
 """Command-line entry point: ``hearth serve``, ``hearth add-member``, ``hearth add-account``,
-``hearth accounts``, ``hearth plaid``, ``hearth compare``, ``hearth export``, ``hearth demo`` and
-``hearth bridge``.
+``hearth accounts``, ``hearth import-ledger``, ``hearth plaid``, ``hearth compare``, ``hearth
+export``, ``hearth demo`` and ``hearth bridge``.
 
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
 --approve-plaid OPERATION`` for the web pages, and ``--approved`` for each ``hearth plaid``
@@ -29,7 +29,7 @@ from pathlib import Path
 import uvicorn
 from beancount.core.data import Open
 
-from hearth import accounts, auth, books, comparison, db, demo, members, runlog
+from hearth import accounts, auth, books, comparison, db, demo, ledger_import, members, runlog
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
 from hearth.clock import system_clock
@@ -140,6 +140,13 @@ def main(argv: list[str] | None = None) -> None:
         "accounts", help="list the books' accounts and who owns each (never writes a ledger)"
     )
 
+    bring = commands.add_parser(
+        "import-ledger",
+        help="import a beancount ledger kept before hearth, once: hearth keeps a frozen copy of"
+        " it in the data directory and reads that from then on (never writes the ledger)",
+    )
+    bring.add_argument("ledger", type=Path, help="the file the ledger is opened from")
+
     against = commands.add_parser(
         "compare",
         help="hold hearth's own books against a ledger the household kept before, account by"
@@ -229,6 +236,8 @@ def main(argv: list[str] | None = None) -> None:
             _add_account(arguments.ledger_account, arguments.name, arguments.owner)
         case "accounts":
             _list_accounts()
+        case "import-ledger":
+            _import_ledger(arguments.ledger)
         case "compare":
             _compare(
                 arguments.ledger,
@@ -421,6 +430,18 @@ def _list_accounts() -> None:
         account = claimed.get(ledger_account)
         owners = ", ".join(sorted(names[o] for o in account.owners)) if account else ""
         print(f"{ledger_account}  {account.name if account else '-'}  {owners or 'unclaimed'}")
+
+
+def _import_ledger(ledger: Path) -> None:
+    """Import `ledger` as the household's base and print the check a person needs before
+    trusting it (``hearth.ledger_import``), or say why nothing was imported."""
+    settings = Settings.from_environment()
+    try:
+        outcome = ledger_import.import_ledger(settings, ledger, now=system_clock())
+    except ledger_import.ImportRefused as refused:
+        sys.exit(f"hearth: {refused} Nothing was imported.")
+    for line in ledger_import.describe(outcome):
+        print(line)
 
 
 def _export(username: str, out: Path | None) -> None:

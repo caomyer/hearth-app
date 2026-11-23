@@ -12,14 +12,16 @@ each figure can say how much of it rests on rows nobody has looked at. A ruling 
 books, so what a member decides shows in the figures within one recompute.
 
 The books are hearth's own (``hearth.ownbooks``), derived from what members connected and
-decided, laid over a ledger of the household's own only when there is one to inherit. Each
-recompute that succeeds writes them out to the books file, an output hearth never reads.
+decided, laid over a ledger of the household's own only when there is one: the base it imported
+and froze (``hearth.base``), or one it inherits where it is (`inherited`). Each recompute that
+succeeds writes them out to the books file, an output hearth never reads.
 
 Nothing here decides who may see what; pages reach the books only through
 ``hearth.disclosure``.
 """
 
 import logging
+import os
 import sqlite3
 import threading
 from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
@@ -33,6 +35,7 @@ from beancount.core.account import is_valid as is_valid_account
 from beancount.core.data import (
     Balance,
     Commodity,
+    Custom,
     Directive,
     Open,
     Pad,
@@ -41,9 +44,11 @@ from beancount.core.data import (
 )
 from beancount.core.interpolate import BalanceError
 from beancount.ops import validation
+from beancount.parser import booking as beancount_booking
 from beancount.parser import options
 
-from hearth import db, ownbooks
+from hearth import base, db, ownbooks
+from hearth.base import Base, BaseError
 from hearth.clock import Clock
 from hearth.config import Settings
 from hearth.connections import Connections, RegisteredConnections, item_of
@@ -195,38 +200,113 @@ class LedgerError(Exception):
         self.reported_by = reported_by
 
 
-def load_entries(path: Path) -> tuple[Directive, ...]:
-    """The ledger at `path`, refusing one beancount reports errors in.
+@dataclass(frozen=True, slots=True)
+class Loaded:
+    """A ledger as hearth reads it: its entries, beancount's options, and every file it read."""
+
+    entries: tuple[Directive, ...]
+    options: dict[str, Any]
+    files: tuple[Path, ...]
+
+
+def load_entries(ledger: Path | Base) -> tuple[Directive, ...]:
+    """The ledger at `ledger`, or the base, refusing one beancount reports errors in
+    (`load_ledger`)."""
+    return load_ledger(ledger).entries
+
+
+def load_ledger(ledger: Path | Base) -> Loaded:
+    """The ledger at `ledger`, or the base hearth imported (``hearth.base``), refusing one
+    beancount reports errors in. Every ledger hearth reads, a base, an inherited ledger or one
+    it compares with, is read here and nowhere else.
+
+    Beancount's own plugins run; any other plugin a ledger names is kept in its text and never
+    run, nor imported (`runs`). Custom directives are kept in the text and left out of the
+    entries. A base is read only once its files are as it was imported, and only if it reads
+    no file outside itself.
 
     A failed balance assertion is left to `compute`, which explains it to the account's
     owners alone. Beancount's own messages name accounts and amounts, so no other error's
     message is ever passed on: only where it is, which is enough to find it.
     """
-    entries, _ = _load(path)
-    return entries
-
-
-def _load(path: Path) -> tuple[tuple[Directive, ...], dict[str, Any]]:
+    frozen = ledger if isinstance(ledger, Base) else None
+    if frozen is not None:
+        try:
+            frozen.verify()
+        except BaseError as error:
+            raise LedgerError(str(error)) from error
+    path = frozen.root_path if frozen is not None else ledger
+    assert isinstance(path, Path)  # noqa: S101 - a Base gives its root, a Path is one
     entries, errors, options_map = _read(path)
     problems = [error for error in errors if not isinstance(error, BalanceError)]
     if problems:
         source = getattr(problems[0], "source", None) or {}
-        where = f"{Path(source['filename']).name}, line {source['lineno']}" if source else None
+        # Beancount files an error of loading, such as an include that matches nothing, at
+        # "<load>", which is no place in the ledger.
+        placed = source and not str(source["filename"]).startswith("<")
+        where = f"{Path(source['filename']).name}, line {source['lineno']}" if placed else None
         count = len(problems)
         summary = f"The ledger has {count} error{'s' if count > 1 else ''} hearth cannot read past"
         raise LedgerError(f"{summary}{f', the first at {where}' if where else ''}.")
-    return tuple(entries), options_map
+    files = tuple(Path(name) for name in options_map["include"])
+    if frozen is not None and set(files) != {Path(os.path.normpath(p)) for p in frozen.paths()}:
+        outside = sorted(str(f) for f in files if not f.is_relative_to(frozen.directory))
+        raise LedgerError(
+            f"The imported ledger reads {outside[0]}, outside its frozen copy."
+            if outside
+            else "The imported ledger does not read the files it was imported with."
+        )
+    kept = tuple(e for e in entries if not isinstance(e, Custom))
+    return Loaded(kept, options_map, files)
+
+
+BUILT_IN = "beancount."
+"""The package beancount's own plugins are in: `beancount.plugins` and `beancount.ops`."""
+
+SKIPPED = frozenset({"beancount.ops.documents"})
+"""Beancount's own plugins hearth never runs: `documents` looks for files a ledger names
+outside its text, which a base does not copy and hearth never opens."""
+
+
+def runs(plugin: str) -> bool:
+    """Whether hearth runs a plugin a ledger names: only beancount's own.
+
+    Any other runs code hearth did not ship, which could read, write or send anything, and
+    would make the books depend on what is installed beside hearth on the day; a ledger's
+    `insert_pythonpath` would even run code from the ledger's own folder. It is kept in the
+    ledger's text, inert, and ``hearth import-ledger`` says so, with where it is.
+    """
+    return plugin.startswith(BUILT_IN) and plugin not in SKIPPED
 
 
 def _read(path: Path) -> tuple[list[Directive], list[Any], Any]:
-    """Load the ledger without touching the directory it lives in.
+    """Load the ledger without touching the directory it lives in, running only beancount's
+    own plugins (`runs`).
 
+    This is beancount's own uncached load, step for step, with the plugins chosen here.
     `loader.load_file` goes through beancount's pickle cache, which writes a
     `.<name>.picklecache` beside the ledger whenever a load takes over a second, and deletes
     one it finds stale. The ledger and its directory belong to the household, and hearth only
-    reads them, so the cache is bypassed for the loader's own uncached path.
+    reads them, so the cache is never used. Nor is the ledger's `insert_pythonpath`: no code
+    from beside a ledger is ever imported.
     """
-    return loader._load([(str(path), True)], None, None, None)
+    entries, errors, options_map = loader._parse_recursive([(str(path), True)], None, None)
+    entries.sort(key=entry_sortkey)
+    entries, booking_errors = beancount_booking.book(entries, options_map)  # type: ignore[no-untyped-call]
+    errors.extend(booking_errors)
+    chosen = [(name, config) for name, config in options_map["plugin"] if runs(name)]
+    if options_map["plugin_processing_mode"] == "default":
+        chosen = [
+            *(p for p in loader.PLUGINS_PRE if runs(p[0])),
+            *chosen,
+            *loader.PLUGINS_AUTO,
+            *loader.PLUGINS_POST,
+        ]
+    # Every plugin is named here; beancount adds none of its own in raw mode.
+    plugged = {**options_map, "plugin": chosen, "plugin_processing_mode": "raw"}
+    entries, errors = loader.run_transformations(entries, errors, plugged, None)
+    errors.extend(validation.validate(entries, options_map))  # type: ignore[no-untyped-call]
+    return entries, errors, options_map
 
 
 type Decide = Callable[[Sequence[PileItem]], Mapping[str, Decision]]
@@ -793,7 +873,7 @@ def from_household(
             )
         finally:
             conn.close()
-        written = ownbooks.render(ownbooks.own(books.entries), inherits=settings.ledger)
+        written = ownbooks.render(ownbooks.own(books.entries), inherits=household.ledger)
         ownbooks.write(settings.books_file, written, now=now)
         return books
 
@@ -809,7 +889,8 @@ def standing(settings: Settings) -> Hashable:
     the stored prices, every connection and the account each of its accounts feeds, the
     household's accounts and their owners, each named account, each ruling and each uploaded
     statement. An inherited ledger is the household's, read on every recompute, so its size and
-    modification time are part of it too.
+    modification time are part of it too; and so is the digest of the base hearth imported,
+    which changes when an import, in this process or another, replaces it (``hearth.base``).
     """
     with feed.Feed.open(settings.feed_database) as fed:
         fed_at = fed.standing()
@@ -837,7 +918,7 @@ def standing(settings: Settings) -> Hashable:
             ledger = (stat.st_size, stat.st_mtime_ns)
         except OSError:
             ledger = None
-    return (fed_at, app, ledger)
+    return (fed_at, app, ledger, base.standing(settings.ledger_base))
 
 
 @dataclass(frozen=True, slots=True)
@@ -845,27 +926,53 @@ class Entries:
     """The household's entries before any ruling, each account hearth opened whose opening
     balance could not be derived, with why, each a brokerage account feeds
     (``hearth.plaid.opening``), and each the household holds that nothing opens
-    (``ownbooks.Derived.unfed``)."""
+    (``ownbooks.Derived.unfed``); and the ledger they go on top of, if any (`inherited`)."""
 
     entries: tuple[Directive, ...]
     unknown: Mapping[str, Unknown] = field(default_factory=dict)
     invested: frozenset[str] = frozenset()
     unfed: frozenset[str] = frozenset()
+    ledger: Path | Base | None = None
+
+
+BOTH = (
+    "Hearth was given two ledgers: HEARTH_LEDGER, and the ledger imported into its data"
+    " directory. It reads the imported one now, so unset HEARTH_LEDGER."
+)
+
+
+def inherited(settings: Settings) -> Path | Base | None:
+    """The ledger hearth's own entries go on top of: the base it imported and froze
+    (``hearth.base``), or the household's own ledger at `HEARTH_LEDGER`, or None.
+
+    Never both: which one held the books would be a guess, so a recompute told of both
+    refuses with a sentence saying so.
+    """
+    try:
+        found = base.current(settings.ledger_base)
+    except BaseError as error:
+        raise LedgerError(str(error)) from error
+    if found is not None and settings.ledger is not None:
+        raise LedgerError(BOTH)
+    return found.base if found is not None else settings.ledger
 
 
 def household_entries(settings: Settings) -> Entries:
-    """The household's entries before any ruling: hearth's own over the inherited ledger.
+    """The household's entries before any ruling: hearth's own over the ledger it inherits,
+    imported or not (`inherited`), each read exactly alike (`load_ledger`).
 
     Checked as beancount checks a file it loads, so the books written out load as cleanly as
     they were computed; hearth's entries that would not are refused, never served.
     """
-    if settings.ledger is not None:
-        inherited, options_map = _load(settings.ledger)
+    ledger = inherited(settings)
+    if ledger is not None:
+        loaded = load_ledger(ledger)
+        theirs, options_map = loaded.entries, loaded.options
     else:
-        inherited, options_map = (), options.OPTIONS_DEFAULTS.copy()
-    opened = {e.account for e in inherited if isinstance(e, Open)}
-    declared = {e.currency for e in inherited if isinstance(e, Commodity)}
-    since = min((e.date for e in inherited), default=None)
+        theirs, options_map = (), options.OPTIONS_DEFAULTS.copy()
+    opened = {e.account for e in theirs if isinstance(e, Open)}
+    declared = {e.currency for e in theirs if isinstance(e, Commodity)}
+    since = min((e.date for e in theirs), default=None)
     conn = db.connect(settings.database)
     try:
         with feed.Feed.open(settings.feed_database) as fed:
@@ -875,7 +982,7 @@ def household_entries(settings: Settings) -> Entries:
     finally:
         conn.close()
     own = derived.entries
-    entries = tuple(sorted((*inherited, *own), key=entry_sortkey))
+    entries = tuple(sorted((*theirs, *own), key=entry_sortkey))
     if own:
         # Beancount checks a name's spelling only as it parses a file, which these never were.
         misnamed = sorted({n for entry in own for n in _names(entry) if not is_valid_account(n)})
@@ -886,4 +993,4 @@ def household_entries(settings: Settings) -> Entries:
                 f"Hearth's own books have {count} error{'s' if count > 1 else ''}"
                 " it will not serve figures past."
             )
-    return Entries(entries, derived.unknown, derived.invested, derived.unfed)
+    return Entries(entries, derived.unknown, derived.invested, derived.unfed, ledger)

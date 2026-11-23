@@ -30,8 +30,10 @@ how it came to be.
 Every recompute also writes these entries to a beancount file, so every figure traces to an
 entry that exists, one a person can open in fava, query, diff and check against a statement.
 The file is an output, never an input: hearth does not read it, and says so at its top. A
-household with a ledger of its own may inherit it (``HEARTH_LEDGER``); hearth reads that one,
-never writes it, and the file includes it so that the file alone holds the whole books.
+household with a ledger of its own imports it once, and hearth keeps it frozen in its data
+directory (``hearth.base``), or, for now, inherits it where it is (``HEARTH_LEDGER``); hearth
+reads either and never writes it, and the file includes it so that the file alone holds the
+whole books.
 """
 
 import hashlib
@@ -47,6 +49,7 @@ from beancount.core.data import Commodity, Directive, Open, Transaction, new_met
 from beancount.parser import printer
 
 from hearth.accounts import Account, all_accounts
+from hearth.base import Base
 from hearth.plaid import booking, opening
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
@@ -285,10 +288,17 @@ def own(entries: Iterable[Directive]) -> list[Directive]:
     return [e for e in entries if isinstance(e.meta, dict) and e.meta.get("filename") == ORIGIN]
 
 
-def render(entries: Sequence[Directive], *, inherits: Path | None) -> str:
-    """The books file: what it is, an inherited ledger if there is one, and `entries`."""
+def render(entries: Sequence[Directive], *, inherits: Path | Base | None) -> str:
+    """The books file: what it is, the ledger it goes on top of if there is one, the base
+    hearth imported (``hearth.base``) or the household's own, and `entries`."""
     parts = [HEADER, f'\noption "title" "{TITLE}"\noption "operating_currency" "{CURRENCY}"\n']
-    if inherits is not None:
+    if isinstance(inherits, Base):
+        parts.append(
+            "\n; Imported: the household's ledger as it was imported, frozen in hearth's data"
+            "\n; directory, which hearth reads and never writes again.\n"
+            f"include {_quoted(str(inherits.root_path.resolve()))}\n"
+        )
+    elif inherits is not None:
         parts.append(
             "\n; Inherited: the household's own ledger, which hearth reads and never writes.\n"
             f"include {_quoted(str(inherits.resolve()))}\n"

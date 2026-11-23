@@ -1,27 +1,111 @@
-# Inheriting the household's own ledger
+# Bringing in the household's own ledger
 
 Hearth keeps the books itself, and a household with no ledger needs nothing here (`docs/books.md`).
-A household that already has a beancount ledger may inherit it instead: hearth reads it, read-only, and lays its own entries over it.
+A household that already has a beancount ledger imports it once: hearth keeps a frozen copy, its base, and lays its own entries over it.
 This is how, and what changes when the ledger is real.
 
-## Point hearth at the ledger
+## Import the ledger
 
-Hearth inherits one beancount file, named by `HEARTH_LEDGER`, and everything it includes.
-For a ledger built by beancount_nextgen's statement import, that file is the run's `check.beancount`, not `ledger.beancount`:
+```sh
+uv run hearth import-ledger "$HOME/Finance/ledger/main.beancount"
+```
+
+Name the file the ledger is opened from, the one fava is pointed at.
+For a ledger built by beancount_nextgen's statement import, that is the run's `check.beancount`, not `ledger.beancount`:
 `check.beancount` includes both the booked entries and `pending.beancount`, the rows the import set aside, which are what the review page lists.
-Pointing at `ledger.beancount` alone leaves the review queue empty and every balance short by whatever is pending.
+Importing `ledger.beancount` alone leaves the review queue empty and every balance short by whatever is pending.
+
+The import reads the ledger where it is, through the same path every ledger is read by (`books.load_ledger`), and writes nothing unless it loads cleanly and every balance assertion in it passes.
+If it does not, it says why, by file and line and never by amount, and nothing is written.
+It then prints the check to hold against the ledger's own figures, in fava or by hand, before trusting the copy:
+
+```text
+Imported /Users/.../main.beancount, 5 files, as hearth's base.
+  Entries: 20, from Jan 1, 2026 to Jul 2, 2026
+  Accounts: 6
+  Balance assertions: 4, all of which pass
+  Net worth today: 3,054.50 USD on Nov 22, 2026, at the ledger's own prices
+  Beancount's own plugins it runs: beancount.plugins.implicit_prices
+Kept but not used, 5 lines:
+  main.beancount, line 5: plugin "zq_meddler", which is not beancount's own, so hearth never runs it
+  main.beancount, line 9: custom "fava-option"
+  accounts.beancount, line 1: plugin "beancount.plugins.auto_accounts", in an included file, where beancount itself does not read plugins
+  years/2026-1.beancount, line 17: custom "budget"
+  years/2026-1.beancount, line 18: document: hearth neither copies nor opens the file it names
+The base is in .../ledger-base/358a7b82..., digest 358a7b82....
+Hearth reads the base from now on, never the original, which it did not change.
+```
+
+Entries are counted as hearth uses them: after beancount's own plugins run, `custom` directives left out.
+Net worth is every Assets and Liabilities account today, valued in the ledger's first operating currency at the newest `price` the ledger holds for each commodity; a holding it has no price for is named, and the total is then only a floor.
+Hearth's own pages value holdings at the prices it stores (`docs/valuation.md`), so they may differ from this figure by exactly the prices.
+
+### What hearth runs, and what it keeps but does not use
+
+Beancount's own plugins, the modules in `beancount.plugins` and `beancount.ops` that a ledger names, run as beancount runs them.
+Any other plugin is kept in the ledger's text and never run, nor imported: it is code hearth did not ship, which could read, write or send anything, and would make the books depend on what happens to be installed beside hearth (`books.runs`).
+A ledger's `insert_pythonpath` is never honoured either, so no code from beside a ledger is ever imported.
+A ledger that loads only because a plugin of its own runs, one that makes entries, say, does not load in hearth, and the import says where.
+
+`custom` directives are kept and ignored.
+Nor does hearth look for documents: beancount's `documents` plugin is not run, so a `document` directive is kept but its file is neither copied nor checked, and an `option "documents"` folder is never searched.
+A plugin named in an included file is listed too, because beancount reads plugins only in the file a ledger is opened from.
+The rule is applied in the one place a ledger is loaded, uncached, so an inherited ledger and a base are read exactly alike.
+
+### The base
+
+```text
+<data dir>/
+  ledger-base/
+    manifest.json              what was imported, from where, when, and its digest
+    <digest>/                  the files as they were, byte for byte
+      main.beancount           each at its path relative to the folder that held them all
+      accounts.beancount
+      years/2026-1.beancount
+```
+
+The base is every file the ledger read, includes resolved, copied byte for byte, each at its path relative to the nearest folder that held all of them (`hearth.base`).
+So an include relative to the file that has it, a nested include, an include reaching into a sibling folder with `..`, and a glob all resolve in the copy exactly as they did in the original, and a glob finds there only the files it found at the import.
+An include by an absolute path would still lead out of the copy, back to the original, so the import refuses it and asks for a relative one; every load of the base checks it reads no file outside it.
+
+The digest is the sha256 of the schema, the path of the file the ledger is opened from, and each file's path, length and bytes in order of path (`base.digest`).
+Any byte of any file, any file's path, or which file is opened changes it.
+Every recompute checks the files against the digest before reading them, so a base changed on disk is refused, and the pages say the figures could not be computed, rather than read it.
+
+`manifest.json` names the base: its digest, its files with their sizes and sha256, where it was imported from, when, and the newest review ruling at the time.
+It is written last and whole, so a recompute finds either the old base or the new one, never half of either; a serving hearth notices an import made by another process within seconds, as `books.standing` includes the digest.
+
+`books.beancount`, beside it in the data directory, is something else: an output hearth writes on every recompute and never reads (`docs/books.md`).
+It includes the base by its full path, so the file alone still holds the whole books.
+
+### Importing again
+
+Importing again, the same ledger after a correction say, replaces the base until a member makes a review ruling after the import.
+The base it replaces stays in its own folder, never discarded, and the manifest names the new one.
+From the first ruling made after the import on, rulings rest on the base as it is, so importing again is refused with a sentence saying so.
+Importing a ledger exactly as the base already holds it writes nothing.
+
+### Inheriting the ledger where it is, for now
+
+Until the import is all a household needs, hearth can still inherit a ledger where it is, named by `HEARTH_LEDGER`, and everything it includes:
 
 ```sh
 export HEARTH_LEDGER="$HOME/Finance/bcng-data/ledger/2026-01_07/check.beancount"
-export HEARTH_DATA_DIR="$HOME/.local/share/hearth"   # the default; never inside the data root
 ```
 
-`HEARTH_DATA_DIR` is hearth's own state: members, sessions, sharing choices, account ownership, prices and review rulings.
-Keep it apart from the ledger's data root, and outside any cloud-synced folder.
+It is read exactly as a base is, by the same rules, so a household computes the same books from either.
+A data directory with a base and `HEARTH_LEDGER` set as well is refused: the recompute says to unset `HEARTH_LEDGER`, and `hearth import-ledger` refuses to run while it is set.
+
+`HEARTH_DATA_DIR` is hearth's own state: members, sessions, sharing choices, account ownership, prices, review rulings and the base.
+Keep it apart from the ledger's own folder, and outside any cloud-synced folder.
+
+```sh
+export HEARTH_DATA_DIR="$HOME/.local/share/hearth"   # the default; never inside the ledger's folder
+```
 
 ## Say who owns each account
 
-Nobody sees an inherited account until it is claimed, so a freshly pointed hearth shows every member nothing.
+Nobody sees an account the ledger opens until it is claimed, so a freshly imported ledger shows every member nothing.
 Ownership lives in hearth's database, never in the ledger, because it decides who may see what.
 
 ```sh
@@ -39,9 +123,9 @@ Each claim is recorded in the activity log against every owner.
 
 ## Read-only, and how that is kept
 
-Hearth never writes to the inherited ledger or the directory it lives in; what it writes is its own books file, in its data directory, which includes the ledger by path (`docs/books.md`).
+Hearth never writes to the ledger it imports or inherits, or the directory it lives in; what it writes is the base and its own books file, both in its data directory (`docs/books.md`).
 That includes a write beancount itself would make: its default loader keeps a `.<name>.picklecache` beside the ledger whenever a load takes over a second, and deletes one it finds stale.
-Hearth loads through beancount's uncached path instead, and `tests/test_books.py` holds it to that.
+Hearth loads through beancount's uncached path instead, and `tests/test_books.py` and `tests/test_ledger_import.py` hold it to that.
 
 ## What a real ledger looks like on the pages
 
@@ -72,7 +156,7 @@ The books note each connection's last successful sync when they are recomputed (
 Like everything else here, this is decided by month alone and is the same for every viewer.
 
 Every entry the import books from a connection carries that source (`docs/books.md`), so an account hearth opened for a connection is vouched for by it from the first recompute after its history arrives.
-An account an inherited ledger opens is left to that ledger, and the import books nothing into it, so its connection vouches for nothing there: a Plaid-fed account whose ledger has stopped while its connection keeps working still reads as covered by the ledger rule below, until carrying an inherited account on from its ledger is built.
+An account the household's ledger opens, imported or inherited, is left to that ledger, and the Plaid import books nothing into it, so its connection vouches for nothing there: a Plaid-fed account whose ledger has stopped while its connection keeps working still reads as covered by the ledger rule below, until carrying such an account on from its ledger is built.
 The demo marks its ledger's bank-feed rows with the source the import writes, so it shows the rule at work on an inherited ledger too.
 
 An account no connection vouches for, such as one a statement import brings in, is judged with its part by the ledger alone, and that limitation stays: one that stopped while another in its part carries on reads as complete.

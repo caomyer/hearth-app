@@ -19,7 +19,8 @@ class Settings:
     # Set when served over HTTPS, so the session cookie is never sent in clear.
     secure_cookies: bool = False
     # A beancount ledger of the household's own, for hearth to inherit: optional, read and
-    # never written. Without one, hearth keeps the books itself (``hearth.ownbooks``).
+    # never written. Without one, hearth keeps the books itself (``hearth.ownbooks``), over
+    # the ledger it imported if there is one (`ledger_base`), which this may not be set beside.
     ledger: Path | None = None
 
     @property
@@ -28,8 +29,15 @@ class Settings:
 
     @property
     def books_file(self) -> Path:
-        """The books as hearth keeps them, written on every recompute and never read back."""
+        """The books as hearth keeps them, written on every recompute and never read back:
+        an output, unlike `ledger_base`."""
         return self.data_dir / "books.beancount"
+
+    @property
+    def ledger_base(self) -> Path:
+        """Where the household's imported ledger is kept, frozen (``hearth.base``): an input,
+        written once at its import and read on every recompute, unlike `books_file`."""
+        return self.data_dir / "ledger-base"
 
     @property
     def feed_database(self) -> Path:

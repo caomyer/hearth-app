@@ -45,12 +45,15 @@ uv run hearth add-member <username> --name "<name>" --admin
 uv run hearth serve --approve-plaid link --approve-plaid read
 ```
 
-A household that already keeps a beancount ledger may inherit it, read-only, and say who owns each of its accounts ([docs/real-ledger.md](docs/real-ledger.md)):
+A household that already keeps a beancount ledger imports it once: hearth keeps a frozen copy of every file it reads in its data directory, prints the check to hold against the ledger's own figures, and reads the copy from then on ([docs/real-ledger.md](docs/real-ledger.md)).
+Then say who owns each of its accounts:
 
 ```sh
-export HEARTH_LEDGER="$HOME/path/to/household.beancount"
+uv run hearth import-ledger "$HOME/path/to/household.beancount"
 uv run hearth add-account <ledger account> --name "<name>" --owner <username>
 ```
+
+Inheriting the ledger where it is, through `HEARTH_LEDGER`, still works for now, but not beside an imported one.
 
 A household that kept a ledger before connecting its banks can hold hearth's own books against it, account by account, at each statement's close or each month end ([docs/books.md](docs/books.md#checking-against-a-ledger-kept-before)).
 It reads both, writes nothing, and prints where they differ and which rows make the difference:
@@ -65,7 +68,8 @@ A household that keeps its own ledger in fava can take the connections and rows 
 uv run hearth export --member <username>
 ```
 
-Hearth never writes an inherited ledger. It recomputes at start-up, every morning at 6:00 and on request, never on page load, and writes its books to `books.beancount` in its data directory each time.
+Hearth never writes a ledger it imports or inherits, nor anything beside it.
+It recomputes at start-up, every morning at 6:00 and on request, never on page load, and writes its books to `books.beancount` in its data directory each time: an output it never reads, unlike the imported ledger in `ledger-base/` beside it.
 
 No live Plaid call is made unless approved for this run, operation by operation:
 
