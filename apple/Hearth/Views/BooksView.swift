@@ -64,7 +64,7 @@ struct BooksView: View {
     var body: some View {
         NavigationSplitView {
             Sidebar(navigator: navigator)
-                .navigationSplitViewColumnWidth(min: 210, ideal: 250, max: 320)
+                .navigationSplitViewColumnWidth(min: 240, ideal: 270, max: 340)
         } detail: {
             VStack(spacing: 0) {
                 if isSample {
@@ -78,9 +78,16 @@ struct BooksView: View {
             // take its colour.
             .toolbarBackground(Palette.surface, for: .windowToolbar)
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+            .toolbar {
+                // On every screen of the books: how fresh they are, and asking the banks again.
+                ToolbarItem(placement: .primaryAction) {
+                    SyncControl(model: navigator.desk.sync)
+                }
+            }
         }
         .environment(navigator)
         .task { await navigator.desk.accounts.watch() }
+        .task { await navigator.desk.sync.watch() }
         .onChange(of: navigator.desk.accounts.content?.groups) { _, groups in
             // A debug build asked to open on an account by name opens it once it is listed.
             guard !openedStart, let name = StartScreen.account,
@@ -148,10 +155,13 @@ private struct SidebarAccount: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            // The name takes whatever the balance leaves, and is cut only when nothing is left.
             Text(account.name)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Spacer(minLength: 4)
+                .layoutPriority(1)
+                .help(account.name)
+            Spacer(minLength: 6)
             if account.attention {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(Palette.warning)
@@ -170,6 +180,7 @@ private struct SidebarAccount: View {
             Text(text)
                 .monospacedDigit()
                 .foregroundStyle(account.standing == .failed ? Palette.unfavourable : Palette.ink2)
+                .fixedSize()
         } else {
             Image(systemName: StandingMark.symbol(account.standing))
                 .foregroundStyle(Palette.ink3)

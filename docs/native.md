@@ -7,7 +7,7 @@ It computes nothing itself: it starts hearth as a process of its own and asks it
 ## The wire
 
 `hearth bridge` answers over its standard input and output, one JSON object a line (`hearth.native.stdio`).
-Every request carries a number and exactly one of `sign_in`, `sign_out` or `ask`; its reply carries the same number.
+Every request carries a number and exactly one of `sign_in`, `sign_out`, `ask` or `act`; its reply carries the same number.
 
 ```
 -> {"id": 1, "ask": "overview"}
@@ -18,12 +18,17 @@ Every request carries a number and exactly one of `sign_in`, `sign_out` or `ask`
 <- {"id": 3, "answer": {"state": "ready", "net_worth": {"value": "162711.83", ...}, ...}}
 -> {"id": 4, "ask": "transactions", "with": {"account": "h1LQ...", "limit": 50}}
 <- {"id": 4, "answer": {"state": "ready", "total": 412, "entries": [...], ...}}
--> {"id": 5, "sign_out": true}
-<- {"id": 5, "outcome": "signed_out"}
+-> {"id": 5, "act": "sync"}
+<- {"id": 5, "outcome": "started"}
+-> {"id": 6, "ask": "banks"}
+<- {"id": 6, "answer": {"state": "ready", "asking": ["read"], "running": true, ...}}
+-> {"id": 7, "sign_out": true}
+<- {"id": 7, "outcome": "signed_out"}
 ```
 
 - An ask may carry `with`, a JSON object of what narrows it; nothing else may.
-  A `with` that is not an object, or one beside `sign_in` or `sign_out`, makes the line a bad request.
+  A `with` that is not an object, or one beside `sign_in`, `sign_out` or `act`, makes the line a bad request.
+- An `ask` shows something; an `act` asks hearth to do something, and takes nothing but the action's name (see "Asking hearth to do something").
 
 - There is no socket and no port.
   The only thing that can ask is the process that started the bridge, and the bridge ends when that process closes its end, which the system does for it if it dies.
@@ -33,6 +38,8 @@ Every request carries a number and exactly one of `sign_in`, `sign_out` or `ask`
 - `hearth bridge` reads the household in the data directory (`HEARTH_DATA_DIR`, or `~/.local/share/hearth`), and refuses to start where there is none rather than make an empty one.
   It recomputes as `hearth serve` does: at start-up, every morning, and whenever another process changes what the books are computed from.
 - `hearth demo --bridge` is the same bridge over the invented household, already signed in as its first member with that member's password. The app's sample runs it.
+  Every connection of that household is to hearth's stand-in for Plaid (`hearth.plaid.fake`), so nothing it syncs reaches Plaid or a bank.
+- Both write what they ask of Plaid to `hearth.log` in their data directory, as `hearth serve` does (`docs/connections.md`).
 
 ## Signing in
 
@@ -58,6 +65,27 @@ A bridge starts signed out, and hearth, not the app, decides who is asking (`hea
 The app keeps a member's username and password in the login keychain, one generic password item per household under the service `Hearth` with the data directory as its account (`HearthKit.Keychain`), and hands them to a new engine on every launch, so the engine checks them every time.
 If the engine refuses them they are forgotten and the member is asked again; "Sign Out" forgets them too.
 
+## Asking hearth to do something
+
+There is one action, `sync`: bring the household's connections up to date now.
+It is told one `outcome` (`hearth.native.bridge.Acted`):
+
+| Outcome | Meaning |
+|---|---|
+| `started` | A sync started, in the background; the `banks` screen follows it. |
+| `running` | A sync was already running, and what it brings is what was asked for; none was started. |
+| `not_allowed` | The bridge was started approved for nothing a sync asks of Plaid. |
+| `missing` | There is no such action. |
+| `signed_out` | Nobody is signed in; nothing is done, and nothing is said of what could be. |
+
+- A sync is the one every sync is: `hearth.refresh.sync_then_recompute`, run by the bridge's `Refresher`, one at a time, so the books always take in what it fetched.
+- The bridge syncs on its own too, exactly as `hearth serve` does: at start-up and every morning, when it was started approved for something a sync asks.
+- What it may ask of Plaid is decided when it starts, never on the wire: `hearth bridge --approve-plaid OPERATION`, once for each of `read`, `holdings` and `activity` (`hearth.plaid.approval`), and the same for `hearth demo --bridge`.
+  `link` and `remove` cannot be approved for a bridge at all.
+  The Plaid client enforces the approval itself, as it does for every run of hearth.
+- The app starts the bridge approved for exactly the switches the person turned on in its Settings, and starts it again when one changes (`HearthKit.Consent`, `apple/README.md`).
+- Every outcome is in `tests/native/fixtures/acted.json`, which both sides' tests read.
+
 ## What an answer is
 
 Every answer has a `state` (`hearth.native.doorway`):
@@ -82,6 +110,7 @@ Every ready answer says what its books are: `computed_at`, `as_of`, `currency` a
 | `accounts` | nothing | Every account the viewer may see, in groups: theirs by kind (Cash, Credit, Investments), then those hearth does not see, then others' they may see into, by whose (`Disclosure.accounts`). |
 | `account` | `id` | One of those accounts, and the days its history covers (`Disclosure.standing`). |
 | `transactions` | `from`, `to`, `account`, `category`, `text`, `show`, `offset`, `limit` | A window onto the journal (`Disclosure.journal`). |
+| `banks` | nothing | How fresh the viewer's own connections are, and where the bridge's syncs stand (`Disclosure.banks`). |
 
 What an ask takes is read strictly in `hearth.native.doorway`, and anything else is answered `missing`, as a screen that is not there is:
 
@@ -118,6 +147,22 @@ The balance, its kind and its standing go with the account balances facet.
 The day its data is known through (`updated`), whether that is long ago (`behind`), and the day its bank's balance covers (`checked`) are when its money last moved, so they go with the transactions facet.
 Its bank's name is given only to the member whose connection feeds it, as is `attention`, which says that connection must be signed in to again; for an account hearth does not see, where its owner said it is.
 
+### Banks
+
+`banks` is not of the books, so it is answered before the first recompute ends, and says nothing of which books are shown.
+It says what the bridge may ask (`asking`, of `read`, `holdings` and `activity`), whether it is asking now (`running`), when its last sync ended (`finished_at`), and what stopped that sync before it asked every connection (`stopped`).
+Then `banks`, the viewer's own connections and nobody else's (`access.may_use_connection`), each with its institution, when it last synced to the end (`synced_at`), whether its bank wants its member to sign in again (`needs_sign_in`), how many new transactions the bridge's last sync brought from it (`added`, null when the bridge has not asked it), and what went wrong (`trouble`):
+
+| Trouble | Meaning |
+|---|---|
+| `sign_in` | The bank wants its member to sign in again, which is done in Hearth in the browser: the app never opens Link. |
+| `unreachable` | Plaid could not be reached. |
+| `keys` | Its access token or its Plaid account's keys could not be opened from the Keychain. |
+| `refused` | Plaid answered with an error of its own. |
+| `failed` | Anything else; `hearth.log` says what. |
+
+What another member's connection answered is never in it, nor whether it had any trouble: the sync that brought it is the household's, the outcome of each connection is its member's.
+
 ### The journal
 
 `transactions` answers newest first, `limit` entries from `offset` (100 unless asked for fewer), with `total`, how many the whole filter leaves, and `counts`, how many each `show` would leave under the other filters.
@@ -153,9 +198,17 @@ It is not an HTTP endpoint and must not become one: a bridge that listened on a 
 
 ## One shape, checked from both sides
 
-`tests/native/fixtures/overview.json`, `accounts.json`, `account.json` and `transactions.json` are example replies, and `tests/native/fixtures/outcomes.json` lists every outcome of signing in.
+`tests/native/fixtures/overview.json`, `accounts.json`, `account.json`, `transactions.json` and `banks.json` are example replies, `tests/native/fixtures/outcomes.json` lists every outcome of signing in, and `acted.json` every outcome of an action.
 The Python tests check that the bridge still answers in their shape; the Swift tests (`apple/HearthKit`) decode the same files.
 A change of shape that only one side has been taught fails that side's tests.
+
+## Adding an action
+
+An action is the one kind of request that changes something, so it is added rarely and kept thin.
+
+1. Add its name to `hearth.native.bridge.ACTIONS` and do it in `Bridge.act`, through the module that already does it for every other path, never a second way.
+2. Anything it does in the background is followed through a screen, never through the action's reply.
+3. Teach `apple/HearthKit` its outcomes, and `acted.json` any new one.
 
 ## Adding a screen
 

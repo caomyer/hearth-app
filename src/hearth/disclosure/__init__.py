@@ -20,7 +20,7 @@ from hearth import audit, members, ownbooks, sharing
 from hearth.accounts import Account, all_accounts
 from hearth.audit import EventKind
 from hearth.books import Books, Failure, Status
-from hearth.connections import Connection, Connections
+from hearth.connections import Answered, Connection, Connections, State
 from hearth.disclosure.balances import AccountGroup, AccountStanding, Failed, standing, standings
 from hearth.disclosure.balances import visible as _visible
 from hearth.disclosure.common import (
@@ -83,6 +83,7 @@ __all__ = [
     "AccountRow",
     "AccountStanding",
     "ActivityLine",
+    "Bank",
     "Concealed",
     "Day",
     "Disclosed",
@@ -116,6 +117,19 @@ class ActivityLine:
     actor: MemberRef | None
     subject: MemberRef | None
     detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class Bank:
+    """One of the viewer's own connections, as fresh as it is."""
+
+    institution: str
+    synced_at: datetime | None
+    """When its bank was last asked and answered in full."""
+    needs_sign_in: bool
+    """Its bank wants its member to sign in again, which only Link in the pages can do."""
+    answered: Answered | None
+    """How it answered the last time this hearth asked it; None when it has not asked it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -416,6 +430,20 @@ class Disclosure:
     def connections(self, known: Connections) -> list[Connection]:
         """The viewer's own connections. Nobody else's are ever listed (see ``access``)."""
         return [c for c in known.all() if self._gate.may_use_connection(c.member)]
+
+    def banks(self, known: Connections, answered: Mapping[str, Answered]) -> tuple[Bank, ...]:
+        """How up to date each of the viewer's own connections is, and how each answered the
+        last time this hearth asked it (`answered`, by Item, which holds every member's).
+        Nobody else's connection is listed, nor anything it answered (see ``access``)."""
+        return tuple(
+            Bank(
+                institution=c.institution,
+                synced_at=c.synced_at,
+                needs_sign_in=c.state is State.EXPIRED,
+                answered=answered.get(c.item_id) if c.item_id is not None else None,
+            )
+            for c in self.connections(known)
+        )
 
     def preview(self) -> PersonView:
         """The viewer's own page as anyone else in the household sees it, given their choices."""

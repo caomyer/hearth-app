@@ -21,12 +21,14 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from hearth.clock import Clock
+from hearth.connections import Trouble
 from hearth.plaid.client import (
     LOGIN_REQUIRED,
     MUTATED_DURING_PAGINATION,
     PlaidClient,
     PlaidError,
     PlaidRejectedError,
+    PlaidUnreachableError,
 )
 from hearth.plaid.feed import Feed, Held, Outcome, Run
 from hearth.plaid.registry import Item, ItemState, Registry
@@ -69,6 +71,8 @@ class SyncBusyError(RuntimeError):
 class Synced:
     item_id: str
     run: Run
+    trouble: Trouble | None = None
+    """What kept the run from bringing everything in, when something did."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +88,7 @@ class Failed:
     """An Item a sync tried and could not bring up to date; ``hearth.log`` says why."""
 
     item_id: str
+    trouble: Trouble = Trouble.FAILED
 
 
 def sync_item(
@@ -109,10 +114,13 @@ def sync_item(
     except PlaidRejectedError as error:
         if error.error_code == LOGIN_REQUIRED:
             registry.set_state(item.item_id, ItemState.LOGIN_REQUIRED, problem=error.error_code)
-            return Synced(item.item_id, feed.finish(run, Outcome.LOGIN_REQUIRED, now=clock()))
-        return _failed(item, registry, feed, run, clock, str(error))
+            finished = feed.finish(run, Outcome.LOGIN_REQUIRED, now=clock())
+            return Synced(item.item_id, finished, Trouble.SIGN_IN)
+        return _failed(item, registry, feed, run, clock, str(error), Trouble.REFUSED)
+    except PlaidUnreachableError as error:
+        return _failed(item, registry, feed, run, clock, str(error), Trouble.UNREACHABLE)
     except PlaidError as error:
-        return _failed(item, registry, feed, run, clock, str(error))
+        return _failed(item, registry, feed, run, clock, str(error), Trouble.FAILED)
     except SyncStoppedError as error:
         return Synced(
             item.item_id, feed.finish(run, Outcome.INTERRUPTED, now=clock(), problem=str(error))
@@ -198,11 +206,18 @@ def _pages(
 
 
 def _failed(
-    item: Item, registry: Registry, feed: Feed, run: Run, clock: Clock, problem: str
+    item: Item,
+    registry: Registry,
+    feed: Feed,
+    run: Run,
+    clock: Clock,
+    problem: str,
+    trouble: Trouble,
 ) -> Synced:
     _log.warning("sync of a connection failed: %s", problem)
     registry.set_state(item.item_id, item.state, problem=problem)
-    return Synced(item.item_id, feed.finish(run, Outcome.FAILED, now=clock(), problem=problem))
+    finished = feed.finish(run, Outcome.FAILED, now=clock(), problem=problem)
+    return Synced(item.item_id, finished, trouble)
 
 
 def last_success(runs: list[Run]) -> datetime | None:

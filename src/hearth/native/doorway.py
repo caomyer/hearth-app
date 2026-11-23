@@ -11,6 +11,9 @@ what kind of answer it is:
 - ``missing``: there is no such screen, none this viewer may see, or the ask was given
   something it does not take. All three are one answer.
 
+Every screen but ``banks`` is of the books, so it waits for them. ``banks`` says how fresh the
+viewer's own connections are and how this engine's syncs stand, which needs no books.
+
 What an ask is given is read here, strictly: a key it does not take, a value of another kind,
 or one out of range is malformed, never guessed at. Whether the viewer may see what it names
 is for ``hearth.disclosure`` to decide, which answers what they may not see as missing.
@@ -33,6 +36,7 @@ from hearth.connections import Connections, RegisteredConnections
 from hearth.disclosure import (
     AccountGroup,
     AccountStanding,
+    Bank,
     Concealed,
     Disclosure,
     Filter,
@@ -41,6 +45,7 @@ from hearth.disclosure import (
 from hearth.disclosure.balances import Standing
 from hearth.disclosure.journal import Entry, Show, Side
 from hearth.names import readable
+from hearth.refresh import NOT_SYNCING, Syncing
 
 type Answer = dict[str, object]
 type Given = Mapping[str, object]
@@ -64,12 +69,24 @@ class Malformed(Exception):  # noqa: N818 - it names an outcome, not a fault
 
 
 @dataclass(frozen=True, slots=True)
+class Around:
+    """What a screen is written from beside the viewer's view: the connections hearth holds,
+    every member's, which only disclosure narrows to the viewer's, and where this engine's
+    syncs stand."""
+
+    connections: Connections
+    syncing: Syncing
+
+
+@dataclass(frozen=True, slots=True)
 class Doorway:
     """Answers one viewer's asks from the latest books. `viewer` is a username."""
 
     settings: Settings
     bookkeeper: Bookkeeper
     viewer: str
+    syncing: Callable[[], Syncing] = lambda: NOT_SYNCING
+    """Where this engine's syncs stand (`hearth.refresh.Refresher.status`)."""
 
     def answer(self, ask: str, given: Given | None = None) -> Answer:
         screen = SCREENS.get(ask)
@@ -91,14 +108,16 @@ class Doorway:
             # A viewer who is no longer a member is told what anyone else would be: nothing.
             return dict(MISSING)
         view = Disclosure.load(conn, member, self.bookkeeper.status)
+        around = Around(RegisteredConnections(self.settings.database), self.syncing())
+        if not screen.of_books:
+            return {"state": "ready", **screen.write(view, asked, around)}
         if view.books is None:
             notice = view.notice()
             if notice is None:
                 return dict(LOADING)
             return {"state": "failed", "summary": notice.summary}
-        known = RegisteredConnections(self.settings.database)
         try:
-            return {"state": "ready", **_books(view), **screen.write(view, asked, known)}
+            return {"state": "ready", **_books(view), **screen.write(view, asked, around)}
         except Concealed:
             return dict(MISSING)
 
@@ -108,7 +127,9 @@ class Screen:
     """One screen: how to read what an ask of it was given, and how to write its answer."""
 
     read: Callable[[Given], object]
-    write: Callable[[Disclosure, object, Connections], Answer]
+    write: Callable[[Disclosure, object, Around], Answer]
+    of_books: bool = True
+    """Whether it is written from the books, so waits for them and says which they are."""
 
 
 def _books(view: Disclosure) -> Answer:
@@ -129,7 +150,7 @@ def _nothing(given: Given) -> None:
         raise Malformed
 
 
-def overview(view: Disclosure, _asked: object, _known: Connections) -> Answer:
+def overview(view: Disclosure, _asked: object, _around: Around) -> Answer:
     """The household's net worth and its history, as the viewer may see them."""
     household = view.household()
     headline = household.headline
@@ -153,9 +174,9 @@ def overview(view: Disclosure, _asked: object, _known: Connections) -> Answer:
     }
 
 
-def accounts(view: Disclosure, _asked: object, known: Connections) -> Answer:
+def accounts(view: Disclosure, _asked: object, around: Around) -> Answer:
     """Every account the viewer may see, grouped, each with its balance and what it rests on."""
-    return {"groups": [_group(group) for group in view.accounts(known)]}
+    return {"groups": [_group(group) for group in view.accounts(around.connections)]}
 
 
 def _one(given: Given) -> str:
@@ -166,10 +187,10 @@ def _one(given: Given) -> str:
     raise Malformed
 
 
-def account(view: Disclosure, asked: object, known: Connections) -> Answer:
+def account(view: Disclosure, asked: object, around: Around) -> Answer:
     """One account the viewer may see, as it is listed, with how far its history reaches."""
     assert isinstance(asked, str)  # noqa: S101 - read by `_one`
-    found = view.standing(asked, known)
+    found = view.standing(asked, around.connections)
     spans = () if isinstance(found.spans, Withheld) else found.spans
     return {
         "account": _account(found),
@@ -253,7 +274,7 @@ def _count_in(given: Given, key: str, least: int, most: int, *, default: int) ->
     return value
 
 
-def transactions(view: Disclosure, asked: object, _known: Connections) -> Answer:
+def transactions(view: Disclosure, asked: object, _around: Around) -> Answer:
     """A window onto the viewer's journal, newest first, as `window` read it."""
     assert isinstance(asked, Window)  # noqa: S101 - read by `window`
     found = view.journal(asked.narrowed, offset=asked.offset, limit=asked.limit)
@@ -273,11 +294,26 @@ def transactions(view: Disclosure, asked: object, _known: Connections) -> Answer
     }
 
 
+def banks(view: Disclosure, _asked: object, around: Around) -> Answer:
+    """How fresh the viewer's own connections are, and where this engine's syncs stand: what
+    it may ask, whether it is asking now, and how its last sync went for each of them."""
+    syncing = around.syncing
+    stopped = syncing.last.stopped if syncing.last is not None else None
+    return {
+        "asking": sorted(operation.value for operation in syncing.asking),
+        "running": syncing.running,
+        "finished_at": _moment(syncing.finished_at) if syncing.finished_at else None,
+        "stopped": stopped.value if stopped is not None else None,
+        "banks": [_bank(bank) for bank in view.banks(around.connections, syncing.answered)],
+    }
+
+
 SCREENS: Mapping[str, Screen] = {
     "overview": Screen(_nothing, overview),
     "accounts": Screen(_nothing, accounts),
     "account": Screen(_one, account),
     "transactions": Screen(window, transactions),
+    "banks": Screen(_nothing, banks, of_books=False),
 }
 """Every screen the app may ask for, by the name it asks with."""
 
@@ -329,6 +365,17 @@ def _account(found: AccountStanding) -> Answer:
         "mask": found.mask,
         "attention": found.attention,
         "unseen_kind": found.unseen_kind,
+    }
+
+
+def _bank(bank: Bank) -> Answer:
+    answered = bank.answered
+    return {
+        "institution": bank.institution,
+        "synced_at": _moment(bank.synced_at) if bank.synced_at else None,
+        "needs_sign_in": bank.needs_sign_in,
+        "added": answered.added if answered is not None else None,
+        "trouble": answered.trouble.value if answered and answered.trouble else None,
     }
 
 

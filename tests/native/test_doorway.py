@@ -7,6 +7,7 @@ signed in to the bridge.
 """
 
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -18,6 +19,8 @@ from hearth.books import LedgerError
 from hearth.native import doorway as asks
 from hearth.native.bridge import Bridge, Outcome
 from hearth.native.doorway import Doorway
+from hearth.plaid.approval import Approval
+from hearth.refresh import ASKING, Begun, Refresher
 from hearth.sharing import DEFAULT_SHARED, Facet
 from tests import household
 from tests.conftest import World, password_of
@@ -188,8 +191,19 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     for username, shared in choices.items():
         world.choose(username, shared)
 
-    # Asked as the app asks: through a bridge the viewer signed in to with their password.
-    door = Bridge(world.settings, world.bookkeeper, world.clock)
+    # Asked as the app asks: through a bridge the viewer signed in to with their password, once
+    # it has synced every member's connection, one of which needs its member to sign in again,
+    # so the banks screen has every member's outcome to keep to the viewer's own.
+    world.plaid.require_login(world.item_ids["blake"])
+    syncs = Refresher(
+        world.settings,
+        replace(world.setup, approval=Approval.of(ASKING)),
+        world.bookkeeper,
+        world.clock,
+    )
+    assert syncs.start() is Begun.STARTED
+    syncs.wait()
+    door = Bridge(world.settings, world.bookkeeper, world.clock, syncs)
     assert door.sign_in(viewer, password_of(viewer)) is Outcome.SIGNED_IN
     answers = [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
     assert all(answer["state"] == "ready" for answer in answers)

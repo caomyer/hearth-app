@@ -32,8 +32,17 @@ from pathlib import Path
 from typing import Any
 
 from hearth.clock import Clock
+from hearth.connections import Trouble
 from hearth.plaid.approval import Operation
-from hearth.plaid.client import LOGIN_REQUIRED, Holdings, PlaidError, PlaidRejectedError, held
+from hearth.plaid.client import (
+    LOGIN_REQUIRED,
+    PRODUCT_NOT_READY,
+    Holdings,
+    PlaidError,
+    PlaidRejectedError,
+    PlaidUnreachableError,
+    held,
+)
 from hearth.plaid.credentials import CredentialStore
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import ItemState, Registry
@@ -57,6 +66,8 @@ class Asked:
     """How many holdings it sent, cash included."""
     problem: str | None = None
     """Why it sent none: Plaid's error code, or what else went wrong."""
+    trouble: Trouble | None = None
+    """That, in words its member can act on; None too while Plaid is still preparing it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +115,7 @@ def price_holdings(
         if saved is not None and not setup.allows(saved.environment, Operation.HOLDINGS):
             continue
         problem: str | None = None
+        trouble: Trouble | None = Trouble.FAILED
         try:
             client = setup.client(store.credentials(item.credentials))
             answer = client.holdings(vault.get(item.member, item.item_id))
@@ -112,15 +124,19 @@ def price_holdings(
             reported = held(answer)
         except PlaidRejectedError as error:
             problem = error.error_code
+            trouble = rejected(error)
             if error.error_code == LOGIN_REQUIRED:
                 registry.set_state(item.item_id, ItemState.LOGIN_REQUIRED, problem=problem)
+        except PlaidUnreachableError as error:
+            problem, trouble = str(error), Trouble.UNREACHABLE
         except (PlaidError, HoldingsMalformedError) as error:
             problem = str(error)
         except VaultError, LookupError:
             problem = "its access token or its Plaid account's keys could not be opened"
+            trouble = Trouble.KEYS
         if problem is not None:
             _log.warning("could not read a connection's holdings: %s", problem)
-            asked.append(Asked(item.item_id, item.institution, 0, problem))
+            asked.append(Asked(item.item_id, item.institution, 0, problem, trouble))
             continue
         answers.append(answer)
         reports.append((item.item_id, reported))
@@ -136,3 +152,14 @@ def price_holdings(
         unpriceable=prices.unpriceable,
         symbols=tuple(quote.symbol for quote in prices.quotes),
     )
+
+
+def rejected(error: PlaidRejectedError) -> Trouble | None:
+    """What Plaid refusing a brokerage read means to its member: a sign-in to make again, an
+    error of Plaid's, or nothing yet while Plaid prepares what was asked for, which the next
+    morning collects."""
+    if error.error_code == LOGIN_REQUIRED:
+        return Trouble.SIGN_IN
+    if error.error_code == PRODUCT_NOT_READY:
+        return None
+    return Trouble.REFUSED

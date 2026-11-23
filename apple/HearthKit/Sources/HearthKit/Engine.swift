@@ -47,6 +47,13 @@ extension Asking {
     }
 }
 
+/// Something the app can ask to do something, not only to show something: the engine, or a
+/// stand-in for it in tests.
+public protocol Acting: Asking {
+    /// Asks hearth to do `action`, which it does in the background; how it goes is a screen.
+    func act(_ action: String) async throws -> ActOutcome
+}
+
 /// What the engine says when the app signs in or out (`hearth.native.bridge.Outcome`).
 public enum SignInOutcome: String, Decodable, Sendable, CaseIterable {
     case signedIn = "signed_in"
@@ -61,7 +68,7 @@ public enum SignInOutcome: String, Decodable, Sendable, CaseIterable {
 }
 
 /// A running engine the app can sign in to, ask, and stop: the engine, or a stand-in for it.
-public protocol Bridging: Asking {
+public protocol Bridging: Acting {
     /// Signs in as a member. Whoever was signed in before is not any more, whatever the outcome.
     func signIn(username: String, password: String) async throws -> SignInOutcome
     func signOut() async throws
@@ -135,6 +142,11 @@ public actor Engine: Bridging {
 
     public func signOut() async throws {
         _ = try await send(["sign_out": true])
+    }
+
+    public func act(_ action: String) async throws -> ActOutcome {
+        let line = try await send(["act": action])
+        return try replyDecoder().decode(Acted.self, from: line).outcome
     }
 
     /// Closes the app's end, which is how the engine is told to finish.
@@ -220,16 +232,20 @@ extension EngineCommand {
 
     /// The engine an app carries, over the books `books` names: the invented household,
     /// signed in as its first member, or the household whose data is in `setup`, which says
-    /// nothing until the app signs in as one of its members.
+    /// nothing until the app signs in as one of its members. It may ask the banks for what
+    /// `consent` allows and nothing else, which the engine itself enforces.
     public static func bundled(
-        _ books: Books, setup: Setup, in resources: URL, home: String, temporary: String
+        _ books: Books, setup: Setup, consent: Consent = .nothing, in resources: URL, home: String,
+        temporary: String
     ) -> EngineCommand {
         switch books {
         case .sample:
-            bundled(in: resources, hearth: ["demo", "--bridge"], home: home, temporary: temporary)
+            bundled(
+                in: resources, hearth: ["demo", "--bridge"] + consent.arguments, home: home,
+                temporary: temporary)
         case .own:
             bundled(
-                in: resources, hearth: ["bridge"], home: home, temporary: temporary,
+                in: resources, hearth: ["bridge"] + consent.arguments, home: home, temporary: temporary,
                 environment: ["HEARTH_DATA_DIR": setup.dataDirectory.path])
         }
     }

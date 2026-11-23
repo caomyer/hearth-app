@@ -1,11 +1,25 @@
+import AppKit
 import Foundation
 import HearthKit
 
 /// Ways to open a debug build straight onto a screen, so each can be looked at without a
 /// click: `-openBooks sample|own`, `-startScreen overview|transactions|accounts|account:<name>`,
-/// and, for a household's own books, `-signInAs <username>` with the password in the
-/// environment's `HEARTH_SIGN_IN_PASSWORD`. A Release build reads none of them.
+/// `-appearance light|dark`, and, for a household's own books, `-signInAs <username>` with the
+/// password in the environment's `HEARTH_SIGN_IN_PASSWORD`. A Release build reads none of them.
 enum DebugLaunch {
+    /// Draws the app light or dark whatever the Mac is set to, so each screen can be looked at
+    /// both ways.
+    @MainActor
+    static func applyAppearance() {
+        #if DEBUG
+            switch UserDefaults.standard.string(forKey: "appearance") {
+            case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+            case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
+            default: break
+            }
+        #endif
+    }
+
     /// The books to open at once, instead of the ones chosen last time.
     static var books: Books? {
         #if DEBUG

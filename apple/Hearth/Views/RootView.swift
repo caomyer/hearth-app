@@ -19,6 +19,9 @@ struct RootView: View {
             case .open(let books):
                 if let desk = session.desk {
                     BooksView(desk: desk, isSample: books == .sample)
+                        // New books, or the same ones from an engine started again, are a new view
+                        // with its own screens, never the last one's kept on.
+                        .id(ObjectIdentifier(desk))
                 } else {
                     Waiting(text: "Opening your books", identifier: "session.opening")
                 }

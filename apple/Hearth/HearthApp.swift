@@ -6,6 +6,10 @@ import SwiftUI
 struct HearthApp: App {
     @State private var session = HearthApp.session()
 
+    init() {
+        DebugLaunch.applyAppearance()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView(session: session)
@@ -26,6 +30,11 @@ struct HearthApp: App {
                     .disabled(!session.isSignedIn)
             }
         }
+
+        Settings {
+            SettingsView(session: session)
+                .tint(Palette.accent)
+        }
     }
 
     /// The session over this Mac's household: hearth's own data directory, or the one the
@@ -35,10 +44,11 @@ struct HearthApp: App {
         let setup = Setup.from(environment: ProcessInfo.processInfo.environment, home: home)
         let resources = Bundle.main.resourceURL
         let credentials = DebugLaunch.credentials ?? Keychain()
-        return Session(setup: setup, defaults: .standard, credentials: credentials) { books in
+        return Session(setup: setup, defaults: .standard, credentials: credentials) { books, consent in
             guard let resources else { throw Engine.Failure.stopped }
             let command = EngineCommand.bundled(
-                books, setup: setup, in: resources, home: home, temporary: NSTemporaryDirectory())
+                books, setup: setup, consent: consent, in: resources, home: home,
+                temporary: NSTemporaryDirectory())
             return try Engine.launch(command)
         }
     }

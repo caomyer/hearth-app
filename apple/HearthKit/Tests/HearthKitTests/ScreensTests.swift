@@ -373,7 +373,7 @@ struct JournalModelTests {
         await engine.answer(journal(offset: 0, count: 1, total: 1, payee: "New"), at: 1)
         await second.value
         await engine.answer(journal(offset: 0, count: 2, total: 2, payee: "Old"), at: 0)
-        await first.value
+        _ = await first.value
 
         #expect(model.entries.map(\.payee) == ["New 0"])
     }

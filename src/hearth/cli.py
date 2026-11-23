@@ -3,11 +3,12 @@
 ``hearth compare``, ``hearth export``, ``hearth demo`` and ``hearth bridge``.
 
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
---approve-plaid OPERATION`` for the web pages, and ``--approved`` for each ``hearth plaid``
-command that calls Plaid. Without it, they refuse before anything is sent.
+--approve-plaid OPERATION`` for the web pages, ``hearth bridge --approve-plaid OPERATION`` for
+the native app, which starts it so from its own switches, and ``--approved`` for each ``hearth
+plaid`` command that calls Plaid. Without it, they refuse before anything is sent.
 
-``hearth serve`` and ``hearth plaid`` note what they ask of Plaid in ``hearth.log`` in the data
-directory (``hearth.runlog``).
+``hearth serve``, ``hearth bridge`` and ``hearth plaid`` note what they ask of Plaid in
+``hearth.log`` in the data directory (``hearth.runlog``).
 
 ``hearth bridge`` and ``hearth demo --bridge`` answer the native app over standard input and
 output and open no port (``hearth.native``). They write nothing but replies to standard output.
@@ -19,11 +20,9 @@ import argparse
 import sqlite3
 import sys
 import tempfile
-import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime
 from pathlib import Path
 
 import uvicorn
@@ -53,7 +52,7 @@ from hearth.plaid import booking, export, feed
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
 from hearth.plaid.setup import PlaidSetup
-from hearth.refresh import sync_then_recompute
+from hearth.refresh import ASKING, Refresher
 from hearth.reports.common import is_balance_sheet
 
 
@@ -234,11 +233,18 @@ def main(argv: list[str] | None = None) -> None:
         " and open no port",
     )
 
-    commands.add_parser(
+    _add_asking(
+        try_it,
+        "with --bridge, let the app sync the invented household's banks, every one of them"
+        " hearth's stand-in for Plaid: ",
+    )
+
+    bridge = commands.add_parser(
         "bridge",
         help="answer the native app over standard input and output, once it signs in as a"
         " member, and open no port",
     )
+    _add_asking(bridge, "approve one kind of live Plaid call the app's syncs may make: ")
 
     arguments = parser.parse_args(argv)
     match arguments.command:
@@ -277,19 +283,35 @@ def main(argv: list[str] | None = None) -> None:
         case "demo":
             if arguments.bridge and arguments.from_zero:
                 parser.error("--bridge does not go with --from-zero")
+            if arguments.approve_plaid and not arguments.bridge:
+                parser.error("--approve-plaid goes with --bridge")
             if arguments.from_zero:
                 _demo_from_zero(arguments.host, arguments.port)
             elif arguments.bridge:
-                _demo_bridge(first_review=arguments.first_review)
+                approval = Approval.of(arguments.approve_plaid)
+                _demo_bridge(approval, first_review=arguments.first_review)
             else:
                 _demo(arguments.host, arguments.port, first_review=arguments.first_review)
         case "bridge":
-            _bridge()
+            _bridge(Approval.of(arguments.approve_plaid))
 
 
 def _add_address(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+
+
+def _add_asking(parser: argparse.ArgumentParser, what: str) -> None:
+    """``--approve-plaid`` for the native app's bridge: only what a sync asks, never linking a
+    bank or removing a connection, which the app does not do."""
+    parser.add_argument(
+        "--approve-plaid",
+        action="append",
+        default=[],
+        choices=sorted(operation.value for operation in ASKING),
+        metavar="OPERATION",
+        help=what + "; ".join(f"{op.value}: {DESCRIPTIONS[op]}" for op in sorted(ASKING)),
+    )
 
 
 type Tls = tuple[Path, Path]
@@ -355,28 +377,13 @@ def _run(
         app = create_app(settings, bookkeeper, plaid=plaid)
         bookkeeper.recompute_daily()
         bookkeeper.recompute_on_change()
-        if any(
-            plaid.approval.allows(operation)
-            for operation in (Operation.READ, Operation.HOLDINGS, Operation.ACTIVITY)
-        ):
-            _sync_daily(settings, plaid, bookkeeper)
+        # At start-up and every morning, only when this run was approved to read banks, their
+        # holdings or their activity (`hearth.refresh.Refresher`).
+        Refresher(settings, plaid, bookkeeper, system_clock).daily()
         cert, key = tls if tls is not None else (None, None)
         uvicorn.run(app, host=host, port=port, ssl_certfile=cert, ssl_keyfile=key)
     finally:
         runlog.stop(settings.data_dir)
-
-
-def _sync_daily(settings: Settings, plaid: PlaidSetup, bookkeeper: books.Bookkeeper) -> None:
-    """Bring every working connection up to date at start-up and every morning, only when this
-    run was started with reading, reading holdings or reading activity approved
-    (`sync_then_recompute`)."""
-
-    def run() -> None:
-        while True:
-            sync_then_recompute(settings, plaid, bookkeeper, system_clock)
-            threading.Event().wait(books.seconds_until(books.DAILY_AT, datetime.now()))
-
-    threading.Thread(target=run, name="hearth-daily-sync", daemon=True).start()
 
 
 def _add_member(username: str, name: str, *, is_admin: bool) -> None:
@@ -625,13 +632,21 @@ def _demo(host: str, port: int, *, first_review: bool = False) -> None:
         _run(household.settings, household.establish, host, port, household.plaid)
 
 
-def _demo_bridge(*, first_review: bool = False) -> None:
+def _demo_bridge(approval: Approval, *, first_review: bool = False) -> None:
+    """The demo's bridge. Its connections are all to hearth's stand-in for Plaid, which reaches
+    no bank; `approval` decides only whether the app's syncs ask it, as it would for a real
+    household's banks."""
     with _demo_household(first_review=first_review) as household:
         username, password = next(iter(household.passwords.items()))
-        _answer_the_app(household.settings, household.establish, (username, password))
+        _answer_the_app(
+            household.settings,
+            household.establish,
+            replace(household.plaid, approval=approval),
+            (username, password),
+        )
 
 
-def _bridge() -> None:
+def _bridge(approval: Approval) -> None:
     data_dir = data_dir_from_environment()
     if not (data_dir / DATABASE_FILE).is_file():
         # Signing in to a household that is not there must not make an empty one.
@@ -639,32 +654,46 @@ def _bridge() -> None:
     settings = Settings.from_environment()
     db.initialise(settings.database)
     feed.initialise(settings.feed_database)
-    _answer_the_app(settings, books.from_household(settings, rulings=rulings_in))
+    establish = books.from_household(settings, rulings=rulings_in)
+    _answer_the_app(settings, establish, PlaidSetup(approval=approval))
 
 
 def _answer_the_app(
-    settings: Settings, establish: books.Establish, signed_in_as: tuple[str, str] | None = None
+    settings: Settings,
+    establish: books.Establish,
+    plaid: PlaidSetup,
+    signed_in_as: tuple[str, str] | None = None,
 ) -> None:
     """Answer the native app until it closes its end, recomputing as ``hearth serve`` does: at
     start-up, every morning, and whenever another process changes what the books are computed
     from. The first recompute runs in the background, so the app is told the books are loading
     instead of waiting on a silent process.
 
+    It syncs as ``hearth serve`` does too, at start-up and every morning, and whenever the app
+    asks, only when `plaid` approves something a sync asks (``hearth.refresh.Refresher``).
+
     The bridge is signed out until the app signs in over the wire, unless `signed_in_as` names
     a member and their password, which the demo's bridge does for its invented household."""
+    runlog.configure(settings.data_dir)
+    approved = ", ".join(sorted(op.value for op in plaid.approval.operations)) or "none"
+    print(f"Live Plaid calls approved for this run: {approved}.", file=sys.stderr, flush=True)
     bookkeeper = books.Bookkeeper(
         establish, system_clock, standing=lambda: books.standing(settings)
     )
     bookkeeper.recompute_daily()
     watching = bookkeeper.recompute_on_change()
-    bridge = Bridge(settings, bookkeeper, system_clock)
+    refresher = Refresher(settings, plaid, bookkeeper, system_clock)
+    bridge = Bridge(settings, bookkeeper, system_clock, refresher)
+    syncing = refresher.daily()
     try:
         if signed_in_as is not None and bridge.sign_in(*signed_in_as) is not Outcome.SIGNED_IN:
             sys.exit("hearth: the demo household's first member could not sign in.")
         stdio.serve(bridge, sys.stdin, _write_reply)
     finally:
+        syncing.set()
         bridge.sign_out()
         watching.set()
+        runlog.stop(settings.data_dir)
 
 
 def _write_reply(line: str) -> None:

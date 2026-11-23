@@ -11,6 +11,12 @@ ask, so a password reset or change that signs a member out everywhere signs the 
 The session is revoked when the app signs out or closes its end.
 
 The password is used once, to sign in, and never kept, logged or written anywhere.
+
+A signed-in app may also ask hearth to do something (`Bridge.act`). There is one action,
+``sync``: bring the household's connections up to date now, through the same `Refresher` that
+syncs at start-up and every morning, which asks Plaid only for what this bridge was started
+approved to ask (``hearth bridge --approve-plaid``). The app's switches decide that approval by
+deciding how the bridge is started; nothing on the wire can widen it.
 """
 
 import sqlite3
@@ -23,6 +29,7 @@ from hearth import auth, db, members, sessions
 from hearth.books import Bookkeeper
 from hearth.config import Settings
 from hearth.native.doorway import Answer, Doorway, Given
+from hearth.refresh import NOT_SYNCING, Begun, Refresher, Syncing
 
 CLIENT = "native app"
 """What the throttle counts the app's failed sign-ins against, as a page's are counted against
@@ -45,6 +52,24 @@ class Outcome(StrEnum):
     SIGNED_OUT = "signed_out"
 
 
+class Acted(StrEnum):
+    """What the app is told when it asks hearth to do something."""
+
+    STARTED = "started"
+    RUNNING = "running"
+    """It was already being done: a sync was running, and what it brings is what was asked."""
+    NOT_ALLOWED = "not_allowed"
+    """This bridge was started approved for nothing the action asks of Plaid."""
+    MISSING = "missing"
+    """There is no such action."""
+    SIGNED_OUT = "signed_out"
+    """Nobody is signed in, so nothing is done and nothing is said of what could be."""
+
+
+ACTIONS = frozenset({"sync"})
+"""Everything the app may ask hearth to do, by the name it asks with."""
+
+
 @dataclass(frozen=True, slots=True)
 class _Session:
     member_id: members.MemberId
@@ -58,6 +83,8 @@ class Bridge:
     settings: Settings
     bookkeeper: Bookkeeper
     clock: Callable[[], datetime]
+    refresher: Refresher | None = None
+    """How this bridge syncs, or None for a bridge that never asks a bank for anything."""
     _session: _Session | None = field(default=None, init=False)
 
     def sign_in(self, username: str, password: str) -> Outcome:
@@ -99,7 +126,26 @@ class Bridge:
         viewer = self._viewer()
         if viewer is None:
             return dict(SIGNED_OUT)
-        return Doorway(self.settings, self.bookkeeper, viewer).answer(ask, given)
+        return Doorway(self.settings, self.bookkeeper, viewer, self._syncing).answer(ask, given)
+
+    def act(self, action: str) -> Acted:
+        """Do what the app asked. Signed out, the outcome is the same whatever is asked."""
+        if self._viewer() is None:
+            return Acted.SIGNED_OUT
+        if action not in ACTIONS:
+            return Acted.MISSING
+        if self.refresher is None:
+            return Acted.NOT_ALLOWED
+        match self.refresher.start():
+            case Begun.STARTED:
+                return Acted.STARTED
+            case Begun.RUNNING:
+                return Acted.RUNNING
+            case Begun.NOT_ALLOWED:
+                return Acted.NOT_ALLOWED
+
+    def _syncing(self) -> Syncing:
+        return self.refresher.status if self.refresher is not None else NOT_SYNCING
 
     def _viewer(self) -> str | None:
         """The username of the member signed in, while their session lasts."""

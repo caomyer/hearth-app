@@ -48,6 +48,12 @@ struct Signed: Decodable {
     let outcome: SignInOutcome
 }
 
+/// The engine's reply to an action.
+struct Acted: Decodable {
+    let id: Int
+    let outcome: ActOutcome
+}
+
 /// The decoder every reply goes through: the engine writes snake_case keys and UTC moments to
 /// the second.
 func replyDecoder() -> JSONDecoder {

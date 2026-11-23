@@ -77,6 +77,86 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["overview.netWorth"].exists)
     }
 
+    /// Asking the banks is off until the person turns it on, and then the sync control brings
+    /// the sample's banks up to date, all of them hearth's stand-in for Plaid, and says when.
+    @MainActor
+    func testTheSyncControlAsksTheBanksOnceAllowed() {
+        let app = XCUIApplication()
+        app.launchEnvironment["HEARTH_DATA_DIR"] = "/var/empty/no-hearth-\(UUID().uuidString)"
+        app.launch()
+        let sample = app.buttons["start.sample"]
+        XCTAssertTrue(sample.waitForExistence(timeout: 20), "the start sheet offered no sample")
+        sample.click()
+
+        let status = app.buttons["sync.status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 60), "the toolbar has no sync control")
+        XCTAssertEqual(status.label, "Not asking your banks")
+        XCTAssertFalse(app.buttons["sync.now"].exists, "a sync was offered that may not run")
+
+        // Its button leads to Settings, where asking is switched on.
+        app.buttons["sync.settings"].click()
+        let transactions = app.descendants(matching: .any)["settings.transactions"].firstMatch
+        XCTAssertTrue(transactions.waitForExistence(timeout: 20), "Settings did not open on Banks")
+        XCTAssertEqual(transactions.value as? Int, 0, "asking was on before anyone turned it on")
+        transactions.click()
+        app.typeKey("w", modifierFlags: .command)
+
+        // The engine starts again, approved, syncs as it starts, and then may be asked again.
+        let now = app.buttons["sync.now"]
+        XCTAssertTrue(
+            now.waitForExistence(timeout: 90),
+            "no way to ask the banks; the sync control says \(status.exists ? status.label : "nothing")")
+        now.click()
+        let bank = app.descendants(matching: .any)["sync.bank.Northfield Bank"].firstMatch
+        XCTAssertTrue(bank.waitForExistence(timeout: 90), "the sync did not say how it went")
+        let line = text(of: bank)
+        XCTAssertTrue(line.contains("Updated today"), "\(line) does not say the bank was updated today")
+        XCTAssertTrue(line.contains("new transaction"), "\(line) says nothing of what arrived")
+        XCTAssertTrue(status.label.hasPrefix("Updated today"), "the sync control says \(status.label)")
+        let signIn = app.descendants(matching: .any).matching(identifier: "sync.trouble").firstMatch
+        XCTAssertTrue(text(of: signIn).contains("Hearth in the browser"), "a bank to sign in to was not said")
+    }
+
+    /// A household whose vault key is not in this Mac's Keychain is told so in words, not shown
+    /// a sync that seems to work. The fixture sealed its bank's keys under a key it kept in memory
+    /// alone, so no Keychain anywhere holds it.
+    @MainActor
+    func testAHouseholdWhoseKeysTheKeychainCannotGiveIsToldSo() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let household = environment["HEARTH_FIXTURE_DATA_DIR"],
+            let password = environment["HEARTH_FIXTURE_PASSWORD"]
+        else {
+            throw XCTSkip("no fixture household was made for this run")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HEARTH_DATA_DIR"] = household
+        app.launchEnvironment["HEARTH_SIGN_IN_PASSWORD"] = password
+        app.launchArguments += ["-openBooks", "own", "-signInAs", "avery"]
+        app.launch()
+
+        let status = app.buttons["sync.status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 60), "the toolbar has no sync control")
+        XCTAssertEqual(status.label, "Not asking your banks")
+        app.buttons["sync.settings"].click()
+        let transactions = app.descendants(matching: .any)["settings.transactions"].firstMatch
+        XCTAssertTrue(transactions.waitForExistence(timeout: 20), "Settings did not open on Banks")
+        transactions.click()
+        app.typeKey("w", modifierFlags: .command)
+
+        let now = app.buttons["sync.now"]
+        XCTAssertTrue(now.waitForExistence(timeout: 90), "no way to ask the banks")
+        now.click()
+        let trouble = app.descendants(matching: .any).matching(identifier: "sync.trouble").firstMatch
+        XCTAssertTrue(trouble.waitForExistence(timeout: 90), "what went wrong was not said")
+        XCTAssertTrue(text(of: trouble).contains("Keychain"), "\(text(of: trouble)) does not name the Keychain")
+
+        // Left as it was found, for the household's other test.
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(transactions.waitForExistence(timeout: 20))
+        transactions.click()
+        app.typeKey("w", modifierFlags: .command)
+    }
+
     /// The start screen is the window's own, so the app quits from it as from anywhere else.
     @MainActor
     func testTheAppQuitsFromTheStartScreen() {

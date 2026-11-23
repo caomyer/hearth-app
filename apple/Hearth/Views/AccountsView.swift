@@ -88,11 +88,17 @@ private struct AccountList: View {
     }
 }
 
+/// The "Last updated" column: wide enough for a date with its year on one line, and for the
+/// sign-in hint on two.
+private enum LastUpdated {
+    static let width: CGFloat = 200
+}
+
 private struct ColumnHeads: View {
     var body: some View {
         HStack(spacing: 16) {
             Text("Account").frame(maxWidth: .infinity, alignment: .leading)
-            Text("Last updated").frame(width: 130, alignment: .leading)
+            Text("Last updated").frame(width: LastUpdated.width, alignment: .leading)
             Text("Balance").frame(width: 130, alignment: .trailing)
             Text("Bank balance").frame(width: 220, alignment: .leading)
         }
@@ -121,12 +127,13 @@ private struct AccountLine: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.freshness(asOf: asOf) ?? "")
                     .foregroundStyle(account.behind ? Palette.warning : Palette.ink2)
+                    .lineLimit(1)
                 if let attention = account.attentionText {
                     Text(attention).font(.system(size: 12)).foregroundStyle(Palette.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(width: 130, alignment: .leading)
+            .frame(width: LastUpdated.width, alignment: .leading)
             Text(account.balanceText(currency: currency) ?? "")
                 .monospacedDigit()
                 .foregroundStyle(Palette.ink)

@@ -12,14 +12,19 @@ The default approves nothing.
 | Operation | Plaid calls | Approved by |
 |---|---|---|
 | `link` | `/link/token/create`, `/item/public_token/exchange` | `hearth serve --approve-plaid link` |
-| `read` | `/item/get`, `/accounts/get`, `/transactions/sync` | `hearth serve --approve-plaid read`, `hearth plaid sync --approved`, `hearth plaid adopt ... --approved` |
+| `read` | `/item/get`, `/accounts/get`, `/transactions/sync` | `hearth serve --approve-plaid read`, `hearth bridge --approve-plaid read`, `hearth plaid sync --approved`, `hearth plaid adopt ... --approved` |
 | `remove` | `/item/remove` | `hearth serve --approve-plaid remove`, `hearth plaid remove ITEM --approved` |
-| `holdings` | `/investments/holdings/get` | `hearth serve --approve-plaid holdings`, `hearth plaid holdings --approved` |
+| `holdings` | `/investments/holdings/get` | `hearth serve --approve-plaid holdings`, `hearth bridge --approve-plaid holdings`, `hearth plaid holdings --approved` |
+| `activity` | `/investments/transactions/get` | `hearth serve --approve-plaid activity`, `hearth bridge --approve-plaid activity`, `hearth plaid activity --approved` |
 
 Connecting a bank needs both `link` and `read`; approving one never approves another.
 Reading holdings is its own operation, not a `read`: every `read` call asks for something an Item already has, while the first holdings call adds Plaid's Investments product to an Item that only offered it, and Plaid bills that product per Item from then on, until the Item is removed.
 So a run approved to sync never adds a product to anyone's Item, and the household decides that separately.
 A page whose step is not approved says so, and sends nothing.
+
+The Mac app gives its approval the third way, by how it starts its engine, `hearth bridge` (`docs/native.md`).
+Its Settings, Banks, has one switch for each of `read`, `holdings` and `activity`, every one off until the person turns it on, and the two for brokerages say the Plaid charge they start before they are turned on.
+The engine is started with `--approve-plaid` for exactly the switches that are on, and started again when one changes; nothing on the wire can widen it, and `link` and `remove` cannot be approved for a bridge at all.
 The demo and the tests run against hearth's stand-in for Plaid (`hearth.plaid.fake`), which answers only its own `demo` environment, in-process; calls to it reach no bank, so they need no approval.
 A real Plaid account entered in the demo is still refused.
 
@@ -107,7 +112,7 @@ Link's own messages are free text and are neither logged nor carried to the page
 ## The runtime log
 
 Hearth writes `hearth.log` in its data directory, readable only by the user it runs as, kept to a few rotated files of 1 MB.
-`hearth serve` and `hearth plaid` write to it.
+`hearth serve`, `hearth bridge` and `hearth plaid` write to it.
 It holds every Plaid call by its path and environment, and how it ended: succeeded, refused with Plaid's error type, code and HTTP status, unreachable, or unreadable, each with the request id Plaid gave it.
 It holds each new connection by member id, institution and Item id, whether linked or adopted from outside hearth; each return from a bank's own sign-in; and each time Link closed without connecting, with Plaid's codes, the step reached, the institution and Plaid's identifiers.
 It never holds a request or response body, an access token, a public token, a Link token, a client id or secret, a balance, an amount, an account number, an account name or a payee.
@@ -222,7 +227,7 @@ The lease names its owner, the process id and the time the system says that proc
 A run whose owner is alive holds its Item until 15 minutes after its last page; a run whose owner has gone, including one whose process id now belongs to another process, holds nothing, and the next sync closes it as interrupted and carries on at once.
 A run that no longer holds its Item is shown as interrupted, so no page waits on a run that cannot finish.
 The daily sync and `hearth plaid sync` also leave alone an Item whose history is being followed by a process that is still alive.
-`hearth serve` re-syncs every working connection at start-up and every morning when started with `read` approved.
+`hearth serve` re-syncs every working connection at start-up and every morning when started with `read` approved, and so does the Mac app's `hearth bridge`, which also syncs whenever the app's sync control asks (`hearth.refresh.Refresher`, one sync at a time).
 `hearth plaid sync --approved` runs the same sync and recompute as the morning's, through one path (`hearth.refresh`), and says both what each connection fetched and whether the books now hold it.
 A sync is only worth what it changes in the books, so there is no fetch-only sync.
 When the recompute after it fails, the command says what went wrong and when the books file was last written, which stays as it was, and exits 1, as it does when any connection did not sync; what was fetched is kept and is in the books from the first recompute that succeeds.

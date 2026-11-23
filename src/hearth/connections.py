@@ -83,6 +83,32 @@ class State(StrEnum):
     EXPIRED = "expired"
 
 
+class Trouble(StrEnum):
+    """What kept one ask of a connection from bringing anything in, in words a member can act
+    on. The detail, Plaid's own codes among it, is in ``hearth.log``, never here."""
+
+    SIGN_IN = "sign_in"
+    """The bank wants its member to sign in to it again (Plaid's ``ITEM_LOGIN_REQUIRED``)."""
+    UNREACHABLE = "unreachable"
+    """Plaid could not be reached at all: no network, or Plaid is down."""
+    KEYS = "keys"
+    """The connection's access token or its Plaid account's keys could not be opened: the
+    Keychain is locked or unreachable, or holds no key for this household's vault."""
+    REFUSED = "refused"
+    """Plaid answered with an error of its own, other than wanting a sign-in."""
+    FAILED = "failed"
+    """Anything else, such as an answer hearth could not read."""
+
+
+@dataclass(frozen=True, slots=True)
+class Answered:
+    """How one connection answered the last time this hearth asked it, sync and brokerage
+    reads together: how many new transactions it sent, and what went wrong, if anything."""
+
+    added: int
+    trouble: Trouble | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class Connection:
     """One member's link to one institution, and the ledger accounts it feeds."""
@@ -95,6 +121,8 @@ class Connection:
     """The last day the connection brought in; for an expired one, where its data stops."""
     item_id: str | None = None
     """The Plaid Item it is, which names the entries booked from it (`plaid_source`)."""
+    synced_at: datetime | None = None
+    """When it last synced to the end: when its bank was last asked and answered in full."""
 
 
 class Connections(Protocol):
@@ -162,6 +190,9 @@ class RegisteredConnections:
                     else None
                 ),
                 item_id=row["item_id"],
+                synced_at=(
+                    datetime.fromisoformat(row["last_synced_at"]) if row["last_synced_at"] else None
+                ),
             )
             for row in rows
         )

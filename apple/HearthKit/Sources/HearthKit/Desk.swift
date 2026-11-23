@@ -10,16 +10,19 @@ public final class Desk {
     public let overview: OverviewModel
     public let accounts: ScreenModel<Accounts>
     public let transactions: JournalModel
+    /// The sync control every screen shows in the toolbar.
+    public let sync: SyncModel
 
     private let engine: any Asking
     private let signedOut: @MainActor () -> Void
 
-    public init(engine: any Asking, signedOut: @escaping @MainActor () -> Void = {}) {
+    public init(engine: any Acting, signedOut: @escaping @MainActor () -> Void = {}) {
         self.engine = engine
         self.signedOut = signedOut
         overview = OverviewModel(engine: engine, signedOut: signedOut)
         accounts = ScreenModel(engine: engine, screen: "accounts", signedOut: signedOut)
         transactions = JournalModel(engine: engine, signedOut: signedOut)
+        sync = SyncModel(engine: engine, signedOut: signedOut)
     }
 
     /// One account's own page: its balance and what it rests on.

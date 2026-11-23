@@ -45,6 +45,11 @@ private actor ScriptedBridge: Bridging {
         signOuts += 1
     }
 
+    func act(_ action: String) async throws -> ActOutcome {
+        guard !stopped, !failing else { throw Engine.Failure.stopped }
+        return .notAllowed
+    }
+
     func stop() async { stopped = true }
 
     func answer(with json: String) { answer = json }
@@ -81,6 +86,8 @@ private final class Harness {
     let defaults = UserDefaults(suiteName: "hearth-tests-\(UUID().uuidString)")!
     let credentials: MemoryCredentials
     var launched: [ScriptedBridge] = []
+    /// What each engine launched was approved for, in order.
+    var approvals: [Consent] = []
     var next: [Books: ScriptedBridge] = [:]
     var canLaunch = true
 
@@ -91,8 +98,9 @@ private final class Harness {
     }
 
     func session() -> Session {
-        Session(setup: setup, defaults: defaults, credentials: credentials) { [unowned self] books in
+        Session(setup: setup, defaults: defaults, credentials: credentials) { [unowned self] books, consent in
             guard self.canLaunch else { throw Engine.Failure.stopped }
+            self.approvals.append(consent)
             let bridge = self.next.removeValue(forKey: books) ?? ScriptedBridge(books)
             self.launched.append(bridge)
             return bridge
@@ -328,6 +336,54 @@ struct SessionTests {
         #expect(session.screen == .unavailable(.engineStopped))
     }
 
+    @Test("an engine is approved for nothing until the person allows it")
+    func approvedForNothing() async throws {
+        let harness = try Harness()
+        let session = harness.session()
+        await session.start()
+
+        await session.choose(.sample)
+
+        #expect(harness.approvals == [.nothing])
+        #expect(session.consent == .nothing)
+    }
+
+    @Test("changing a switch starts the engine again approved for it, and is remembered")
+    func allowing() async throws {
+        let harness = try Harness(saved: avery)
+        harness.next[.own] = ScriptedBridge(.own, outcomes: [.signedIn])
+        let session = harness.session()
+        await session.start()
+        await session.choose(.own)
+        #expect(session.screen == .open(.own))
+        let first = harness.last
+
+        harness.next[.own] = ScriptedBridge(.own, outcomes: [.signedIn])
+        let reading = Consent(transactions: true)
+        await session.allow(reading)
+
+        #expect(await first.stopped)
+        #expect(harness.approvals == [.nothing, reading])
+        // The new engine checks the saved sign-in again before it shows anything.
+        #expect(await harness.last.signIns == [avery])
+        #expect(session.screen == .open(.own))
+        #expect(session.consent == reading)
+
+        // The same consent again starts nothing.
+        await session.allow(reading)
+        #expect(harness.launched.count == 2)
+
+        // Each set of books keeps its own: the sample's switches are off.
+        await session.choose(.sample)
+        #expect(session.consent == .nothing)
+        #expect(harness.approvals.last == .nothing)
+
+        // And the next launch starts the household's engine approved as it was left.
+        harness.next[.own] = ScriptedBridge(.own, outcomes: [.signedIn])
+        await session.choose(.own)
+        #expect(harness.approvals.last == reading)
+    }
+
     @Test("a remembered choice of books no longer on this Mac asks again")
     func goneAway() async throws {
         let harness = try Harness(present: false)
@@ -371,5 +427,45 @@ struct SetupTests {
         ])
         #expect(sample.arguments.suffix(2) == ["demo", "--bridge"])
         #expect(sample.environment["HEARTH_DATA_DIR"] == nil)
+    }
+
+    @Test("an engine is started approved for exactly the switches that are on")
+    func approvals() {
+        let setup = Setup(dataDirectory: URL(fileURLWithPath: "/Users/someone/.local/share/hearth"))
+        let resources = URL(fileURLWithPath: "/Applications/Hearth.app/Contents/Resources")
+        func hearth(_ books: Books, _ consent: Consent) -> [String] {
+            Array(
+                EngineCommand.bundled(
+                    books, setup: setup, consent: consent, in: resources, home: "/Users/someone", temporary: "/tmp/x"
+                ).arguments.dropFirst(3))
+        }
+
+        #expect(hearth(.own, .nothing) == ["bridge"])
+        #expect(hearth(.own, Consent(transactions: true)) == ["bridge", "--approve-plaid", "read"])
+        #expect(hearth(.own, Consent(holdings: true)) == ["bridge", "--approve-plaid", "holdings"])
+        #expect(
+            hearth(.own, Consent(transactions: true, holdings: true, activity: true)) == [
+                "bridge", "--approve-plaid", "read", "--approve-plaid", "holdings", "--approve-plaid", "activity",
+            ])
+        #expect(hearth(.sample, Consent(activity: true)) == ["demo", "--bridge", "--approve-plaid", "activity"])
+        // Nothing the app can switch on links a bank or removes a connection.
+        let everything = Consent(transactions: true, holdings: true, activity: true)
+        #expect(!everything.arguments.contains("link"))
+        #expect(!everything.arguments.contains("remove"))
+    }
+
+    @Test("consent is kept per set of books and per household, and starts off")
+    func consentKept() throws {
+        let defaults = UserDefaults(suiteName: "hearth-tests-\(UUID().uuidString)")!
+        let here = ConsentStore(defaults: defaults, setup: try household(present: true))
+        let there = ConsentStore(defaults: defaults, setup: try household(present: true))
+
+        #expect(here.consent(for: .own) == .nothing)
+        here.save(Consent(transactions: true, holdings: true), for: .own)
+
+        #expect(here.consent(for: .own) == Consent(transactions: true, holdings: true))
+        #expect(here.consent(for: .sample) == .nothing)
+        #expect(there.consent(for: .own) == .nothing)
+        #expect(Consent(operations: ["holdings", "read"]) == Consent(transactions: true, holdings: true))
     }
 }

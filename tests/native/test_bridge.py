@@ -14,7 +14,7 @@ import pytest
 from hearth import auth, books, db, members, sessions, throttle
 from hearth.disclosure import rulings_in
 from hearth.native import doorway as asks
-from hearth.native.bridge import SIGNED_OUT, Bridge, Outcome
+from hearth.native.bridge import SIGNED_OUT, Acted, Bridge, Outcome
 from hearth.native.doorway import Doorway
 from tests.conftest import FakeClock, World, password_of
 from tests.native import on_disk
@@ -164,6 +164,13 @@ def test_every_outcome_is_one_the_app_decodes() -> None:
     told = json.loads((Path(__file__).parent / "fixtures" / "outcomes.json").read_text())
 
     assert told == [outcome.value for outcome in Outcome]
+
+
+def test_every_outcome_of_an_action_is_one_the_app_decodes() -> None:
+    """``acted.json`` is what the app's own tests decode (``apple/HearthKit``)."""
+    told = json.loads((Path(__file__).parent / "fixtures" / "acted.json").read_text())
+
+    assert told == [outcome.value for outcome in Acted]
 
 
 def test_the_household_the_mac_app_is_tested_on_is_worth_what_its_test_expects(

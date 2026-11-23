@@ -25,6 +25,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from hearth.clock import Clock
+from hearth.connections import Trouble
 from hearth.plaid.approval import Operation
 from hearth.plaid.client import (
     LOGIN_REQUIRED,
@@ -32,10 +33,12 @@ from hearth.plaid.client import (
     PlaidClient,
     PlaidError,
     PlaidRejectedError,
+    PlaidUnreachableError,
     Security,
 )
 from hearth.plaid.credentials import CredentialStore
 from hearth.plaid.feed import Feed
+from hearth.plaid.holdings import rejected
 from hearth.plaid.registry import ItemState, Registry
 from hearth.plaid.setup import PlaidSetup
 from hearth.vault.errors import VaultError
@@ -68,6 +71,8 @@ class Asked:
     """How many activities it sent over those days."""
     problem: str | None = None
     """Why it sent none: Plaid's error code, or what else went wrong."""
+    trouble: Trouble | None = None
+    """That, in words its member can act on; None too while Plaid is still preparing it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +120,7 @@ def fetch_activity(
             else through - timedelta(days=REFRESH_DAYS)
         )
         problem: str | None = None
+        trouble: Trouble | None = Trouble.FAILED
         login = False
         found: list[Activity] = []
         securities: dict[str, Security] = {}
@@ -125,13 +131,17 @@ def fetch_activity(
             )
         except PlaidRejectedError as error:
             problem = error.error_code
+            trouble = rejected(error)
             if error.error_code == LOGIN_REQUIRED:
                 login = True
                 registry.set_state(item.item_id, ItemState.LOGIN_REQUIRED, problem=problem)
+        except PlaidUnreachableError as error:
+            problem, trouble = str(error), Trouble.UNREACHABLE
         except PlaidError as error:
             problem = str(error)
         except VaultError, LookupError:
             problem = "its access token or its Plaid account's keys could not be opened"
+            trouble = Trouble.KEYS
         with Feed.open(feed_path) as feed:
             if problem is None:
                 feed.record_activity(
@@ -142,7 +152,17 @@ def fetch_activity(
                 feed.activity_failed(
                     item.item_id, start, today, problem, login=login, now=fetched_at
                 )
-        asked.append(Asked(item.item_id, item.institution, start, today, len(found), problem))
+        asked.append(
+            Asked(
+                item.item_id,
+                item.institution,
+                start,
+                today,
+                len(found),
+                problem,
+                trouble if problem is not None else None,
+            )
+        )
     return Fetched(fetched_at=fetched_at, asked=tuple(asked))
 
 

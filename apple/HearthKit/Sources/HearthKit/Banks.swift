@@ -1,0 +1,80 @@
+import Foundation
+
+/// How fresh the viewer's own banks are, and where the engine's syncs stand: the `banks`
+/// screen (`hearth.native.doorway.banks`). Only the viewer's own connections are ever in it;
+/// another member's never are, nor anything they answered.
+public struct Banks: Decodable, Sendable, Equatable {
+    /// What the engine was started approved to ask, by hearth's names: `read`, `holdings`,
+    /// `activity`. Empty when the person allowed nothing.
+    public let asking: [String]
+    /// Whether the engine is asking the banks right now.
+    public let running: Bool
+    /// When the last sync this engine ran ended, its recompute included.
+    public let finishedAt: Date?
+    /// What stopped that sync before it could ask every connection, when something did.
+    public let stopped: Trouble?
+    public let banks: [Bank]
+
+    public init(
+        asking: [String], running: Bool, finishedAt: Date?, stopped: Trouble?, banks: [Bank]
+    ) {
+        self.asking = asking
+        self.running = running
+        self.finishedAt = finishedAt
+        self.stopped = stopped
+        self.banks = banks
+    }
+
+    /// When the viewer's banks were last asked and answered in full: the newest of them.
+    public var updatedAt: Date? { banks.compactMap(\.syncedAt).max() }
+}
+
+/// One of the viewer's own connections.
+public struct Bank: Decodable, Sendable, Equatable, Identifiable {
+    public let institution: String
+    /// When its bank was last asked and answered in full.
+    public let syncedAt: Date?
+    /// Its bank wants its member to sign in again, which is done in Hearth in the browser.
+    public let needsSignIn: Bool
+    /// How many new transactions the engine's last sync brought from it; nil when the engine
+    /// has not asked it.
+    public let added: Int?
+    /// What went wrong the last time the engine asked it.
+    public let trouble: Trouble?
+
+    public var id: String { institution }
+
+    public init(institution: String, syncedAt: Date?, needsSignIn: Bool, added: Int?, trouble: Trouble?) {
+        self.institution = institution
+        self.syncedAt = syncedAt
+        self.needsSignIn = needsSignIn
+        self.added = added
+        self.trouble = trouble
+    }
+}
+
+/// What kept an ask of a bank from bringing anything in (`hearth.connections.Trouble`).
+public enum Trouble: String, Decodable, Sendable, CaseIterable {
+    /// The bank wants its member to sign in to it again.
+    case signIn = "sign_in"
+    /// Plaid could not be reached at all.
+    case unreachable
+    /// The connection's token or its Plaid account's keys could not be opened from the Keychain.
+    case keys
+    /// Plaid answered with an error of its own.
+    case refused
+    /// Anything else; `hearth.log` says what.
+    case failed
+}
+
+/// What the engine says when asked to do something (`hearth.native.bridge.Acted`).
+public enum ActOutcome: String, Decodable, Sendable, CaseIterable {
+    case started
+    /// It was already being done: a sync was running.
+    case running
+    /// The engine was started approved for nothing the action asks.
+    case notAllowed = "not_allowed"
+    /// There is no such action.
+    case missing
+    case signedOut = "signed_out"
+}

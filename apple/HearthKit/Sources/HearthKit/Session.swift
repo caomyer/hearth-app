@@ -8,6 +8,10 @@ import Observation
 /// and hands it the username and password a member typed, or the ones it saved for them in
 /// the Keychain; the engine checks them, every time, and answers nothing about a household
 /// until it has (`hearth.native.bridge`).
+///
+/// Nor does it decide what the engine may ask the banks: it starts the engine approved for
+/// what the person switched on for these books (`Consent`), and starts it again when they
+/// change a switch, as the engine takes its approvals only when it starts.
 @MainActor
 @Observable
 public final class Session {
@@ -43,8 +47,8 @@ public final class Session {
         case engineStopped
     }
 
-    /// Starts the engine for the books given.
-    public typealias Launch = @MainActor (Books) throws -> any Bridging
+    /// Starts the engine for the books given, approved for what the consent allows.
+    public typealias Launch = @MainActor (Books, Consent) throws -> any Bridging
 
     public private(set) var screen: Screen = .starting
     /// The screens of the books, while they are open to someone.
@@ -53,13 +57,18 @@ public final class Session {
     public var overview: OverviewModel? { desk?.overview }
     /// True while a sign-in the person asked for is with the engine.
     public private(set) var isSigningIn = false
+    /// What the person allowed the engine to ask the banks of the books open or opening.
+    public private(set) var consent: Consent = .nothing
     public let setup: Setup
 
     private let defaults: UserDefaults
     private let credentials: any CredentialStore
+    private let consents: ConsentStore
     private let launch: Launch
     private var engine: (any Bridging)?
     private var running: Books?
+    /// What the engine running now was started approved for.
+    private var approved: Consent?
     /// Bumped whenever what the app is doing changes, so an answer to something it has since
     /// moved on from is let go.
     private var generation = 0
@@ -71,7 +80,20 @@ public final class Session {
         self.setup = setup
         self.defaults = defaults
         self.credentials = credentials
+        self.consents = ConsentStore(defaults: defaults, setup: setup)
         self.launch = launch
+    }
+
+    /// Keeps what the person allowed for the books open, and starts their engine again, approved
+    /// for it: the engine takes its approvals when it starts and never over the wire. A sync
+    /// running when a switch changes ends with that engine; what it stored is kept, and the
+    /// next one carries on from there.
+    public func allow(_ consent: Consent) async {
+        guard let books, consent != self.consent else { return }
+        consents.save(consent, for: books)
+        self.consent = consent
+        guard engine != nil, running == books else { return }
+        await open(books)
     }
 
     /// The books chosen the last time, for this household's data directory.
@@ -159,12 +181,15 @@ public final class Session {
         generation += 1
         let mine = generation
         desk = nil
-        if running != books || engine == nil {
+        let consent = consents.consent(for: books)
+        self.consent = consent
+        if running != books || engine == nil || approved != consent {
             await stopEngine()
             guard mine == generation else { return }
             do {
-                engine = try launch(books)
+                engine = try launch(books, consent)
                 running = books
+                approved = consent
             } catch {
                 screen = .unavailable(.engineMissing)
                 return
@@ -233,6 +258,7 @@ public final class Session {
         let stopping = engine
         engine = nil
         running = nil
+        approved = nil
         await stopping?.stop()
     }
 }

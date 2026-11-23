@@ -1,6 +1,6 @@
 """The bridge's wire: one JSON object a line, in and out.
 
-Each request carries a number and exactly one of three things:
+Each request carries a number and exactly one of four things:
 
 - ``{"id": 1, "sign_in": {"username": "...", "password": "..."}}``, told
   ``{"id": 1, "outcome": "signed_in"}``, or ``rejected``, ``throttled`` or
@@ -10,6 +10,9 @@ Each request carries a number and exactly one of three things:
   (``hearth.native.doorway``), or ``{"state": "signed_out"}`` while nobody is signed in. An ask
   may also carry ``"with": {...}``, what narrows it, which the doorway reads. A ``with`` that
   is not an object, or one beside anything but an ask, makes the line not a request.
+- ``{"id": 4, "act": "sync"}``, told ``{"id": 4, "outcome": "started"}``, or ``running``,
+  ``not_allowed``, ``missing`` or ``signed_out`` (``hearth.native.bridge.Acted``): asking
+  hearth to do something rather than to show something. It takes nothing beside its name.
 
 A line that is not such a request is answered ``{"id": null, "error": "bad request"}`` and the
 bridge carries on: one malformed line must not take the engine down with the books in it. A
@@ -26,7 +29,7 @@ from hearth.native.bridge import Bridge
 
 BAD_REQUEST = {"id": None, "error": "bad request"}
 
-_KINDS = ("ask", "sign_in", "sign_out")
+_KINDS = ("ask", "act", "sign_in", "sign_out")
 
 
 def serve(bridge: Bridge, lines: Iterable[str], write: Callable[[str], object]) -> None:
@@ -54,6 +57,8 @@ def reply(bridge: Bridge, line: str) -> dict[str, object]:
     match kinds[0], request[kinds[0]], request.get("with", {}):
         case "ask", str(ask), dict(given):
             return {"id": identity, "answer": bridge.answer(ask, given)}
+        case "act", str(action), _:
+            return {"id": identity, "outcome": bridge.act(action).value}
         case "sign_in", {"username": str(username), "password": str(password)}, _:
             return {"id": identity, "outcome": bridge.sign_in(username, password).value}
         case "sign_out", True, _:

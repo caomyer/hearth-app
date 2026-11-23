@@ -1,0 +1,26 @@
+{
+  "id": 6,
+  "answer": {
+    "state": "ready",
+    "asking": ["holdings", "read"],
+    "running": false,
+    "finished_at": "2026-10-15T13:00:00Z",
+    "stopped": null,
+    "banks": [
+      {
+        "institution": "Larkspur Savings Bank",
+        "synced_at": "2026-10-15T13:00:00Z",
+        "needs_sign_in": false,
+        "added": 3,
+        "trouble": null
+      },
+      {
+        "institution": "Wrenfield Brokerage",
+        "synced_at": "2026-10-14T13:00:00Z",
+        "needs_sign_in": true,
+        "added": 0,
+        "trouble": "sign_in"
+      }
+    ]
+  }
+}

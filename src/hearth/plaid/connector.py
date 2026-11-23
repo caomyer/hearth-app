@@ -30,6 +30,7 @@ from hearth import accounts as hearth_accounts
 from hearth import db, runlog
 from hearth.accounts import Account
 from hearth.clock import Clock
+from hearth.connections import Trouble
 from hearth.disclosure import Concealed
 from hearth.members import Member, MemberId
 from hearth.plaid import credentials as sets
@@ -1458,6 +1459,9 @@ def sync_all(
             done.append(_sync(conn, feed_path, setup, clock, item))
         except SyncBusyError:
             done.append(Skipped(item.item_id, "another sync is running"))
+        except VaultError, LookupError:
+            _log.exception("could not open a connection's access token or its Plaid keys")
+            done.append(Failed(item.item_id, Trouble.KEYS))
         except Exception:
             _log.exception("could not sync a connection")
             done.append(Failed(item.item_id))
