@@ -16,6 +16,15 @@ public struct Overview: Decodable, Sendable, Equatable {
     public let netWorth: NetWorth
     /// Net worth at the end of each month, oldest first, ending with today.
     public let history: [Point]
+    /// What waits for the viewer in Review.
+    public let review: Waiting
+
+    /// What waits for the viewer in Review: their own rows nobody has checked, and how much of
+    /// their own spending this month rests on them, when any does.
+    public struct Waiting: Decodable, Sendable, Equatable {
+        public let waiting: Int
+        public let spending: Money?
+    }
 
     public struct NetWorth: Decodable, Sendable, Equatable {
         public let value: Money

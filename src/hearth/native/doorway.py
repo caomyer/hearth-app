@@ -22,17 +22,16 @@ Money is written as a decimal string, never a float, so nothing is rounded on th
 screen. Days are ISO dates, and moments are UTC to the second (``2026-10-15T12:00:00Z``).
 """
 
-import re
 import sqlite3
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
-from decimal import Decimal
+from datetime import date
 
 from hearth import db, members
 from hearth.books import Bookkeeper
+from hearth.clock import Clock, system_clock
 from hearth.config import Settings
-from hearth.connections import Connections, RegisteredConnections
+from hearth.connections import RegisteredConnections
 from hearth.disclosure import (
     AccountGroup,
     AccountStanding,
@@ -45,13 +44,32 @@ from hearth.disclosure import (
 from hearth.disclosure.balances import Standing
 from hearth.disclosure.journal import Entry, Show, Side
 from hearth.names import readable
+from hearth.native import review
+from hearth.native.common import (
+    CATEGORY,
+    DAY,
+    LONGEST_ID,
+    LONGEST_TEXT,
+    MISSING,
+    Acted,
+    Answer,
+    Around,
+    Decided,
+    Done,
+    Given,
+    Malformed,
+    Screen,
+    count_in,
+    text_in,
+)
+from hearth.native.common import day as _day
+from hearth.native.common import moment as _moment
+from hearth.native.common import money as _money
 from hearth.refresh import NOT_SYNCING, Syncing
+from hearth.review.rulings import RulingStore
 
-type Answer = dict[str, object]
-type Given = Mapping[str, object]
-"""What an ask was given to narrow it: the ``with`` of its request, as the wire carried it."""
+__all__ = ["SCREENS", "Acted", "Answer", "Decided", "Done", "Doorway", "Given"]
 
-MISSING: Mapping[str, object] = {"state": "missing"}
 LOADING: Mapping[str, object] = {"state": "loading"}
 
 PAGE = 100
@@ -60,22 +78,6 @@ MOST = 200
 """The most entries one ask is answered with: a window onto the journal, never all of it."""
 FURTHEST = 1_000_000
 """The furthest into a journal an ask may start."""
-LONGEST_TEXT = 200
-LONGEST_ID = 64
-
-
-class Malformed(Exception):  # noqa: N818 - it names an outcome, not a fault
-    """What an ask was given is not something it takes. Answered as missing."""
-
-
-@dataclass(frozen=True, slots=True)
-class Around:
-    """What a screen is written from beside the viewer's view: the connections hearth holds,
-    every member's, which only disclosure narrows to the viewer's, and where this engine's
-    syncs stand."""
-
-    connections: Connections
-    syncing: Syncing
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +89,7 @@ class Doorway:
     viewer: str
     syncing: Callable[[], Syncing] = lambda: NOT_SYNCING
     """Where this engine's syncs stand (`hearth.refresh.Refresher.status`)."""
+    clock: Clock = system_clock
 
     def answer(self, ask: str, given: Given | None = None) -> Answer:
         screen = SCREENS.get(ask)
@@ -108,7 +111,12 @@ class Doorway:
             # A viewer who is no longer a member is told what anyone else would be: nothing.
             return dict(MISSING)
         view = Disclosure.load(conn, member, self.bookkeeper.status)
-        around = Around(RegisteredConnections(self.settings.database), self.syncing())
+        around = Around(
+            RegisteredConnections(self.settings.database),
+            self.syncing(),
+            RulingStore(conn),
+            self.clock,
+        )
         if not screen.of_books:
             return {"state": "ready", **screen.write(view, asked, around)}
         if view.books is None:
@@ -121,15 +129,34 @@ class Doorway:
         except Concealed:
             return dict(MISSING)
 
-
-@dataclass(frozen=True, slots=True)
-class Screen:
-    """One screen: how to read what an ask of it was given, and how to write its answer."""
-
-    read: Callable[[Given], object]
-    write: Callable[[Disclosure, object, Around], Answer]
-    of_books: bool = True
-    """Whether it is written from the books, so waits for them and says which they are."""
+    def act(self, action: str, given: Given | None = None) -> Done:
+        """Make one of the viewer's review decisions (``hearth.native.review``), through their
+        own desk and nothing else, then recompute the books behind it, as a page's decision
+        does. Anything it names that is not on the viewer's desk is missing, like an action
+        that is not there."""
+        decision = review.DECISIONS.get(action)
+        if decision is None:
+            return Acted.MISSING
+        try:
+            asked = decision.read(given or {})
+        except Malformed:
+            return Acted.MISSING
+        conn = db.connect(self.settings.database)
+        try:
+            member = members.find(conn, self.viewer)
+            if member is None:
+                return Acted.MISSING
+            view = Disclosure.load(conn, member, self.bookkeeper.status)
+            try:
+                done = decision.make(view.review_desk(RulingStore(conn), self.clock), asked)
+            except Concealed:
+                return Acted.MISSING
+        finally:
+            conn.close()
+        if done.rows:
+            # A ruling changes the books, so they are recomputed, behind the app.
+            self.bookkeeper.recompute_in_background()
+        return done
 
 
 def _books(view: Disclosure) -> Answer:
@@ -150,8 +177,9 @@ def _nothing(given: Given) -> None:
         raise Malformed
 
 
-def overview(view: Disclosure, _asked: object, _around: Around) -> Answer:
-    """The household's net worth and its history, as the viewer may see them."""
+def overview(view: Disclosure, _asked: object, around: Around) -> Answer:
+    """The household's net worth and its history, as the viewer may see them, and what waits
+    for the viewer in Review."""
     household = view.household()
     headline = household.headline
     return {
@@ -171,6 +199,7 @@ def overview(view: Disclosure, _asked: object, _around: Around) -> Answer:
             {"day": _day(point.day), "value": _money(point.value), "is_floor": point.is_floor}
             for point in household.history
         ],
+        "review": review.waiting(view, around),
     }
 
 
@@ -200,8 +229,6 @@ def account(view: Disclosure, asked: object, around: Around) -> Answer:
     }
 
 
-_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
-_CATEGORY = re.compile(r"(Expenses|Income)(:[^\s:]+)*")
 _TRANSACTIONS = frozenset({"from", "to", "account", "category", "text", "show", "offset", "limit"})
 
 
@@ -222,24 +249,24 @@ def window(given: Given) -> Window:
     start, end = _day_in(given, "from"), _day_in(given, "to")
     if start is not None and end is not None and start > end:
         raise Malformed
-    category = _text_in(given, "category", LONGEST_TEXT)
-    if category is not None and not _CATEGORY.fullmatch(category):
+    category = text_in(given, "category", LONGEST_TEXT)
+    if category is not None and not CATEGORY.fullmatch(category):
         raise Malformed
-    show = _text_in(given, "show", LONGEST_TEXT)
+    show = text_in(given, "show", LONGEST_TEXT)
     if show is not None and show not in {s.value for s in Show}:
         raise Malformed
-    text = _text_in(given, "text", LONGEST_TEXT)
+    text = text_in(given, "text", LONGEST_TEXT)
     return Window(
         Filter(
             start=start,
             end=end,
-            account=_text_in(given, "account", LONGEST_ID),
+            account=text_in(given, "account", LONGEST_ID),
             category=category,
             text=(text.strip() or None) if text is not None else None,
             show=Show(show) if show is not None else Show.EVERYTHING,
         ),
-        offset=_count_in(given, "offset", 0, FURTHEST, default=0),
-        limit=_count_in(given, "limit", 1, MOST, default=PAGE),
+        offset=count_in(given, "offset", 0, FURTHEST, default=0),
+        limit=count_in(given, "limit", 1, MOST, default=PAGE),
     )
 
 
@@ -247,31 +274,12 @@ def _day_in(given: Given, key: str) -> date | None:
     if key not in given:
         return None
     value = given[key]
-    if not isinstance(value, str) or not _DAY.fullmatch(value):
+    if not isinstance(value, str) or not DAY.fullmatch(value):
         raise Malformed
     try:
         return date.fromisoformat(value)
     except ValueError:
         raise Malformed from None
-
-
-def _text_in(given: Given, key: str, longest: int) -> str | None:
-    if key not in given:
-        return None
-    value = given[key]
-    if not isinstance(value, str) or not 0 < len(value) <= longest:
-        raise Malformed
-    return value
-
-
-def _count_in(given: Given, key: str, least: int, most: int, *, default: int) -> int:
-    if key not in given:
-        return default
-    value = given[key]
-    # bool is an int in Python, and no window is true entries long.
-    if not isinstance(value, int) or isinstance(value, bool) or not least <= value <= most:
-        raise Malformed
-    return value
 
 
 def transactions(view: Disclosure, asked: object, _around: Around) -> Answer:
@@ -314,6 +322,9 @@ SCREENS: Mapping[str, Screen] = {
     "account": Screen(_one, account),
     "transactions": Screen(window, transactions),
     "banks": Screen(_nothing, banks, of_books=False),
+    "review": Screen(review.read_queue, review.queue_screen),
+    "review_row": Screen(_one, review.row_screen),
+    "where": Screen(_nothing, review.where_screen),
 }
 """Every screen the app may ask for, by the name it asks with."""
 
@@ -394,6 +405,7 @@ def _entry(position: int, entry: Entry) -> Answer:
         "checked": entry.checked.value if entry.checked else None,
         "amount": _money(entry.amount),
         "sides": [_side(side) for side in entry.sides],
+        "review": entry.review,
     }
 
 
@@ -419,17 +431,3 @@ def _category(name: str | None) -> Answer | None:
     if root == "Income" and rest:
         return {"name": name, "label": ": ".join(readable(part) for part in rest.split(":"))}
     return {"name": name, "label": readable(name.rsplit(":", 1)[-1])}
-
-
-def _money(value: Decimal | None) -> str | None:
-    return None if value is None else format(value, "f")
-
-
-def _day(value: date | None) -> str | None:
-    return None if value is None else value.isoformat()
-
-
-def _moment(value: datetime) -> str:
-    """To the second, in UTC, always in one shape: ``2026-10-15T12:00:00Z``. The app shows it in
-    the Mac's own time zone."""
-    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

@@ -5,6 +5,15 @@ import Testing
 
 @Suite("Figures, as a person reads them")
 struct FiguresTests {
+    @Test("a transaction's day has its weekday, and its year only when it is another year's")
+    func weekday() {
+        let asOf = Day(year: 2026, month: 10, day: 15)
+        #expect(Figures.weekday(Day(year: 2026, month: 10, day: 3), asOf: asOf, locale: unitedStates) == "Sat, Oct 3")
+        #expect(
+            Figures.weekday(Day(year: 2025, month: 10, day: 3), asOf: asOf, locale: unitedStates) == "Fri, Oct 3, 2025")
+        #expect(Figures.month(Day(year: 2026, month: 9, day: 30), locale: unitedStates) == "Sep 2026")
+    }
+
     @Test("a total is whole dollars")
     func total() {
         #expect(Figures.total(money("846683.89"), currency: "USD", locale: unitedStates) == "$846,684")

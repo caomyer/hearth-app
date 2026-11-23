@@ -74,7 +74,30 @@ public enum ActOutcome: String, Decodable, Sendable, CaseIterable {
     case running
     /// The engine was started approved for nothing the action asks.
     case notAllowed = "not_allowed"
-    /// There is no such action.
+    /// There is no such action, it was given something it does not take, or what it names is
+    /// not there for this viewer. The engine does not say which.
     case missing
     case signedOut = "signed_out"
+    /// Every row shown was accepted as suggested.
+    case accepted
+    /// Saved under the category chosen.
+    case booked
+    /// Moved to the account of the viewer's own they chose.
+    case moved
+    /// Not a transaction: it books nothing.
+    case excluded
+    /// The decision was taken back.
+    case undone
+    /// Some of what was shown changed since, and was left waiting; the rest, if any, decided.
+    case changed
+    /// The group is not one kind of transaction, so it is not accepted all at once.
+    case notOneDecision = "not_one_decision"
+    /// The name typed is not a full account name.
+    case notAnAccount = "not_an_account"
+    /// A row goes only to a category or one of the viewer's own accounts.
+    case notYours = "not_yours"
+    /// That account's balance is its bank's, so only the bank's rows go in it.
+    case banksAccount = "banks_account"
+    /// Its bank counts the row in the balance it reports, so it cannot be left out.
+    case banksRow = "banks_row"
 }

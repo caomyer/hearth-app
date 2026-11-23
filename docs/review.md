@@ -6,7 +6,7 @@ What keeps that honest is the flag.
 A row nobody has checked is `!`, beancount's own marker for incomplete, and every figure that rests on such rows says so.
 A figure built partly from unreviewed guesses is never presented as though a person checked it.
 
-`hearth.review` holds the engine; the page is `hearth.web.routes.review`.
+`hearth.review` holds the engine; the page is `hearth.web.routes.review`, and the Mac app's way in is `hearth.native.review` (below).
 
 ## The rows
 
@@ -124,6 +124,16 @@ Group names keep Plaid's abbreviations in capitals ("Bank fees: ATM fees"), and 
 
 `hearth demo --first-review` serves an invented household with two years of history, none of it reviewed: one member has about 1,150 rows in 34 groups, the size of a real first import.
 Exercising the queue at that size is what found that a one-key accept could settle an "Unsure" group of 212 guesses.
+
+## In the Mac app
+
+The Mac app is a second way in to the same desk (`docs/native.md`, "Reviewing"): its Review screen and its Transactions decide through `hearth.native.review`, which makes the calls these pages make, as the member signed in to the app, and nothing else.
+Everything above holds there as it does here: binding, one decision per group, Undo of exactly the last decision, and nobody's queue but the member's own.
+
+- Booking a row against another account and excluding one are bound to what the row said when the app showed it (`ReviewDesk.book_shown`, `reject_shown`), as answering a row alone under "Where did it go?" is here, so a row its bank changed in between is left waiting there too.
+- The queue's keys are menu commands: the arrows move between items, Return settles the row as chosen or accepts a group that is one decision, C changes the category, X excludes where offered, S skips, and Command-Z is Edit > Undo.
+- Naming an account hearth does not see stays on these pages; the app answers "Where did it go?" with an account already named, or a category.
+- `hearth demo --first-review` is the app's sample too, with `-firstReview YES` in a debug build (`apple/README.md`).
 
 ## Totals that lean on unreviewed rows
 

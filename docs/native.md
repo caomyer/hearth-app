@@ -22,13 +22,15 @@ Every request carries a number and exactly one of `sign_in`, `sign_out`, `ask` o
 <- {"id": 5, "outcome": "started"}
 -> {"id": 6, "ask": "banks"}
 <- {"id": 6, "answer": {"state": "ready", "asking": ["read"], "running": true, ...}}
--> {"id": 7, "sign_out": true}
-<- {"id": 7, "outcome": "signed_out"}
+-> {"id": 7, "act": "accept_group", "with": {"group": "Food and drink: groceries", "rows": {"7a1c9e04b2": "Expenses:FoodAndDrink:Groceries"}}}
+<- {"id": 7, "outcome": "accepted", "ruling": 41, "rows": 1, "changed": 0}
+-> {"id": 8, "sign_out": true}
+<- {"id": 8, "outcome": "signed_out"}
 ```
 
-- An ask may carry `with`, a JSON object of what narrows it; nothing else may.
-  A `with` that is not an object, or one beside `sign_in`, `sign_out` or `act`, makes the line a bad request.
-- An `ask` shows something; an `act` asks hearth to do something, and takes nothing but the action's name (see "Asking hearth to do something").
+- An ask may carry `with`, a JSON object of what narrows it, and an act a `with` of what it is done to; nothing else may.
+  A `with` that is not an object, or one beside `sign_in` or `sign_out`, makes the line a bad request.
+- An `ask` shows something; an `act` asks hearth to do something (see "Asking hearth to do something").
 
 - There is no socket and no port.
   The only thing that can ask is the process that started the bridge, and the bridge ends when that process closes its end, which the system does for it if it dies.
@@ -67,16 +69,27 @@ If the engine refuses them they are forgotten and the member is asked again; "Si
 
 ## Asking hearth to do something
 
-There is one action, `sync`: bring the household's connections up to date now.
-It is told one `outcome` (`hearth.native.bridge.Acted`):
+An `act` names an action, and may carry `with`, what it is done to.
+Its reply carries one `outcome` (`hearth.native.common.Acted`).
+A review decision's reply also carries `ruling`, the decision an Undo would take back (null when nothing was recorded), `rows`, how many rows it decided or took back, and `changed`, how many of the rows it was shown it left waiting because they changed since.
+Every outcome is in `tests/native/fixtures/acted.json`, and a decision's reply in `decided.json`, which both sides' tests read.
+
+These two outcomes are any action's:
+
+| Outcome | Meaning |
+|---|---|
+| `missing` | There is no such action, it was given something it does not take, or what it names is not on the viewer's desk. The three are one answer. |
+| `signed_out` | Nobody is signed in; nothing is done, and nothing is said of what could be. |
+
+### Syncing
+
+`sync` brings the household's connections up to date now, and takes nothing.
 
 | Outcome | Meaning |
 |---|---|
 | `started` | A sync started, in the background; the `banks` screen follows it. |
 | `running` | A sync was already running, and what it brings is what was asked for; none was started. |
 | `not_allowed` | The bridge was started approved for nothing a sync asks of Plaid. |
-| `missing` | There is no such action. |
-| `signed_out` | Nobody is signed in; nothing is done, and nothing is said of what could be. |
 
 - A sync is the one every sync is: `hearth.refresh.sync_then_recompute`, run by the bridge's `Refresher`, one at a time, so the books always take in what it fetched.
 - The bridge syncs on its own too, exactly as `hearth serve` does: at start-up and every morning, when it was started approved for something a sync asks.
@@ -84,7 +97,42 @@ It is told one `outcome` (`hearth.native.bridge.Acted`):
   `link` and `remove` cannot be approved for a bridge at all.
   The Plaid client enforces the approval itself, as it does for every run of hearth.
 - The app starts the bridge approved for exactly the switches the person turned on in its Settings, and starts it again when one changes (`HearthKit.Consent`, `apple/README.md`).
-- Every outcome is in `tests/native/fixtures/acted.json`, which both sides' tests read.
+
+### Reviewing
+
+Every other action is one of the signed-in member's review decisions (`hearth.native.review.DECISIONS`), made through their own desk (`Disclosure.review_desk`) with the calls the review pages make (`docs/review.md`).
+Each is bound to what the app showed, as a page's form is: an accept to the account each row proposed then, every other decision to what each row said then (`says`, from the review screens).
+A decision that recorded or took back a ruling starts a recompute in the background, as a page's does.
+
+| Action | Takes | Does |
+|---|---|---|
+| `accept` | `row`, `shown` | Accepts one row as suggested, while it still proposes `shown` (`ReviewDesk.accept`). |
+| `accept_group` | `group`, `rows` | Accepts the rows shown of a group that is one decision, each as the account it was shown with (`ReviewDesk.accept_group`). |
+| `book` | `row`, `says`, and `category` or `account` | Books one row against a category or another account by its full name, or one of the viewer's own accounts by its id (`ReviewDesk.book_shown`). |
+| `exclude` | `row`, `says` | Rules one row not a transaction (`ReviewDesk.reject_shown`). |
+| `move_group` | `title`, `rows`, and `category` or `account` | Answers one group of "Where did it go?": every row shown onto one of the viewer's own accounts hearth does not see, or a category (`ReviewDesk.move_group`). |
+| `move_row` | `row`, `says`, and `category` or `account` | Answers one such row on its own (`ReviewDesk.answer_shown`). |
+| `undo` | `ruling` | Takes back one of the viewer's own decisions (`ReviewDesk.undo`). |
+
+`rows` is an object of review ids to what each showed, `ruling` a whole number, and everything else text.
+What a decision says:
+
+| Outcome | Meaning |
+|---|---|
+| `accepted` | Every row shown was accepted as suggested. |
+| `booked` | Saved under the category chosen. |
+| `moved` | Moved to the account of the viewer's own they chose. |
+| `excluded` | Not a transaction: it books nothing. |
+| `undone` | Taken back; its rows wait again. |
+| `changed` | Some of what was shown changed since, and was left waiting; the rest, if any, was decided. |
+| `not_one_decision` | The group is not one kind of transaction, so it is not accepted all at once. |
+| `not_an_account` | The name given is not a full account name. |
+| `not_yours` | A row goes only to a category or one of the viewer's own accounts; which rule an account broke is never said. |
+| `banks_account` | That account's balance is its bank's, so only the bank's rows go in it. |
+| `banks_row` | Its bank counts the row in the balance it reports, so it cannot be excluded. |
+
+A row, group or ruling that is not on the viewer's desk is `missing`, exactly like one that does not exist, and changes nothing.
+There is no auto-accept, and no action accepts more than one group.
 
 ## What an answer is
 
@@ -111,6 +159,9 @@ Every ready answer says what its books are: `computed_at`, `as_of`, `currency` a
 | `account` | `id` | One of those accounts, and the days its history covers (`Disclosure.standing`). |
 | `transactions` | `from`, `to`, `account`, `category`, `text`, `show`, `offset`, `limit` | A window onto the journal (`Disclosure.journal`). |
 | `banks` | nothing | How fresh the viewer's own connections are, and where the bridge's syncs stand (`Disclosure.banks`). |
+| `review` | `order`, `account`, `category`, `group`, `text` | The viewer's own review queue, counted as the desk counts it, in the order asked (`hearth.review.queue`). |
+| `review_row` | `id` | One row on the viewer's desk: where it stands, what it may be booked against, and the rows from the same merchant before it. |
+| `where` | nothing | The viewer's rows whose other side hearth does not see, grouped so that one answer settles each (`hearth.review.where`). |
 
 What an ask takes is read strictly in `hearth.native.doorway`, and anything else is answered `missing`, as a screen that is not there is:
 
@@ -120,7 +171,8 @@ What an ask takes is read strictly in `hearth.native.doorway`, and anything else
 - `category` that is not `Expenses` or `Income`, alone or with parts beneath it;
 - `text` that is not text of 1 to 200 characters;
 - `show` that is not `everything`, `unreviewed`, `transfers` or `balance_checks`;
-- `offset` that is not a whole number from 0 to 1,000,000, and `limit` that is not one from 1 to 200.
+- `offset` that is not a whole number from 0 to 1,000,000, and `limit` that is not one from 1 to 200;
+- `order` that is not one of `review.queue`'s orders, and a review `category` that is not an account name or `-`, for nothing suggested.
 
 Whether the viewer may see what an ask names is for `hearth.disclosure` to decide, never the doorway.
 An account they may not see, or for `transactions` one whose transactions they may not see, is answered `missing`, exactly like an id that names nothing.
@@ -146,6 +198,16 @@ Each account says what its balance rests on, its `standing`, and every absence i
 The balance, its kind and its standing go with the account balances facet.
 The day its data is known through (`updated`), whether that is long ago (`behind`), and the day its bank's balance covers (`checked`) are when its money last moved, so they go with the transactions facet.
 Its bank's name is given only to the member whose connection feeds it, as is `attention`, which says that connection must be signed in to again; for an account hearth does not see, where its owner said it is.
+
+### Review
+
+The review screens are written from the viewer's own desk (`Disclosure.review_desk`) and nothing else: a member is shown only rows they may rule on, and never another member's queue, not even a count, whatever is shared.
+The `overview` says how many of the viewer's rows wait (`review.waiting`, those waiting to be told where their money went among them, as the pages count them) and how much of their own spending this month rests on such rows (`review.spending`).
+A `transactions` entry names the review it waits on (`review`) only to whoever may make it.
+
+- `review` answers how much waits and what it moves (`remaining`), what the filter leaves (`shown`), how many are reviewed of the `total`, rows that came back (`changed`, `revised`), rows waiting to be told where their money went, counted apart (`elsewhere`), the values it may be narrowed to (`accounts`, `categories`), its `groups` in order, each with its rows by id and whether it is one decision (`one_decision`), and every row the filter leaves (`rows`), in the queue's order.
+- A row says why it is suggested in words (`reason`), never as a percentage; whether it may be excluded (`excludable`, false when its bank counts it); and what it says (`says`), which binds a decision to it.
+- The whole queue is answered at once, as the review page shows it, since a group's accept is bound to every row it shows.
 
 ### Banks
 
@@ -191,6 +253,7 @@ The doorway is a page by another name, and is held to everything a page is.
 - `tests/native/test_doorway.py` signs in to a bridge as every member under every sharing scenario the page crawl uses, asks every screen, and fails if an answer holds a datum its viewer may not see.
   A new screen is covered the moment it is added to `SCREENS`; one that takes something to narrow it must be named in the crawl's `NARROWED`, or its plain ask is missing and the crawl fails.
   Narrowed screens are asked for every account in the household by id, every member's and the one nobody owns, every category and payee in it, each chip, periods and windows, and a narrowed journal must hold nothing the whole of it did not.
+  It makes every review decision on every review row in the household and on rows in nobody's books, against every account, as the row said and as it did not, under forged groups, and takes back every ruling: one on anything not on the viewer's desk must answer `missing` and record nothing, and no review screen or decision may name a row on anyone else's desk.
 - Anything private answers exactly like something missing.
 
 This is the one place hearth hands figures out as data.
@@ -198,7 +261,7 @@ It is not an HTTP endpoint and must not become one: a bridge that listened on a 
 
 ## One shape, checked from both sides
 
-`tests/native/fixtures/overview.json`, `accounts.json`, `account.json`, `transactions.json` and `banks.json` are example replies, `tests/native/fixtures/outcomes.json` lists every outcome of signing in, and `acted.json` every outcome of an action.
+`tests/native/fixtures/overview.json`, `accounts.json`, `account.json`, `transactions.json`, `banks.json`, `review.json`, `review_row.json`, `where.json` and `decided.json` are example replies, `tests/native/fixtures/outcomes.json` lists every outcome of signing in, and `acted.json` every outcome of an action.
 The Python tests check that the bridge still answers in their shape; the Swift tests (`apple/HearthKit`) decode the same files.
 A change of shape that only one side has been taught fails that side's tests.
 
@@ -206,7 +269,7 @@ A change of shape that only one side has been taught fails that side's tests.
 
 An action is the one kind of request that changes something, so it is added rarely and kept thin.
 
-1. Add its name to `hearth.native.bridge.ACTIONS` and do it in `Bridge.act`, through the module that already does it for every other path, never a second way.
+1. Add its name to `hearth.native.bridge.ACTIONS`, or a review decision to `hearth.native.review.DECISIONS`, and do it through the module that already does it for every other path, never a second way.
 2. Anything it does in the background is followed through a screen, never through the action's reply.
 3. Teach `apple/HearthKit` its outcomes, and `acted.json` any new one.
 

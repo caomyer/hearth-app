@@ -81,7 +81,7 @@ struct AnswerTests {
              "recomputing":true,"connected":false,
              "net_worth":{"value":"0","is_known":false,"is_partial":false,"is_floor":false,"without":[],
                           "since_month_start":null,"over_year":null,"priced_on":null,"stale_prices":0},
-             "history":[]}
+             "history":[],"review":{"waiting":0,"spending":null}}
             """#
         guard case .ready(let overview) = try decode(json, as: Overview.self) else {
             Issue.record("a ready answer")

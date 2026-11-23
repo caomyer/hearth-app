@@ -48,10 +48,35 @@ struct Signed: Decodable {
     let outcome: SignInOutcome
 }
 
-/// The engine's reply to an action.
-struct Acted: Decodable {
-    let id: Int
-    let outcome: ActOutcome
+/// The engine's reply to an action: its outcome, and for a review decision, what it decided
+/// (`hearth.native.common.Decided`).
+public struct ActResult: Decodable, Sendable, Equatable {
+    public let outcome: ActOutcome
+    /// The decision an Undo would take back, when one was recorded.
+    public let ruling: Int?
+    /// How many rows it decided, or for an Undo, took back.
+    public let rows: Int
+    /// How many of the rows shown it left waiting, because they changed since.
+    public let changed: Int
+
+    public init(outcome: ActOutcome, ruling: Int? = nil, rows: Int = 0, changed: Int = 0) {
+        self.outcome = outcome
+        self.ruling = ruling
+        self.rows = rows
+        self.changed = changed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case outcome, ruling, rows, changed
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        outcome = try container.decode(ActOutcome.self, forKey: .outcome)
+        ruling = try container.decodeIfPresent(Int.self, forKey: .ruling)
+        rows = try container.decodeIfPresent(Int.self, forKey: .rows) ?? 0
+        changed = try container.decodeIfPresent(Int.self, forKey: .changed) ?? 0
+    }
 }
 
 /// The decoder every reply goes through: the engine writes snake_case keys and UTC moments to

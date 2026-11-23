@@ -1,0 +1,105 @@
+{
+  "id": 7,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "order": "size",
+    "remaining": {"rows": 4, "moved": "259.32"},
+    "shown": {"rows": 4, "moved": "259.32"},
+    "filtered": false,
+    "reviewed": 3,
+    "total": 7,
+    "groups_waiting": 2,
+    "oldest": "2026-09-28",
+    "changed": 1,
+    "revised": 0,
+    "elsewhere": {"rows": 2, "moved": "600.00"},
+    "accounts": [
+      {"value": "eDUVDA9IScyfzS3o", "label": "Rewards card", "rows": 3},
+      {"value": "h1LQFxEvalLFwj4a", "label": "Everyday checking", "rows": 1}
+    ],
+    "categories": [
+      {"value": "Expenses:FoodAndDrink:Groceries", "label": "Groceries", "rows": 3},
+      {"value": "-", "label": "Nothing suggested", "rows": 1}
+    ],
+    "groups": [
+      {
+        "name": "Food and drink: groceries",
+        "size": 3,
+        "total": "-171.93",
+        "moved": "171.93",
+        "suggested": [{"name": "Expenses:FoodAndDrink:Groceries", "label": "Groceries"}],
+        "one_decision": true,
+        "least_sure": "Suggested by a rule",
+        "rows": ["7a1c9e04b2", "c3f0d815aa", "0e92b4d7c1"]
+      },
+      {
+        "name": "Uncategorised",
+        "size": 1,
+        "total": "-87.39",
+        "moved": "87.39",
+        "suggested": [],
+        "one_decision": false,
+        "least_sure": "Nothing suggested",
+        "rows": ["91d2e6f0a8"]
+      }
+    ],
+    "rows": [
+      {
+        "id": "7a1c9e04b2",
+        "group": "Food and drink: groceries",
+        "date": "2026-10-12",
+        "payee": "Cobble Street Market",
+        "narration": "COBBLE ST MKT 0412",
+        "account": {"id": "eDUVDA9IScyfzS3o", "name": "Rewards card"},
+        "amount": "-84.12",
+        "suggested": {"name": "Expenses:FoodAndDrink:Groceries", "label": "Groceries"},
+        "reason": "Suggested by a rule",
+        "excludable": false,
+        "says": "9f4b67c004"
+      },
+      {
+        "id": "c3f0d815aa",
+        "group": "Food and drink: groceries",
+        "date": "2026-10-05",
+        "payee": "Cobble Street Market",
+        "narration": "COBBLE ST MKT 0412",
+        "account": {"id": "eDUVDA9IScyfzS3o", "name": "Rewards card"},
+        "amount": "-46.50",
+        "suggested": {"name": "Expenses:FoodAndDrink:Groceries", "label": "Groceries"},
+        "reason": "Suggestion changed since you accepted it",
+        "excludable": false,
+        "says": "6fc2aaf11b"
+      },
+      {
+        "id": "0e92b4d7c1",
+        "group": "Food and drink: groceries",
+        "date": "2026-09-28",
+        "payee": null,
+        "narration": "POS PURCHASE 3381",
+        "account": {"id": "eDUVDA9IScyfzS3o", "name": "Rewards card"},
+        "amount": "-41.31",
+        "suggested": {"name": "Expenses:FoodAndDrink:Groceries", "label": "Groceries"},
+        "reason": "Suggested by a rule",
+        "excludable": false,
+        "says": "e56feaa1ba"
+      },
+      {
+        "id": "91d2e6f0a8",
+        "group": "Uncategorised",
+        "date": "2026-10-09",
+        "payee": "Corner Hardware",
+        "narration": "CORNER HDWE #22",
+        "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"},
+        "amount": "-87.39",
+        "suggested": null,
+        "reason": "Nothing suggested",
+        "excludable": true,
+        "says": "370f0a842d"
+      }
+    ]
+  }
+}
