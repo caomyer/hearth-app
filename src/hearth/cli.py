@@ -11,6 +11,8 @@ directory (``hearth.runlog``).
 
 ``hearth bridge`` and ``hearth demo --bridge`` answer the native app over standard input and
 output and open no port (``hearth.native``). They write nothing but replies to standard output.
+``hearth bridge`` answers nothing about the household until the app signs in as a member over
+that wire; ``hearth demo --bridge`` is signed in as the invented household's first member.
 """
 
 import argparse
@@ -31,11 +33,11 @@ from hearth import accounts, auth, books, comparison, db, demo, members, runlog
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
 from hearth.clock import system_clock
-from hearth.config import Settings, data_dir_from_environment
+from hearth.config import DATABASE_FILE, Settings, data_dir_from_environment
 from hearth.disclosure import rulings_in
 from hearth.members import MemberRejectedError, normalise_username
 from hearth.native import stdio
-from hearth.native.doorway import Doorway
+from hearth.native.bridge import Bridge, Outcome
 from hearth.plaid import booking, export, feed
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
@@ -200,12 +202,10 @@ def main(argv: list[str] | None = None) -> None:
         " and open no port",
     )
 
-    bridge = commands.add_parser(
+    commands.add_parser(
         "bridge",
-        help="answer the native app over standard input and output, and open no port",
-    )
-    bridge.add_argument(
-        "--as", dest="viewer", required=True, metavar="USERNAME", help="whose view to answer with"
+        help="answer the native app over standard input and output, once it signs in as a"
+        " member, and open no port",
     )
 
     arguments = parser.parse_args(argv)
@@ -248,7 +248,7 @@ def main(argv: list[str] | None = None) -> None:
             else:
                 _demo(arguments.host, arguments.port, first_review=arguments.first_review)
         case "bridge":
-            _bridge(normalise_username(arguments.viewer))
+            _bridge()
 
 
 def _add_address(parser: argparse.ArgumentParser) -> None:
@@ -559,37 +559,43 @@ def _demo(host: str, port: int, *, first_review: bool = False) -> None:
 
 def _demo_bridge(*, first_review: bool = False) -> None:
     with _demo_household(first_review=first_review) as household:
-        viewer = next(iter(household.passwords))
-        _answer_the_app(household.settings, household.establish, viewer)
+        username, password = next(iter(household.passwords.items()))
+        _answer_the_app(household.settings, household.establish, (username, password))
 
 
-def _bridge(viewer: str) -> None:
+def _bridge() -> None:
+    data_dir = data_dir_from_environment()
+    if not (data_dir / DATABASE_FILE).is_file():
+        # Signing in to a household that is not there must not make an empty one.
+        sys.exit(f"hearth: there is no household in {data_dir}.")
     settings = Settings.from_environment()
     db.initialise(settings.database)
     feed.initialise(settings.feed_database)
-    conn = db.connect(settings.database)
-    try:
-        known = members.find(conn, viewer) is not None
-    finally:
-        conn.close()
-    if not known:
-        sys.exit(f"hearth: there is no member {viewer}.")
-    _answer_the_app(settings, books.from_household(settings, rulings=rulings_in), viewer)
+    _answer_the_app(settings, books.from_household(settings, rulings=rulings_in))
 
 
-def _answer_the_app(settings: Settings, establish: books.Establish, viewer: str) -> None:
+def _answer_the_app(
+    settings: Settings, establish: books.Establish, signed_in_as: tuple[str, str] | None = None
+) -> None:
     """Answer the native app until it closes its end, recomputing as ``hearth serve`` does: at
     start-up, every morning, and whenever another process changes what the books are computed
     from. The first recompute runs in the background, so the app is told the books are loading
-    instead of waiting on a silent process."""
+    instead of waiting on a silent process.
+
+    The bridge is signed out until the app signs in over the wire, unless `signed_in_as` names
+    a member and their password, which the demo's bridge does for its invented household."""
     bookkeeper = books.Bookkeeper(
         establish, system_clock, standing=lambda: books.standing(settings)
     )
     bookkeeper.recompute_daily()
     watching = bookkeeper.recompute_on_change()
+    bridge = Bridge(settings, bookkeeper, system_clock)
     try:
-        stdio.serve(Doorway(settings, bookkeeper, viewer), sys.stdin, _write_reply)
+        if signed_in_as is not None and bridge.sign_in(*signed_in_as) is not Outcome.SIGNED_IN:
+            sys.exit("hearth: the demo household's first member could not sign in.")
+        stdio.serve(bridge, sys.stdin, _write_reply)
     finally:
+        bridge.sign_out()
         watching.set()
 
 

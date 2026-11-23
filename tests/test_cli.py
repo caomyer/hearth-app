@@ -9,7 +9,7 @@ from hearth import accounts, audit, db, members
 from hearth.audit import EventKind
 from hearth.cli import main
 from hearth.config import DATA_DIR_VARIABLE, LEDGER_VARIABLE
-from tests.conftest import World
+from tests.conftest import World, password_of
 
 
 def test_the_first_admin_is_added_from_the_command_line(
@@ -318,24 +318,47 @@ def test_the_bridge_answers_the_app_on_standard_output_and_nothing_else(
 ) -> None:
     monkeypatch.setenv(DATA_DIR_VARIABLE, str(world.settings.data_dir))
     monkeypatch.setenv(LEDGER_VARIABLE, str(world.ledger))
-    monkeypatch.setattr("sys.stdin", io.StringIO('{"id": 3, "ask": "overview"}\n'))
+    sign_in = {"id": 2, "sign_in": {"username": "Avery", "password": password_of("avery")}}
+    requests = [{"id": 1, "ask": "overview"}, sign_in, {"id": 3, "ask": "overview"}]
+    monkeypatch.setattr("sys.stdin", io.StringIO("".join(json.dumps(r) + "\n" for r in requests)))
 
-    main(["bridge", "--as", "Avery"])
+    main(["bridge"])
 
-    (line,) = capsys.readouterr().out.splitlines()
-    reply = json.loads(line)
-    assert reply["id"] == 3
+    before, signed, after = (json.loads(line) for line in capsys.readouterr().out.splitlines())
+    assert before == {"id": 1, "answer": {"state": "signed_out"}}
+    assert signed == {"id": 2, "outcome": "signed_in"}
+    assert after["id"] == 3
     # The first recompute runs beside the first ask, so either answer is a true one.
-    assert reply["answer"]["state"] in {"loading", "ready"}
+    assert after["answer"]["state"] in {"loading", "ready"}
 
 
-def test_the_bridge_refuses_to_start_as_someone_who_is_not_a_member(
-    world: World, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_the_bridge_ends_the_session_it_signed_in_with_when_the_app_closes_its_end(
+    world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(DATA_DIR_VARIABLE, str(world.settings.data_dir))
+    monkeypatch.setenv(LEDGER_VARIABLE, str(world.ledger))
+    sign_in = {"id": 1, "sign_in": {"username": "blake", "password": password_of("blake")}}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(sign_in) + "\n"))
+
+    main(["bridge"])
+
+    conn = world.connect()
+    try:
+        (live,) = conn.execute("SELECT count(*) FROM sessions WHERE revoked_at IS NULL").fetchone()
+    finally:
+        conn.close()
+    assert live == 0
+
+
+def test_the_bridge_makes_no_household_where_there_is_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    nowhere = tmp_path / "nothing-here"
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(nowhere))
     monkeypatch.setattr("sys.stdin", io.StringIO('{"id": 1, "ask": "overview"}\n'))
 
-    with pytest.raises(SystemExit, match="hearth: there is no member mallory"):
-        main(["bridge", "--as", "mallory"])
+    with pytest.raises(SystemExit, match="hearth: there is no household in"):
+        main(["bridge"])
 
     assert capsys.readouterr().out == ""
+    assert not nowhere.exists()

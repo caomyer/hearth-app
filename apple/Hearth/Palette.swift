@@ -9,13 +9,21 @@ enum Palette {
     static let ink2 = dynamic(light: 0x4F4F4A, dark: 0xB9B9B2)
     static let ink3 = dynamic(light: 0x6A6A64, dark: 0x99998F)
     static let line = dynamic(light: 0xE2E2DC, dark: 0x33332F)
+    static let lineStrong = dynamic(light: 0xCFCFC8, dark: 0x46463F)
+    /// The boundary of a control a person types into.
+    static let control = dynamic(light: 0x84847D, dark: 0x7B7B73)
+    static let background = dynamic(light: 0xF6F6F3, dark: 0x121211)
     static let surface = dynamic(light: 0xFFFFFF, dark: 0x1C1C1A)
     /// Blue is reserved for "you can act on this"; it never encodes data.
     static let accent = dynamic(light: 0x2851C4, dark: 0x8EACFF)
+    /// Text on an accent button.
+    static let onAccent = dynamic(light: 0xFFFFFF, dark: 0x10162B)
     static let accentBackground = dynamic(light: 0xEAEFFB, dark: 0x1D2742)
     /// Favourable and unfavourable, not up and down, and never without a glyph and a word.
     static let favourable = dynamic(light: 0x16703E, dark: 0x5FCF8D)
     static let unfavourable = dynamic(light: 0xB3261E, dark: 0xFF8F84)
+    /// Errors share unfavourable's red, on their own tint.
+    static let errorBackground = dynamic(light: 0xFBEBE9, dark: 0x3A1D1A)
     static let warning = dynamic(light: 0x8A5100, dark: 0xF1B55A)
     static let warningBackground = dynamic(light: 0xFCF1DA, dark: 0x33280F)
     static let chartLine = dynamic(light: 0x1B1B19, dark: 0xECECE8)

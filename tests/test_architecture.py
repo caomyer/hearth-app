@@ -15,6 +15,8 @@ The rules, for the package as it is now:
   reader and touch none of the books' raw data.
 - Only ``hearth.disclosure`` builds a member's ``Connector``, the one way a page reaches
   connections, so every connection a page shows went past the gate.
+- Only ``hearth.native.bridge`` builds the native app's ``Doorway``, so the app is answered
+  only as the member signed in to the bridge.
 
 What it cannot catch, so nobody mistakes it for proof: an alias or re-export of an ``access``
 function, a ``getattr`` or ``importlib`` call, or any other dynamic import. It reads import
@@ -139,15 +141,27 @@ def test_pages_touch_none_of_the_books_raw_data() -> None:
     assert reaching == []
 
 
-def test_only_disclosure_builds_a_members_connector() -> None:
-    builders = {
+def builders_of(cls: str) -> set[str]:
+    """The modules that call `cls` by name, as a constructor is called."""
+    return {
         name
         for name, tree in modules()
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and (
-            (isinstance(node.func, ast.Name) and node.func.id == "Connector")
-            or (isinstance(node.func, ast.Attribute) and node.func.attr == "Connector")
+            (isinstance(node.func, ast.Name) and node.func.id == cls)
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == cls)
         )
     }
-    assert builders == {"hearth.disclosure"}
+
+
+def test_only_disclosure_builds_a_members_connector() -> None:
+    assert builders_of("Connector") == {"hearth.disclosure"}
+
+
+def test_only_the_bridge_opens_the_native_doorway() -> None:
+    """The doorway answers as whichever member it is handed. Only the bridge, which hands it
+    the member signed in to a live session, may hand it one: a second place that built a
+    doorway could answer the app as someone nobody signed in as."""
+    assert builders_of("Doorway") == {"hearth.native.bridge"}
+    assert importers_of("hearth.native.doorway") == {"hearth.native.bridge"}

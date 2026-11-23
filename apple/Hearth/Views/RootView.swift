@@ -1,9 +1,54 @@
 import HearthKit
 import SwiftUI
 
-/// The window: the places you can go on the left, the place you are on the right.
+/// The window: the choice of books, signing in, or the books themselves.
 struct RootView: View {
     let session: Session
+
+    var body: some View {
+        Group {
+            switch session.screen {
+            case .starting, .choosing:
+                // The start sheet sits over an empty window: nothing is open yet.
+                Color.clear
+            case .opening:
+                Waiting(text: "Opening your books", identifier: "session.opening")
+            case .signIn(let problem):
+                SignInView(session: session, problem: problem)
+            case .open(let books):
+                BooksView(session: session, isSample: books == .sample)
+            case .unavailable(.engineMissing):
+                Unavailable(
+                    title: "Hearth could not start",
+                    detail: "Its engine is missing from the app. Install Hearth again.")
+            case .unavailable(.engineStopped):
+                Unavailable(title: "Hearth's engine stopped", detail: "Quit Hearth and open it again.")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.background)
+        .toolbarBackground(Palette.background, for: .windowToolbar)
+        .navigationTitle("Hearth")
+        .sheet(isPresented: .constant(isChoosing)) {
+            StartSheet(session: session, offersSetup: offersSetup)
+                .interactiveDismissDisabled()
+        }
+        .task { await session.start() }
+    }
+
+    private var isChoosing: Bool {
+        if case .choosing = session.screen { true } else { false }
+    }
+
+    private var offersSetup: Bool {
+        if case .choosing(let offers) = session.screen { offers } else { false }
+    }
+}
+
+/// The books, open: the places you can go on the left, the place you are on the right.
+private struct BooksView: View {
+    let session: Session
+    let isSample: Bool
     @State private var place: Place? = .overview
 
     enum Place: Hashable {
@@ -18,15 +63,13 @@ struct RootView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
         } detail: {
             VStack(spacing: 0) {
-                if session.isSample {
+                if isSample {
                     SampleBanner()
                 }
                 if let overview = session.overview {
                     OverviewView(model: overview)
                 } else {
-                    Unavailable(
-                        title: "Hearth could not start",
-                        detail: "Its engine is missing from the app. Install Hearth again.")
+                    Waiting(text: "Opening your books", identifier: "session.opening")
                 }
             }
             .background(Palette.surface)
@@ -35,7 +78,6 @@ struct RootView: View {
             .toolbarBackground(Palette.surface, for: .windowToolbar)
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         }
-        .navigationTitle("Hearth")
     }
 }
 
@@ -69,5 +111,7 @@ struct Unavailable: View {
         .multilineTextAlignment(.center)
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("unavailable")
     }
 }

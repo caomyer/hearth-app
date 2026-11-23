@@ -10,6 +10,9 @@ public enum Answer<Content: Decodable & Sendable>: Decodable, Sendable {
     case failed(summary: String)
     /// There is no such screen, or none this viewer may see. The engine does not say which.
     case missing
+    /// Nobody is signed in to the engine, so it says nothing about the household: not even
+    /// whether the screen exists.
+    case signedOut
 
     private enum CodingKeys: String, CodingKey {
         case state, summary
@@ -23,6 +26,7 @@ public enum Answer<Content: Decodable & Sendable>: Decodable, Sendable {
         case "loading": self = .loading
         case "failed": self = .failed(summary: try container.decode(String.self, forKey: .summary))
         case "missing": self = .missing
+        case "signed_out": self = .signedOut
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .state, in: container, debugDescription: "an answer in no known state: \(state)")
@@ -36,6 +40,12 @@ extension Answer: Equatable where Content: Equatable {}
 struct Reply<Content: Decodable & Sendable>: Decodable {
     let id: Int
     let answer: Answer<Content>
+}
+
+/// The engine's reply to signing in or out.
+struct Signed: Decodable {
+    let id: Int
+    let outcome: SignInOutcome
 }
 
 /// The decoder every reply goes through: the engine writes snake_case keys and UTC moments to

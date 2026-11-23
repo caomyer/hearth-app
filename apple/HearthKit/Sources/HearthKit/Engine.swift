@@ -21,12 +21,33 @@ public protocol Asking: Sendable {
     ) async throws -> Answer<Content>
 }
 
+/// What the engine says when the app signs in or out (`hearth.native.bridge.Outcome`).
+public enum SignInOutcome: String, Decodable, Sendable, CaseIterable {
+    case signedIn = "signed_in"
+    /// The username or the password is wrong. The engine never says which.
+    case rejected
+    /// Too many recent failures, for this username or from this app.
+    case throttled
+    /// The password is a one-time password, changed in hearth's web pages before the app may
+    /// use it. The engine stays signed out.
+    case mustChangePassword = "must_change_password"
+    case signedOut = "signed_out"
+}
+
+/// A running engine the app can sign in to, ask, and stop: the engine, or a stand-in for it.
+public protocol Bridging: Asking {
+    /// Signs in as a member. Whoever was signed in before is not any more, whatever the outcome.
+    func signIn(username: String, password: String) async throws -> SignInOutcome
+    func signOut() async throws
+    func stop() async
+}
+
 /// Hearth's engine, running as a process of its own.
 ///
 /// The engine is hearth's Python (`hearth bridge`). The app writes it one request a line and
 /// reads one reply a line (`hearth.native.stdio`). It opens no port, and it ends when the app
 /// closes its end of the pipe, which the system does for the app if the app dies.
-public actor Engine: Asking {
+public actor Engine: Bridging {
     public enum Failure: Error, Equatable {
         /// The engine is not running: it was stopped, it exited, or it never started.
         case stopped
@@ -72,8 +93,18 @@ public actor Engine: Asking {
     public func ask<Content: Decodable & Sendable>(
         _ screen: String, as content: Content.Type = Content.self
     ) async throws -> Answer<Content> {
-        let line = try await send(screen)
+        let line = try await send(["ask": screen])
         return try replyDecoder().decode(Reply<Content>.self, from: line).answer
+    }
+
+    /// The password is written to the engine's pipe and kept by neither side.
+    public func signIn(username: String, password: String) async throws -> SignInOutcome {
+        let line = try await send(["sign_in": ["username": username, "password": password]])
+        return try replyDecoder().decode(Signed.self, from: line).outcome
+    }
+
+    public func signOut() async throws {
+        _ = try await send(["sign_out": true])
     }
 
     /// Closes the app's end, which is how the engine is told to finish.
@@ -83,11 +114,11 @@ public actor Engine: Asking {
         finish()
     }
 
-    private func send(_ screen: String) async throws -> Data {
+    private func send(_ request: [String: Any]) async throws -> Data {
         guard !stopped else { throw Failure.stopped }
         let id = nextID
         nextID += 1
-        var line = try JSONSerialization.data(withJSONObject: ["id": id, "ask": screen])
+        var line = try JSONSerialization.data(withJSONObject: request.merging(["id": id]) { $1 })
         line.append(0x0A)
         return try await withCheckedThrowingContinuation { continuation in
             waiting[id] = continuation
@@ -141,15 +172,33 @@ extension EngineCommand {
     /// Python, run in isolated mode so that nothing on this Mac changes what it imports, and
     /// told to write no bytecode, since the bundle is sealed by its signature.
     ///
-    /// The engine is given a home, a place for temporary files and a text encoding, and nothing
-    /// else of the app's environment.
+    /// The engine is given a home, a place for temporary files, a text encoding and whatever
+    /// `environment` adds, and nothing else of the app's environment.
     public static func bundled(
-        in resources: URL, hearth arguments: [String], home: String, temporary: String
+        in resources: URL, hearth arguments: [String], home: String, temporary: String,
+        environment: [String: String] = [:]
     ) -> EngineCommand {
         let engine = resources.appendingPathComponent("engine")
+        let base = ["HOME": home, "TMPDIR": temporary, "LC_ALL": "en_US.UTF-8"]
         return EngineCommand(
             executable: engine.appendingPathComponent("python/bin/python3.14"),
             arguments: ["-I", "-B", engine.appendingPathComponent("main.py").path] + arguments,
-            environment: ["HOME": home, "TMPDIR": temporary, "LC_ALL": "en_US.UTF-8"])
+            environment: base.merging(environment) { $1 })
+    }
+
+    /// The engine an app carries, over the books `books` names: the invented household,
+    /// signed in as its first member, or the household whose data is in `setup`, which says
+    /// nothing until the app signs in as one of its members.
+    public static func bundled(
+        _ books: Books, setup: Setup, in resources: URL, home: String, temporary: String
+    ) -> EngineCommand {
+        switch books {
+        case .sample:
+            bundled(in: resources, hearth: ["demo", "--bridge"], home: home, temporary: temporary)
+        case .own:
+            bundled(
+                in: resources, hearth: ["bridge"], home: home, temporary: temporary,
+                environment: ["HEARTH_DATA_DIR": setup.dataDirectory.path])
+        }
     }
 }

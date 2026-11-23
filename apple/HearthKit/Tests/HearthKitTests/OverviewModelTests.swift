@@ -59,6 +59,22 @@ struct OverviewModelTests {
         #expect(model.state == .missing)
     }
 
+    @Test("an engine that signs the member out ends the screen, and says so once")
+    func signedOut() async {
+        let ended = Waits()
+        let model = OverviewModel(engine: Scripted([ready, #"{"state":"signed_out"}"#]), signedOut: { Task { await ended.note(.zero) } })
+
+        await model.refresh()
+        #expect(await model.refresh() == nil)
+
+        #expect(model.state == .signedOut)
+        await Task.yield()
+        for _ in 0..<100 where await ended.all.isEmpty {
+            await Task.yield()
+        }
+        #expect(await ended.all == [.zero])
+    }
+
     @Test("an engine that has stopped is said to have stopped")
     func stopped() async {
         let model = OverviewModel(engine: Scripted([]))

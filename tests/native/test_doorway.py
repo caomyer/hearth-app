@@ -2,7 +2,8 @@
 
 The figures are the ones worked out by hand in ``tests/household.py``. The last test is the
 doorway's share of the privacy boundary: whatever a viewer asks, under every sharing scenario
-the page crawl uses, no datum they may not see is in any answer.
+the page crawl uses, no datum they may not see is in any answer the app is given once they have
+signed in to the bridge.
 """
 
 import json
@@ -15,10 +16,11 @@ import pytest
 from hearth import books
 from hearth.books import LedgerError
 from hearth.native import doorway as asks
+from hearth.native.bridge import Bridge, Outcome
 from hearth.native.doorway import Doorway
 from hearth.sharing import DEFAULT_SHARED, Facet
 from tests import household
-from tests.conftest import World
+from tests.conftest import World, password_of
 from tests.test_privacy_boundary import SCENARIOS
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -146,9 +148,13 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     for username, shared in choices.items():
         world.choose(username, shared)
 
-    door = doorway(world, viewer)
+    # Asked as the app asks: through a bridge the viewer signed in to with their password.
+    door = Bridge(world.settings, world.bookkeeper, world.clock)
+    assert door.sign_in(viewer, password_of(viewer)) is Outcome.SIGNED_IN
+    answers = [door.answer(ask) for ask in asks.SCREENS]
+    assert all(answer["state"] == "ready" for answer in answers)
     # The doorway writes money without the thousands separators a page shows it with.
-    seen = "\n".join(json.dumps(door.answer(ask)) for ask in asks.SCREENS)
+    seen = "\n".join(json.dumps(answer) for answer in answers)
 
     leaked = [
         f"{secret.what}: {text!r}"

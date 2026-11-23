@@ -68,6 +68,28 @@ struct EngineTests {
         }
     }
 
+    @Test("signing in sends the username and password on one line, and reads the outcome")
+    func signsIn() async throws {
+        // Says signed_in only to the one request that carries this member's sign-in.
+        let script = #"""
+            while IFS= read -r line; do
+              id=$(printf '%s' "$line" | sed -E 's/.*"id":([0-9]+).*/\1/')
+              case "$line" in
+                *'"sign_in":{'*'"username":"avery"'*'"password":"an invented passphrase"'*) outcome=signed_in ;;
+                *'"sign_out":true'*) outcome=signed_out ;;
+                *) outcome=rejected ;;
+              esac
+              printf '{"id":%s,"outcome":"%s"}\n' "$id" "$outcome"
+            done
+            """#
+        let engine = try Engine.launch(EngineCommand(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script]))
+        defer { Task { await engine.stop() } }
+
+        #expect(try await engine.signIn(username: "avery", password: "an invented passphrase") == .signedIn)
+        #expect(try await engine.signIn(username: "avery", password: "a guess") == .rejected)
+        try await engine.signOut()
+    }
+
     @Test("an engine that is not there cannot be launched")
     func notThere() {
         let nowhere = EngineCommand(executable: URL(fileURLWithPath: "/nonexistent/hearth-engine"), arguments: [])

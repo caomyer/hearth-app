@@ -47,6 +47,26 @@ struct AnswerTests {
         #expect(try decode(#"{"state":"missing"}"#, as: Overview.self) == .missing)
     }
 
+    @Test("an engine nobody is signed in to says so, and nothing else")
+    func signedOut() throws {
+        #expect(try decode(#"{"state":"signed_out"}"#, as: Overview.self) == .signedOut)
+    }
+
+    @Test("every outcome of signing in the engine's own tests know is one the app reads")
+    func outcomes() throws {
+        let told = try JSONDecoder().decode([SignInOutcome].self, from: fixture("outcomes"))
+
+        #expect(told == SignInOutcome.allCases)
+    }
+
+    @Test("a sign-in's reply carries its outcome under the request's number")
+    func signedReply() throws {
+        let reply = try replyDecoder().decode(Signed.self, from: Data(#"{"id":4,"outcome":"must_change_password"}"#.utf8))
+
+        #expect(reply.id == 4)
+        #expect(reply.outcome == .mustChangePassword)
+    }
+
     @Test("a state the app was never taught is an error, not a guess")
     func unknownState() {
         #expect(throws: DecodingError.self) {

@@ -15,6 +15,9 @@ public final class OverviewModel {
         case failed(String)
         /// The engine has no overview for this viewer.
         case missing
+        /// The engine says nobody is signed in: the member's session ended elsewhere, as when
+        /// their password was reset.
+        case signedOut
         /// The engine is not running.
         case stopped
     }
@@ -23,6 +26,7 @@ public final class OverviewModel {
 
     private let engine: any Asking
     private let pause: @Sendable (Duration) async throws -> Void
+    private let signedOut: @MainActor () -> Void
 
     /// How long to wait before asking again: often while the books are being computed, so the
     /// screen fills the moment they are ready, and seldom once they are, only to notice a
@@ -32,10 +36,12 @@ public final class OverviewModel {
 
     public init(
         engine: any Asking,
-        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        signedOut: @escaping @MainActor () -> Void = {}
     ) {
         self.engine = engine
         self.pause = pause
+        self.signedOut = signedOut
     }
 
     /// Asks once and takes the answer in. Returns how long to wait before asking again, or nil
@@ -57,6 +63,11 @@ public final class OverviewModel {
                 return Self.whileReady
             case .missing:
                 state = .missing
+                return nil
+            case .signedOut:
+                // Nothing on screen may outlast the session it was shown in.
+                state = .signedOut
+                signedOut()
                 return nil
             }
         } catch {

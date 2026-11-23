@@ -9,12 +9,10 @@ struct OverviewView: View {
         Group {
             switch model.state {
             case .starting, .loading:
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Working out the books").foregroundStyle(Palette.ink2)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("overview.loading")
+                Waiting(text: "Working out the books", identifier: "overview.loading")
+            case .signedOut:
+                // Gone the moment the engine says so; the window moves on to signing in.
+                Color.clear
             case .ready(let overview):
                 if overview.connected {
                     Figures(overview: overview)

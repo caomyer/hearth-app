@@ -7,6 +7,8 @@ from pathlib import Path
 
 DATA_DIR_VARIABLE = "HEARTH_DATA_DIR"
 LEDGER_VARIABLE = "HEARTH_LEDGER"
+DATABASE_FILE = "hearth.sqlite3"
+"""The app database, whose presence in a data directory is what makes it a household's."""
 _SIGNING_KEY_FILE = "signing.key"
 
 
@@ -22,7 +24,7 @@ class Settings:
 
     @property
     def database(self) -> Path:
-        return self.data_dir / "hearth.sqlite3"
+        return self.data_dir / DATABASE_FILE
 
     @property
     def books_file(self) -> Path:
