@@ -55,7 +55,7 @@ from hearth.accounts import Account
 from hearth.clock import Clock
 from hearth.disclosure import Concealed
 from hearth.members import MemberId
-from hearth.review.decision import Decision, State, decide, guarded, postable
+from hearth.review.decision import NOT_OPEN, Decision, State, decide, guarded, postable
 from hearth.review.pile import Moved, PileItem
 from hearth.review.rulings import Action, Covered, Ruling, RulingStore, Scope, check_account
 
@@ -69,6 +69,7 @@ __all__ = [
     "Learned",
     "Moved",
     "NotOneDecision",
+    "NotOpen",
     "NotTheirs",
     "ReviewDesk",
     "State",
@@ -187,6 +188,14 @@ class BanksRow(ValueError):  # noqa: N818 - it names a refusal, as Concealed doe
         super().__init__("its bank counts this row in the balance it reports")
 
 
+class NotOpen(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
+    """A category the books hold, but not open on the row's day, or not in its currency: a
+    ruling booking the row there could not be laid in the books (``decision.postable``)."""
+
+    def __init__(self) -> None:
+        super().__init__(NOT_OPEN)
+
+
 class NotOneDecision(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
     """A group that is no one kind of transaction, so no single accept may settle it."""
 
@@ -244,6 +253,13 @@ def resolve(
         item.review_id: decide(item, applicable[item.review_id], formerly.get(item.account, ()))
         for item in pile
     }
+
+
+def _open_for(item: PileItem, opens: tuple[date, date | None, frozenset[str] | None]) -> bool:
+    opened, closed, currencies = opens
+    return opened <= item.date <= (closed or date.max) and (
+        currencies is None or item.currency in currencies
+    )
 
 
 def _owners(accounts: Sequence[Account]) -> Callable[[PileItem], frozenset[MemberId]]:
@@ -434,6 +450,11 @@ class ReviewDesk:
     def _check_target(self, account: str, rows: Sequence[PileItem]) -> None:
         check_account(account)
         if account.split(":")[0] in FREE:
+            # A category the books do not open yet opens with the ruling; one they hold must be
+            # open on every row's day, in its currency, as the books would refuse it otherwise.
+            found = self._opens.get(account)
+            if found is not None and not all(_open_for(item, found) for item in rows):
+                raise NotOpen
             return
         opens, closes = self._movable.get(account, (date.max, None))
         if not all(opens <= item.date <= (closes or date.max) for item in rows):

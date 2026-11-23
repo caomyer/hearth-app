@@ -26,6 +26,7 @@ from hearth.review.desk import (
     BanksAccount,
     BanksRow,
     NotOneDecision,
+    NotOpen,
     NotTheirs,
     ReviewDesk,
 )
@@ -72,6 +73,9 @@ OUTCOMES = {
     " reports for this account, so hearth cannot leave it out without disagreeing with the"
     " bank. If the bank got it wrong, that is for the bank to put right; here it can go to"
     " any spending or income category.",
+    "not-open": "That transaction is still waiting. Your books close that category before the"
+    " day of this transaction, or keep it for another currency, so it cannot be booked there."
+    " Choose a category that is open on its day.",
     "reminder-saved": "Reminder saved.",
     "not-one-decision": "That group is not one kind of transaction, so it cannot be accepted"
     " all at once. Its transactions are waiting for a look one by one.",
@@ -283,6 +287,8 @@ def book_row(
         return _to(where, "not-yours", review_id)
     except BanksAccount:
         return _to(where, "banks-account", review_id)
+    except NotOpen:
+        return _to(where, "not-open", review_id)
     except ValueError:
         return _to(where, "not-an-account", review_id)
     _ruled(app)

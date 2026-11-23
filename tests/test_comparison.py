@@ -749,7 +749,7 @@ def test_the_command_changes_nothing_of_the_households(
         conn.execute("DROP TABLE carried_over")
         conn.execute("DROP TABLE named_accounts")
         conn.execute("ALTER TABLE review_ruling_rows DROP COLUMN says")
-        conn.execute(f"PRAGMA user_version = {len(db.MIGRATIONS) - 4}")
+        conn.execute(f"PRAGMA user_version = {len(db.MIGRATIONS) - 5}")
     finally:
         conn.close()
     household.settings.books_file.unlink()

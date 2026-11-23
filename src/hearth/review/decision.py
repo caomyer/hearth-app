@@ -53,6 +53,9 @@ UNRULED = Decision(State.UNREVIEWED, None, None, "nobody has ruled on it")
 PROPOSAL_CHANGED = "the import's proposal has changed since it was accepted"
 REOPENED = "a decision on it was taken back"
 REVISED = "its bank has changed it since it was reviewed"
+REDESCRIBED = "its bank has changed how it describes it since it was accepted"
+"""Why an accepted row is unreviewed again when the bank's category for it has changed: what
+the member accepted may have rested on how the bank described it, whatever is suggested now."""
 
 
 KEPT_OFF = "it was moved onto an account whose balance its bank decides now"
@@ -113,7 +116,10 @@ def _apply(item: PileItem, covered: Covered, said: frozenset[str]) -> Decision:
     if ruling.action is Action.ACCOUNT:
         return Decision(State.REVIEWED, ruling.account, ruling, None)
     if not _holds(item, covered):
-        return Decision(State.UNREVIEWED, None, ruling, PROPOSAL_CHANGED)
+        redescribed = item.bank is not None and covered.bank is not None
+        return Decision(
+            State.UNREVIEWED, None, ruling, REDESCRIBED if redescribed else PROPOSAL_CHANGED
+        )
     return Decision(State.REVIEWED, accepted, ruling, None)
 
 

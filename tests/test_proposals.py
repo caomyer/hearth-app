@@ -70,8 +70,21 @@ MERCHANTS = [
     ((None, "ACH DEBIT 0012 GEICO"), "geico"),
     ((None, "ACH DEBIT 0013 PG&E"), "pg&e"),
     ((None, "POS DEBIT 1234 TARGET T-1234"), "target"),
-    # Only a description is read for them: a merchant's own name may start with one.
+    # Only as the whole phrase followed by its date or number: a merchant's name may start
+    # with one of its words.
     (("Card Factory",), "card factory"),
+    ((None, "ELECTRONIC ARTS 123"), "electronic arts"),
+    ((None, "CREDIT ONE BANK PAYMENT"), "credit one bank payment"),
+    ((None, "ON THE BORDER 123"), "on the border"),
+    ((None, "CARD SERVICES 123"), "card services"),
+    ((None, "SALE AT TARGET"), "sale at target"),
+    # Never a name cut down to a kind of place.
+    ((None, "VISA DDA PUR 12345 BAR 22 NYC"), "bar 22 nyc"),
+    ((None, "VISA DDA PUR 12345 BAR 7 BROOKLYN"), "bar 7 brooklyn"),
+    # After an asterisk: a word of letters is the company's service, kept; a reference is not.
+    ((None, "UBER *TRIP"), "uber trip"),
+    ((None, "UBER *EATS"), "uber eats"),
+    ((None, "UBER *TRIP HELP.UBER.COM"), "uber trip"),
     # A cheque says no merchant at all, whatever its number.
     ((None, "CHECK 1001"), None),
     ((None, "CHECK 1002"), None),
@@ -122,6 +135,11 @@ def test_different_merchants_written_alike_are_never_one_merchant() -> None:
         (("The 1849 Club",), ("The 9 Muses",)),
         (("寿司 BAR",), ("拉麺 BAR",)),
         (("A 1 AUTO",), ("A 2 Z TOYS",)),
+        ((None, "ELECTRONIC ARTS 123"), (None, "ACADEMY OF ARTS 77")),
+        ((None, "CARD SERVICES 123"), (None, "FIELD SERVICES 9")),
+        ((None, "ON THE BORDER 123"), (None, "ACROSS THE BORDER 5")),
+        ((None, "VISA DDA PUR 12345 BAR 22 NYC"), (None, "VISA DDA PUR 12346 BAR 7 BROOKLYN")),
+        ((None, "UBER *TRIP"), (None, "UBER *EATS")),
     ]
     for one, other in pairs:
         assert merchant(*one) != merchant(*other), (one, other)

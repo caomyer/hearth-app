@@ -48,10 +48,10 @@ No reason is ever a percentage.
    Only without one is a description read: Plaid's name for the row, then the bank's original description, or a ledger entry's narration.
 2. Letters of every script are kept, accents and all, in Unicode's compatible form, and case is ignored: "CAFÉ" is "café", "寿司 BAR" and "拉麺 BAR" are two merchants.
 3. A payment processor's prefix before an asterisk is dropped: `SQ *`, `TST*`, `PAYPAL *`, `SP *`, `IN *`, `DD *` and the like, generic services, never a merchant.
-4. Everything from the first remaining asterisk on is dropped, the network's reference for one payment ("AMZN Mktp US*2K4AB1" is "amzn mktp us").
-5. In a description only, the bank's own words for how the money moved are dropped from the front, with the dates and numbers among and after them: "PURCHASE AUTHORIZED ON 09/12 STARBUCKS" is "starbucks", "ACH DEBIT 0012 GEICO" is "geico", "POS DEBIT 1234 TARGET" is "target".
-   A merchant's own name may begin with such a word ("Card Factory"), so a name is never read so.
-6. Everything from the first word holding a digit or starting with "#" is dropped, with "store", "str", "no" or "location" just before it, so "STARBUCKS #1234 SEATTLE WA" and "Starbucks Store 01234" are "starbucks"; but never while the words kept so far are only generic ones, so "The 1849 Club" and "The 9 Muses" stay two merchants, "A 1 AUTO" stays itself, and "7-Eleven" too.
+4. After the first remaining asterisk, a first word of letters alone is the same company's service and is kept, as a member books "UBER *EATS" and "UBER *TRIP" apart; anything else there is the network's reference for one payment and is dropped ("AMZN Mktp US*2K4AB1" is "amzn mktp us").
+5. In a description only, a phrase the bank starts with to say how the money moved is dropped from the front, only as the whole phrase followed by its date or number, with that date or number: "PURCHASE AUTHORIZED ON 09/12 STARBUCKS" is "starbucks", "ACH DEBIT 0012 GEICO" is "geico", "POS DEBIT 1234 TARGET" is "target", "VISA DDA PUR 12345 ..." loses its first four words.
+   A merchant whose name merely starts with one of those words is never cut: "ELECTRONIC ARTS", "CREDIT ONE BANK", "ON THE BORDER", "CARD SERVICES", "SALE AT TARGET", and a name, never a description, is never read so at all ("Card Factory").
+6. Everything from the first word holding a digit or starting with "#" is dropped, with "store", "str", "no" or "location" just before it, so "STARBUCKS #1234 SEATTLE WA" and "Starbucks Store 01234" are "starbucks"; but never while the words kept so far are only generic ones or a kind of place ("bar", "cafe", "club", "deli" and the like), so "The 1849 Club" and "The 9 Muses" stay two merchants, "BAR 22 NYC" is not every bar, "A 1 AUTO" stays itself, and "7-Eleven" too.
 7. Punctuation is a space, but for "&" and "'" within a word.
 
 What is left is the merchant, unless every word of it is generic ("the", "check", "payment", "debit" and the like) or a number: that is no merchant, which is never the same merchant as anything, so "CHECK 1001" teaches nothing to "CHECK 1002".
@@ -81,6 +81,7 @@ So claiming, matching or connecting an account, replacing another connection, se
 
 The one other thing that can bring an accepted row back is the books being unable to hold it: a ledger imported since that closes the account it was booked to, or opens it for another currency (`decision.postable`).
 Laying it there would fail the recompute, so it is asked again instead.
+A row is never booked to such a category in the first place: the desk refuses a category the books hold that is not open on the row's day, or not in its currency (`desk.NotOpen`), and the page says so.
 
 What a row nobody has ruled on suggests is also kept from shifting under a member while they work: a ruling teaches a row only if it was made before the row first arrived, the start of the sync that first stored it (`Feed.arrived`).
 So a whole merchant accepted at once teaches the rows that arrive after it, not the rows beside it in the queue the member is looking at.
@@ -118,7 +119,7 @@ Which ruling decides a row (`review.decision`):
    An accept recorded before then holds while the bank's category alone still names the account it accepted (`booking.proposal`), exactly as it always did.
    What hearth learns never undoes either ("Why an accepted row never comes back", above).
    For a row an imported ledger set aside, it holds while the ledger still proposes that account.
-   When it stops holding, the row is unreviewed again, and the queue says its suggestion changed since it was accepted.
+   When it stops holding, the row is unreviewed again, and the queue says why: that the bank changed how it describes the transaction since it was accepted, when the bank's category changed, or that its suggestion changed, for an accept recorded before then or a ledger's row.
 5. An accept never covers a row the import proposed nothing for.
 6. A reopen takes a decision back: the rows it covers are unreviewed again.
    Taking a decision back is not reviewing, so it does not move when the member last reviewed.

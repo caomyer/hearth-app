@@ -25,7 +25,7 @@ from hearth.months import Month
 from hearth.plaid.fake import FakeAccount, FakeInstitution, FakeTransaction
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
-from hearth.review.decision import PROPOSAL_CHANGED, REVISED, State
+from hearth.review.decision import REDESCRIBED, REVISED, State
 from hearth.review.ids import plaid_review_id, says
 from hearth.review.pile import PileItem
 from hearth.review.rulings import Action, RulingStore, Scope
@@ -246,7 +246,7 @@ def test_nothing_hearth_allows_but_the_bank_moves_an_accepted_row(accepted: Acce
                 date(2026, 9, 2),
                 "FOOD_AND_DRINK_FAST_FOOD",
             ),
-            PROPOSAL_CHANGED,
+            REDESCRIBED,
         ),
     ],
     ids=["amount", "date", "category"],
@@ -288,6 +288,14 @@ def test_the_bank_changing_the_row_brings_it_back(
         conn.close()
     assert view.decision.state is State.UNREVIEWED
     assert view.decision.reason == reason
+    # The Review page says what happened, in the member's words.
+    page = household.client().get("/review?view=rows").text
+    said = {
+        REVISED: "Changed by the bank since it was reviewed",
+        REDESCRIBED: "The bank changed how it describes it since you accepted it",
+    }
+    assert said[reason] in page
+    assert "Suggestion changed since you accepted it" not in page
 
 
 # Upgrading from rulings made before suggestions were learned.
@@ -395,3 +403,28 @@ def test_an_old_accept_the_ledger_has_closed_the_account_of_is_asked_again(
     finally:
         conn.close()
     assert LEDGER_CHECKING in {i.account for i in household.books().pile}
+
+
+def test_booking_a_row_to_a_category_the_ledger_closed_before_its_day_is_refused(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    """Refused up front, saying why, rather than accepted and shown at once as not open."""
+    closed = "2026-08-01 open Expenses:Zq:Old USD\n2026-08-31 close Expenses:Zq:Old\n"
+    household = based(tmp_path, clock, extra=closed)
+    item = household.row("ZQ BEAN COUNTER #0042", "3.75")
+    avery = household.fresh.signed_in("avery")
+    response = avery.post(
+        "/review/rows/book",
+        data={
+            "csrf": household.fresh.csrf(avery),
+            "review_id": item.review_id,
+            "account": "Expenses:Zq:Old",
+        },
+    )
+
+    assert response.status_code == 303
+    assert "outcome=not-open" in response.headers["location"]
+    page = avery.get(response.headers["location"]).text
+    assert "close that category before the day of this transaction" in page
+    assert household.state(item) is State.UNREVIEWED
+    assert household.fresh.bookkeeper.status.failure is None

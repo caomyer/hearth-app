@@ -18,7 +18,7 @@ from enum import StrEnum
 from typing import Any
 
 from hearth.names import readable
-from hearth.review.decision import PROPOSAL_CHANGED, REVISED, State
+from hearth.review.decision import PROPOSAL_CHANGED, REDESCRIBED, REVISED, State
 from hearth.review.desk import ItemView, one_decision
 from hearth.review.reasons import Why
 
@@ -70,6 +70,7 @@ class Confidence(StrEnum):
     UNSCORED = "Suggested by a rule"
     CHANGED = "Suggestion changed since you accepted it"
     REVISED = "Changed by the bank since it was reviewed"
+    REDESCRIBED = "The bank changed how it describes it since you accepted it"
 
 
 def confidence(view: ItemView) -> Confidence:
@@ -79,6 +80,8 @@ def confidence(view: ItemView) -> Confidence:
         return Confidence.CHANGED
     if view.decision.reason == REVISED:
         return Confidence.REVISED
+    if view.decision.reason == REDESCRIBED:
+        return Confidence.REDESCRIBED
     if view.item.proposed is None:
         return Confidence.NONE
     score = view.item.confidence
@@ -106,7 +109,7 @@ def said(view: ItemView) -> str:
     bank changed the row since it was reviewed, comes first, as what the member must know."""
     band = confidence(view)
     reason = view.item.reason
-    if band in (Confidence.CHANGED, Confidence.REVISED) or reason is None:
+    if band in (Confidence.CHANGED, Confidence.REVISED, Confidence.REDESCRIBED) or reason is None:
         return band.value
     if view.item.proposed is None and reason.why not in (Why.NEW, Why.MIXED, Why.ELSEWHERE):
         return band.value
@@ -222,6 +225,7 @@ class QueueGroup:
 
 _CONFIDENCE_RANK = [
     Confidence.REVISED,
+    Confidence.REDESCRIBED,
     Confidence.CHANGED,
     Confidence.NONE,
     Confidence.LOW,
@@ -323,7 +327,7 @@ def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
         reviewed=len(decided),
         remaining=Tally.of(waiting),
         changed=sum(1 for v in waiting if v.decision.reason == PROPOSAL_CHANGED),
-        revised=sum(1 for v in waiting if v.decision.reason == REVISED),
+        revised=sum(1 for v in waiting if v.decision.reason in (REVISED, REDESCRIBED)),
         oldest=min((v.item.date for v in waiting), default=None),
         accounts=_choices(waiting, lambda v: (v.account.id, v.account.name) if v.account else None),
         categories=_choices(waiting, lambda v: (_category_key(v), _category_label(v))),
