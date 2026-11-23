@@ -164,7 +164,7 @@ def seed(
     history = FIRST_REVIEW_DAYS if first_review else HISTORY_DAYS
     prices = _prices(today, history)
     store = PriceStore(conn)
-    for quote in _quotes(prices, today):
+    for quote in _quotes(prices, now):
         store.record(quote)
     review_days = FIRST_REVIEW_DAYS if first_review else SET_ASIDE_DAYS
     ledger.write_text(_ledger(today, prices, history, review_days))
@@ -216,8 +216,10 @@ def _prices(today: date, history: int) -> dict[str, dict[date, Decimal]]:
     return walks
 
 
-def _quotes(prices: dict[str, dict[date, Decimal]], today: date) -> Iterator[Quote]:
-    fetched = datetime.combine(today, time(6, 0), tzinfo=UTC)
+def _quotes(prices: dict[str, dict[date, Decimal]], now: datetime) -> Iterator[Quote]:
+    today = now.astimezone().date()
+    # Fetched at six this morning where hearth runs, or just now if the demo starts earlier.
+    fetched = min(now, datetime.combine(today, time(6, 0)).astimezone(UTC))
     stale_after = today - timedelta(days=6)
     for fund, closes in prices.items():
         for day, price in closes.items():

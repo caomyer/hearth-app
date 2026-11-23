@@ -207,7 +207,7 @@ def first_day(
         clock,
         standing=lambda: books.standing(settings),
     )
-    fake = FakePlaid(institutions, today=lambda: clock().date())
+    fake = FakePlaid(institutions, today=lambda: clock().astimezone().date())
     keys = MemoryKeyStore()
     setup = PlaidSetup(stand_in=fake, keys=lambda: keys, wait=Waits())
     app = create_app(

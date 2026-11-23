@@ -1,9 +1,9 @@
 """The demo household, built by the same path `hearth demo` takes."""
 
 import os
-import time
+import time as clock_time
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -34,7 +34,7 @@ def test_the_demos_connected_banks_carry_the_history_and_balance_the_ledger_hold
     finally:
         conn.close()
     feed.initialise(settings.feed_database)
-    demo.connect(settings, demo.plaid(lambda: now.date(), ledger), now=now)
+    demo.connect(settings, demo.plaid(lambda: now.astimezone().date(), ledger), now=now)
 
     held_in_ledger: dict[str, Decimal] = {}
     for entry in books.load_entries(ledger):
@@ -69,12 +69,36 @@ def test_the_demos_connected_banks_carry_the_history_and_balance_the_ledger_hold
     assert set(fed) == {"Assets:Avery:Checking", "Liabilities:Avery:Card", "Assets:Blake:Checking"}
     for ledger_account, (held, balance) in fed.items():
         assert held.earliest is not None
-        assert held.earliest <= now.date() - timedelta(days=demo.HISTORY_DAYS - 7)
+        assert held.earliest <= now.astimezone().date() - timedelta(days=demo.HISTORY_DAYS - 7)
         assert balance is not None
         owed = ledger_account.startswith("Liabilities:")
         expected = -held_in_ledger[ledger_account] if owed else held_in_ledger[ledger_account]
         assert balance.current == expected
         assert balance.current != 0
+
+
+@pytest.mark.parametrize("hour", [0, 5, 6, 15, 23])
+def test_the_demos_prices_were_fetched_this_morning_and_never_after_now(
+    tmp_path: Path, hour: int
+) -> None:
+    """Whatever the zone hearth runs in: the net worth page says when its prices were
+    fetched, which must be today where hearth runs, and never a moment still to come."""
+    now = datetime.combine(date(2026, 10, 18), time(hour, 30)).astimezone(UTC)
+    ledger = tmp_path / "household.beancount"
+    settings = Settings.in_directory(tmp_path, ledger=ledger)
+    db.initialise(settings.database)
+    conn = db.connect(settings.database)
+    try:
+        demo.seed(conn, ledger, now=now)
+        fetched = {
+            datetime.fromisoformat(row[0]) for row in conn.execute("SELECT fetched_at FROM price")
+        }
+    finally:
+        conn.close()
+
+    assert fetched
+    assert all(at <= now for at in fetched)
+    assert {at.astimezone().date() for at in fetched} == {date(2026, 10, 18)}
 
 
 def test_the_first_review_demo_is_a_backfill_at_full_size(tmp_path: Path) -> None:
@@ -115,7 +139,7 @@ def pacific_time() -> Iterator[None]:
     """The machine's zone is America/Los_Angeles, as the demo's clocks above assume."""
     before = os.environ.get("TZ")
     os.environ["TZ"] = "America/Los_Angeles"
-    time.tzset()
+    clock_time.tzset()
     try:
         yield
     finally:
@@ -123,7 +147,7 @@ def pacific_time() -> Iterator[None]:
             del os.environ["TZ"]
         else:
             os.environ["TZ"] = before
-        time.tzset()
+        clock_time.tzset()
 
 
 @pytest.mark.usefixtures("pacific_time")
@@ -145,10 +169,10 @@ def test_the_demos_connections_vouch_for_what_they_booked_and_its_stopped_card_s
     finally:
         conn.close()
     feed.initialise(settings.feed_database)
-    demo.connect(settings, demo.plaid(lambda: now.date(), ledger), now=now)
+    demo.connect(settings, demo.plaid(lambda: now.astimezone().date(), ledger), now=now)
 
     found = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))(now)
-    today = min(now.astimezone().date(), now.date())
+    today = now.astimezone().date()
     stopped = now.astimezone().date() - timedelta(days=demo.CARD_EXPIRED_DAYS_AGO)
 
     assert found.synced == {
@@ -190,6 +214,6 @@ def test_the_from_zero_demo_is_a_household_with_members_and_nothing_else(tmp_pat
     assert set(passwords) == {"avery", "blake"}
     assert found.entries == ()
     assert settings.books_file.exists()
-    stand_in = demo.plaid_from_zero(lambda: now.date()).stand_in
+    stand_in = demo.plaid_from_zero(lambda: now.astimezone().date()).stand_in
     assert stand_in is not None
     assert set(stand_in.institutions) == {i.id for i in DEMO_INSTITUTIONS}

@@ -97,7 +97,7 @@ def fetch_activity(
     vault = TokenVault(conn, setup.keys())
     store = CredentialStore(conn, vault)
     fetched_at = clock()
-    today = fetched_at.date()
+    today = fetched_at.astimezone().date()
     asked: list[Asked] = []
     for item in registry.all_items():
         if item.state is not ItemState.WORKING or (only is not None and item.item_id not in only):

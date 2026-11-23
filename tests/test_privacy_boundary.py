@@ -328,7 +328,7 @@ def test_an_adopted_connection_is_its_members_alone(world: World, tmp_path: Path
     else is shown anything of it, and its member is, so the crawl reached it."""
     world.plaid.institutions[ADOPTED.id] = ADOPTED
     item_id, token = world.plaid.made_elsewhere(
-        "client-avery", ADOPTED.id, days=120, linked=household.NOW.date()
+        "client-avery", ADOPTED.id, days=120, linked=household.TODAY
     )
     path = tmp_path / "token"
     path.write_text(token)

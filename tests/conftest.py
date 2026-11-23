@@ -2,7 +2,7 @@ import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -179,9 +179,7 @@ def institutions() -> list[FakeInstitution]:
                     "depository",
                     "checking",
                     Decimal(p.checking_balance.replace(",", "")),
-                    transactions=(
-                        FakeTransaction(p.payee, Decimal("42.00"), household.NOW.date()),
-                    ),
+                    transactions=(FakeTransaction(p.payee, Decimal("42.00"), household.TODAY),),
                 ),
                 FakeAccount(
                     "card",
@@ -264,7 +262,7 @@ def build_world(tmp_path: Path, clock: FakeClock) -> World:
                 rows={review_id: None},
                 says={review_id: says(on, day, Decimal(amount), "USD")},
                 # Said the day it moved, long enough ago that a weekly review is due again.
-                at=datetime.combine(day, time(9), tzinfo=UTC),
+                at=household.noon(day),
             )
         store = PriceStore(conn)
         for symbol, day, price in household.prices():
@@ -274,7 +272,7 @@ def build_world(tmp_path: Path, clock: FakeClock) -> World:
     bookkeeper = books.Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
     bookkeeper.recompute()
     assert bookkeeper.status.failure is None, bookkeeper.status.failure
-    fake = FakePlaid(institutions(), today=lambda: clock().date())
+    fake = FakePlaid(institutions(), today=lambda: clock().astimezone().date())
     keys = MemoryKeyStore()
     waits = Waits()
     setup = PlaidSetup(stand_in=fake, keys=lambda: keys, wait=waits)

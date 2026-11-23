@@ -14,7 +14,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from html import unescape
 from pathlib import Path
@@ -664,7 +664,7 @@ def test_a_card_whose_connection_stopped_no_longer_claims_months_it_does_not_hol
     part look current. Fenwick's card stopped sending after May; the checking account is
     current; spending after May must read as incomplete, which it does only because the import
     names the connection each entry came from."""
-    filed.clock.now = datetime(2026, 6, 2, 12, tzinfo=UTC)
+    filed.clock.now = household.noon(date(2026, 6, 2))
     filed.link("avery", "ins_fenwick")
     filed.map(filed.signed_in("avery"), {"9090": FENWICK})
     until(filed, lambda b: _on(b, FENWICK))

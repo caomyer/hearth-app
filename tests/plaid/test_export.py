@@ -178,7 +178,7 @@ def test_a_brokerage_carries_its_activity_holdings_and_the_price_hearth_kept_eac
     assert brokerage["account_type"] == "investment"
     assert brokerage["transactions"] == []
     assert brokerage["activity_count"] == len(brokerage["activity"]) == 19
-    assert brokerage["activity_through"] == fresh.clock().date().isoformat()
+    assert brokerage["activity_through"] == fresh.clock().astimezone().date().isoformat()
     row = next(a for a in brokerage["activity"] if a["activity_id"] == bought.activity_id)
     assert row["ticker"] == "ZQAA"
     assert [Decimal(row[k]) for k in ("quantity", "price", "amount")] == [
@@ -207,7 +207,7 @@ def test_the_file_carries_each_days_price_for_what_the_member_holds_and_nothing_
     try:
         fetch_activity(conn, fresh.settings.feed_database, fresh.setup, fresh.clock)
         store = PriceStore(conn)
-        today = fresh.clock().date()
+        today = fresh.clock().astimezone().date()
         earlier = today.replace(day=1)
         for symbol, day, price in (
             ("ZQAA", earlier, "1200.00"),

@@ -39,7 +39,7 @@ ELSEWHERE = FakeInstitution(
         FakeAccount("chk", "Cash", "2718", "depository", "checking", Decimal("812.40")),
     ),
 )
-MADE = household.NOW.date() - timedelta(days=200)
+MADE = household.TODAY - timedelta(days=200)
 """When the older tool linked it, asking for 120 days: what it reaches back stops there."""
 
 
@@ -98,7 +98,7 @@ def test_the_first_run_says_what_the_item_offers_and_writes_nothing(
     assert f"Quarry Street Brokerage: Item {item_id}, made at Plaid {MADE:%Y-%m-%d}" in out
     assert "Brokerage (brokerage ending 3141): " in out
     assert "Cash (checking ending 2718): " in out
-    days = (household.NOW.date() - first).days + 1
+    days = (household.TODAY - first).days + 1
     assert f"Earliest transaction: {first:%Y-%m-%d}, {days} days back" in out
     assert "asks for 730" in out
     assert "read from Plaid, not what any tool kept from it" in out
@@ -184,9 +184,9 @@ def test_an_item_reaching_an_account_hearth_reaches_is_refused_saying_which_reac
     twice, and may narrow what hearth knows. The report says which reaches further back."""
     held = world.item_ids["avery"]
     item_id, token = world.plaid.made_elsewhere(
-        "client-avery", "ins_avery", days=730, linked=household.NOW.date()
+        "client-avery", "ins_avery", days=730, linked=household.TODAY
     )
-    old = FakeTransaction("Invented Grocer", Decimal("9.00"), household.NOW.date())
+    old = FakeTransaction("Invented Grocer", Decimal("9.00"), household.TODAY)
     for item, back in ((held, ours), (item_id, theirs)):
         if back:
             world.plaid.change(item, "added", replace(old, day=old.day - timedelta(back)), "chk")
@@ -210,9 +210,9 @@ def test_reaching_further_is_weighed_account_by_account(
     the card further back: keeping either loses some history, and the report says so."""
     held = world.item_ids["avery"]
     item_id, token = world.plaid.made_elsewhere(
-        "client-avery", "ins_avery", days=730, linked=household.NOW.date()
+        "client-avery", "ins_avery", days=730, linked=household.TODAY
     )
-    old = FakeTransaction("Invented Grocer", Decimal("9.00"), household.NOW.date())
+    old = FakeTransaction("Invented Grocer", Decimal("9.00"), household.TODAY)
     for item, account, back in (
         (held, "chk", 300),
         (held, "card", 30),
@@ -227,7 +227,7 @@ def test_reaching_further_is_weighed_account_by_account(
     assert adopt(world, "avery", token_file(tmp_path, token), confirm=item_id) == plaid_cli.REFUSED
 
     out = capsys.readouterr().out
-    day = household.NOW.date()
+    day = household.TODAY
     assert (
         f"This Item reaches further back on Axolotl Rewards ending 6623 (this Item from"
         f" {day - timedelta(200):%Y-%m-%d}, hearth's own from {day - timedelta(30):%Y-%m-%d})"
@@ -269,10 +269,10 @@ def test_an_account_only_one_side_reaches_leaves_the_choice_to_the_member(
         accounts=tuple(a for a in (*bank.accounts, savings) if a.key in outside_has),
     )
     item_id, token = world.plaid.made_elsewhere(
-        "client-avery", "ins_avery", days=730, linked=household.NOW.date()
+        "client-avery", "ins_avery", days=730, linked=household.TODAY
     )
     world.plaid.institutions["ins_avery"] = bank
-    old = FakeTransaction("Invented Grocer", Decimal("9.00"), household.NOW.date())
+    old = FakeTransaction("Invented Grocer", Decimal("9.00"), household.TODAY)
     for item, back in ((held, ours), (item_id, theirs)):
         if back:
             world.plaid.change(item, "added", replace(old, day=old.day - timedelta(back)), "chk")
@@ -296,7 +296,7 @@ def test_another_members_account_is_refused_without_saying_whose_or_what_it_hold
     """Blake holds a token reaching an account avery's connection reaches: refused, and told
     only that hearth reaches it, never through which connection nor since when."""
     _, token = world.plaid.made_elsewhere(
-        "client-blake", "ins_avery", days=120, linked=household.NOW.date()
+        "client-blake", "ins_avery", days=120, linked=household.TODAY
     )
     before = state(world)
 

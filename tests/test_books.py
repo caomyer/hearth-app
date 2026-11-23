@@ -16,6 +16,7 @@ from hearth import books
 from hearth.books import Bookkeeper, Books
 from hearth.months import Month
 from hearth.valuation.networth import NetWorth
+from tests import household
 from tests.conftest import FakeClock
 
 LEDGER = """
@@ -75,7 +76,7 @@ def _computed(on: datetime) -> books.Books:
 
 
 def test_figures_are_as_of_today_however_early_the_ledger_stops() -> None:
-    computed = _computed(datetime(2026, 3, 1, 9, tzinfo=UTC))
+    computed = _computed(household.noon(date(2026, 3, 1)))
 
     assert computed.as_of == date(2026, 3, 1)
     assert computed.month_ends[-1].as_of == date(2026, 2, 28)
@@ -151,7 +152,7 @@ def test_each_account_ends_on_its_own_last_day() -> None:
 
 
 def test_data_a_few_days_short_is_not_called_behind() -> None:
-    computed = _computed(datetime(2026, 1, 12, 9, tzinfo=UTC))
+    computed = _computed(household.noon(date(2026, 1, 12)))
 
     assert not computed.behind(date(2026, 1, 5))
     assert computed.behind(date(2026, 1, 4))

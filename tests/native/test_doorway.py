@@ -7,7 +7,7 @@ signed in to the bridge.
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -39,7 +39,7 @@ def test_the_overview_is_the_households_net_worth_to_the_cent(world: World) -> N
 
     assert answer["state"] == "ready"
     assert answer["currency"] == "USD"
-    assert answer["as_of"] == household.NOW.date().isoformat()
+    assert answer["as_of"] == household.TODAY.isoformat()
     assert answer["connected"] is True
     worth = answer["net_worth"]
     assert isinstance(worth, dict)
@@ -109,10 +109,13 @@ def test_a_failed_first_recompute_says_so_in_one_sentence(world: World) -> None:
 
 
 def test_moments_are_utc_to_the_second_in_one_shape(world: World) -> None:
+    kolkata = timezone(timedelta(hours=5, minutes=30))
+    world.clock.now = datetime(2026, 10, 15, 17, 30, 7, 250_000, tzinfo=kolkata)
+    world.recompute()
+
     answer = doorway(world, "avery").answer("overview")
 
-    assert answer["computed_at"] == "2026-10-15T12:00:00Z"
-    assert datetime(2026, 10, 15, 12, 0, tzinfo=UTC) == household.NOW
+    assert answer["computed_at"] == "2026-10-15T12:00:07Z"
 
 
 def test_the_overview_has_the_shape_the_app_decodes(world: World) -> None:

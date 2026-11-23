@@ -13,12 +13,23 @@ of against itself.
 import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 
 from hearth.sharing import Facet
 
-NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
+
+def noon(day: date) -> datetime:
+    """Midday of `day` where hearth runs, as the system clock reports it (in UTC).
+
+    Every figure takes "today" as the local calendar day of its clock (``books.compute``), so
+    a test that means "the clock reads `day`" means this moment, in whatever zone it runs.
+    """
+    return datetime.combine(day, time(12)).astimezone(UTC)
+
+
+TODAY = date(2026, 10, 15)
+NOW = noon(TODAY)
 USERNAMES = ("avery", "blake", "casey")
 ADMIN = "avery"
 OPENED = date(2026, 8, 1)

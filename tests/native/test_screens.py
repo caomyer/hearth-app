@@ -131,7 +131,7 @@ def test_a_balance_hearth_keeps_from_a_bank_matches_what_the_bank_reported(
     checking = accounts["Everyday checking"]
     assert checking["standing"] == "matches"
     assert checking["balance"]["value"] == "3250.40"
-    assert checking["checked"] == household.NOW.date().isoformat()
+    assert checking["checked"] == household.TODAY.isoformat()
     assert checking["institution"] == "Larkspur Savings Bank"
     assert checking["behind"] is False
     assert accounts["Rewards card"]["balance"]["value"] == "-612.15"
@@ -184,7 +184,7 @@ def test_the_journal_is_this_year_so_far_newest_first(world: World) -> None:
     answer = ask(world, "avery", "transactions")
 
     assert answer["from"] == "2026-01-01"
-    assert answer["to"] == household.NOW.date().isoformat()
+    assert answer["to"] == household.TODAY.isoformat()
     days = [e["date"] for e in answer["entries"]]
     assert days == sorted(days, reverse=True)
     # Avery's own and the joint account's rows, and the move into the joint savings.

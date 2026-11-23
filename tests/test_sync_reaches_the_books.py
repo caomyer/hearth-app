@@ -59,7 +59,10 @@ def post(fresh: FirstDay, payee: str = PAYEE, amount: str = "18.40") -> None:
     """The bank posts a new row on checking, and reports the balance it leaves."""
     (item_id,) = fresh.plaid.items()
     fresh.plaid.change(
-        item_id, "added", FakeTransaction(payee, Decimal(amount), fresh.clock().date()), "chk"
+        item_id,
+        "added",
+        FakeTransaction(payee, Decimal(amount), fresh.clock().astimezone().date()),
+        "chk",
     )
     fresh.plaid.report(item_id, "chk", Decimal("4130") - Decimal(amount))
 
@@ -150,7 +153,10 @@ def test_the_books_are_said_to_hold_only_what_the_connections_that_synced_fetche
         conn.close()
     (synced,) = [item for item in fresh.plaid.items() if item != unopenable]
     fresh.plaid.change(
-        synced, "added", FakeTransaction(PAYEE, Decimal("18.40"), clock().date()), "chk"
+        synced,
+        "added",
+        FakeTransaction(PAYEE, Decimal("18.40"), clock().astimezone().date()),
+        "chk",
     )
     fresh.plaid.report(synced, "chk", Decimal("4111.60"))
 
@@ -304,7 +310,10 @@ def test_the_serving_hearth_labels_its_previous_books_when_a_sync_by_hand_cannot
 def post_to_fernhill(fresh: FirstDay) -> None:
     (item_id,) = fresh.plaid.items()
     fresh.plaid.change(
-        item_id, "added", FakeTransaction(PAYEE, Decimal("18.40"), fresh.clock().date()), "chk"
+        item_id,
+        "added",
+        FakeTransaction(PAYEE, Decimal("18.40"), fresh.clock().astimezone().date()),
+        "chk",
     )
     fresh.plaid.report(item_id, "chk", Decimal("2481.60"))
 

@@ -8,7 +8,7 @@ stopped is the day that member's data stops, which nobody who may not see their 
 may learn, from any page, on any day. A connection that has booked nothing vouches for nothing.
 """
 
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from itertools import product
 
 import pytest
@@ -19,6 +19,7 @@ from hearth.months import Month
 from hearth.plaid.connector import NEW, Mapping
 from hearth.plaid.registry import ItemState, Registry
 from hearth.sharing import Facet
+from tests import household
 from tests.conftest import World
 from tests.plaid.linking import add_dana, form, save_keys, stand_in_tokens
 from tests.test_disclosure import disclosure_for, household_for
@@ -52,7 +53,7 @@ def _last_synced(world: World, username: str, day: date, *, expired: bool) -> No
     try:
         registry = Registry(conn)
         item_id = world.item_ids[username]
-        registry.synced(item_id, at=datetime.combine(day, time(12), UTC), history=None)
+        registry.synced(item_id, at=household.noon(day), history=None)
         if expired:
             registry.set_state(item_id, ItemState.LOGIN_REQUIRED, problem="ITEM_LOGIN_REQUIRED")
     finally:
@@ -104,7 +105,7 @@ def _everyone_else_current(world: World) -> None:
 
 
 def _today(world: World, day: date) -> None:
-    world.clock.now = datetime.combine(day, world.clock.now.timetz())
+    world.clock.now = household.noon(day)
 
 
 def _covered(world: World, username: str) -> list[tuple[int, bool]]:

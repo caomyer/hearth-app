@@ -87,7 +87,7 @@ def test_the_first_ask_reaches_back_two_years_and_keeps_every_activity(
 
     fetched = _ask(world)
 
-    today = world.clock().date()
+    today = world.clock().astimezone().date()
     (asked,) = fetched.asked
     assert (asked.start, asked.end, asked.activity, asked.problem) == (
         today - timedelta(days=HISTORY_DAYS),
@@ -116,7 +116,7 @@ def test_a_later_ask_starts_a_month_before_the_last_and_keeps_each_activity_once
 
     (asked,) = _ask(world).asked
 
-    assert asked.start == world.clock().date() - timedelta(days=REFRESH_DAYS)
+    assert asked.start == world.clock().astimezone().date() - timedelta(days=REFRESH_DAYS)
     with Feed.open(world.settings.feed_database) as feed:
         assert len(feed.activity(_account(world, item_id))) == EVERY
 
