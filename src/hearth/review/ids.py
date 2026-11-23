@@ -48,6 +48,14 @@ def plaid_review_id(transaction_id: str) -> str:
     return hashlib.sha256("\x1f".join(content).encode()).hexdigest()[:ID_LENGTH]
 
 
+def reconciling_review_id(account: str, cut_over: date) -> str:
+    """The review id of the entry that reconciles `account`, carried on from the base from
+    `cut_over`, with its bank (``hearth.plaid.opening.Carrying``): one per account and day, so
+    the entry derived afresh on every recompute is always the same row, whatever it says."""
+    content = ("reconciling", account, cut_over.isoformat())
+    return hashlib.sha256("\x1f".join(content).encode()).hexdigest()[:ID_LENGTH]
+
+
 def says(account: str, day: date, amount: Decimal, currency: str) -> str:
     """What a row says, as a ruling is bound to it: which account, which day, how much.
 

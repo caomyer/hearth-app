@@ -27,9 +27,10 @@ from typing import Any
 from beancount.core.data import Balance, Directive, Document, Open, Price
 from beancount.parser import _parser, grammar, printer  # type: ignore[attr-defined]
 
-from hearth import base, books, db
+from hearth import base, books, carrying, db
 from hearth.base import Base, BaseError, Imported
 from hearth.config import LEDGER_VARIABLE, Settings
+from hearth.plaid import booking, feed
 from hearth.reports.balances import check_balance_assertions
 from hearth.reports.common import is_balance_sheet
 from hearth.review.rulings import RulingStore
@@ -78,6 +79,8 @@ class Outcome:
     """The base named before, which a new one replaced; it stays in its own folder."""
     unchanged: bool = False
     """The ledger was the base already, byte for byte: nothing was written."""
+    carried: tuple[Carried, ...] = ()
+    """Each matched account hearth carries on from the base, and what that meets."""
 
 
 def import_ledger(settings: Settings, source: Path, *, now: datetime) -> Outcome:
@@ -112,6 +115,8 @@ def import_ledger(settings: Settings, source: Path, *, now: datetime) -> Outcome
             f" replaced: {since} review ruling{'s have' if since > 1 else ' has'} been made"
             " since, and rulings rest on the ledger as it was imported."
         )
+    if before is not None:
+        _not_carried_on(settings, before, now.astimezone().date())
 
     original = _load(source)
     _assertions_pass(original.entries)
@@ -126,7 +131,9 @@ def import_ledger(settings: Settings, source: Path, *, now: datetime) -> Outcome
     if before is not None and before.base.digest == base.digest(root, contents):
         copy = _load(before.base)
         check = _check(copy, before.base, _noted(before.base), today, now)
-        return Outcome(before, check, unchanged=True)
+        return Outcome(
+            before, check, unchanged=True, carried=_carried(settings, copy.entries, today)
+        )
 
     with base.staged(settings.ledger_base, root, contents) as staged:
         noted = _noted(staged)
@@ -141,7 +148,67 @@ def import_ledger(settings: Settings, source: Path, *, now: datetime) -> Outcome
         imported = base.commit(
             settings.ledger_base, staged, source=source, now=now, rulings_through=newest
         )
-    return Outcome(imported, check, replaced=before)
+    return Outcome(
+        imported, check, replaced=before, carried=_carried(settings, copy.entries, today)
+    )
+
+
+def _not_carried_on(settings: Settings, before: Imported, today: date) -> None:
+    """Refuse to replace a base hearth carries an account on from once carrying has begun
+    (``books.begun``): a ruling on a row carried on from its cut-over rests on
+    the base as it is, and another base would move the cut-over under them."""
+    if not settings.database.exists():
+        return
+    try:
+        begun = books.begun_in(settings, today)
+    except books.LedgerError as error:
+        raise ImportRefused(
+            f"Hearth cannot tell whether it carries an account on from the ledger imported on"
+            f" {_day(before.imported_at.astimezone().date())}, so it is not replaced:"
+            f" {error.summary}"
+        ) from error
+    if begun:
+        accounts = ", ".join(sorted(begun))
+        raise ImportRefused(
+            f"The ledger imported on {_day(before.imported_at.astimezone().date())} is not"
+            f" replaced: hearth carries {accounts} on from it, and a decision has been made in"
+            " Review on transactions carried on there. Those rest on the ledger as it was"
+            " imported, and another one would move where they begin."
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Carried:
+    """An account the household matched to a connection that hearth carries on from the
+    base just imported: from which day, and how many of the bank's transactions before then
+    the base does not hold, which hearth never brings in (``hearth.carrying``)."""
+
+    account: str
+    cut_over: date
+    before: int
+    postponed: bool = False
+    """Its cut-over is after today, so it is not carried on yet (``carrying.postponed``)."""
+
+
+def _carried(
+    settings: Settings, entries: tuple[Directive, ...], today: date
+) -> tuple[Carried, ...]:
+    """What carrying each matched account on from `entries`, the base being imported, meets."""
+    if not settings.database.exists() or not settings.feed_database.exists():
+        return ()
+    held = carrying.read(entries)
+    conn = db.connect(settings.database)
+    try:
+        with feed.Feed.open(settings.feed_database) as fed:
+            plans = booking.carried_plans(conn, fed, held, today)
+            later = carrying.postponed(held, booking.feeding(conn, held.opened), today)
+    except booking.Refused:
+        return ()
+    finally:
+        conn.close()
+    found = [Carried(account, plan.cut_over, len(plan.before)) for account, plan in plans.items()]
+    found += [Carried(account, day, 0, postponed=True) for account, day in later.items()]
+    return tuple(sorted(found, key=lambda c: c.account))
 
 
 def _newest_ruling(settings: Settings) -> int:
@@ -369,6 +436,21 @@ def describe(outcome: Outcome) -> list[str]:
     ]
     if check.runs:
         lines.append(f"  Beancount's own plugins it runs: {', '.join(check.runs)}")
+    for carried in outcome.carried:
+        if carried.postponed:
+            lines.append(
+                f"  Not carried on yet: {carried.account}, which the ledger has an entry or a"
+                " balance assertion on dated after today; carrying it on would begin on"
+                f" {_day(carried.cut_over)}"
+            )
+            continue
+        missing = (
+            f"{carried.before} of the bank's transactions before then"
+            f" {'is' if carried.before == 1 else 'are'} not in it and never brought in"
+            if carried.before
+            else "every one of the bank's transactions before then is in it"
+        )
+        lines.append(f"  Carried on from {_day(carried.cut_over)}: {carried.account}; {missing}")
     if check.unused:
         count = len(check.unused)
         lines.append(f"Kept but not used, {count} line{'s' if count != 1 else ''}:")

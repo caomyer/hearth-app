@@ -279,6 +279,20 @@ MIGRATIONS: tuple[str, ...] = (
         named_at TEXT NOT NULL
     ) STRICT;
     """,
+    """
+    -- An account hearth kept itself whose rows the imported ledger also held, moved onto the
+    -- ledger's account so hearth carries the one bank account on from the ledger instead of
+    -- counting it twice (hearth.matching). Rulings are bound to what a row said, account and
+    -- all, so a ruling made on the row as it was booked on `before` still decides it on `after`.
+    -- A name may be moved more than once, as when a newly filed account takes a name already
+    -- moved, so each move is its own row.
+    CREATE TABLE carried_over (
+        id INTEGER PRIMARY KEY,
+        before TEXT NOT NULL,
+        after TEXT NOT NULL,
+        at TEXT NOT NULL
+    ) STRICT;
+    """,
 )
 
 

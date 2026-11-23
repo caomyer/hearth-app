@@ -491,7 +491,7 @@ def _match_accounts(confirmations: list[str]) -> None:
         if wanted:
             found = matching.confirm(settings, wanted, now=system_clock())
         else:
-            found = matching.survey(settings)
+            found = matching.survey(settings, system_clock().astimezone().date())
     except matching.MatchRefused as refused:
         sys.exit(f"hearth: {refused} Nothing was matched." if wanted else f"hearth: {refused}")
     for line in matching.describe(found):
@@ -543,15 +543,21 @@ def _compare(ledger: Path, cycles: Path | None, *, monthly: bool, accounts: list
     with tempfile.TemporaryDirectory(prefix="hearth-compare-") as directory:
         snapshot = _snapshot(data_dir, Path(directory))
         try:
-            household = books.household_entries(snapshot)
+            now = system_clock()
+            # The snapshot holds the databases alone, never the base, so nothing in it is
+            # carried on; what carrying would say is passed all the same.
+            household = books.household_entries(snapshot, now.astimezone().date())
             conn = db.connect(snapshot.database)
             try:
                 ours = books.compute(
                     household.entries,
                     lambda symbol, day: None,
-                    now=system_clock(),
+                    now=now,
                     decide=rulings_in(conn),
                     unknown=household.unknown,
+                    carried=household.carried,
+                    unproved=household.unproved,
+                    held_back=household.held_back,
                 )
             finally:
                 conn.close()

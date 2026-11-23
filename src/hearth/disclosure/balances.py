@@ -102,6 +102,10 @@ class AccountStanding:
     attention: bool
     """Whether the viewer's own connection that feeds it has to be signed in to again."""
     unseen_kind: str | None = None
+    reconciling: bool = False
+    """Whether its bank's balance agrees with the books only by an entry reconciling the
+    imported ledger with the bank that nobody has confirmed yet (``books.reconciling``): its
+    balance is then not shown as matching its bank. Told with its balance."""
     """What kind of account its owner said one hearth does not see is, in their words."""
 
 
@@ -184,7 +188,7 @@ def standing(
         part=h.part_ref(next(p for p in h.parts if p.owners == account.owners)),
         kind=row.kind if row else WITHHELD,
         balance=row.value if row else WITHHELD,
-        standing=_standing(row, unseen, check, failure),
+        standing=_standing(row, unseen, check, failure, ledger in books.reconciling),
         why=why.value if why is not None and row is not None and not row.value.is_known else None,
         checked=((check.date - timedelta(days=1) if check else None) if transactions else WITHHELD),
         failed=failure,
@@ -203,11 +207,16 @@ def standing(
         mask=account.named.mask if unseen and account.named else None,
         attention=feeding is not None and feeding.state is State.EXPIRED,
         unseen_kind=account.named.kind.label if unseen and account.named else None,
+        reconciling=row is not None and ledger in books.reconciling,
     )
 
 
 def _standing(
-    row: AccountRow | None, unseen: bool, check: Balance | None, failure: Failed | None
+    row: AccountRow | None,
+    unseen: bool,
+    check: Balance | None,
+    failure: Failed | None,
+    reconciling: bool = False,
 ) -> Standing:
     if unseen:
         return Standing.UNSEEN
@@ -223,6 +232,9 @@ def _standing(
         return Standing.UNCHECKED
     if held(check):
         return Standing.HOLDINGS
+    if anchors(check) and reconciling:
+        # Not proved by its bank until someone confirms what the ledger and the bank differ by.
+        return Standing.UNCHECKED
     return Standing.MATCHES if anchors(check) else Standing.CHECKED
 
 

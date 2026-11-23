@@ -190,6 +190,13 @@ class AccountView:
     priced: date | None = None
     """For a brokerage account whose balance the viewer may see, the day of the newest price
     its holdings are valued at."""
+    unseen_between: Disclosed[tuple[date, date] | None] = None
+    """For a carried account, the days from its cut-over that neither the imported ledger nor
+    its bank's history holds (``books.unseen_between``), which go with its transactions."""
+    held_back: Disclosed[tuple[date, date] | None] = None
+    """For a matched account not carried on yet, the last day its imported ledger knows of it
+    today and the day ahead its ledger holds an entry on (``books.held_back``), which go with
+    its transactions."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,6 +309,16 @@ class Disclosure:
             owners=tuple(h.ref(m) for m in h.members if m.id in account.owners),
             spans=self._gate.disclose(
                 Facet.TRANSACTIONS, account.owners, lambda: coverage.spans if coverage else ()
+            ),
+            unseen_between=self._gate.disclose(
+                Facet.TRANSACTIONS,
+                account.owners,
+                lambda: h.books.unseen_between.get(account.ledger_account),
+            ),
+            held_back=self._gate.disclose(
+                Facet.TRANSACTIONS,
+                account.owners,
+                lambda: h.books.held_back.get(account.ledger_account),
             ),
             kind=row.kind if isinstance(row, AccountRow) else WITHHELD,
             balance=row.value if isinstance(row, AccountRow) else WITHHELD,
@@ -514,9 +531,13 @@ class Disclosure:
             },
             may_move_to=self._gate.may_feed,
             banks={e.account for e in entries if isinstance(e, Balance) and anchors(e)}
-            | {a for a, why in (books.unknown if books else {}).items() if why in PASSING},
+            | {a for a, why in (books.unknown if books else {}).items() if why in PASSING}
+            # A carried account's balance is its bank's, as soon as its bank reports one.
+            | set(books.carried if books else ())
+            | set(books.held_back if books else ()),
             clock=clock,
             moves=moved,
+            carried=books.carried if books else (),
         )
 
     def connector(
@@ -554,8 +575,11 @@ class Disclosure:
             setup=setup,
             clock=clock,
             runner=runner,
-            inherited=ledger - own,
+            inherited=ledger - own - set(books.carried if books else ()),
             unbalanced=books.unanchored if books else (),
+            carried=books.carried.keys() if books else (),
+            carried_rows=_carried_rows(books),
+            moved_into=_moved_into(books),
         )
 
     def namer(self, conn: sqlite3.Connection) -> Namer:
@@ -646,6 +670,36 @@ def review_decisions(
     from hearth.review.desk import resolve
 
     return resolve(pile, accounts, rulings, may_review)
+
+
+def _carried_rows(books: Books | None) -> dict[str, frozenset[str]]:
+    """Each carried account with the review ids of its review rows, its reconciling entry's
+    among them: what a ruling fixing its match would be made on (``books.begun``)."""
+    if books is None:
+        return {}
+    found: dict[str, set[str]] = {account: set() for account in books.carried}
+    for item in books.pile:
+        if item.account in found:
+            found[item.account].add(item.review_id)
+    return {account: frozenset(ids) for account, ids in found.items()}
+
+
+def _moved_into(books: Books | None) -> frozenset[str]:
+    """Every balance-sheet account a reviewed row is booked onto now, other than its own:
+    no connection is filed into one, as it would hold the row beside its bank's own."""
+    if books is None:
+        return frozenset()
+    from beancount.core.data import Transaction
+
+    from hearth.reports.common import is_balance_sheet
+
+    return frozenset(
+        p.account
+        for e in ownbooks.own(books.entries)
+        if isinstance(e, Transaction) and e.flag == "*" and "review-id" in (e.meta or {})
+        for p in e.postings[1:]
+        if is_balance_sheet(p.account)
+    )
 
 
 def rulings_in(conn: sqlite3.Connection) -> Decide:

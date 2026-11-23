@@ -50,11 +50,12 @@ from beancount.parser import printer
 
 from hearth.accounts import Account, all_accounts
 from hearth.base import Base
+from hearth.carrying import Carry, Held
 from hearth.plaid import booking, opening
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
 from hearth.reports.common import is_balance_sheet
-from hearth.review.pile import WAITING
+from hearth.review.pile import LEDGER_BANK, WAITING
 from hearth.review.rulings import RulingStore
 
 _log = logging.getLogger(__name__)
@@ -89,6 +90,14 @@ class Derived:
     unfed: frozenset[str] = frozenset()
     """Accounts the household claimed that neither the inherited ledger nor hearth opens: no
     connection feeds them and nobody named them, so hearth is never told what they hold."""
+    carried: Mapping[str, Carry] = field(default_factory=dict)
+    """Each account of the base hearth carries on, and what carrying made of its bank's rows
+    (``hearth.carrying``)."""
+    unproved: Mapping[str, opening.Unknown] = field(default_factory=dict)
+    """Each carried account whose bank's balance cannot prove it yet, with why."""
+    postponed: Mapping[str, date] = field(default_factory=dict)
+    """Each account of the base matched to a connection whose cut-over has not come yet,
+    with it (``carrying.postponed``)."""
 
 
 def derive(
@@ -98,6 +107,8 @@ def derive(
     opened: Collection[str] = (),
     declared: Collection[str] = (),
     since: date | None = None,
+    base: Held | None = None,
+    today: date | None = None,
 ) -> Derived:
     """Hearth's own entries: an `open` for each ledger account a confirmed mapping feeds,
     every transaction the import books for them (``hearth.plaid.booking``), and each one's
@@ -109,7 +120,13 @@ def derive(
     transaction Plaid sent for it if that is earlier, or on its opening balance if that is
     earlier still, so every entry it could ever hold is on or after the day it opens. A ledger
     account fed by more than one connection opens at the earliest of them. Accounts in
-    `opened`, which an inherited ledger opens already, are left to it, with their transactions.
+    `opened`, which an inherited ledger opens already, are left to it, with their transactions,
+    except each account of `base`, the imported base as carrying reads it, that hearth carries
+    on (``hearth.carrying``) by `today`, the household's own day: the base opens it and holds
+    its history up to its cut-over, and hearth books the rows from then on that the base does
+    not hold, with no opening and with the balance its bank reports asserted, and reconciled
+    where the two disagree
+    (``opening.Carrying``).
 
     Every other account an entry names, and every category a member has reviewed a row as,
     opens on the first of those days, or on `since`, the inherited ledger's first day, when
@@ -135,14 +152,23 @@ def derive(
         known = found.get(start.account)
         if known is None or start.day < known.day:
             found[start.account] = start
-    booked = booking.book(conn, feed, opened=opened)
+    if base is not None and today is None:
+        raise ValueError("carrying on from a base needs the household's own day")
+    booked = booking.book(conn, feed, opened=opened, base=base, today=today or date.max)
     openings = opening.derive(registry, feed, booked)
+    proved = opening.carried(registry, feed, booked)
     for anchor in openings.anchors:
         if anchor.day < found[anchor.account].day:
             found[anchor.account] = replace(found[anchor.account], day=anchor.day)
     first = min((o.day for o in found.values()), default=since)
+    if booked.carried and since is not None and (first is None or since < first):
+        # A carried account's rows are dated from its cut-over, whatever day hearth's own
+        # accounts open, so what they name opens from the base's first day.
+        first = since
     unseen = _unseen(conn, named.values(), booked, set(opened) | found.keys(), first, since)
     equity = {opening.EQUITY} if openings.anchors else set()
+    if any(proof.difference for proof in proved.proofs):
+        equity.add(LEDGER_BANK)
     extra = (booked.accounts | equity | _ruled(conn)) - set(opened) - found.keys() - unseen.keys()
     ordered = sorted(found.values(), key=lambda o: (o.day, o.account))
     entries: list[Directive] = [o.entry(0) for o in ordered]
@@ -152,11 +178,21 @@ def derive(
         entries += [Open(new_metadata(ORIGIN, 0), first, a, [], None) for a in sorted(extra)]
     entries += _securities(openings, declared)
     entries += [entry for anchor in openings.anchors for entry in anchor.entries()]
+    entries += [entry for proof in proved.proofs for entry in proof.entries()]
     entries += booked.entries
     filed = [_filed(entry, lineno) for lineno, entry in enumerate(entries, start=1)]
     held = set(opened) | {e.account for e in entries if isinstance(e, Open)}
     unfed = frozenset(a.ledger_account for a in named.values() if a.ledger_account not in held)
-    return Derived(filed, openings.unknown, openings.invested, unfed)
+    carried = {account: kept.carry for account, kept in booked.carried.items()}
+    return Derived(
+        filed,
+        openings.unknown,
+        openings.invested,
+        unfed,
+        carried,
+        dict(proved.unknown),
+        dict(booked.postponed),
+    )
 
 
 def _securities(openings: opening.Openings, declared: Collection[str]) -> list[Commodity]:
@@ -320,7 +356,11 @@ def render(entries: Sequence[Directive], *, inherits: Path | Base | None) -> str
             "\n; balance its bank reported less every transaction it sent, and that balance, which"
             "\n; beancount checks the transactions add up to. A brokerage account holds what its"
             '\n; brokerage said it held on the day it said it (balance: "holdings"), and nothing'
-            "\n; says what it held before: no trades are brought in.\n"
+            "\n; says what it held before: no trades are brought in. An account carried on from"
+            "\n; the imported ledger has no opening, as the ledger says what it held; its bank's"
+            "\n; balance is checked against the ledger and the transactions since, and where they"
+            '\n; disagree, one entry marked ! (balance: "difference") says by how much, on the'
+            "\n; day carrying it on begins, until a member confirms it in Review.\n"
         )
         parts.extend(f"\n{printer.format_entry(entry)}" for entry in anchors)
     if booked:

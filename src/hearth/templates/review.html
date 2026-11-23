@@ -8,7 +8,7 @@
 <input type="hidden" name="focus" value="{{ next_id }}">
 {% endmacro %}
 {% macro row_day(d) %}{{ d | day if d.year == today.year else d | year_day }}{% endmacro %}
-{% macro reason(row) %}{% set band = confidence(row) %}<span class="second">{{ band.value }}{% if not where.filter.group %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}</span>{% endmacro %}
+{% macro reason(row) %}{% if row.item.reconciling %}<span class="second">Confirm it once you know why they differ, or put the cause right, such as a transaction the ledger or the bank is missing, and it shrinks or goes at the next update.</span>{% else %}{% set band = confidence(row) %}<span class="second">{{ band.value }}{% if not where.filter.group %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}</span>{% endif %}{% endmacro %}
 {# One row and its decision: the suggestion is already in the box, so Accept keeps it and
    typing another account books that instead. The page sends back what it showed. #}
 {% macro decide_row(row, next_id) %}
@@ -30,7 +30,7 @@
   <td class="act">
     <div class="ract">
       {# Nothing proposed is nothing to accept: the button saves what is typed. #}
-      <button class="btn btn-sm" type="submit" form="f-{{ rid }}" data-accept>{% if row.item.proposed %}Accept{% else %}Save{% endif %}</button>
+      <button class="btn btn-sm" type="submit" form="f-{{ rid }}" data-accept>{% if row.item.reconciling %}Confirm{% elif row.item.proposed %}Accept{% else %}Save{% endif %}</button>
       {# A row its bank counts in the balance it reports cannot be left out, so it offers no Exclude. #}
       {% if not row.bank_counts %}
       <form method="post" action="/review/rows/reject" data-exclude>

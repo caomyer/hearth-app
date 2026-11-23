@@ -37,18 +37,12 @@ from pathlib import Path
 from beancount.core.data import Balance, Directive, Open, Pad, Transaction
 
 from hearth.books import REVIEW_EQUITY, unanchored
+from hearth.carrying import APART, POST_DATE, posted_on
 from hearth.months import Month
 from hearth.plaid import opening
 from hearth.reports.common import is_balance_sheet, root
 
 CURRENCY = "USD"
-
-POST_DATE = "post-date"
-"""Where a ledger built from statements records the day the bank posted a row."""
-
-APART = timedelta(days=7)
-"""How far apart two books may date one row and still be read as the same row: a card's
-charge and its posting, or a payment and its arrival, are a few days apart at most."""
 
 GENERIC = frozenset(
     {
@@ -396,14 +390,6 @@ def _rows(entries: Sequence[Directive], account: str, *, openings: bool = False)
                 entry.date if day != entry.date else None,
                 entry.payee or "",
             )
-
-
-def posted_on(entry: Transaction) -> date:
-    """The day `entry` counts on: the day the bank posted it, where the ledger says."""
-    posted = (entry.meta or {}).get(POST_DATE)
-    if isinstance(posted, str):
-        posted = date.fromisoformat(posted)
-    return posted if isinstance(posted, date) else entry.date
 
 
 def _held(rows: Sequence[Row], day: date) -> Decimal:

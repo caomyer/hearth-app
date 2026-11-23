@@ -21,7 +21,7 @@ This module knows nothing of who may rule, so the books can apply decisions with
 the access policy; ``hearth.review.desk`` and ``hearth.disclosure`` decide whose rulings count.
 """
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -54,14 +54,42 @@ REOPENED = "a decision on it was taken back"
 REVISED = "its bank has changed it since it was reviewed"
 
 
-def decide(item: PileItem, rulings: Iterable[Covered]) -> Decision:
-    """The decision `rulings` (oldest first, all covering the row) make for `item`."""
+KEPT_OFF = "it was moved onto an account whose balance its bank decides now"
+"""Why a row a ruling would move onto a carried account is unreviewed (`guarded`)."""
+
+
+def guarded(item: PileItem, decision: Decision, carried: Collection[str]) -> Decision:
+    """`decision`, unless it would put on an account carried on from the imported base a
+    posting its bank never sent, or take one of its bank's rows away: then the row is
+    unreviewed, at its proposal, and says why.
+
+    A carried account's balance is asserted against exactly the rows its bank sent and its
+    difference with the base, so no ruling may move another row onto it or reject one of its
+    own. Review refuses both as they are asked for; this keeps it so for every ruling on
+    record however it comes to decide, as one superseded that decides again once its bank
+    revises the row, so no recompute fails because of carrying (``docs/books.md``)."""
+    moved = decision.account in carried and decision.account != item.account
+    if decision.state is State.REVIEWED and moved:
+        return Decision(State.UNREVIEWED, None, decision.ruling, KEPT_OFF)
+    if decision.state is State.REJECTED and item.account in carried:
+        return Decision(State.UNREVIEWED, None, decision.ruling, KEPT_OFF)
+    return decision
+
+
+def decide(item: PileItem, rulings: Iterable[Covered], formerly: Iterable[str] = ()) -> Decision:
+    """The decision `rulings` (oldest first, all covering the row) make for `item`.
+
+    `formerly` are the accounts the row's account was called before hearth carried it on from
+    the base (``RulingStore.formerly``): a ruling made on the row as it was booked there is
+    bound to the same row of the same bank account, so it holds as long as nothing else it
+    said has changed."""
+    said = item.said(formerly)
     latest: dict[Scope, Covered] = {}
     for covered in rulings:
         latest[covered.ruling.scope] = covered
     row, group = latest.get(Scope.ROW), latest.get(Scope.GROUP)
     if row is not None:
-        decision = _apply(item, row)
+        decision = _apply(item, row, said)
         if (
             decision.state is not State.UNREVIEWED
             or group is None
@@ -70,14 +98,14 @@ def decide(item: PileItem, rulings: Iterable[Covered]) -> Decision:
             return decision
     if group is None:
         return UNRULED
-    return _apply(item, group)
+    return _apply(item, group, said)
 
 
-def _apply(item: PileItem, covered: Covered) -> Decision:
+def _apply(item: PileItem, covered: Covered, said: frozenset[str]) -> Decision:
     ruling, accepted = covered.ruling, covered.accepted
     if ruling.action is Action.REOPEN:
         return Decision(State.UNREVIEWED, None, ruling, REOPENED)
-    if covered.says is not None and covered.says != item.says:
+    if covered.says is not None and covered.says not in said:
         return Decision(State.UNREVIEWED, None, ruling, REVISED)
     if ruling.action is Action.REJECT:
         return Decision(State.REJECTED, None, ruling, None)

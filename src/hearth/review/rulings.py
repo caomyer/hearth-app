@@ -219,6 +219,42 @@ class RulingStore:
             found.setdefault(row["account"], set()).add(row["review_id"])
         return found
 
+    def formerly(self) -> dict[str, tuple[str, ...]]:
+        """Each ledger account a connected account was moved onto when hearth began carrying
+        it on from the base, with every account its rows were booked on before
+        (``hearth.matching``, `carry_over`): a ruling made on one of them is bound to what the
+        row said there, and still decides the same row of the same bank account."""
+        rows = self._db.execute("SELECT before, after FROM carried_over ORDER BY id")
+        direct: dict[str, set[str]] = {}
+        for row in rows:
+            direct.setdefault(row["after"], set()).add(row["before"])
+        # A name moved onto one that was itself moved before: a ruling made under either still
+        # names its own rows, each one transaction by its review id, so every name a row was
+        # booked under before counts, however long the chain.
+        found: dict[str, tuple[str, ...]] = {}
+        for after in direct:
+            seen: set[str] = set()
+            waiting = list(direct[after])
+            while waiting:
+                name = waiting.pop()
+                if name in seen or name == after:
+                    continue
+                seen.add(name)
+                waiting += direct.get(name, ())
+            found[after] = tuple(sorted(seen))
+        return found
+
+    def carry_over(self, before: str, after: str, *, at: datetime) -> None:
+        """Record that the rows booked on `before` are booked on `after` from now on, the base's
+        account hearth carries the same bank account on as (`formerly`). A name moved before
+        may be moved again, once a newly filed account has taken it: a ruling is bound to its
+        row by review id, one Plaid transaction's, so the rows of two accounts that once shared
+        a name are never confused."""
+        self._db.execute(
+            "INSERT INTO carried_over (before, after, at) VALUES (?, ?, ?)",
+            (before, after, at.isoformat()),
+        )
+
     def newest(self) -> int:
         """The id of the newest ruling anyone has made, of any kind, or 0 if none: ids only
         grow, so a ruling made after this call has a greater one."""

@@ -60,6 +60,7 @@ from hearth.plaid.registry import (
 )
 from hearth.plaid.setup import DAYS_REQUESTED, PlaidSetup
 from hearth.plaid.sync import Failed, Skipped, SyncBusyError, Synced, check_waits, look, sync_item
+from hearth.review.rulings import RulingStore
 from hearth.vault.errors import VaultError
 from hearth.vault.secret import Secret
 from hearth.vault.tokens import TokenVault
@@ -109,6 +110,15 @@ class Refusal(StrEnum):
     CREDENTIALS_IN_USE = "credentials-in-use"
     NOT_UNDERSTOOD = "not-understood"
     TARGET_TAKEN = "target-taken"
+    CARRIED = "carried"
+    """The account is carried on from the imported ledger and a decision has been made in
+    Review on its transactions there, so where it goes is fixed (``books.begun``)."""
+    MOVED_INTO = "moved-into"
+    """Rows were moved into the imported ledger's account in Review, so no connection feeds
+    it: carried on, its balance could never agree with its bank's (``hearth.matching``)."""
+    CARRY_BY_COMMAND = "carry-by-command"
+    """An account hearth keeps itself is moved onto one of the imported ledger's only by
+    ``hearth match-accounts``, which first checks the ledger holds every row it took in."""
     STATEMENT_UNREADABLE = "statement-unreadable"
     WRONG_ADDRESS = "wrong-address"
     """Opened from an address other than the one Plaid brings the member back to, where this
@@ -532,6 +542,9 @@ class Connector:
         runner: Runner,
         inherited: Collection[str] = (),
         unbalanced: Collection[str] = (),
+        carried: Collection[str] = (),
+        carried_rows: dict[str, frozenset[str]] | None = None,
+        moved_into: Collection[str] = (),
     ) -> None:
         self._policy = policy
         self._viewer = policy.viewer
@@ -540,6 +553,13 @@ class Connector:
         self._ledger_accounts = frozenset(ledger_accounts)
         self._inherited = frozenset(inherited)
         self._unbalanced = frozenset(unbalanced)
+        self._carried = frozenset(carried)
+        """Accounts of the imported base hearth carries on (``hearth.carrying``)."""
+        self._carried_rows = {a: frozenset(ids) for a, ids in (carried_rows or {}).items()}
+        """Each carried account's review ids: a ruling on any of them, asked of the rulings
+        as they stand when the form is sent, fixes its match (``books.begun``)."""
+        self._moved_into = frozenset(moved_into)
+        """Accounts a reviewed row is booked onto now, other than its own."""
         self._db = conn
         self._database = database
         self._feed_path = feed_path
@@ -966,6 +986,22 @@ class Connector:
             raise Held(Hold.NEAR, again)
         if any(row.chosen.taken for row in chosen):
             raise Refused(Refusal.TARGET_TAKEN)
+        by_id = {a.id: a.ledger_account for a in self._accounts}
+        base = self._inherited | self._carried
+        rulings = RulingStore(self._db)
+        for row in chosen:
+            linked = self._registry.account(row.account.account_id)
+            current = by_id.get(linked.hearth_account or "") if linked is not None else None
+            chosen_at = row.chosen.ledger_account
+            if chosen_at in base and chosen_at != current and chosen_at in self._moved_into:
+                raise Refused(Refusal.MOVED_INTO)
+            if current is None or current == chosen_at:
+                continue
+            ids = self._carried_rows.get(current, ())
+            if ids and next(iter(rulings.covering(ids)), None) is not None:
+                raise Refused(Refusal.CARRIED)
+            if current not in base and row.chosen.ledger_account in base:
+                raise Refused(Refusal.CARRY_BY_COMMAND)
         owned: list[tuple[ToMap, frozenset[MemberId]]] = []
         for row in chosen:
             owners = row.owners()

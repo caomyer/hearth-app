@@ -24,7 +24,7 @@ import logging
 import os
 import sqlite3
 import threading
-from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -47,8 +47,9 @@ from beancount.ops import validation
 from beancount.parser import booking as beancount_booking
 from beancount.parser import options
 
-from hearth import base, db, ownbooks
+from hearth import base, carrying, db, ownbooks
 from hearth.base import Base, BaseError
+from hearth.carrying import Carry
 from hearth.clock import Clock
 from hearth.config import Settings
 from hearth.connections import Connections, RegisteredConnections, item_of
@@ -58,9 +59,10 @@ from hearth.plaid.opening import Unknown
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.common import is_balance_sheet, root
 from hearth.reports.coverage import AccountCoverage, account_coverage
-from hearth.review.decision import Decision
+from hearth.review.decision import Decision, guarded
 from hearth.review.overlay import reviewed
 from hearth.review.pile import PileItem, read_pile
+from hearth.review.rulings import RulingStore
 from hearth.valuation import institution
 from hearth.valuation.holdings import holdings_at
 from hearth.valuation.networth import NetWorth, PriceLookup, value_holdings
@@ -127,7 +129,8 @@ class Books:
     known here, never the sum of their transactions, never zero."""
     unknown: dict[str, Unknown] = field(default_factory=dict)
     """Accounts hearth opened whose opening balance could not be derived from what their bank
-    reported, with why (``hearth.plaid.opening``). Each is `unanchored`."""
+    reported, and accounts it carries on from the base whose bank's balance cannot prove
+    them, with why (``hearth.plaid.opening``). Each is `unanchored`."""
     unseen: frozenset[str] = frozenset()
     """Accounts the household holds that hearth does not see, whose balance it is never told:
     each a member named (`unseen`), of which only what moved between it and connected
@@ -142,6 +145,26 @@ class Books:
     """Each account that holds what its brokerage reported, with the day it reported it
     (`positioned`). Nothing says what it held on any day before, so no month before that day
     is whole for it (``figures.covers``)."""
+    carried: dict[str, date] = field(default_factory=dict)
+    """Each account of the imported base hearth carries on, with its cut-over: its history
+    before that day is the base's, and hearth books its bank's rows from then on
+    (``hearth.carrying``). Each is an account whose balance its bank reports."""
+    reconciling: frozenset[str] = frozenset()
+    """Carried accounts whose bank's balance agrees with the books only by an entry that
+    reconciles the base with the bank, which nobody has confirmed yet (`reconciling`): wherever
+    such an account's balance would be shown as proved by its bank, it says so instead."""
+    unseen_between: dict[str, tuple[date, date]] = field(default_factory=dict)
+    """Each carried account with the days from its cut-over that neither the base nor its
+    bank's history holds (``carrying.Carry.unseen``), the last capped at the books' own day:
+    no month among them is whole (``figures.covers``)."""
+    held_back: dict[str, tuple[date, date]] = field(default_factory=dict)
+    """Each account of the base matched to a connection that is not carried on yet, as the
+    base holds something on it dated after today: the last day the base knows of it today,
+    after which no month is whole (``figures.covers``), and the latest day the base holds
+    anything on it, which holds it back. Each is its bank's in Review all the same."""
+    begun: frozenset[str] = frozenset()
+    """Carried accounts with a ruling on one of their review rows (`begun`): from then on the
+    match, and the base, are fixed."""
 
     @property
     def balance_unknown(self) -> frozenset[str]:
@@ -323,18 +346,30 @@ def compute(
     unknown: Mapping[str, Unknown] | None = None,
     invested: frozenset[str] = frozenset(),
     unfed: frozenset[str] = frozenset(),
+    carried: Mapping[str, Carry] | None = None,
+    unproved: Mapping[str, Unknown] | None = None,
+    held_back: Mapping[str, tuple[date, date]] | None = None,
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
     recent month end. `synced` is each fed ledger account's connection and its last successful
     sync (`synced_through`); `unknown`, each account whose opening balance could not be
     derived, with why; `invested`, each account a brokerage account feeds; `unfed`, each the
-    household holds that nothing opens.
+    household holds that nothing opens; `carried`, each account of the base hearth carries on;
+    `unproved`, each of those its bank's balance cannot prove yet, with why.
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
     """
+    carried = carried or {}
     pile = tuple(read_pile(e for e in ledger if _set_aside(e)))
-    entries = tuple(reviewed(ledger, decide(pile)))
+    decisions = decide(pile)
+    # No ruling on record may put a posting on a carried account its bank never sent.
+    decided = {
+        item.review_id: guarded(item, decisions[item.review_id], carried)
+        for item in pile
+        if item.review_id in decisions
+    }
+    entries = tuple(reviewed(ledger, decided))
     for check in check_balance_assertions(entries):
         if not check.agrees:
             raise _disagreement(entries, check)
@@ -344,7 +379,8 @@ def compute(
     # nothing of which days the history covers.
     history = tuple(e for e in entries if not opening.anchors(e))
     fed = synced or {}
-    vouches = vouched(history, fed, today)
+    held = {a: c.held_through for a, c in carried.items() if c.held_through is not None}
+    vouches = vouched(history, fed, today, held)
     own = {account: fed[account][0] for account in vouches}
 
     hidden = unseen(entries) | unfed
@@ -370,13 +406,77 @@ def compute(
         # Plaid sends an investment account no transactions at all, so waiting on its
         # history would leave every month's spending incomplete for good.
         awaiting=awaiting(history, today) - invested,
-        unanchored=unanchored(entries),
-        unknown=dict(unknown or {}),
+        # A carried account its bank cannot prove yet is not known, as a connected account in
+        # the same state is: never the base and the rows since, unproved, shown as known.
+        unanchored=unanchored(entries) | set(unproved or {}),
+        unknown={**(unknown or {}), **(unproved or {})},
         unseen=hidden,
         invested=invested,
         positioned=positioned(entries),
         pile=pile,
+        carried={account: c.cut_over for account, c in carried.items()},
+        held_back=dict(held_back or {}),
+        unseen_between={
+            account: (c.unseen[0], min(c.unseen[1], today))
+            for account, c in carried.items()
+            if c.unseen is not None
+        },
+        reconciling=reconciling(entries),
+        begun=begun(ledger, carried, {r for r, d in decided.items() if d.ruling is not None}),
     )
+
+
+def begun_in(settings: Settings, today: date | None = None) -> frozenset[str]:
+    """The carried accounts on which carrying has begun (`begun`), read from the household's
+    entries before any ruling and every ruling recorded, whoever made it, for the commands
+    that must not change what the books rest on (``hearth.matching``, ``hearth.ledger_import``).
+    Raises `LedgerError` when the household's entries cannot be derived, as then nobody can
+    tell."""
+    household = household_entries(settings, today)
+    if not household.carried:
+        return frozenset()
+    try:
+        pile = read_pile(e for e in household.entries if _set_aside(e))
+    except ValueError as error:
+        raise LedgerError("A review row in the books cannot be ruled on.") from error
+    conn = db.connect(settings.database)
+    try:
+        ruled = {c.review_id for c in RulingStore(conn).covering([i.review_id for i in pile])}
+    finally:
+        conn.close()
+    return begun(household.entries, household.carried, ruled)
+
+
+def reconciling(entries: Sequence[Directive]) -> frozenset[str]:
+    """Carried accounts whose reconciling entry (``opening.Carrying``) is still unconfirmed:
+    flagged, as the import wrote it, once the rulings are laid over the books."""
+    return frozenset(
+        p.account
+        for e in entries
+        if isinstance(e, Transaction) and opening.reconciling(e) and e.flag == "!"
+        for p in e.postings
+        if is_balance_sheet(p.account)
+    )
+
+
+def begun(
+    entries: Sequence[Directive], carried: Collection[str], ruled: Collection[str]
+) -> frozenset[str]:
+    """Carried accounts on which carrying has begun: a member has made a ruling on a review row
+    carried on the account, its reconciling entry included. `entries` are the books before any
+    ruling, and `ruled` the review ids some ruling covers.
+
+    A booked row alone does not begin it: every entry hearth books is derived afresh on each
+    recompute, so a wrong match put right before anyone has ruled loses nothing, and its rows
+    move with it. A ruling is what a later change would orphan, so from the first one the
+    match and the base it rests on are fixed (``hearth.matching``, ``hearth.ledger_import``)."""
+    found: set[str] = set()
+    for entry in ownbooks.own(entries):
+        if not isinstance(entry, Transaction):
+            continue
+        if (entry.meta or {}).get("review-id") in ruled:
+            found |= {p.account for p in entry.postings} & set(carried)
+    return frozenset(found)
 
 
 def _disagreement(entries: Sequence[Directive], check: AssertionCheck) -> LedgerError:
@@ -422,36 +522,45 @@ def synced_through(connections: Connections) -> dict[str, tuple[str, date]]:
     return through
 
 
-def frozen_through(base: Sequence[Directive]) -> dict[str, date]:
-    """Each account a frozen base opens, with the last day the base knows of it, by the rule
-    of `account_ends`: its newest transaction, or the day before its newest balance
-    assertion. An account the base opens and holds nothing on knows of no day at all."""
-    ends = account_ends(base, date.max)
-    opened = {e.account for e in base if isinstance(e, Open)}
-    return {account: ends.get(account, date.min) for account in opened}
+def frozen_through(base: carrying.Held, today: date) -> dict[str, date]:
+    """Each account a frozen base opens, with the last day the base knows of it on the
+    household's own day `today`: the day before its cut-over (``carrying.cut_over``), the one
+    definition of where the base's own record of an account stops, or, where the base runs
+    ahead of today, what it holds up to today (``carrying.known_through``)."""
+    return {account: carrying.known_through(base, account, today) for account in base.opened}
 
 
-def vouched_within_base(
-    synced: Mapping[str, tuple[str, date]], frozen: Mapping[str, date]
+def vouched_over_base(
+    synced: Mapping[str, tuple[str, date]],
+    frozen: Mapping[str, date],
+    carried: Collection[str],
 ) -> dict[str, tuple[str, date]]:
-    """`synced` (`synced_through`), with each account a frozen base opens vouched for no
-    further than the base's own last day on it (`frozen_through`), never through a later
-    sync: hearth books nothing into such an account yet, so nothing after the base was frozen
-    is in the books, however current its connection is. A month the base does not reach then
-    reads as incomplete, as it is, rather than as quiet.
+    """`synced` (`synced_through`), with each account a frozen base opens that hearth does
+    not carry on vouched for no further than the base's own last day on it
+    (`frozen_through`), never through a later sync: hearth books nothing into such an account,
+    a brokerage say (``carrying.carries``), so nothing after the base was frozen is in the
+    books, however current its connection is. A month the base does not reach then reads as
+    incomplete, as it is, rather than as quiet.
 
-    This is the rule only until hearth carries a matched account on from the base, when a
-    connection vouches for what hearth books after the cut-over instead. A live ledger
-    inherited at `HEARTH_LEDGER` is not capped: an import outside hearth may still be adding
-    to it."""
+    An account hearth carries on is vouched for through its connection's last successful sync
+    like any it keeps itself, as hearth books every row of it from its cut-over on; the base's
+    entries that hold the bank's own rows count as that connection's (`vouched`). A live
+    ledger inherited at `HEARTH_LEDGER` is not capped: an import outside hearth may still be
+    adding to it."""
     return {
-        account: (item, min(day, frozen[account]) if account in frozen else day)
+        account: (
+            item,
+            min(day, frozen[account]) if account in frozen and account not in carried else day,
+        )
         for account, (item, day) in synced.items()
     }
 
 
 def vouched(
-    entries: Sequence[Directive], synced: Mapping[str, tuple[str, date]], today: date
+    entries: Sequence[Directive],
+    synced: Mapping[str, tuple[str, date]],
+    today: date,
+    held: Mapping[str, date] | None = None,
 ) -> dict[str, date]:
     """Each fed account its connection's last sync vouches for, known through that sync day,
     or `today` if earlier.
@@ -460,8 +569,15 @@ def vouched(
     newest entry on the account booked from the connection (`connections.plaid_source`) must
     be on or before the sync. An account with no such entry is left out, so its connection
     says nothing about it and the ledger alone judges it, as if it had no connection.
+
+    `held` is each carried account with the newest day among its bank's rows that the base
+    holds already (``carrying.Carry.held_through``): the base's entries for them are that
+    connection's data in the books too, so a quiet carried account is vouched for by the
+    connection that sent what the base holds.
     """
-    booked: dict[str, date] = {}
+    booked: dict[str, date] = {
+        account: day for account, day in (held or {}).items() if account in synced
+    }
     for account, entry, source in _account_entries(entries):
         if account in synced and item_of(source) == synced[account][0]:
             booked[account] = max(entry.date, booked.get(account, date.min))
@@ -885,9 +1001,9 @@ def from_household(
         # Each sync is noted before the feed is read, never after: a sync that finishes in
         # between then vouches for rows the books hold, not for rows they do not hold yet.
         synced = synced_through(known)
-        household = household_entries(settings)
+        household = household_entries(settings, now.astimezone().date())
         if household.frozen is not None:
-            synced = vouched_within_base(synced, household.frozen)
+            synced = vouched_over_base(synced, household.frozen, household.carried)
         conn = db.connect(settings.database)
         try:
             prices = stored_prices(PriceStore(conn), sources)
@@ -898,8 +1014,11 @@ def from_household(
                 decide=rulings(conn),
                 synced=synced,
                 unknown=household.unknown,
+                unproved=household.unproved,
                 invested=household.invested,
                 unfed=household.unfed,
+                carried=household.carried,
+                held_back=household.held_back,
             )
         finally:
             conn.close()
@@ -937,6 +1056,7 @@ def standing(settings: Settings) -> Hashable:
                 "SELECT account_id FROM named_accounts ORDER BY account_id",
                 "SELECT max(id) FROM review_rulings",
                 "SELECT max(id) FROM statement_uploads",
+                "SELECT id, before, after FROM carried_over ORDER BY id",
             )
         )
     finally:
@@ -966,6 +1086,15 @@ class Entries:
     frozen: Mapping[str, date] | None = None
     """Each account the base opens, with its last day in it (`frozen_through`), when the
     ledger is a frozen base; None for a live ledger, or none."""
+    carried: Mapping[str, Carry] = field(default_factory=dict)
+    """Each account of the base hearth carries on, and what carrying made of its bank's rows
+    (``hearth.carrying``)."""
+    unproved: Mapping[str, Unknown] = field(default_factory=dict)
+    """Each carried account whose bank's balance cannot prove it yet, with why."""
+    held_back: Mapping[str, tuple[date, date]] = field(default_factory=dict)
+    """Each account of the base matched to a connection whose cut-over has not come, with
+    the last day the base knows of it today and the latest day the base holds anything on it
+    (``carrying.known_through``, ``carrying.ahead``)."""
 
 
 BOTH = (
@@ -990,13 +1119,17 @@ def inherited(settings: Settings) -> Path | Base | None:
     return found.base if found is not None else settings.ledger
 
 
-def household_entries(settings: Settings) -> Entries:
+def household_entries(settings: Settings, today: date | None = None) -> Entries:
     """The household's entries before any ruling: hearth's own over the ledger it inherits,
     imported or not (`inherited`), each read exactly alike (`load_ledger`).
 
     Checked as beancount checks a file it loads, so the books written out load as cleanly as
     they were computed; hearth's entries that would not are refused, never served.
+
+    `today` is the household's own day, the clock's local day, which decides whether a carried
+    account's cut-over has come (``carrying.postponed``); the system clock's when not given.
     """
+    today = today or datetime.now().astimezone().date()
     ledger = inherited(settings)
     if ledger is not None:
         loaded = load_ledger(ledger)
@@ -1006,10 +1139,14 @@ def household_entries(settings: Settings) -> Entries:
     opened = {e.account for e in theirs if isinstance(e, Open)}
     declared = {e.currency for e in theirs if isinstance(e, Commodity)}
     since = min((e.date for e in theirs), default=None)
+    # Only an imported base is carried on: a ledger inherited where it is may still be growing.
+    held = carrying.read(theirs) if isinstance(ledger, Base) else None
     conn = db.connect(settings.database)
     try:
         with feed.Feed.open(settings.feed_database) as fed:
-            derived = ownbooks.derive(conn, fed, opened=opened, declared=declared, since=since)
+            derived = ownbooks.derive(
+                conn, fed, opened=opened, declared=declared, since=since, base=held, today=today
+            )
     except booking.Refused as refused:
         raise LedgerError(str(refused)) from refused
     finally:
@@ -1026,5 +1163,21 @@ def household_entries(settings: Settings) -> Entries:
                 f"Hearth's own books have {count} error{'s' if count > 1 else ''}"
                 " it will not serve figures past."
             )
-    frozen = frozen_through(theirs) if isinstance(ledger, Base) else None
-    return Entries(entries, derived.unknown, derived.invested, derived.unfed, ledger, frozen)
+    frozen = frozen_through(held, today) if held is not None else None
+    held_back = {}
+    if held is not None:
+        for account in derived.postponed:
+            beyond = carrying.ahead(held, account)
+            assert beyond is not None  # noqa: S101 - a cut-over after today is the base's
+            held_back[account] = (carrying.known_through(held, account, today), beyond)
+    return Entries(
+        entries,
+        derived.unknown,
+        derived.invested,
+        derived.unfed,
+        ledger,
+        frozen,
+        derived.carried,
+        derived.unproved,
+        held_back,
+    )

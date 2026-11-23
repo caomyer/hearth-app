@@ -53,6 +53,7 @@ uv run hearth import-ledger "$HOME/path/to/household.beancount"
 uv run hearth add-account <ledger account> --name "<name>" --owner <username>
 ```
 
+Once each connected account is matched to the imported ledger's account it is (`hearth match-accounts`), hearth carries it on: its history is the ledger's up to where the ledger stops, and the bank's from then on, checked against the balance the bank reports, with any difference between the two shown in Review ([docs/books.md](docs/books.md#carried-on-from-the-base)).
 Inheriting the ledger where it is, through `HEARTH_LEDGER`, still works for now, but not beside an imported one.
 
 A household that kept a ledger before connecting its banks can hold hearth's own books against it, account by account, at each statement's close or each month end ([docs/books.md](docs/books.md#checking-against-a-ledger-kept-before)).

@@ -80,9 +80,11 @@ It includes the base by its full path, so the file alone still holds the whole b
 
 ### Importing again
 
-Importing again, the same ledger after a correction say, replaces the base until a member makes a review ruling after the import.
+Importing again, the same ledger after a correction say, replaces the base until a member makes a review ruling after the import, or on a row carried on from it.
 The base it replaces stays in its own folder, never discarded, and the manifest names the new one.
 From the first ruling made after the import on, rulings rest on the base as it is, so importing again is refused with a sentence saying so.
+So it is once a member has ruled on a row hearth carries on from the base, or on a reconciling entry (`books.begun`): that row begins at a cut-over the base decides, and another base would move it under the ruling.
+Where matched accounts are carried on from the base being imported, the check says from which day each is, and how many of the bank's transactions before then the base does not hold, which hearth never brings in.
 Importing a ledger exactly as the base already holds it writes nothing.
 
 ### Inheriting the ledger where it is, for now
@@ -156,33 +158,49 @@ The best is proposed only when it clearly beats the rest, which is three things 
 
 A brokerage account, which Plaid sends no transactions, and an account of any type other than depository, credit and loan, are not matched by content.
 
+Content is evidence, not proof, and carrying holds a row by content by the same rule (`docs/books.md`, "Carried on from the base").
+A frequent charge of one amount can be held by the wrong entry: the base's entry for a charge the bank never posted, within a week of one it did, holds the bank's row, which is then not booked.
+That is never silent: the books are short of exactly that row, so the account's difference with its bank, in Review, is its amount, until a member confirms it or puts the cause right.
+
 **Otherwise nothing is proposed**, and the household names the base's account itself, or files the connected account as a new one on the Connect page.
 
 ### What a match is
 
 A confirmed match is the mapping a member confirms on the Connect page, recorded in the same place (`plaid_accounts`, `Registry.confirm`), with no member named as having confirmed it, as a claim made on the command line names none.
-Nothing is booked differently for it: the import books nothing into an account the base opens (`docs/books.md`).
-A match may be changed until carrying begins, which is not built yet, so for now always.
+From then on hearth carries the account on from the base: its history before its cut-over is the base's, and hearth books the bank's rows from then on that the base does not hold (`docs/books.md`, "Carried on from the base").
+A match may be changed until carrying begins, once a member has ruled on a row carried on the account or on its reconciling entry (`books.begun`); until then a wrong match is put right with another `--confirm`, and its rows move with it at the next recompute, since they are derived afresh each time.
+After that the command refuses, saying a decision has been made on its transactions, and so does the Connect page.
 
 A match never changes who owns an account:
 
 - the base's account must be claimed already (`hearth add-account`), and its owners must include the member who holds the connection, as the Connect page asks it of the gate (`access.may_feed`);
 - an account claimed by members the holder is not among is never proposed to their connection, however strong the evidence, and the command says where the evidence points and why it is not proposed;
 - an account another connected account is matched to is not matched again, as one ledger account is fed by one connection at most;
-- a connected account already filed as an account hearth keeps itself is not matched to the base, which would take what it brought in out of the books.
+- an account the base closes is not matched, as nothing can be carried on into it.
 
-### What carrying it on will meet
+### An account hearth kept itself while the base held its rows too
 
-For each matched account, and each one proposed, the command also says what carrying it on from the base will meet, worked out by `matching.facing` for the cut-over to be built on:
+A household that connected its bank before importing its ledger may have filed a connected account as an account hearth keeps itself, whose rows the base also holds.
+Matching the base's account as well would count that bank account twice, so it is moved onto the base's account instead, with the same `--confirm <plaid account>=<ledger account>`, only when carrying would hold every row hearth has booked on it: each is in the base, or dated from the cut-over on, so hearth books it again on the base's account (`matching.Moving`).
+A row before the cut-over that the base does not hold would leave the books, so then nothing is moved, and the command says how many and from which day.
+Rulings are bound to what a row said, account and all, so the move is recorded (`carried_over`), and a ruling on a row booked again keeps deciding it; a ruling on a row the base holds decides nothing more, since the base's own entry for it stands.
+A name may be moved more than once, as when an account filed later takes a name moved before, and a name moved onto one that was itself moved: every name a row was booked under before still binds its rulings (`RulingStore.formerly`), as a ruling names its row by its review id, one transaction's, so two accounts that once shared a name are never confused.
+An account rows were moved into in Review is never matched or moved onto, as carried on it would hold them beside its bank's own rows and its balance could never agree with its bank's.
+Who sees the account never changes: the base's account must be unclaimed, and the claim of hearth's own account becomes its claim, or be claimed by exactly the same members, and hearth's own account is then removed.
+It is refused for a brokerage, which is not carried yet, and for an account rows were moved into in Review.
+The Connect page never makes this move; it sends the member to the command.
+
+### What carrying it on meets
+
+For each matched account, and each one proposed, the command also says what carrying it on from the base meets, by the one rule the books use (`matching.facing`, `carrying.carry`):
 how many of the feed's posted rows the base holds already, by Plaid id and, of the rest, by content;
-how many it does not hold that are dated on or before the base's last entry on the account, which carrying on from that day would never bring in, and how many come after it;
-and the days of the base's last entry, last balance assertion and last `pad` on the account.
+the days of the base's last entry, last balance assertion and last `pad` on the account, and the cut-over worked out from them;
+how many it does not hold that are dated before the cut-over, which hearth never brings in, and how many from it on, which hearth books.
+A matched brokerage is said not to be carried, with the day its history ends.
 
-Until carrying is built, a matched account is still the base's alone, and its connection books nothing into it.
-Its connection vouches for it (`books.vouched`) only when the base holds entries booked from that very connection, which hearth's own `source` names and a bare `plaid-id` does not.
-Even then it vouches only through the base's own last day on the account, its newest transaction or the day before its newest balance assertion, never through a later sync (`books.vouched_within_base`): nothing after the base was frozen is in the books yet, so a month after it reads as incomplete, however current the connection is, rather than as a quiet month.
+A carried account is vouched for through its connection's last successful sync, as one hearth keeps itself is, and the base's entries that hold the bank's own rows count as entries from that connection (`books.vouched_over_base`).
+A matched account that is not carried, a brokerage, is vouched for only through the base's own last day on it, never through a later sync: nothing after the base was frozen is in the books, so a month after it reads as incomplete, however current the connection is, rather than as a quiet month.
 A live ledger inherited at `HEARTH_LEDGER` is not capped, as an import outside hearth may still be adding to it.
-Once carrying is built, the cap gives way to a connection vouching for what hearth books after the cut-over.
 
 ## Read-only, and how that is kept
 
@@ -219,7 +237,8 @@ The books note each connection's last successful sync when they are recomputed (
 Like everything else here, this is decided by month alone and is the same for every viewer.
 
 Every entry the import books from a connection carries that source (`docs/books.md`), so an account hearth opened for a connection is vouched for by it from the first recompute after its history arrives.
-An account the household's ledger opens, imported or inherited, is left to that ledger, and the Plaid import books nothing into it, so its connection vouches for nothing there unless the ledger's own entries on it name that connection in hearth's `source`, as a ledger fed from hearth's export may, and then, on an imported base, only through the base's last day on the account (see "What carrying it on will meet", above): a Plaid-fed account whose ledger has stopped while its connection keeps working otherwise still reads as covered by the ledger rule below, until carrying such an account on from its ledger is built.
+An account the household's ledger opens and hearth does not carry on, inherited, or imported and not matched, or a matched brokerage, is left to that ledger, and the Plaid import books nothing into it, so its connection vouches for nothing there unless the ledger's own entries on it name that connection in hearth's `source`, as a ledger fed from hearth's export may, and then, on an imported base, only through the base's last day on the account (see "What carrying it on meets", above).
+An account carried on from an imported base is vouched for as one hearth keeps itself is.
 The demo marks its ledger's bank-feed rows with the source the import writes, so it shows the rule at work on an inherited ledger too.
 
 An account no connection vouches for, such as one a statement import brings in, is judged with its part by the ledger alone, and that limitation stays: one that stopped while another in its part carries on reads as complete.
