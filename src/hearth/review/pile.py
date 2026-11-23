@@ -76,6 +76,13 @@ class PileItem:
     settles it is that other side arriving, not a category."""
     reason: Reason | None = None
     """Why it is suggested as it is, or why nothing is, in words (``hearth.proposals``)."""
+    bank: str | None = None
+    """For a row hearth booked from a bank, what the bank says its category is, "" for none:
+    the bank's own input to its suggestion, which an accept is bound to (``review.decision``).
+    None for a row anything else wrote."""
+    plain: str | None = None
+    """For a row hearth booked from a bank, the account the bank's category alone names
+    (``booking.proposal``), which an accept recorded before `bank` was kept is bound to."""
 
     @property
     def says(self) -> str:
@@ -97,6 +104,16 @@ class PileItem:
     def reconciling(self) -> bool:
         """Whether it is a carried account's reconciling entry (`LEDGER_BANK`)."""
         return self.proposed == LEDGER_BANK
+
+
+BANK = "review-bank"
+"""Where a row hearth booked from a bank keeps the bank's category, "" for none."""
+PLAIN = "review-plain"
+"""Where it keeps the account the bank's category alone names, "" for none."""
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 def _location(entry: Transaction) -> str:
@@ -144,6 +161,8 @@ def read_pile(entries: Iterable[Directive]) -> list[PileItem]:
                 location=where,
                 transfer=proposal.account == TRANSFER_PENDING,
                 reason=reasons.read(entry.meta),
+                bank=_text(entry.meta.get(BANK)),
+                plain=_text(entry.meta.get(PLAIN)) or None,
             )
         )
     return items

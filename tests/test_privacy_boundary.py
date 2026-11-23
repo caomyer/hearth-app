@@ -357,10 +357,23 @@ def test_an_adopted_connection_is_its_members_alone(world: World, tmp_path: Path
 
 LEARNED_SCENARIOS: dict[str, dict[str, frozenset[Facet]]] = {
     "defaults": {},
-    "everyone shares nothing": dict.fromkeys(("avery", "blake"), NOTHING),
+    "everyone shares nothing": dict.fromkeys(learned_household.USERNAMES, NOTHING),
+    "avery shares transactions, blake nothing": {
+        "avery": DEFAULT_SHARED | {Facet.TRANSACTIONS},
+        "blake": NOTHING,
+    },
+    "avery shares categories, blake nothing": {
+        "avery": DEFAULT_SHARED | {Facet.CATEGORY_BREAKDOWN},
+        "blake": NOTHING,
+    },
+    "blake shares transactions, avery nothing": {
+        "avery": NOTHING,
+        "blake": DEFAULT_SHARED | {Facet.TRANSACTIONS},
+    },
     "avery shares everything": {"avery": EVERYTHING, "blake": NOTHING},
     "blake shares everything": {"avery": NOTHING, "blake": EVERYTHING},
     "both share everything": dict.fromkeys(("avery", "blake"), EVERYTHING),
+    "everyone shares everything": dict.fromkeys(learned_household.USERNAMES, EVERYTHING),
     "both share totals only": dict.fromkeys(
         ("avery", "blake"),
         frozenset(
@@ -371,8 +384,9 @@ LEARNED_SCENARIOS: dict[str, dict[str, frozenset[Facet]]] = {
         ("avery", "blake"), frozenset({Facet.ACCOUNT_BALANCES})
     ),
 }
-"""Every way the two members of ``tests/learned.py`` can share what their categories are, or
-not: through their transactions, their category breakdown, everything, or only figures."""
+"""Every way the members of ``tests/learned.py`` can share what their categories are, or not:
+through their transactions, their category breakdown, everything, or only figures; one joint
+owner sharing while the other does not, as is the point of a third member who owns nothing."""
 
 
 def test_no_suggestion_carries_one_members_category_to_another(
@@ -394,22 +408,25 @@ def test_no_suggestion_carries_one_members_category_to_another(
     assert said(lh.BLAKE_CHK, lh.GROCER, "33.00") == ("Expenses:Zq:Falconry", ledger_says)
     assert said(lh.BLAKE_CHK, lh.GROCER, "23.50") == ("Expenses:Zq:Falconry", ledger_says)
     assert said(lh.JOINT, lh.MARKET, "21.00") == ("Expenses:Zq:Hearthstone", ledger_says)
+    # A joint account's rows learn from its own decisions, either owner's.
+    assert said(lh.JOINT, lh.DELI, "18.00") == (lh.JOINTLY, "Jointly once before")
+    # A merchant only the joint account ever booked teaches a member's own row nothing.
     for account, name, amount in (
         (lh.AVERY_CHK, lh.GROCER, "14.00"),
+        (lh.AVERY_CHK, lh.MARKET, "24.00"),
         (lh.BLAKE_CHK, lh.DELI, "16.00"),
         (lh.JOINT, lh.DELI, "15.00"),
-        (lh.JOINT, lh.DELI, "18.00"),
         (lh.JOINT, lh.GROCER, "19.00"),
     ):
         assert said(account, name, amount) == (None, "New merchant"), (account, amount)
 
 
 @pytest.mark.parametrize("scenario", LEARNED_SCENARIOS)
-@pytest.mark.parametrize("viewer", ["avery", "blake"])
+@pytest.mark.parametrize("viewer", learned_household.USERNAMES)
 def test_no_page_shows_a_category_a_suggestion_could_have_carried(
     learned: learned_household.Learned, scenario: str, viewer: str
 ) -> None:
-    choices = dict.fromkeys(("avery", "blake"), DEFAULT_SHARED)
+    choices = dict.fromkeys(learned_household.USERNAMES, DEFAULT_SHARED)
     choices.update(LEARNED_SCENARIOS[scenario])
     for username, shared in choices.items():
         learned.choose(username, shared)
@@ -424,5 +441,9 @@ def test_no_page_shows_a_category_a_suggestion_could_have_carried(
     assert not leaked, f"{viewer} could see another member's categories: {leaked}"
     # The crawl reached the suggestions: each member's own reasons are on their Review page.
     mine = {"avery": "Pantry once before", "blake": "As your ledger books it"}
-    assert mine[viewer] in seen
-    assert "New merchant" in seen
+    if viewer in mine:
+        assert mine[viewer] in seen
+        assert "New merchant" in seen
+    # What reaches Casey, who owns nothing, is only what every owner of it shares.
+    if viewer == "casey" and Facet.TRANSACTIONS in choices["avery"]:
+        assert "Marzipan" in seen

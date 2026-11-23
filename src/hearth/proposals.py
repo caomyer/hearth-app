@@ -7,22 +7,18 @@ the first of these that gives one (`Proposer.propose`):
 1. **What the row's owners decided before for the same merchant** (``hearth.merchants``): the
    latest decisions, up to `LATEST` of them, on rows of the merchant, when every one of them
    booked the same category. A decision is a ruling of one of the row's owners, on a row of an
-   account all of them own (``access.may_learn``), made before the row first arrived. "Dining
-   twice before".
+   account with exactly them as its owners (``access.may_learn``), made before the row first
+   arrived. "Dining twice before".
 2. **How the imported ledger books the same merchant**: the latest of the ledger's own
-   entries for it, up to `LATEST`, on accounts all the row's owners own, when every one books
+   entries for it, up to `LATEST`, on accounts with exactly the row's owners, when every one books
    the same one category. "As your ledger books it".
 3. **The bank's category, as the ledger names it**: what the rows the ledger holds of the
-   bank's own, on accounts all the row's owners own, say each of the bank's categories is, when
+   bank's own, on accounts with exactly the row's owners, say each of the bank's categories is, when
    at least `MAP_AT_LEAST` rows of the category are held and a strict majority of them book the
    same one category. "Bank says Restaurant".
 4. **The bank's category, as hearth names it** (``booking.proposal``); for a household with an
    imported ledger only when the ledger already books that category on an account all the
    row's owners own. Hearth never invents a category beside a ledger that has its own.
-
-Steps 2 to 4 above use the ledger only for a row nobody ruled on before it was imported
-(`Target.before_base`): the ledger's suggestion is what such a row is first seen with, and an
-accept made before it was bound to what was suggested without it.
 
 A suggested account must be one the books can post the row to on its day: a category open
 then and taking the row's currency (`usable`). Otherwise the next step is tried, and with
@@ -33,20 +29,20 @@ before" when their latest decisions or entries disagree.
 A suggestion is never a decision. The row still arrives flagged and waits for a member, however
 often its merchant was decided before; there is no accepting on anyone's behalf.
 
-Why this cannot move an accepted row back into Review: an accept is bound to the suggestion
-it was made on (``review.decision``), and every suggestion here is a function of what was
-fixed before anyone could decide the row. Rulings teach a row only if made before the row
-first arrived (`Target.arrived`), and rulings are never changed, only added; the ledger is
-frozen once a ruling rests on it, and teaches only rows nobody ruled on before it came. So no
-ruling, including one re-deciding an earlier row differently, changes what an already
-arrived row suggests. Only the bank changes it, as before: by revising the row itself, or an
-earlier row of the same merchant it was taught by.
+None of this ever changes a row somebody ruled on. A ruling makes its row immune to what is
+learned: an accept keeps booking the row where it was accepted for as long as the bank's own
+inputs to it are what they were (``review.decision``), whatever is learned, claimed, matched,
+connected or imported since. What is learned changes only what an unruled row suggests, and
+even then not because of a ruling made after the row arrived (`Target.arrived`): so a row a
+member is looking at does not change its suggestion under them as they rule on its
+neighbours.
 """
 
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from enum import Enum
 
 from hearth.carrying import BaseEntry
 from hearth.members import MemberId
@@ -109,9 +105,6 @@ class Target:
     """The bank's category in words, as the reason says it."""
     arrived: datetime | None
     """When the row first arrived; None when that is not known, which learns from no ruling."""
-    before_base: bool = False
-    """Whether a ruling on the row was made before the ledger was imported, so the ledger
-    suggests nothing for it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,12 +158,12 @@ class Proposer:
     def propose(self, row: Target) -> Proposal:
         """The first of the module's four steps that suggests a category for `row`, and why;
         or nothing, saying why where there is something to say."""
-        seen, mixed = False, False
+        found: set[Found] = set()
         for learned in (self._remembered(row), self._as_booked(row)):
             if isinstance(learned, Proposal):
                 return learned
             if learned is not None:
-                seen, mixed = True, mixed or learned
+                found.add(learned)
         if self._uses_ledger(row):
             mapped = self._map(row.owners).get(row.category or "")
             if mapped is not None and self.usable(mapped, row):
@@ -182,9 +175,11 @@ class Proposer:
             and self.usable(default, row)
         ):
             return Proposal(default, self._bank(row))
-        if mixed:
+        if Found.DISAGREE in found:
             return Proposal(None, Reason(Why.MIXED, "Booked more than one way before"))
-        if row.merchant is not None and not seen:
+        if Found.ELSEWHERE in found:
+            return Proposal(None, Reason(Why.ELSEWHERE, "Not booked to a category before"))
+        if row.merchant is not None and not found:
             return Proposal(None, Reason(Why.NEW, "New merchant"))
         return NOTHING
 
@@ -204,16 +199,16 @@ class Proposer:
         )
 
     def _uses_ledger(self, row: Target) -> bool:
-        return self.ledger is not None and not row.before_base
+        return self.ledger is not None
 
-    def _remembered(self, row: Target) -> Proposal | bool | None:
+    def _remembered(self, row: Target) -> Proposal | Found | None:
         """The category the row's owners booked its merchant as in their latest decisions
-        before it arrived, when they agree on one it may be booked to; otherwise whether they
-        disagree, or None when they decided nothing for it."""
+        before it arrived, when they agree on one it may be booked to; otherwise what they
+        found instead, or None when they decided nothing for it."""
         if row.merchant is None or row.arrived is None:
             return None
         arrived = row.arrived
-        decided: list[tuple[int, date, str, str | None]] = []
+        decided: list[tuple[int, date, str, str | NoCategory]] = []
         for source in self._ruled.get(row.merchant, ()):
             if source.review_id == row.review_id:
                 continue
@@ -229,35 +224,35 @@ class Proposer:
                 decided.append((ruling_id, source.day, source.review_id, account))
         if not decided:
             return None
-        decided.sort(reverse=True)
+        decided.sort(key=lambda d: (d[0], d[1], d[2]), reverse=True)
         agreed = _agreed([account for *_, account in decided[:LATEST]])
-        if agreed is None:
-            return True
+        if not isinstance(agreed, str):
+            return agreed
         if not self.usable(agreed, row):
-            return False
+            return Found.UNUSABLE
         times = sum(1 for *_, account in decided if account == agreed)
         return Proposal(agreed, Reason(Why.REMEMBERED, f"{label(agreed)} {_times(times)} before"))
 
-    def _as_booked(self, row: Target) -> Proposal | bool | None:
+    def _as_booked(self, row: Target) -> Proposal | Found | None:
         """The category the ledger's latest entries for the row's merchant book, on accounts
-        all its owners own, when they agree on one it may be booked to; otherwise whether they
-        disagree, or None when the ledger has no such entry, or teaches the row nothing."""
+        with exactly its owners, when they agree on one it may be booked to; otherwise what they
+        found instead, or None when the ledger has no such entry, or teaches the row nothing."""
         if row.merchant is None or not self._uses_ledger(row):
             return None
         found = [e for e in self._entries.get(row.merchant, ()) if self._theirs(e, row.owners)]
         if not found:
             return None
         found.sort(key=lambda e: (e.day, e.entry), reverse=True)
-        agreed = _agreed([e.category for e in found[:LATEST]])
-        if agreed is None:
-            return True
+        agreed = _agreed([e.category or NO_CATEGORY for e in found[:LATEST]])
+        if not isinstance(agreed, str):
+            return agreed
         if not self.usable(agreed, row):
-            return False
+            return Found.UNUSABLE
         return Proposal(agreed, Reason(Why.LEDGER, "As your ledger books it"))
 
     def _theirs(self, entry: BaseEntry, owners: Owners) -> bool:
         """Whether the ledger's `entry` may teach a row `owners` own: it is complete, moves
-        money, and every account it moves is owned by all of them."""
+        money, and every account it moves has exactly them as its owners."""
         ledger = self.ledger
         return (
             ledger is not None
@@ -268,7 +263,7 @@ class Proposer:
 
     def _map(self, owners: Owners) -> dict[str, str]:
         """Each bank category with the category most of the rows the ledger holds of it book,
-        on accounts all `owners` own, where `MAP_AT_LEAST` rows of it are held and a strict
+        on accounts with exactly `owners`, where `MAP_AT_LEAST` rows of it are held and a strict
         majority agree."""
         if owners in self._maps:
             return self._maps[owners]
@@ -288,7 +283,7 @@ class Proposer:
         return found
 
     def _categories(self, owners: Owners) -> frozenset[str]:
-        """The categories the ledger books on accounts all `owners` own."""
+        """The categories the ledger books on accounts with exactly `owners`."""
         if owners not in self._booked:
             self._booked[owners] = frozenset(
                 e.category
@@ -302,11 +297,32 @@ class Proposer:
         return Reason(Why.BANK, f"Bank says {row.bank_says}") if row.bank_says else None
 
 
-def decided_as(covering: Iterable[Covered]) -> tuple[int, str | None] | None:
+class NoCategory(Enum):
+    """A decision that booked a row to no category: ruled not a transaction, or moved onto an
+    account; or a ledger entry that books none, as a transfer or a split does."""
+
+    NONE = "none"
+
+
+NO_CATEGORY = NoCategory.NONE
+
+
+class Found(Enum):
+    """What a merchant's history gave instead of a suggestion."""
+
+    DISAGREE = "disagree"
+    """Its latest decisions, or entries, name more than one thing."""
+    ELSEWHERE = "elsewhere"
+    """Every one of them booked it to no category (`NO_CATEGORY`)."""
+    UNUSABLE = "unusable"
+    """They agree on a category the row cannot be booked to on its day."""
+
+
+def decided_as(covering: Iterable[Covered]) -> tuple[int, str | NoCategory] | None:
     """What `covering`, the rulings on one row oldest first, decided it as, by the precedence
     a decision has (``review.decision``): the ruling that decides it, and the category it
-    booked, or None for a decision that booked none, such as a row ruled not a transaction or
-    moved onto an account. None when they leave it undecided.
+    booked, or `NO_CATEGORY` for a decision that booked none, such as a row ruled not a
+    transaction or moved onto an account. None when they leave it undecided.
 
     An accept decided what its author was shown, whatever the row suggests now, and a ruling
     decided its merchant's category even if the bank has since revised the row's amount."""
@@ -323,14 +339,18 @@ def decided_as(covering: Iterable[Covered]) -> tuple[int, str | None] | None:
         return None
     ruling = chosen.ruling
     account = chosen.accepted if ruling.action is Action.ACCEPT else ruling.account
-    if account is not None and account.split(":", 1)[0] not in CATEGORIES:
-        account = None
+    if account is None or account.split(":", 1)[0] not in CATEGORIES:
+        return ruling.id, NO_CATEGORY
     return ruling.id, account
 
 
-def _agreed(accounts: Sequence[str | None]) -> str | None:
+def _agreed(accounts: Sequence[str | NoCategory]) -> str | Found:
+    """The one category `accounts` all name; else that they all name none, or disagree."""
     found = set(accounts)
-    return found.pop() if len(found) == 1 else None
+    if len(found) > 1:
+        return Found.DISAGREE
+    only = found.pop()
+    return Found.ELSEWHERE if only is NO_CATEGORY else only
 
 
 def label(account: str) -> str:

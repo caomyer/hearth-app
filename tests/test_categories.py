@@ -5,6 +5,7 @@ is in what was left over, so the figures still add up (``hearth.categories``).
 Every account and figure is invented, and every figure below is worked out here by hand.
 """
 
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -45,7 +46,22 @@ RETIREMENT = "Expenses:Zq:Retirement"
         ("Expenses:Retirement:401k", Kind.NOT_SPENDING),
         ("Expenses:Zq:Retirement401k", Kind.NOT_SPENDING),
         ("Expenses:RothIRA", Kind.NOT_SPENDING),
-        ("Expenses:Transfers", Kind.NOT_SPENDING),
+        ("Expenses:Payroll:Pension", Kind.NOT_SPENDING),
+        ("Expenses:Savings:403b", Kind.NOT_SPENDING),
+        ("Income:Pay", Kind.PAY),
+        ("Income:Job:Pay", Kind.PAY),
+        # Words that name fees, charity and spending as often as a move are spending; a word
+        # that merely begins with "pay" is not pay.
+        ("Expenses:Transfers", Kind.SPENDING),
+        ("Expenses:Charity:Contributions", Kind.SPENDING),
+        ("Expenses:Bank:TransferFees", Kind.SPENDING),
+        ("Expenses:Fees:WireTransfer", Kind.SPENDING),
+        ("Expenses:Investments:AdvisoryFees", Kind.SPENDING),
+        ("Expenses:Travel:Transfers", Kind.SPENDING),
+        ("Expenses:Savings", Kind.SPENDING),
+        ("Income:PayPal", Kind.OTHER_INCOME),
+        ("Income:Payments:Refund", Kind.OTHER_INCOME),
+        ("Expenses:Travel:Mirage", Kind.SPENDING),
         ("Expenses:Food:Dining", Kind.SPENDING),
         ("Expenses:Transport:Taxi", Kind.SPENDING),
         ("Expenses:Interest", Kind.SPENDING),
@@ -143,6 +159,10 @@ def test_a_move_booked_as_an_expense_is_not_spending_and_is_in_what_was_left_ove
     assert month.kept.by_owners[owners] == {RETIREMENT: Decimal("500.00")}
     assert month.spent(owners) + sum(month.kept.by_owners[owners].values()) == Decimal("700.00")
     assert money_in - money_out == Decimal("2800.00")
+    # Nothing is left out of a figure without a word: the page says how much, and why.
+    page = re.sub(r"<[^>]+>", "", household.signed_in("avery").get("/").text)
+    assert "$500 booked as not spending, such as a retirement contribution" in page
+    assert "booked as not spending" not in household.signed_in("blake").get("/").text
     assert found.kind(RETIREMENT) is Kind.NOT_SPENDING
     assert found.kinds["Expenses:Zq:Groceries"] is Kind.SPENDING
     assert found.kinds["Income:Zq:Salary"] is Kind.PAY

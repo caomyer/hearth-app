@@ -12,7 +12,7 @@ expense account has a kind (`Kind`):
 
 A kind is guessed from the account's name alone, by generic words (`guess`): "Salary" or
 "Wages" is pay, "Interest" or "Dividends" investment income, "Tax" tax, "Retirement", "401k"
-or "Transfer" not spending. No employer, bank, broker or person is named anywhere in the rule.
+or "IRA" not spending. No employer, bank, broker or person is named anywhere in the rule.
 Anything it does not recognise is spending under Expenses and other income under Income, so no
 account is ever left out of every total.
 
@@ -80,7 +80,6 @@ WORDS: Mapping[str, tuple[tuple[Kind, frozenset[str]], ...]] = {
                     "payroll",
                     "paycheck",
                     "paycheque",
-                    "pay",
                     "bonus",
                     "bonuses",
                     "commission",
@@ -112,30 +111,20 @@ WORDS: Mapping[str, tuple[tuple[Kind, frozenset[str]], ...]] = {
     "Expenses": (
         (
             Kind.NOT_SPENDING,
-            frozenset(
-                {
-                    "retirement",
-                    "401k",
-                    "403b",
-                    "457b",
-                    "ira",
-                    "roth",
-                    "pension",
-                    "contribution",
-                    "contributions",
-                    "transfer",
-                    "transfers",
-                    "savings",
-                    "investment",
-                    "investments",
-                }
-            ),
+            frozenset({"retirement", "401k", "403b", "457b", "ira", "roth", "pension"}),
         ),
         (Kind.TAX, frozenset({"tax", "taxes", "taxation", "withholding", "fica"})),
     ),
 }
 """The generic words each kind is guessed from, in the order they are tried: an expense
-account named for a retirement contribution is a move, whatever tax it saves."""
+account named for a retirement contribution is a move, whatever tax it saves. Only words that
+say so unambiguously: "contribution", "transfer", "investment" and "savings" name fees,
+charity and spending as often as moves, so each of those is spending until a person says
+otherwise, as is a word such as "PayPal" that merely begins with "pay"."""
+
+PAY_ALONE = "pay"
+"""Pay, when it is a whole part of the name on its own ("Income:Pay", "Income:Job:Pay"), never
+the start of a longer word."""
 
 _TOKEN = re.compile(r"\d+[A-Za-z]?|[A-Z]+(?![a-z])|[A-Z]?[a-z]+")
 
@@ -163,6 +152,8 @@ def guess(account: str) -> Kind:
     if found is None:
         raise NotACategory(f"{account} is not an income or expense account")
     said = set(words(account))
+    if found == "Income" and PAY_ALONE in (p.casefold() for p in account.split(":")[1:]):
+        return Kind.PAY
     for kind, known in WORDS[found]:
         if said & known:
             return kind

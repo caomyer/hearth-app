@@ -12,14 +12,14 @@ import calendar
 import statistics
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 
 from beancount.core.data import Transaction
 
 from hearth.accounts import Account
-from hearth.books import Books
+from hearth.books import Books, uncategorised
 from hearth.members import Member
 from hearth.months import Month
 from hearth.plaid.booking import moved
@@ -104,6 +104,18 @@ def worth(valuation: NetWorth, part: Part) -> NetWorth:
 
 
 @dataclass(frozen=True, slots=True)
+class Unplaced:
+    """Rows nothing says what they were yet, one way: how many, and how much money they moved
+    that way. None of it is in any spending or income total."""
+
+    rows: int = 0
+    amount: Decimal = Decimal(0)
+
+    def __add__(self, other: Unplaced) -> Unplaced:
+        return Unplaced(self.rows + other.rows, self.amount + other.amount)
+
+
+@dataclass(frozen=True, slots=True)
 class MonthFlows:
     """One month of money in and out, for every part at once.
 
@@ -126,6 +138,22 @@ class MonthFlows:
     as a retirement contribution: left out of `spending`, and so part of what was left over,
     as money kept somewhere else rather than spent. `spending` and `kept` together are every
     expense."""
+    unplaced_out: Mapping[Owners, Unplaced] = field(default_factory=dict)
+    """Each part's rows taking money out that wait for a member to say what they were
+    (``books.uncategorised``), such as a new merchant's: in no spending total until placed."""
+    unplaced_in: Mapping[Owners, Unplaced] = field(default_factory=dict)
+    """The same, of rows bringing money in: in no income total until placed."""
+
+    def kept_out(self, owners: Owners) -> Decimal:
+        """What the part booked to expense accounts that are not spending."""
+        found = self.kept.by_owners.get(owners, {}) if self.kept is not None else {}
+        return sum(found.values(), Decimal(0))
+
+    def spent_unplaced(self, owners: Owners) -> Unplaced:
+        return self.unplaced_out.get(owners, Unplaced())
+
+    def earned_unplaced(self, owners: Owners) -> Unplaced:
+        return self.unplaced_in.get(owners, Unplaced())
 
     def spent_by_category(self, owners: Owners) -> dict[str, Decimal]:
         return dict(self.spending.by_owners.get(owners, {}))
@@ -154,14 +182,30 @@ def month_flows(
     last = calendar.monthrange(month.year, month.month)[1]
     end = start.replace(day=min(to_day or last, last))
     unreviewed: defaultdict[Owners, int] = defaultdict(int)
+    unplaced_out: defaultdict[Owners, Unplaced] = defaultdict(Unplaced)
+    unplaced_in: defaultdict[Owners, Unplaced] = defaultdict(Unplaced)
     flagged: list[Transaction] = []
     for entry in _transactions(books, start, end):
         if entry.flag != "!":
             continue
         flagged.append(entry)
         paid_by = payers(entry, ownership)
-        if not isinstance(paid_by, str):
-            unreviewed[paid_by] += 1
+        if isinstance(paid_by, str):
+            continue
+        unreviewed[paid_by] += 1
+        if uncategorised(entry):
+            waiting = sum(
+                (
+                    units(p, entry).number
+                    for p in entry.postings
+                    if p.account == UNRESOLVED and units(p, entry).currency == books.currency
+                ),
+                Decimal(0),
+            )
+            if waiting > 0:
+                unplaced_out[paid_by] += Unplaced(1, waiting)
+            elif waiting < 0:
+                unplaced_in[paid_by] += Unplaced(1, -waiting)
     currency = books.currency
     return MonthFlows(
         month=month,
@@ -177,6 +221,8 @@ def month_flows(
             flagged, ownership, start=start, end=end, currency=currency
         ),
         unreviewed=dict(unreviewed),
+        unplaced_out=dict(unplaced_out),
+        unplaced_in=dict(unplaced_in),
         kept=spending_by_category(
             books.entries,
             ownership,
@@ -304,6 +350,9 @@ class Line:
     side is, is for ``hearth.disclosure`` to decide."""
     review_id: str | None = None
     """The review row the line was booked from, if it was one."""
+    kept: bool = False
+    """Whether its category is an expense that is not spending (``hearth.categories``), such
+    as a retirement contribution, which no spending figure counts."""
 
 
 MOVED_IN = "Transfer from another account"

@@ -25,7 +25,8 @@ A month cut by the period's start or end is marked `partial`.
 Every income and expense account is a kind of money (`hearth.categories`, `docs/real-ledger.md`), and each recompute holds every account's kind in `Books.kinds`, as a person set it or as its name says.
 Every figure that means spending counts only spending and tax, never "not spending", such as a retirement contribution booked as an expense: the spending totals and their typical months, "Where the month went" and its categories, the month's pace, its fixed bills, and each day's spending on a member's page (`Books.spends`, `figures.month_flows`, `reports.flows.spending_by_category`).
 Nothing is lost by it, and the figures still add up: money in less money out is what was left over, so an amount moved somewhere else rather than spent is part of what was left over, not of what went out.
-`MonthFlows.kept` holds what was left out of spending, by part and category, so spending and it together are every expense; no page shows it on a line of its own yet.
+`MonthFlows.kept` holds what was left out of spending, by part and category, so spending and it together are every expense.
+Wherever a spending figure leaves some out, one plain line beside it says how much and that it is not counted as spending, and a day's line on a member's page says so of each such row; the amount is said only to whoever may see the categories or transactions of the parts behind the figure, as which categories a part books to is its detail.
 Income totals count every income kind: pay, investment income and other income alike.
 The income statement (`statement.income_statement`) is not yet told kinds, and adds up every expense.
 

@@ -62,7 +62,7 @@ from hearth.proposals import MayLearn, Opens, learn_nothing
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.common import is_balance_sheet, root
 from hearth.reports.coverage import AccountCoverage, account_coverage
-from hearth.review.decision import Decision, guarded
+from hearth.review.decision import Decision, guarded, postable
 from hearth.review.overlay import reviewed
 from hearth.review.pile import UNRESOLVED, PileItem, read_pile
 from hearth.review.rulings import RulingStore
@@ -382,8 +382,10 @@ def compute(
     pile = tuple(read_pile(e for e in ledger if _set_aside(e)))
     decisions = decide(pile)
     # No ruling on record may put a posting on a carried account its bank never sent.
+    # Nor may one lay a row on an account the books do not hold open for it on its day.
+    opens = _opens(ledger)
     decided = {
-        item.review_id: guarded(item, decisions[item.review_id], carried)
+        item.review_id: postable(item, guarded(item, decisions[item.review_id], carried), opens)
         for item in pile
         if item.review_id in decisions
     }
@@ -764,7 +766,7 @@ def _connected(entries: Sequence[Directive]) -> set[str]:
 
 def flowing(entries: Sequence[Directive]) -> frozenset[str]:
     """Balance-sheet accounts with a posting beside an Expenses or Income one anywhere, or
-    beside a row waiting to be told what it was that is no move between accounts (`_uncategorised`).
+    beside a row waiting to be told what it was that is no move between accounts (`uncategorised`).
 
     Only they can move a spending or income figure; an account that only ever takes transfers,
     such as a retirement account, cannot. A row nothing was suggested for, such as one from a
@@ -776,14 +778,14 @@ def flowing(entries: Sequence[Directive]) -> frozenset[str]:
         if isinstance(entry, Transaction)
         and (
             any(root(p.account) in ("Expenses", "Income") for p in entry.postings)
-            or _uncategorised(entry)
+            or uncategorised(entry)
         )
         for posting in entry.postings
         if is_balance_sheet(posting.account)
     )
 
 
-def _uncategorised(entry: Transaction) -> bool:
+def uncategorised(entry: Transaction) -> bool:
     """Whether `entry` is a review row waiting against `UNRESOLVED` that is not a move to or
     from an account the row does not name (``booking.moved``): what it was is still to say."""
     group = (entry.meta or {}).get("review-group")
@@ -1216,7 +1218,6 @@ def household_entries(
     since = min((e.date for e in theirs), default=None)
     # Only an imported base is carried on: a ledger inherited where it is may still be growing.
     held = carrying.read(theirs) if isinstance(ledger, Base) else None
-    imported = base.current(settings.ledger_base) if held is not None else None
     conn = db.connect(settings.database)
     try:
         with feed.Feed.open(settings.feed_database) as fed:
@@ -1229,7 +1230,6 @@ def household_entries(
                 base=held,
                 today=today,
                 learns=learns,
-                base_through=imported.rulings_through if imported is not None else 0,
                 opens=_opens(theirs),
             )
     except booking.Refused as refused:

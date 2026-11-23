@@ -111,7 +111,6 @@ def derive(
     base: Held | None = None,
     today: date | None = None,
     learns: MayLearn = learn_nothing,
-    base_through: int = 0,
     opens: Opens | None = None,
 ) -> Derived:
     """Hearth's own entries: an `open` for each ledger account a confirmed mapping feeds,
@@ -140,7 +139,7 @@ def derive(
     holds opens nowhere (`Derived.unfed`). Raises ``booking.Refused`` when the feed cannot be
     booked.
 
-    `learns`, `base_through` and `opens` say what each row's suggestion may learn from
+    `learns` and `opens` say what each row's suggestion may learn from
     (``booking.book``); by default nothing, for a reader of the books that shows no suggestion.
     """
     registry = Registry(conn)
@@ -168,7 +167,6 @@ def derive(
         base=base,
         today=today or date.max,
         learns=learns,
-        base_through=base_through,
         opens=opens,
     )
     openings = opening.derive(registry, feed, booked)

@@ -19,13 +19,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from hearth import accounts, matching
+from hearth import accounts, auth, matching
 from hearth.ledger_import import import_ledger
 from hearth.plaid.fake import FakeAccount, FakeInstitution, FakeTransaction
 from hearth.plaid.registry import Registry
 from hearth.review.pile import PileItem
 from hearth.sharing import Facet
-from tests.conftest import FakeClock
+from tests.conftest import FakeClock, password_of
 from tests.firstday import FirstDay, first_day
 from tests.household import noon
 
@@ -62,7 +62,7 @@ FIRST = {
 """What each bank sent after the ledger stops, on Aug 20, before anyone ruled."""
 
 LATER = {
-    AVERY_CHK: (_row(DELI, "17.00", 20), _row(GROCER, "22.00", 23)),
+    AVERY_CHK: (_row(DELI, "17.00", 20), _row(GROCER, "22.00", 23), _row(MARKET, "24.00", 25)),
     JOINT: (_row(DELI, "18.00", 21), _row(GROCER, "19.00", 22)),
     BLAKE_CHK: (_row(GROCER, "23.50", 24),),
 }
@@ -121,21 +121,31 @@ def _base() -> str:
 
 PANTRY, GRYPHONRY = "Expenses:Zq:Pantry", "Expenses:Zq:Gryphonry"
 
-SECRETS = {
-    "Falconry": "blake",
-    "Gryphonry": "blake",
-    "Marzipan": "avery",
-    "Pantry": "avery",
+JOINTLY = "Expenses:Zq:Jointly"
+
+SECRETS: dict[str, tuple[str, ...]] = {
+    "Falconry": ("blake",),
+    "Gryphonry": ("blake",),
+    "Marzipan": ("avery",),
+    "Pantry": ("avery",),
+    "Hearthstone": ("avery", "blake"),
+    "Jointly": ("avery", "blake"),
 }
-"""Each member's own category, by whose it is: another member may be shown it only through
-what its owner shares of their transactions or their categories, never through a suggestion."""
+"""Each category only one account's owners book, by whose it is: anyone else may be shown it
+only through what every one of its owners shares of their transactions or their categories,
+never through a suggestion. Casey owns nothing here, and is shown each only so."""
+
+USERNAMES = ("avery", "blake", "casey")
 
 
-def may_see(viewer: str, owner: str, shared: dict[str, frozenset[Facet]]) -> bool:
-    """The contract for a member's category, stated independently of hearth: their own, or
-    shared with everyone through their transactions or their category breakdown."""
-    facets = shared.get(owner, frozenset())
-    return viewer == owner or bool(facets & {Facet.TRANSACTIONS, Facet.CATEGORY_BREAKDOWN})
+def may_see(viewer: str, owners: tuple[str, ...], shared: Mapping[str, frozenset[Facet]]) -> bool:
+    """The contract for an account's category, stated independently of hearth: its owners', or
+    shared with everyone once every owner shares their transactions or their category
+    breakdown."""
+    detail = {Facet.TRANSACTIONS, Facet.CATEGORY_BREAKDOWN}
+    return viewer in owners or all(
+        bool(shared.get(owner, frozenset()) & detail) for owner in owners
+    )
 
 
 @dataclass
@@ -160,7 +170,7 @@ class Learned:
 
     def path_values(self) -> dict[str, list[str]]:
         return {
-            "username": ["avery", "blake", "nobody"],
+            "username": [*USERNAMES, "nobody"],
             "item_id": [*self.items.values(), "nonexistent"],
             "account_id": [*self.account_ids.values(), "nonexistent"],
         }
@@ -182,6 +192,20 @@ class Learned:
 def build(tmp_path: Path, clock: FakeClock) -> Learned:
     clock.now = noon(TODAY)
     fresh = first_day(tmp_path, clock, institutions=(AVERY_BANK, BLAKE_BANK))
+    conn = fresh.connect()
+    try:
+        casey, _ = auth.create_member(
+            conn,
+            actor=None,
+            username="casey",
+            display_name="Casey",
+            is_admin=False,
+            password=password_of("casey"),
+            now=clock(),
+        )
+    finally:
+        conn.close()
+    fresh.member_ids["casey"] = casey.id
     items = {
         "avery": fresh.link("avery", AVERY_BANK.id),
         "blake": fresh.link("blake", BLAKE_BANK.id),
@@ -216,6 +240,8 @@ def build(tmp_path: Path, clock: FakeClock) -> Learned:
     clock.advance(timedelta(hours=1))
     _book(learned, "avery", learned.row(AVERY_CHK, GROCER, "14.00"), PANTRY)
     _book(learned, "blake", learned.row(BLAKE_CHK, DELI, "16.00"), GRYPHONRY)
+    # And Avery books the joint account's deli row in a category only the joint account has.
+    _book(learned, "avery", learned.row(JOINT, DELI, "15.00"), JOINTLY)
 
     # And a while after that, more rows of both arrive, everywhere.
     clock.advance(timedelta(hours=1))

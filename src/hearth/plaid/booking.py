@@ -74,7 +74,7 @@ from hearth.proposals import (
 from hearth.proposals import group_of as proposal_group
 from hearth.review import reasons
 from hearth.review.ids import plaid_review_id
-from hearth.review.pile import TRANSFER_PENDING, UNRESOLVED, Moved
+from hearth.review.pile import BANK, PLAIN, TRANSFER_PENDING, UNRESOLVED, Moved
 from hearth.review.reasons import Reason
 from hearth.review.rulings import Covered, RulingStore
 
@@ -149,7 +149,6 @@ def book(
     base: Held | None = None,
     today: date = date.max,
     learns: MayLearn = learn_nothing,
-    base_through: int = 0,
     opens: Opens | None = None,
 ) -> Booked:
     """Every posted row on an account a member has mapped into the books, as an entry.
@@ -164,8 +163,8 @@ def book(
     booked by what carrying makes of its two rows (`_legs`, ``docs/pairing.md``).
 
     Each other row is suggested a category by ``hearth.proposals``, learning only what
-    `learns`, the access policy, lets its owners learn; from a `base`, only for a row nobody
-    ruled on by `base_through`, the newest ruling when the base was imported. `opens` are the
+    `learns`, the access policy, lets its owners learn, from the rulings and from `base`.
+    `opens` are the
     days each account of the ledger hearth reads opens and closes, and the currencies it takes,
     which a suggestion must keep to.
     """
@@ -173,7 +172,7 @@ def book(
     feeds, rows = taken_once(conn, feed, opened=set(opened) - carried)
     plans = _plans(Registry(conn), base, carried, feeds, rows)
     paired = pairing.staged(conn, rows)
-    propose = _proposer(conn, feed, feeds, rows, base, plans, learns, base_through, opens or {})
+    propose = _proposer(conn, feed, feeds, rows, base, plans, learns, opens or {})
 
     def status(row: Transaction) -> Status:
         plan = plans.get(feeds[row.account_id][1])
@@ -219,7 +218,7 @@ def book(
                     linked.item_id,
                     ledger_account,
                     suggested.account or UNRESOLVED,
-                    proposal_group(suggested.account) if suggested.account else group(row.category),
+                    _group_of(row, suggested),
                     suggested.reason,
                 )
             )
@@ -248,7 +247,6 @@ def _proposer(
     base: Held | None,
     plans: Mapping[str, Carry],
     learns: MayLearn,
-    base_through: int,
     opens: Opens,
 ) -> Callable[[Transaction, str], Proposal]:
     """How each row on a ledger account is suggested a category (``hearth.proposals``): from
@@ -326,11 +324,26 @@ def _proposer(
                 default=None if default == UNRESOLVED else default,
                 bank_says=bank_says(row.category),
                 arrived=arrived.get(row.transaction_id),
-                before_base=any(c.ruling.id <= base_through for c in covering.get(review_id, ())),
             )
         )
 
     return propose
+
+
+UNSUGGESTED = "{}, nothing suggested"
+"""The review group of a row nothing suggests a category for, by Plaid's category in words:
+never the name of a group of rows that suggest one (``proposals.group_of``), so a group's name
+never names a category half its rows do not suggest."""
+
+
+def _group_of(row: Transaction, suggested: Proposal) -> str:
+    """The row's review group: the category it suggests, in words; or, with none, Plaid's
+    category, as is for a move to or from an account the row does not name (`moved` reads the
+    group so), and otherwise said to be suggesting nothing (`UNSUGGESTED`)."""
+    if suggested.account is not None:
+        return proposal_group(suggested.account)
+    named = group(row.category)
+    return named if moved(named) is not None else UNSUGGESTED.format(named)
 
 
 def _merchant(row: Transaction) -> str | None:
@@ -600,6 +613,12 @@ def _flagged(
     if reason is not None:
         meta[reasons.WHY] = reason.why.value
         meta[reasons.WORDS] = reason.words
+    if against != TRANSFER_PENDING:
+        # The bank's own inputs to the suggestion, which an accept is bound to: what hearth
+        # learns may change the suggestion, never a decision (``review.decision``).
+        plain = proposal(row.category)
+        meta[BANK] = row.category or ""
+        meta[PLAIN] = "" if plain == UNRESOLVED else plain
     units = _units(row)
     return Entry(
         meta,

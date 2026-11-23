@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, worth_amount, asof, failure_alert, private, part_avatar, as_table, priced_from_note, unreviewed_sub, unreviewed_caveat %}
+{% from "_macros.html" import delta, hero_value, worth_amount, asof, failure_alert, private, part_avatar, as_table, priced_from_note, unreviewed_sub, unreviewed_caveat, unplaced_note, kept_sentence %}
 {% set h = household %}
 {% set head = h.headline %}
 {% set books = status.books %}
@@ -149,7 +149,7 @@
           </div>
           {% endif %}
           {% if lo.parts %}
-          <p class="sm muted mt-4 measure">{{ lo.parts | names("in_prose") | capitalize_first }} {{ "is" if lo.parts | length == 1 and not lo.parts[0].is_joint else "are" }} in all three.{% if lo.typical is not none and lo.covered %} A typical month is the middle of the six complete months before.{% endif %}{% if lo.without %} {{ lo.without | names("in_prose") | capitalize_first }} {{ "does" if lo.without | length == 1 else "do" }} not share both money in and money out with you, so {{ "is" if lo.without | length == 1 else "are" }} in none of these three{% if spent_elsewhere %}; the spending of {{ spent_elsewhere | names("in_prose") }} is under "Where {{ last_name }} went"{% endif %}.{% endif %}{% if lo.covered and (lo.in_unreviewed.leans or lo.out_unreviewed.leans) %} Includes {% if lo.in_unreviewed.leans %}<span class="tnum">{{ (lo.in_unreviewed.amount | abs) | dollars }}</span> of money in{% endif %}{% if lo.in_unreviewed.leans and lo.out_unreviewed.leans %} and {% endif %}{% if lo.out_unreviewed.leans %}<span class="tnum">{{ (lo.out_unreviewed.amount | abs) | dollars }}</span> of spending{% endif %} not yet reviewed, at its suggested category.{% endif %}{% if lo.covered %}{{ unreviewed_caveat(lo.out_unreviewed) }}{% endif %}</p>
+          <p class="sm muted mt-4 measure">{{ lo.parts | names("in_prose") | capitalize_first }} {{ "is" if lo.parts | length == 1 and not lo.parts[0].is_joint else "are" }} in all three.{% if lo.typical is not none and lo.covered %} A typical month is the middle of the six complete months before.{% endif %}{% if lo.without %} {{ lo.without | names("in_prose") | capitalize_first }} {{ "does" if lo.without | length == 1 else "do" }} not share both money in and money out with you, so {{ "is" if lo.without | length == 1 else "are" }} in none of these three{% if spent_elsewhere %}; the spending of {{ spent_elsewhere | names("in_prose") }} is under "Where {{ last_name }} went"{% endif %}.{% endif %}{% if lo.covered and (lo.in_unreviewed.leans or lo.out_unreviewed.leans) %} Includes {% if lo.in_unreviewed.leans %}<span class="tnum">{{ (lo.in_unreviewed.amount | abs) | dollars }}</span> of money in{% endif %}{% if lo.in_unreviewed.leans and lo.out_unreviewed.leans %} and {% endif %}{% if lo.out_unreviewed.leans %}<span class="tnum">{{ (lo.out_unreviewed.amount | abs) | dollars }}</span> of spending{% endif %} not yet reviewed, at its suggested category.{% endif %}{% if lo.covered %}{{ kept_sentence(lo.out_unreviewed.kept) }}{{ unplaced_note(lo.out_unreviewed) }}{{ unplaced_note(lo.in_unreviewed) }}{{ unreviewed_caveat(lo.out_unreviewed) }}{% endif %}</p>
           {% endif %}
           {% if lo.covered %}<p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>{{ last_name }} is complete for every account behind these figures. Computed {{ when(books.computed_at, today) }}.</p>{% endif %}
           {% if lo.leaves_out_unassigned %}<p class="sm muted mt-2 measure">Some money went through accounts nobody has claimed, or several people's at once. It is in nobody's figures, so it is not counted here. <a href="/settings/connections">Assign accounts</a></p>{% endif %}
@@ -244,8 +244,8 @@
       </div>
       {% if went.known and (went.rows or went.totals_only) %}
       <div class="panel-foot">
-        <span>{% if went.total is not none %}<span class="tnum">{{ went.total | dollars }}</span> in all{% if went.without %}, without {{ went.without | names("in_prose") }}{% endif %}.{% endif %}{% if went.has_typical %} Typical is the middle of the six months before.{% endif %}{% if went.unreviewed.leans %} Includes <span class="tnum">{{ went.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ unreviewed_caveat(went.unreviewed) }}</span>
-        {% if review_count and went.unreviewed.leans %}<a href="/review">Review yours</a>{% endif %}
+        <span>{% if went.total is not none %}<span class="tnum">{{ went.total | dollars }}</span> in all{% if went.without %}, without {{ went.without | names("in_prose") }}{% endif %}.{% endif %}{% if went.has_typical %} Typical is the middle of the six months before.{% endif %}{% if went.unreviewed.leans %} Includes <span class="tnum">{{ went.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ kept_sentence(went.unreviewed.kept) }}{{ unplaced_note(went.unreviewed) }}{{ unreviewed_caveat(went.unreviewed) }}</span>
+        {% if review_count and (went.unreviewed.leans or went.unreviewed.leaves_out) %}<a href="/review">Review yours</a>{% endif %}
       </div>
       {% endif %}
     </section>

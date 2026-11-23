@@ -738,12 +738,14 @@ def test_the_command_changes_nothing_of_the_households(
 ) -> None:
     """Not even a database an older hearth left, which serving would bring up to date: the
     one before rulings recorded what each row said, members named accounts, an account was
-    carried over onto the imported ledger's, or a person set a category's kind. Nor the books
+    carried over onto the imported ledger's, or a person set a category's kind or a ruling kept
+    what the bank said. Nor the books
     file: hearth leaves one it would write unchanged untouched, so it is taken away first, and
     must stay away."""
     conn = sqlite3.connect(household.settings.database)
     try:
         conn.execute("DROP TABLE category_kinds")
+        conn.execute("ALTER TABLE review_ruling_rows DROP COLUMN bank")
         conn.execute("DROP TABLE carried_over")
         conn.execute("DROP TABLE named_accounts")
         conn.execute("ALTER TABLE review_ruling_rows DROP COLUMN says")

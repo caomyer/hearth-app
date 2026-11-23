@@ -17,7 +17,7 @@ Metadata carries the row's `review-id`, `review-group`, `model-confidence` and `
 `pile.read_pile` reads them; a row without a review id or a group is refused, because a ruling on it could not be kept.
 
 A row hearth books from a connection (`hearth.plaid.booking`) is named by Plaid's transaction id (`ids.plaid_review_id`), which Plaid keeps when it revises the row.
-It is grouped by the category it suggests, so every row in a group suggests the same one, and a row with nothing suggested by Plaid's category.
+It is grouped by the category it suggests, so every row in a group suggests the same one, and a row with nothing suggested by Plaid's category, said to be suggesting nothing.
 It carries no `model-confidence`: it says instead why it is suggested as it is, in words (`review-why` and `review-reason`, "Suggestions, and why" below).
 
 ## Suggestions, and why
@@ -26,15 +26,15 @@ What a row hearth books is suggested as comes from `hearth.proposals`, afresh on
 
 1. **What the row's owners decided before for the same merchant**: their latest decisions on rows of the merchant, up to the newest 5, when every one of them booked the same category.
    It reads "Dining twice before", counting every decision for the merchant that booked that category.
-2. **How the imported ledger books the same merchant**, for a household with one: the ledger's latest entries for it, up to the newest 5, on accounts all the row's owners own, when every one books the same one category.
+2. **How the imported ledger books the same merchant**, for a household with one: the ledger's latest entries for it, up to the newest 5, on accounts with exactly the row's owners, when every one books the same one category.
    It reads "As your ledger books it".
-3. **The bank's category, as the ledger names it**, for a household with an imported ledger: the rows of the bank's that the ledger holds, on accounts all the row's owners own, each give the bank's category beside the ledger's own.
+3. **The bank's category, as the ledger names it**, for a household with an imported ledger: the rows of the bank's that the ledger holds, on accounts with exactly the row's owners, each give the bank's category beside the ledger's own.
    A bank category is mapped to a ledger category when the ledger holds at least 3 rows of it and strictly more than half of them book that one category; a held row the ledger books as no one category, such as a split, counts against every category.
    It reads "Bank says Restaurant", the bank's category by its most specific words.
-4. **The bank's category, as hearth names it** (`booking.proposal`: `FOOD_AND_DRINK_COFFEE` is `Expenses:FoodAndDrink:Coffee`); for a household with an imported ledger only when the ledger already books that category on an account all the row's owners own, so hearth never invents a category beside a ledger that has its own.
+4. **The bank's category, as hearth names it** (`booking.proposal`: `FOOD_AND_DRINK_COFFEE` is `Expenses:FoodAndDrink:Coffee`); for a household with an imported ledger only when the ledger already books that category on an account with exactly the row's owners, so hearth never invents a category beside a ledger that has its own.
    It reads "Bank says Coffee".
 
-With none, nothing is suggested and the row is asked plainly: it reads "New merchant" when nothing was decided or booked for its merchant before, and "Booked more than one way before" when the latest decisions or entries disagree.
+With none, nothing is suggested and the row is asked plainly: it reads "New merchant" when nothing was decided or booked for its merchant before, "Booked more than one way before" when the latest decisions or entries disagree, and "Not booked to a category before" when every one of them booked it to no category, moved onto an account or ruled not a transaction.
 A row with no merchant at all reads "Nothing suggested".
 A transfer or a loan payment is never suggested a category: it is asked where its money went ("Where did it go?", below).
 A suggested account must be a category the books can post the row to: open on its day in a ledger hearth reads, if that ledger opens it, and taking its currency; otherwise the next step is tried, so no suggestion can make a recompute fail.
@@ -44,23 +44,28 @@ No reason is ever a percentage.
 
 `hearth.merchants.merchant` is the one rule for which merchant a row is from, for Plaid's rows and the ledger's entries alike:
 
-- the words are Plaid's merchant name where it sends one, else its name for the row, else the bank's own description; a ledger entry's payee, else its narration;
-- case is ignored;
-- a payment processor's prefix before an asterisk is dropped: `SQ *`, `TST*`, `PAYPAL *`, `SP *` and the like, generic services, never a merchant;
-- everything from the first remaining asterisk on is dropped, the network's reference for one payment ("AMZN Mktp US*2K4AB1" is "amzn mktp us");
-- everything from the first word after the first that holds a digit or starts with "#" is dropped, with "store", "str", "no" or "location" just before it, so "STARBUCKS #1234 SEATTLE WA" and "Starbucks Store 01234" are "starbucks", while the first word is always kept, so "7-Eleven" stays itself;
-- punctuation is a space, but for "&" and "'" within a word.
+1. A name is used where there is one: Plaid's merchant name, or a ledger entry's payee.
+   Only without one is a description read: Plaid's name for the row, then the bank's original description, or a ledger entry's narration.
+2. Letters of every script are kept, accents and all, in Unicode's compatible form, and case is ignored: "CAFÉ" is "café", "寿司 BAR" and "拉麺 BAR" are two merchants.
+3. A payment processor's prefix before an asterisk is dropped: `SQ *`, `TST*`, `PAYPAL *`, `SP *`, `IN *`, `DD *` and the like, generic services, never a merchant.
+4. Everything from the first remaining asterisk on is dropped, the network's reference for one payment ("AMZN Mktp US*2K4AB1" is "amzn mktp us").
+5. In a description only, the bank's own words for how the money moved are dropped from the front, with the dates and numbers among and after them: "PURCHASE AUTHORIZED ON 09/12 STARBUCKS" is "starbucks", "ACH DEBIT 0012 GEICO" is "geico", "POS DEBIT 1234 TARGET" is "target".
+   A merchant's own name may begin with such a word ("Card Factory"), so a name is never read so.
+6. Everything from the first word holding a digit or starting with "#" is dropped, with "store", "str", "no" or "location" just before it, so "STARBUCKS #1234 SEATTLE WA" and "Starbucks Store 01234" are "starbucks"; but never while the words kept so far are only generic ones, so "The 1849 Club" and "The 9 Muses" stay two merchants, "A 1 AUTO" stays itself, and "7-Eleven" too.
+7. Punctuation is a space, but for "&" and "'" within a word.
 
-What is left is the merchant; nothing left is no merchant, which is never the same merchant as anything.
+What is left is the merchant, unless every word of it is generic ("the", "check", "payment", "debit" and the like) or a number: that is no merchant, which is never the same merchant as anything, so "CHECK 1001" teaches nothing to "CHECK 1002".
 Plaid's merchant name and the bank's description can still differ ("Blue Bottle Coffee" and "blue bottle"), and are then two merchants: the rule never guesses that two names are one.
+`tests/test_proposals.py` holds it to a table of real-shaped bank text, and to keeping apart every pair of merchants in it that are different.
 
 ### Whose decisions teach whose rows
 
-A suggestion for a row learns only from rows on accounts every one of the row's owners owns, and from rulings made by one of its owners (`access.may_learn`).
-So one member's categories never reach another member's rows, through a ruling, the ledger's entries or the bank's categories; a joint account's rows learn from either owner's decisions on accounts both own, never from one owner's own account; and a member's own rows learn from their decisions on the joint account, but not from their co-owner's.
+A suggestion for a row learns only from rows on accounts with exactly the row's owners, and from rulings made by one of its owners (`access.may_learn`), for its owners' decisions, the ledger's entries, the bank's categories as the ledger maps them and which categories the ledger has alike.
+A suggested category is shown as the row's category to everyone the row's transactions are shared with, so it may come only from accounts shared on exactly the same terms.
+So one member's categories never reach another member's rows; a member's own rows never learn from a joint account, whose detail one owner cannot share without the other; and a joint account's rows learn from either owner's decisions on it, never from one owner's own account.
 Sharing grants nothing here, and neither does being an admin.
 The reason is told only to whoever reviews the row, on the Review page and through the native doorway, never to someone the row's transactions are shared with: "twice before" is about the owners' other rows.
-`tests/test_privacy_boundary.py` and `tests/native/test_doorway.py` crawl a household set up for every way a suggestion could carry one member's category to the other (`tests/learned.py`), under every way of sharing it.
+`tests/test_privacy_boundary.py` and `tests/native/test_doorway.py` crawl a household set up for every way a suggestion could carry one account's categories to another's rows, a third member who owns nothing among them, under every way of sharing it (`tests/learned.py`).
 
 ### A suggestion is never a decision
 
@@ -69,30 +74,16 @@ The row still arrives flagged `!` and waits for a member, however often its merc
 
 ### Why an accepted row never comes back
 
-An accept is bound to the suggestion its author saw (rule 4 below), so a suggestion must not change under a row once it could have been accepted.
-Two rules make sure of it:
+A ruling makes its row immune to what hearth learns.
+An accept keeps booking the row to the account it recorded, and stays valid, for as long as the bank's own inputs to the row are what they were: what the row says (`ids.says`), which binds every ruling, and the bank's own category, recorded with the accept (rule 4 below).
+What hearth learns, from the household's decisions, its imported ledger, the bank's categories as the ledger maps them, who owns which account, what is matched or connected, may change what a row nobody has ruled on suggests, and never anything about a row somebody has.
+So claiming, matching or connecting an account, replacing another connection, setting a category's kind, adding a member, another member's rulings, and deciding other rows of the same merchant again all leave an accepted row booked where it was accepted; `tests/test_accept_holds.py` holds every one of them, and that the bank changing a row's amount, day or category still brings it back.
 
-- **A ruling teaches a row only if it was made before the row first arrived**, the start of the sync that first stored it (`Feed.arrived`).
-  Rulings are only ever added, never changed, so nothing ruled later, a whole merchant accepted at once or one of its rows decided again differently, changes what a row already in the books suggests.
-  Each earlier row teaches what the rulings made before the row's arrival decided it as, whatever was ruled on it since.
-- **The imported ledger teaches a row only if nobody ruled on the row before the ledger was imported** (a ruling numbered at or below the base's `rulings_through`).
-  Such a row keeps what it was suggested without the ledger, so an accept made before the import still holds; and the base is frozen once a ruling rests on it (`docs/real-ledger.md`).
+The one other thing that can bring an accepted row back is the books being unable to hold it: a ledger imported since that closes the account it was booked to, or opens it for another currency (`decision.postable`).
+Laying it there would fail the recompute, so it is asked again instead.
 
-What learning gives up for this is a row's first sight: a first import of a thousand rows arrives before any decision, so its rows learn from the ledger and the bank, and only rows arriving after a decision learn from it.
-Only the bank can change a suggestion after a row could be accepted, as before: by revising the row's own category or merchant, or by revising or withdrawing an earlier row of the same merchant it learned from; the row is then unreviewed again, saying its suggestion changed since it was accepted.
-`tests/test_learning.py` holds this through Review itself, including a whole merchant accepted at once and one of its rows then decided again.
-
-### Where the imported ledger and the bank disagree
-
-An account carried on from an imported base whose bank's balance does not agree with the base and the rows booked since has one reconciling entry, dated its cut-over, against `Equity:Ledger-Bank-Difference` (`docs/books.md`, "Carried on from the base").
-It is in Review as its own kind of row, in the group "Where the imported ledger and the bank disagree", saying so: "The imported ledger and <bank> disagree by this much as of <day>", for the difference.
-Its owner confirms it, which books it `*` where it is, or puts its cause right, such as a row the bank counts arriving, and it shrinks or goes at the next recompute.
-It is confirmed one at a time, never with a group (`desk.one_decision`), and never excluded, as its account's balance is its bank's.
-A confirmation is bound to the difference it saw, as every ruling is bound to what its row said, so a different difference asks again.
-Until it is confirmed, the account is not shown as matching its bank.
-Its review id is made of the account and its cut-over (`ids.reconciling_review_id`), so the entry derived afresh on every recompute is always the same row.
-
-A row booked on an account hearth kept itself that was then moved onto the base's account it is (`docs/real-ledger.md`) keeps its rulings: a ruling is bound to the row as it was booked there (`RulingStore.formerly`).
+What a row nobody has ruled on suggests is also kept from shifting under a member while they work: a ruling teaches a row only if it was made before the row first arrived, the start of the sync that first stored it (`Feed.arrived`).
+So a whole merchant accepted at once teaches the rows that arrive after it, not the rows beside it in the queue the member is looking at.
 
 ## Rulings, and how they reach the books
 
@@ -122,9 +113,12 @@ Which ruling decides a row (`review.decision`):
    Keeping the ruling would mark the revised row checked when nobody checked it, and dropping it would lose the decision without a word, so neither happens: the row is unreviewed again, at its proposal, and the queue says the bank changed it after it was reviewed.
    The ruling stays on record.
    A revision that only tidies the description or refines the category changes none of this; a changed category changes the proposal, which the next rule covers.
-4. An accept is bound to the proposal its author saw.
-   It records, for each row, the account that row proposed when it was accepted, and holds only while the import still proposes that account.
-   If a later import proposes something else, the row is unreviewed again, and the queue says its suggestion changed since it was accepted.
+4. An accept is bound to what its author was shown, and books the row to the account it recorded for it.
+   For a row hearth booked from a bank, it holds while the bank's own inputs to the row are what they were: what the row says (rule 3), and the bank's category, recorded with each accept since hearth began learning suggestions.
+   An accept recorded before then holds while the bank's category alone still names the account it accepted (`booking.proposal`), exactly as it always did.
+   What hearth learns never undoes either ("Why an accepted row never comes back", above).
+   For a row an imported ledger set aside, it holds while the ledger still proposes that account.
+   When it stops holding, the row is unreviewed again, and the queue says its suggestion changed since it was accepted.
 5. An accept never covers a row the import proposed nothing for.
 6. A reopen takes a decision back: the rows it covers are unreviewed again.
    Taking a decision back is not reviewing, so it does not move when the member last reviewed.
@@ -151,7 +145,7 @@ A first import can be over a thousand rows in thirty-odd groups, most of them a 
 
 - **Grouped by default**, largest group first, so payroll and peer-to-peer transfers are one decision each.
   A row hearth booked is grouped by the category it suggests, named for it ("Food and drink: coffee", "Dining", "Income: wages"), whichever step suggested it, so a group is one decision however many merchants and reasons are in it, and there are about as many groups as categories, never one a merchant.
-  A row with nothing suggested is grouped by Plaid's category, as before.
+  A row with nothing suggested is grouped by Plaid's category, said to be suggesting nothing ("Food and drink: fast food, nothing suggested"), so no group's name names a category some of its rows do not suggest; a transfer or a loan payment keeps Plaid's words alone, which "Where did it go?" reads.
   A group with one clear suggestion is one button, binding every row it shows; a group without one opens its first rows for a look and links to the rest.
 - **One by one**, in pages of fifty, for working through rows individually.
 - **Ordered by any dimension**: group size, lowest confidence, largest amount, newest, account or suggested category.
@@ -206,7 +200,9 @@ Exercising the queue at that size is what found that a one-key accept could sett
 ## Totals that lean on unreviewed rows
 
 Every spending and income total on the dashboards says how much of it rests on unreviewed rows, at their suggested category.
-That amount is computed only over parts whose review state the viewer may know (`access.may_see_review_state`): their own, or a part whose transactions are shared with them, where every line already shows its flag.
+A row nothing is suggested for, such as a new merchant's, waits against `Equity:Review:Unresolved` and is in no total at all until a member places it, so every total also says how many such rows it leaves out and how much money they moved its way ("Leaves out 3 transactions of $41 nobody has said what they were yet").
+A transfer or a loan payment waiting to be told where it went is not counted so: it is a move, not spending or income.
+Both amounts are computed only over parts whose review state the viewer may know (`access.may_see_review_state`): their own, or a part whose transactions are shared with them, where every line already shows its flag.
 For any other part in a total, the page says that member's share may include rows they have not checked, the same way whether it does or not.
 So no member's pile can be counted by subtracting from a household figure: `tests/test_review_web.py` checks that another member's ruling changes not a byte of anyone else's pages.
 

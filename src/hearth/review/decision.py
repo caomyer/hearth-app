@@ -21,8 +21,9 @@ This module knows nothing of who may rule, so the books can apply decisions with
 the access policy; ``hearth.review.desk`` and ``hearth.disclosure`` decide whose rulings count.
 """
 
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 
 from hearth.review.pile import PileItem
@@ -111,6 +112,60 @@ def _apply(item: PileItem, covered: Covered, said: frozenset[str]) -> Decision:
         return Decision(State.REJECTED, None, ruling, None)
     if ruling.action is Action.ACCOUNT:
         return Decision(State.REVIEWED, ruling.account, ruling, None)
-    if item.proposed != accepted:
+    if not _holds(item, covered):
         return Decision(State.UNREVIEWED, None, ruling, PROPOSAL_CHANGED)
     return Decision(State.REVIEWED, accepted, ruling, None)
+
+
+def _holds(item: PileItem, covered: Covered) -> bool:
+    """Whether an accept still decides `item`, booking it where it was accepted.
+
+    For a row hearth booked from a bank (`PileItem.bank`), while the bank's own inputs to it
+    are what they were: what it says, which every ruling is bound to, and the bank's category,
+    recorded with the accept. What hearth learned since, from the household's decisions, its
+    ledger or who owns what, may change what the row would suggest now, never what a member
+    decided for it. An accept recorded before the bank's category was kept holds while the
+    bank's category alone still names the account it accepted, as it always did. For any other
+    row, such as one an imported ledger set aside, while it still proposes the account."""
+    if item.bank is not None:
+        if covered.bank is not None:
+            return covered.bank == item.bank
+        return item.plain == covered.accepted
+    return item.proposed == covered.accepted
+
+
+NOT_OPEN = "the account it was booked to is not open on its day in the books"
+"""Why a row decided onto an account the books cannot post it to is unreviewed (`postable`)."""
+
+type Opens = Mapping[str, tuple[date, date | None, frozenset[str] | None]]
+
+
+def postable(
+    item: PileItem, decision: Decision, opens: Opens, *, unknown_is_open: bool = False
+) -> Decision:
+    """`decision`, unless it books the row to an account the books do not hold open on the
+    row's day in its currency: then the row is unreviewed, at its proposal, and says why.
+
+    An accept holds through whatever hearth learns, and a ledger imported since may close or
+    restrict the account it booked; laying it there anyway would fail the recompute, so the row
+    is asked again instead (``docs/books.md``). With `unknown_is_open`, an account `opens` does
+    not name is taken to be open, as for a desk whose books have not yet opened a category a
+    member has just named."""
+    account = decision.account
+    if decision.state is not State.REVIEWED or account is None or account == item.proposed:
+        return decision
+    found = opens.get(account)
+    if found is None:
+        return (
+            decision
+            if unknown_is_open
+            else Decision(State.UNREVIEWED, None, decision.ruling, NOT_OPEN)
+        )
+    opened, closed, currencies = found
+    if (
+        opened <= item.date
+        and (closed is None or item.date <= closed)
+        and (currencies is None or item.currency in currencies)
+    ):
+        return decision
+    return Decision(State.UNREVIEWED, None, decision.ruling, NOT_OPEN)

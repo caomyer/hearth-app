@@ -297,6 +297,12 @@ MIGRATIONS: tuple[str, ...] = (
     -- What kind of money an income or expense account is, where a person said so
     -- (hearth.categories). Every other account's kind is guessed from its name on every
     -- recompute and never stored, so only a person's word is kept.
+    -- What the bank said a row's category was when a member ruled on it, for a row hearth
+    -- booked from a bank (hearth.review.decision): an accept holds while the bank still says
+    -- so, whatever hearth has learned since. A ruling made before this was recorded has none,
+    -- and its accept holds while the bank's category still names the account it accepted.
+    ALTER TABLE review_ruling_rows ADD COLUMN bank TEXT;
+
     CREATE TABLE category_kinds (
         account TEXT PRIMARY KEY,
         kind TEXT NOT NULL CHECK (kind IN

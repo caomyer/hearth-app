@@ -173,6 +173,8 @@ def test_ownership_never_reaches_the_file(fresh: FirstDay) -> None:
             "review-group",
             "review-why",
             "review-reason",
+            "review-bank",
+            "review-plain",
             "source",
         }
         assert all(set(p.meta or {}) <= {"filename", "lineno", "source"} for p in row.postings)

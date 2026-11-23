@@ -47,16 +47,16 @@ def may_learn(
     for a row of an account ``owners`` own: a member's ruling, by ``author``, or the
     household's own ledger's booking, with no author (``hearth.proposals``).
 
-    Only when every owner of the row owns the account the decision was made on, so nobody is
-    shown a suggestion drawn from an account they do not own: one member's categories never
-    reach another's rows, and a joint account learns only from accounts all its owners own
-    together, never from one owner's own. A ruling counts only when its author is one of the
-    row's owners: a member's own decisions are suggested back to them, a joint account's rows
-    learn from either owner's, and one member's row never learns from anyone else's, not even
-    from a co-owner's ruling on the joint account they share. Sharing grants nothing here and
-    neither does being an admin. What nobody owns learns from nothing.
+    Only when the two accounts have exactly the same owners. A suggested category is shown as
+    the row's category to everyone the row's transactions are shared with, so it may come only
+    from accounts whose detail is shared on exactly the same terms: a member's own rows learn
+    from accounts that member owns alone, never from a joint account, whose detail one owner
+    cannot share without the other; a joint account's rows learn only from accounts owned by
+    exactly the same members together. A ruling counts only when its author is one of the
+    row's owners. Sharing grants nothing here and neither does being an admin. What nobody
+    owns learns from nothing.
     """
-    if not owners or not set(owners) <= set(source):
+    if not owners or set(owners) != set(source):
         return False
     return author is None or author in owners
 

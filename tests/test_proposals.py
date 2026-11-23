@@ -20,6 +20,7 @@ from hearth.plaid.booking import bank_says
 from hearth.proposals import (
     LATEST,
     MAP_AT_LEAST,
+    NO_CATEGORY,
     Ledger,
     Proposal,
     Proposer,
@@ -42,45 +43,89 @@ AFTER = ARRIVED + timedelta(days=1)
 # The same merchant.
 
 
-@pytest.mark.parametrize(
-    ("texts", "found"),
-    [
-        # Plaid's own merchant name comes first; the description only without one.
-        (("Blue Bottle Coffee", "SQ *BLUE BOTTLE 0042", None), "blue bottle coffee"),
-        ((None, "SQ *BLUE BOTTLE 0042", None), "blue bottle"),
-        (("  ", None, "Zq Fallback Words"), "zq fallback words"),
-        # Casing.
-        (("BLUE BOTTLE COFFEE",), "blue bottle coffee"),
-        (("blue bottle coffee",), "blue bottle coffee"),
-        # A store number, and the town after it.
-        (("STARBUCKS #1234 SEATTLE WA",), "starbucks"),
-        (("STARBUCKS STORE 01234",), "starbucks"),
-        (("Shell Oil 57444123 Springfield IL",), "shell oil"),
-        (("Target T-1234",), "target"),
-        # A payment processor's prefix, with or without a space.
-        (("SQ *ZQ BEAN COUNTER",), "zq bean counter"),
-        (("TST* Zq Bean Counter",), "zq bean counter"),
-        (("PAYPAL *ZQBEANS",), "zqbeans"),
-        # Not a processor: the merchant, and a reference after its asterisk.
-        (("AMZN Mktp US*2K4AB1",), "amzn mktp us"),
-        # The first word is the merchant's, digits and all.
-        (("7-Eleven 33012",), "7 eleven"),
-        (("24 Hour Fitness 0099",), "24 hour fitness"),
-        # Punctuation is a space, but for an apostrophe or ampersand inside a word.
-        (("Joe's Pizza",), "joe's pizza"),
-        (("H&M 0418",), "h&m"),
-        (("Zq. Bean -- Counter!",), "zq bean counter"),
-        # Nothing to go on is no merchant.
-        ((None, None, None), None),
-        (("", "   "), None),
-        (("***",), None),
-        (("SQ *",), None),
-    ],
-)
+MERCHANTS = [
+    # Plaid's own merchant name comes first; a description only without one.
+    (("Blue Bottle Coffee", "SQ *BLUE BOTTLE 0042", None), "blue bottle coffee"),
+    ((None, "SQ *BLUE BOTTLE 0042", None), "blue bottle"),
+    (("  ", None, "Zq Fallback Words"), "zq fallback words"),
+    # Casing.
+    (("BLUE BOTTLE COFFEE",), "blue bottle coffee"),
+    (("blue bottle coffee",), "blue bottle coffee"),
+    # A store number, and the town after it.
+    (("STARBUCKS #1234 SEATTLE WA",), "starbucks"),
+    (("STARBUCKS STORE 01234",), "starbucks"),
+    (("Shell Oil 57444123 Springfield IL",), "shell oil"),
+    (("Target T-1234",), "target"),
+    # A payment processor's prefix, with or without a space.
+    (("SQ *ZQ BEAN COUNTER",), "zq bean counter"),
+    (("TST* Zq Bean Counter",), "zq bean counter"),
+    (("PAYPAL *ZQBEANS",), "zqbeans"),
+    (("IN *ACME CO",), "acme co"),
+    (("DD *DOORDASH SUSHI",), "doordash sushi"),
+    # Not a processor: the merchant, and a reference after its asterisk.
+    (("AMZN Mktp US*2K4AB1",), "amzn mktp us"),
+    # The bank's own words for how money moved, with the dates and numbers among them.
+    ((None, "PURCHASE AUTHORIZED ON 09/12 STARBUCKS STORE 0042"), "starbucks"),
+    ((None, "PURCHASE AUTHORIZED ON 09/13 SHELL OIL 57444"), "shell oil"),
+    ((None, "ACH DEBIT 0012 GEICO"), "geico"),
+    ((None, "ACH DEBIT 0013 PG&E"), "pg&e"),
+    ((None, "POS DEBIT 1234 TARGET T-1234"), "target"),
+    # Only a description is read for them: a merchant's own name may start with one.
+    (("Card Factory",), "card factory"),
+    # A cheque says no merchant at all, whatever its number.
+    ((None, "CHECK 1001"), None),
+    ((None, "CHECK 1002"), None),
+    # A name is never cut down to a generic word: the first meaningful one is kept, digits
+    # and all.
+    (("The 1849 Club",), "the 1849 club"),
+    (("The 9 Muses",), "the 9 muses"),
+    (("A 1 AUTO",), "a 1 auto"),
+    (("7-Eleven 33012",), "7 eleven"),
+    (("24 Hour Fitness 0099",), "24 hour fitness"),
+    # Letters of every script, accents and all.
+    (("寿司 BAR",), "寿司 bar"),
+    (("拉麺 BAR",), "拉麺 bar"),
+    (("CAFÉ",), "café"),
+    (("Café",), "café"),
+    # Punctuation is a space, but for an apostrophe or ampersand inside a word.
+    (("Joe's Pizza",), "joe's pizza"),
+    (("H&M 0418",), "h&m"),
+    (("Zq. Bean -- Counter!",), "zq bean counter"),
+    # Nothing to go on is no merchant, nor only generic words.
+    ((None, None, None), None),
+    (("", "   "), None),
+    (("***",), None),
+    (("SQ *",), None),
+    ((None, "PURCHASE AUTHORIZED ON 09/12"), None),
+    (("The",), None),
+    ((None, "ONLINE PAYMENT"), None),
+]
+"""Each row's words, as `merchant` takes them, and the merchant they are from."""
+
+
+@pytest.mark.parametrize(("texts", "found"), MERCHANTS)
 def test_one_rule_says_which_merchant_a_row_is_from(
     texts: tuple[str | None, ...], found: str | None
 ) -> None:
     assert merchant(*texts) == found
+
+
+def test_different_merchants_written_alike_are_never_one_merchant() -> None:
+    """The keys of the table are distinct wherever its merchants are, so a wrong merchant can
+    never agree with itself five times."""
+    pairs = [
+        (
+            (None, "PURCHASE AUTHORIZED ON 09/12 STARBUCKS"),
+            (None, "PURCHASE AUTHORIZED ON 09/12 SHELL"),
+        ),
+        ((None, "ACH DEBIT 0012 GEICO"), (None, "ACH DEBIT 0012 PG&E")),
+        (("The 1849 Club",), ("The 9 Muses",)),
+        (("寿司 BAR",), ("拉麺 BAR",)),
+        (("A 1 AUTO",), ("A 2 Z TOYS",)),
+    ]
+    for one, other in pairs:
+        assert merchant(*one) != merchant(*other), (one, other)
+        assert merchant(*one) is not None
 
 
 def test_rows_of_one_merchant_written_differently_are_one_merchant() -> None:
@@ -262,9 +307,33 @@ def test_what_decides_a_row_is_what_decides_it_in_review() -> None:
     assert decided_as([covered("x", group, beans), covered("x", reopen)]) is None
     assert decided_as([covered("x", reopen), covered("x", later_group)]) == (4, beans)
     # Not a transaction, or moved onto an account, books no category: it disagrees.
-    assert decided_as([covered("x", ruling(5, Action.REJECT))]) == (5, None)
+    assert decided_as([covered("x", ruling(5, Action.REJECT))]) == (5, NO_CATEGORY)
     moved = ruling(6, Action.ACCOUNT, account="Assets:Zq:Savings")
-    assert decided_as([covered("x", moved)]) == (6, None)
+    assert decided_as([covered("x", moved)]) == (6, NO_CATEGORY)
+
+
+def test_a_merchant_only_ever_booked_to_no_category_says_so() -> None:
+    """Moved onto an account each time, or ruled not a transaction: that is not booking it
+    more than one way, and the row is told what is true."""
+    moved = [
+        Ruled(
+            f"m{n}",
+            "zq bean counter",
+            DAY,
+            ALONE,
+            (covered(f"m{n}", ruling(n, Action.ACCOUNT, account="Assets:Zq:Savings")),),
+        )
+        for n in range(1, 4)
+    ]
+    plain = target(default=None, bank_says=None, category=None)
+
+    assert proposer(moved).propose(plain) == Proposal(
+        None, Reason(Why.ELSEWHERE, "Not booked to a category before")
+    )
+    transfers = ledger([entry(n, None) for n in range(1, 3)])
+    assert proposer(ledger=transfers).propose(plain) == Proposal(
+        None, Reason(Why.ELSEWHERE, "Not booked to a category before")
+    )
     assert decided_as([]) is None
 
 
@@ -333,10 +402,6 @@ def test_beside_a_ledger_hearths_own_name_for_a_category_is_used_only_if_the_led
     assert proposer(ledger=having).propose(row) == Proposal(
         "Expenses:FoodAndDrink:Coffee", Reason(Why.BANK, "Bank says Coffee")
     )
-    # A row ruled on before the ledger was imported keeps what it was suggested without it.
-    assert proposer(ledger=without).propose(target(before_base=True)).account == (
-        "Expenses:FoodAndDrink:Coffee"
-    )
 
 
 def test_a_row_with_no_merchant_learns_nothing_and_is_not_called_new() -> None:
@@ -363,20 +428,24 @@ def test_another_members_decisions_never_reach_a_members_row() -> None:
     )
 
 
-def test_a_joint_row_learns_only_from_accounts_all_its_owners_own() -> None:
-    """Avery's decision on Avery's own account would show Blake one of Avery's categories, so a
-    joint row learns from it nothing; either owner's decision on the joint account teaches it."""
+def test_a_row_learns_only_from_accounts_with_exactly_its_owners() -> None:
+    """A suggested category is shown to everyone the row is shared with, so it comes only from
+    accounts shared on the same terms: Avery's decision on Avery's own account teaches no joint
+    row, and a decision on the joint account, by either owner, teaches no one's own row."""
     mine = [booked_as("a", 1, "Expenses:Zq:Marzipan", on=ALONE)]
     joint = target(owners=JOINT)
 
     assert proposer(mine).propose(joint).account == "Expenses:FoodAndDrink:Coffee"
+    assert proposer(mine).propose(target()).account == "Expenses:Zq:Marzipan"
     for by in (AVERY, BLAKE):
         theirs = [booked_as("j", 1, "Expenses:Zq:Hearth", by=by, on=JOINT)]
         assert proposer(theirs).propose(joint).account == "Expenses:Zq:Hearth"
-    # Avery's own row learns from Avery's decisions on the joint account, not from Blake's.
-    assert proposer([booked_as("j", 1, "Expenses:Zq:Hearth", on=JOINT)]).propose(
-        target()
-    ).account == ("Expenses:Zq:Hearth")
+        assert proposer(theirs).propose(target()).account == "Expenses:FoodAndDrink:Coffee"
+    # Nor does an account three own teach one two of them own.
+    three = frozenset({AVERY, BLAKE, MemberId(3)})
+    assert proposer([booked_as("t", 1, "Expenses:Zq:All", on=three)]).propose(joint).account == (
+        "Expenses:FoodAndDrink:Coffee"
+    )
 
 
 def test_the_ledger_teaches_a_row_only_from_accounts_all_its_owners_own() -> None:
@@ -394,6 +463,17 @@ def test_the_ledger_teaches_a_row_only_from_accounts_all_its_owners_own() -> Non
     assert proposer(ledger=mine).propose(target(owners=JOINT)).account is None
     assert proposer(ledger=nobodys).propose(plain).account is None
     assert proposer(ledger=mine).propose(target()).account == "Expenses:Zq:Marzipan"
+    # The joint account's entries teach no member's own row, nor the joint row any category
+    # that only the joint account books, beside a ledger.
+    joint = ledger(
+        [entry(n, "Expenses:Zq:Hearthstone", account="Assets:Zq:Joint") for n in range(1, 4)],
+        [("FOOD_AND_DRINK_COFFEE", n) for n in range(1, 4)],
+    )
+    assert proposer(ledger=joint).propose(plain) == Proposal(None, Reason(Why.NEW, "New merchant"))
+    assert proposer(ledger=joint).propose(target()).account is None
+    assert proposer(ledger=joint).propose(target(owners=JOINT)).account == (
+        "Expenses:Zq:Hearthstone"
+    )
 
 
 # A suggestion the books can post.

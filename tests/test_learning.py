@@ -123,6 +123,16 @@ def suggested(item: PileItem) -> tuple[str | None, str, Reason | None]:
     return item.proposed, item.group, item.reason
 
 
+def booked_to(household: Household, item: PileItem) -> str:
+    """Where the books hold `item` now: the account its second posting is booked to."""
+    (entry,) = [
+        e
+        for e in household.books().entries
+        if isinstance(e, Transaction) and e.meta.get("review-id") == item.review_id
+    ]
+    return entry.postings[1].account
+
+
 def connected(tmp_path: Path, clock: FakeClock) -> Household:
     clock.now = NOW
     fresh = first_day(tmp_path, clock, institutions=(BANK,))
@@ -340,12 +350,19 @@ def _base() -> str:
     return text
 
 
-def based(tmp_path: Path, clock: FakeClock, *, ruled_first: bool = False) -> Household:
+def based(
+    tmp_path: Path,
+    clock: FakeClock,
+    *,
+    ruled_first: bool = False,
+    others: tuple[FakeInstitution, ...] = (),
+    extra: str = "",
+) -> Household:
     """Avery's bank connected, the ledger imported and the checking account matched to it.
     With `ruled_first`, Avery accepted the bean counter's September row as the bank said
     before the ledger was imported."""
     clock.now = NOW
-    fresh = first_day(tmp_path, clock, institutions=(IMPORTED_BANK,))
+    fresh = first_day(tmp_path, clock, institutions=(IMPORTED_BANK, *others))
     item = fresh.link("avery", IMPORTED_BANK.id)
     household = Household(fresh, item, clock)
     conn = fresh.connect()
@@ -372,7 +389,7 @@ def based(tmp_path: Path, clock: FakeClock, *, ruled_first: bool = False) -> Hou
         conn.close()
     folder = tmp_path / "kept"
     folder.mkdir()
-    (folder / "main.beancount").write_text(_base())
+    (folder / "main.beancount").write_text(_base() + extra)
     clock.advance(timedelta(minutes=5))
     import_ledger(fresh.settings, folder / "main.beancount", now=clock())
     conn = fresh.connect()
@@ -421,7 +438,7 @@ def test_with_a_ledger_new_rows_are_suggested_in_its_own_categories_and_say_why(
     # no category of hearth's name for it: asked plainly, never a category invented.
     assert said("Zq Burger Barn", "9.00") == (
         None,
-        "Food and drink: fast food",
+        "Food and drink: fast food, nothing suggested",
         Reason(Why.NEW, "New merchant"),
     )
     # Hearth's own name for the bank's category, which the ledger has already.
@@ -436,14 +453,40 @@ def test_with_a_ledger_new_rows_are_suggested_in_its_own_categories_and_say_why(
     assert "FoodAndDrink" not in page
 
 
-def test_a_row_decided_before_the_ledger_came_keeps_what_it_was_suggested_without_it(
+def test_a_row_accepted_before_the_ledger_came_stays_booked_where_it_was_accepted(
     tmp_path: Path, clock: FakeClock
 ) -> None:
+    """The ledger now suggests its own category for the row, as for any other; the accept,
+    made before the ledger came and before the bank's category was kept with a ruling, holds,
+    as the bank's category still names what it accepted."""
     household = based(tmp_path, clock, ruled_first=True)
     item = household.row("ZQ BEAN COUNTER #0042", "3.75")
 
-    assert item.proposed == PLAID_COFFEE
-    assert item.reason == Reason(Why.BANK, "Bank says Coffee")
+    assert item.proposed == "Expenses:Zq:Coffee"
     assert household.state(item) is State.REVIEWED
+    assert booked_to(household, item) == PLAID_COFFEE
     # Every other row learns from the ledger as it would have.
     assert household.row("Zq Grocer", "40.00").proposed == "Expenses:Zq:Groceries"
+
+
+def test_a_total_says_how_much_money_nobody_has_placed_yet(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    """The burger barn's row suggests nothing, so it is in no spending total: September's
+    says so to its owner, how many rows and how much, and says nothing of it to anyone else."""
+    household = based(tmp_path, clock)
+    conn = household.fresh.connect()
+    try:
+        avery = find(conn, "avery")
+        assert avery is not None
+        view = Disclosure.load(conn, avery, household.fresh.bookkeeper.status).household()
+    finally:
+        conn.close()
+    spent = view.left_over.out_unreviewed
+    assert view.left_over.last.month.month == 9
+    assert (spent.unplaced.rows, spent.unplaced.amount) == (1, Decimal("9.00"))
+    assert spent.leaves_out
+
+    page = household.client().get("/").text
+    assert "Leaves out 1 transaction of" in page
+    assert "Leaves out" not in household.fresh.signed_in("blake").get("/").text

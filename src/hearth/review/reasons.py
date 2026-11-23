@@ -23,6 +23,9 @@ class Why(StrEnum):
     """Nothing is suggested, and nothing was ever decided for the merchant: "New merchant"."""
     MIXED = "mixed"
     """Nothing is suggested, as the merchant was booked more than one way before."""
+    ELSEWHERE = "elsewhere"
+    """Nothing is suggested, as the merchant was only ever booked to no category before:
+    moved onto an account, or not a transaction: "Not booked to a category before"."""
 
 
 @dataclass(frozen=True, slots=True)

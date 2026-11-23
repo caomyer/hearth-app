@@ -231,13 +231,13 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
 
 
 @pytest.mark.parametrize("scenario", LEARNED_SCENARIOS)
-@pytest.mark.parametrize("viewer", ["avery", "blake"])
+@pytest.mark.parametrize("viewer", learned_household.USERNAMES)
 def test_no_answer_carries_a_category_a_suggestion_could_have_carried(
     learned: Learned, scenario: str, viewer: str
 ) -> None:
     """The doorway's share of the suggestions' boundary (``tests/learned.py``): no answer holds
     another member's category, and a reason is told only on a row the viewer reviews."""
-    choices = dict.fromkeys(("avery", "blake"), DEFAULT_SHARED)
+    choices = dict.fromkeys(learned_household.USERNAMES, DEFAULT_SHARED)
     choices.update(LEARNED_SCENARIOS[scenario])
     for username, shared in choices.items():
         learned.choose(username, shared)
@@ -245,7 +245,12 @@ def test_no_answer_carries_a_category_a_suggestion_could_have_carried(
 
     ids = [*learned.account_ids.values(), "no-such-account"]
     categories = [f"Expenses:Zq:{word}" for word in learned_household.SECRETS] + ["Expenses"]
-    words = [learned_household.DELI, learned_household.GROCER, *learned_household.SECRETS]
+    words = [
+        learned_household.DELI,
+        learned_household.GROCER,
+        learned_household.MARKET,
+        *learned_household.SECRETS,
+    ]
     asked: list[tuple[str, dict[str, object]]] = [("transactions", {"limit": asks.MOST})]
     asked += [("account", {"id": i}) for i in ids]
     asked += [("transactions", {"account": i}) for i in ids]
@@ -276,4 +281,4 @@ def test_no_answer_carries_a_category_a_suggestion_could_have_carried(
                 assert {a["id"] for a in entry["accounts"]} <= reviews, entry
                 reasons.append(entry["reason"])
     mine = {"avery": "Pantry once before", "blake": "As your ledger books it"}
-    assert mine[viewer] in reasons
+    assert mine[viewer] in reasons if viewer in mine else reasons == []

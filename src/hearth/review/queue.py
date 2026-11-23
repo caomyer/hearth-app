@@ -108,7 +108,7 @@ def said(view: ItemView) -> str:
     reason = view.item.reason
     if band in (Confidence.CHANGED, Confidence.REVISED) or reason is None:
         return band.value
-    if view.item.proposed is None and reason.why not in (Why.NEW, Why.MIXED):
+    if view.item.proposed is None and reason.why not in (Why.NEW, Why.MIXED, Why.ELSEWHERE):
         return band.value
     return reason.words
 
