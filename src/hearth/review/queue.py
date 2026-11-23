@@ -20,6 +20,7 @@ from typing import Any
 from hearth.names import readable
 from hearth.review.decision import PROPOSAL_CHANGED, REVISED, State
 from hearth.review.desk import ItemView, one_decision
+from hearth.review.reasons import Why
 
 PAGE_SIZE = 50
 """Rows on one page of the one-by-one view: enough to work through, few enough to render."""
@@ -72,6 +73,8 @@ class Confidence(StrEnum):
 
 
 def confidence(view: ItemView) -> Confidence:
+    """How sure the suggestion is, as a band: a categoriser's score where the import kept one,
+    and otherwise what was suggested, if anything (`said` gives the words a row is shown with)."""
     if view.decision.reason == PROPOSAL_CHANGED:
         return Confidence.CHANGED
     if view.decision.reason == REVISED:
@@ -84,6 +87,38 @@ def confidence(view: ItemView) -> Confidence:
     if score < LOW_CONFIDENCE:
         return Confidence.LOW
     return Confidence.MEDIUM if score < HIGH_CONFIDENCE else Confidence.HIGH
+
+
+SURER = {
+    Why.REMEMBERED: Confidence.HIGH,
+    Why.LEDGER: Confidence.HIGH,
+    Why.BANK: Confidence.UNSCORED,
+}
+"""Where a reason ranks among the bands, for ordering by confidence: what a member decided
+before, or the ledger books, is as sure as a confident score; the bank's category is as sure as
+any rule."""
+
+
+def said(view: ItemView) -> str:
+    """Why a row is suggested as it is, or why nothing is, in words: "Dining twice before",
+    "As your ledger books it", "Bank says Restaurant", "New merchant", or the band a
+    categoriser's score falls in. That the suggestion changed since it was accepted, or the
+    bank changed the row since it was reviewed, comes first, as what the member must know."""
+    band = confidence(view)
+    reason = view.item.reason
+    if band in (Confidence.CHANGED, Confidence.REVISED) or reason is None:
+        return band.value
+    if view.item.proposed is None and reason.why not in (Why.NEW, Why.MIXED):
+        return band.value
+    return reason.words
+
+
+def _rank(view: ItemView) -> int:
+    band = confidence(view)
+    reason = view.item.reason
+    if band is Confidence.UNSCORED and reason is not None:
+        band = SURER.get(reason.why, band)
+    return _CONFIDENCE_RANK.index(band)
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,8 +211,9 @@ class QueueGroup:
         return one_decision(self.name, [v.item for v in self.waiting])
 
     @property
-    def lowest(self) -> Confidence:
-        return min((confidence(v) for v in self.rows), key=_CONFIDENCE_RANK.index)
+    def lowest(self) -> str:
+        """Why the least sure of its rows is suggested as it is, in words (`said`)."""
+        return said(min(self.rows, key=lambda v: (_rank(v), v.item.date, v.item.review_id)))
 
     @property
     def total(self) -> Decimal:
@@ -333,7 +369,7 @@ def _row_key(order: Order) -> Callable[[ItemView], Any]:
 
     match order:
         case Order.CONFIDENCE:
-            return lambda v: (_CONFIDENCE_RANK.index(confidence(v)), _score(v), *newest(v))
+            return lambda v: (_rank(v), _score(v), *newest(v))
         case Order.AMOUNT:
             return lambda v: (-abs(v.item.amount), *newest(v))
         case Order.ACCOUNT:

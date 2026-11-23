@@ -37,7 +37,7 @@ from hearth import books, db, members
 from hearth.books import Status
 from hearth.clock import Clock, system_clock
 from hearth.config import Settings
-from hearth.disclosure import Disclosure, rulings_in
+from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.plaid import feed
 from hearth.plaid.activity import fetch_activity
 from hearth.plaid.approval import Approval, ApprovalRequired, Operation
@@ -86,7 +86,7 @@ def run(arguments: argparse.Namespace, settings: Settings) -> int:
                 settings,
                 PlaidSetup(approval=Approval.of([Operation.READ])),
                 system_clock,
-                books.from_household(settings, rulings=rulings_in),
+                books.from_household(settings, rulings=rulings_in, learns=may_learn),
             )
         case "remove":
             return remove(settings, arguments.item_id, approved=arguments.approved)
@@ -102,7 +102,7 @@ def run(arguments: argparse.Namespace, settings: Settings) -> int:
                 settings,
                 PlaidSetup(approval=Approval.of([Operation.HOLDINGS])),
                 system_clock,
-                books.from_household(settings, rulings=rulings_in),
+                books.from_household(settings, rulings=rulings_in, learns=may_learn),
             )
         case "activity":
             if not arguments.approved:
@@ -116,7 +116,7 @@ def run(arguments: argparse.Namespace, settings: Settings) -> int:
                 settings,
                 PlaidSetup(approval=Approval.of([Operation.ACTIVITY])),
                 system_clock,
-                books.from_household(settings, rulings=rulings_in),
+                books.from_household(settings, rulings=rulings_in, learns=may_learn),
             )
         case "adopt":
             if not arguments.approved:

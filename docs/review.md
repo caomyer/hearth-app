@@ -16,8 +16,71 @@ Neither is a proposal: accepting such a row settles nothing, and no ruling may b
 Metadata carries the row's `review-id`, `review-group`, `model-confidence` and `source`, as beancount_nextgen writes them.
 `pile.read_pile` reads them; a row without a review id or a group is refused, because a ruling on it could not be kept.
 
-A row hearth books from a connection (`hearth.plaid.booking`) is named by Plaid's transaction id (`ids.plaid_review_id`), which Plaid keeps when it revises the row, and grouped by Plaid's category, so every row in a group proposes the same account.
-Plaid rates its own category in words, which the feed does not keep yet, so such a row carries no `model-confidence` and reads "Suggested by a rule".
+A row hearth books from a connection (`hearth.plaid.booking`) is named by Plaid's transaction id (`ids.plaid_review_id`), which Plaid keeps when it revises the row.
+It is grouped by the category it suggests, so every row in a group suggests the same one, and a row with nothing suggested by Plaid's category.
+It carries no `model-confidence`: it says instead why it is suggested as it is, in words (`review-why` and `review-reason`, "Suggestions, and why" below).
+
+## Suggestions, and why
+
+What a row hearth books is suggested as comes from `hearth.proposals`, afresh on every recompute, and is the first of these that gives one:
+
+1. **What the row's owners decided before for the same merchant**: their latest decisions on rows of the merchant, up to the newest 5, when every one of them booked the same category.
+   It reads "Dining twice before", counting every decision for the merchant that booked that category.
+2. **How the imported ledger books the same merchant**, for a household with one: the ledger's latest entries for it, up to the newest 5, on accounts all the row's owners own, when every one books the same one category.
+   It reads "As your ledger books it".
+3. **The bank's category, as the ledger names it**, for a household with an imported ledger: the rows of the bank's that the ledger holds, on accounts all the row's owners own, each give the bank's category beside the ledger's own.
+   A bank category is mapped to a ledger category when the ledger holds at least 3 rows of it and strictly more than half of them book that one category; a held row the ledger books as no one category, such as a split, counts against every category.
+   It reads "Bank says Restaurant", the bank's category by its most specific words.
+4. **The bank's category, as hearth names it** (`booking.proposal`: `FOOD_AND_DRINK_COFFEE` is `Expenses:FoodAndDrink:Coffee`); for a household with an imported ledger only when the ledger already books that category on an account all the row's owners own, so hearth never invents a category beside a ledger that has its own.
+   It reads "Bank says Coffee".
+
+With none, nothing is suggested and the row is asked plainly: it reads "New merchant" when nothing was decided or booked for its merchant before, and "Booked more than one way before" when the latest decisions or entries disagree.
+A row with no merchant at all reads "Nothing suggested".
+A transfer or a loan payment is never suggested a category: it is asked where its money went ("Where did it go?", below).
+A suggested account must be a category the books can post the row to: open on its day in a ledger hearth reads, if that ledger opens it, and taking its currency; otherwise the next step is tried, so no suggestion can make a recompute fail.
+No reason is ever a percentage.
+
+### The same merchant
+
+`hearth.merchants.merchant` is the one rule for which merchant a row is from, for Plaid's rows and the ledger's entries alike:
+
+- the words are Plaid's merchant name where it sends one, else its name for the row, else the bank's own description; a ledger entry's payee, else its narration;
+- case is ignored;
+- a payment processor's prefix before an asterisk is dropped: `SQ *`, `TST*`, `PAYPAL *`, `SP *` and the like, generic services, never a merchant;
+- everything from the first remaining asterisk on is dropped, the network's reference for one payment ("AMZN Mktp US*2K4AB1" is "amzn mktp us");
+- everything from the first word after the first that holds a digit or starts with "#" is dropped, with "store", "str", "no" or "location" just before it, so "STARBUCKS #1234 SEATTLE WA" and "Starbucks Store 01234" are "starbucks", while the first word is always kept, so "7-Eleven" stays itself;
+- punctuation is a space, but for "&" and "'" within a word.
+
+What is left is the merchant; nothing left is no merchant, which is never the same merchant as anything.
+Plaid's merchant name and the bank's description can still differ ("Blue Bottle Coffee" and "blue bottle"), and are then two merchants: the rule never guesses that two names are one.
+
+### Whose decisions teach whose rows
+
+A suggestion for a row learns only from rows on accounts every one of the row's owners owns, and from rulings made by one of its owners (`access.may_learn`).
+So one member's categories never reach another member's rows, through a ruling, the ledger's entries or the bank's categories; a joint account's rows learn from either owner's decisions on accounts both own, never from one owner's own account; and a member's own rows learn from their decisions on the joint account, but not from their co-owner's.
+Sharing grants nothing here, and neither does being an admin.
+The reason is told only to whoever reviews the row, on the Review page and through the native doorway, never to someone the row's transactions are shared with: "twice before" is about the owners' other rows.
+`tests/test_privacy_boundary.py` and `tests/native/test_doorway.py` crawl a household set up for every way a suggestion could carry one member's category to the other (`tests/learned.py`), under every way of sharing it.
+
+### A suggestion is never a decision
+
+A remembered merchant only sets the suggestion.
+The row still arrives flagged `!` and waits for a member, however often its merchant was decided before; nothing is accepted on anyone's behalf, after a delay or otherwise.
+
+### Why an accepted row never comes back
+
+An accept is bound to the suggestion its author saw (rule 4 below), so a suggestion must not change under a row once it could have been accepted.
+Two rules make sure of it:
+
+- **A ruling teaches a row only if it was made before the row first arrived**, the start of the sync that first stored it (`Feed.arrived`).
+  Rulings are only ever added, never changed, so nothing ruled later, a whole merchant accepted at once or one of its rows decided again differently, changes what a row already in the books suggests.
+  Each earlier row teaches what the rulings made before the row's arrival decided it as, whatever was ruled on it since.
+- **The imported ledger teaches a row only if nobody ruled on the row before the ledger was imported** (a ruling numbered at or below the base's `rulings_through`).
+  Such a row keeps what it was suggested without the ledger, so an accept made before the import still holds; and the base is frozen once a ruling rests on it (`docs/real-ledger.md`).
+
+What learning gives up for this is a row's first sight: a first import of a thousand rows arrives before any decision, so its rows learn from the ledger and the bank, and only rows arriving after a decision learn from it.
+Only the bank can change a suggestion after a row could be accepted, as before: by revising the row's own category or merchant, or by revising or withdrawing an earlier row of the same merchant it learned from; the row is then unreviewed again, saying its suggestion changed since it was accepted.
+`tests/test_learning.py` holds this through Review itself, including a whole merchant accepted at once and one of its rows then decided again.
 
 ### Where the imported ledger and the bank disagree
 
@@ -87,11 +150,14 @@ A first import can be over a thousand rows in thirty-odd groups, most of them a 
 `review.queue` makes that tractable:
 
 - **Grouped by default**, largest group first, so payroll and peer-to-peer transfers are one decision each.
+  A row hearth booked is grouped by the category it suggests, named for it ("Food and drink: coffee", "Dining", "Income: wages"), whichever step suggested it, so a group is one decision however many merchants and reasons are in it, and there are about as many groups as categories, never one a merchant.
+  A row with nothing suggested is grouped by Plaid's category, as before.
   A group with one clear suggestion is one button, binding every row it shows; a group without one opens its first rows for a look and links to the rest.
 - **One by one**, in pages of fifty, for working through rows individually.
 - **Ordered by any dimension**: group size, lowest confidence, largest amount, newest, account or suggested category.
   Lowest confidence and largest amount find real errors fastest.
-  Confidence is shown as a band in words ("Low confidence", "Nothing suggested"), as the design asks, never as a percentage.
+  Each row says why it is suggested as it is ("Dining twice before", "As your ledger books it", "Bank says Restaurant", "New merchant"); a row an importer scored says its band in words ("Low confidence", "Nothing suggested"), as the design asks, never as a percentage.
+  Least sure first puts first what was reviewed once and has changed since, then what nothing suggests, then the lowest scores, then the bank's category, then the ledger's and a member's own decisions.
 - **Filtered** by account, suggested category or group, and **searched** by merchant or description, in any case, to find one particular row.
 - **Honest progress**: how many rows remain and how much money they move, how many are reviewed of the total, and what the current filter leaves, all of it only what the member can act on.
 

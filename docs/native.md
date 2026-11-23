@@ -178,6 +178,8 @@ An entry is one of `transaction`, `transfer` or `balance` (`hearth.disclosure.jo
 - An opening balance is never an entry.
 - A `balance` is a check the books hold, on the last day it covers, for whoever may see both the account's balance and its transactions; every check in the books passed.
 - `unreviewed` marks a row nobody has checked; `suggested` says its category is hearth's suggestion, and `waiting` what one with no category waits to be told.
+- `reason` says, in words, why an unreviewed row is suggested as it is, or why nothing is: "Dining twice before", "As your ledger books it", "Bank says Restaurant", "New merchant" (`docs/review.md`, "Suggestions, and why").
+  It is told only on a row the viewer reviews, an owner's, and is null on everything else, as it says what the row's owners decided before; an app that does not know it ignores it, and one that does reads it as none when an older engine leaves it out.
 - `position` is where it stands in what the filter leaves, which is how the app tells entries apart; it says nothing of the household's ledger.
 
 ## The boundary

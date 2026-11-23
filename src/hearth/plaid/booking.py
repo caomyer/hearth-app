@@ -18,13 +18,16 @@ Then, row by row:
   booked once, as both banks' records of it agree;
 - one side of a card payment nothing pairs with is booked flagged in `pairing.GROUP`,
   against ``hearth.review.pile.TRANSFER_PENDING``, never as spending or income;
-- every other row is booked flagged against the account Plaid's category proposes, or
-  against ``hearth.review.pile.UNRESOLVED`` when it proposes none: a transfer, a loan
-  payment, or a category Plaid could not decide.
+- every other row is booked flagged against the category ``hearth.proposals`` suggests for
+  it, from what its owners decided before for its merchant, how the imported ledger books it,
+  or the bank's category, with the reason in words; or against
+  ``hearth.review.pile.UNRESOLVED`` when nothing is suggested: a transfer, a loan payment, or
+  a row nothing teaches anything about.
 
 A flagged row carries what the review desk keys a ruling to: its review id, derived from the
-Plaid transaction id so it survives Plaid revising the row, and its group, which is Plaid's
-category, so that each group is one decision. Every entry carries its
+Plaid transaction id so it survives Plaid revising the row, and its group: the suggested
+category, so every row in a group suggests the same one and accepting a group is one decision,
+or, for a row with nothing suggested, Plaid's category. Every entry carries its
 `connections.plaid_source`, which coverage parses to tell which connection vouches for it.
 
 An account the household's own ledger opens is that ledger's (``docs/real-ledger.md``):
@@ -37,7 +40,7 @@ of it is the base's (`book`).
 
 import re
 import sqlite3
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -51,13 +54,29 @@ from hearth import carrying
 from hearth.accounts import all_accounts
 from hearth.carrying import Carry, Held, Status
 from hearth.connections import plaid_source
+from hearth.members import MemberId
+from hearth.merchants import merchant
 from hearth.plaid import pairing
 from hearth.plaid.client import PRIMARIES, Transaction
 from hearth.plaid.feed import Feed
 from hearth.plaid.mapping import component
 from hearth.plaid.registry import Item, LinkedAccount, Registry
+from hearth.proposals import (
+    Ledger,
+    MayLearn,
+    Opens,
+    Proposal,
+    Proposer,
+    Ruled,
+    Target,
+    learn_nothing,
+)
+from hearth.proposals import group_of as proposal_group
+from hearth.review import reasons
 from hearth.review.ids import plaid_review_id
 from hearth.review.pile import TRANSFER_PENDING, UNRESOLVED, Moved
+from hearth.review.reasons import Reason
+from hearth.review.rulings import Covered, RulingStore
 
 ORIGIN = "<plaid>"
 """Where an entry booked here says it is from, until ``hearth.ownbooks`` files it among the
@@ -129,6 +148,9 @@ def book(
     opened: Collection[str] = (),
     base: Held | None = None,
     today: date = date.max,
+    learns: MayLearn = learn_nothing,
+    base_through: int = 0,
+    opens: Opens | None = None,
 ) -> Booked:
     """Every posted row on an account a member has mapped into the books, as an entry.
 
@@ -140,11 +162,18 @@ def book(
     Pairing runs over every row of the accounts hearth books, whatever day each is dated and
     whether the base holds it or not, exactly as it does without a base; each pair is then
     booked by what carrying makes of its two rows (`_legs`, ``docs/pairing.md``).
+
+    Each other row is suggested a category by ``hearth.proposals``, learning only what
+    `learns`, the access policy, lets its owners learn; from a `base`, only for a row nobody
+    ruled on by `base_through`, the newest ruling when the base was imported. `opens` are the
+    days each account of the ledger hearth reads opens and closes, and the currencies it takes,
+    which a suggestion must keep to.
     """
     carried = _carried(conn, opened, base, today)
     feeds, rows = taken_once(conn, feed, opened=set(opened) - carried)
     plans = _plans(Registry(conn), base, carried, feeds, rows)
     paired = pairing.staged(conn, rows)
+    propose = _proposer(conn, feed, feeds, rows, base, plans, learns, base_through, opens or {})
 
     def status(row: Transaction) -> Status:
         plan = plans.get(feeds[row.account_id][1])
@@ -183,9 +212,15 @@ def book(
                 _flagged(row, linked.item_id, ledger_account, TRANSFER_PENDING, pairing.GROUP)
             )
         else:
+            suggested = propose(row, ledger_account)
             entries.append(
                 _flagged(
-                    row, linked.item_id, ledger_account, proposal(row.category), group(row.category)
+                    row,
+                    linked.item_id,
+                    ledger_account,
+                    suggested.account or UNRESOLVED,
+                    proposal_group(suggested.account) if suggested.account else group(row.category),
+                    suggested.reason,
                 )
             )
         booked.append(row)
@@ -203,6 +238,103 @@ def book(
     }
     later = carrying.postponed(base, feeding(conn, opened), today) if base is not None else {}
     return Booked(tuple(entries), frozenset(accounts), fed, taken, kept, later)
+
+
+def _proposer(
+    conn: sqlite3.Connection,
+    feed: Feed,
+    feeds: Mapping[str, tuple[LinkedAccount, str]],
+    rows: Collection[Transaction],
+    base: Held | None,
+    plans: Mapping[str, Carry],
+    learns: MayLearn,
+    base_through: int,
+    opens: Opens,
+) -> Callable[[Transaction, str], Proposal]:
+    """How each row on a ledger account is suggested a category (``hearth.proposals``): from
+    the rulings on every row hearth books and every row the base set aside for review, and
+    from the base's own entries and the bank's rows it holds."""
+    owned = {account.ledger_account: account.owners for account in all_accounts(conn)}
+
+    def owners(ledger_account: str) -> frozenset[MemberId]:
+        return frozenset(owned.get(ledger_account, frozenset()))
+
+    def all_own(accounts: frozenset[str]) -> frozenset[MemberId]:
+        found = [owners(a) for a in accounts]
+        return frozenset.intersection(*found) if found else frozenset()
+
+    sources: dict[str, tuple[str | None, date, frozenset[MemberId]]] = {}
+    for row in rows:
+        sources[plaid_review_id(row.transaction_id)] = (
+            _merchant(row),
+            row.day,
+            owners(feeds[row.account_id][1]),
+        )
+    if base is not None:
+        for entry in base.entries:
+            if entry.review_id is not None and entry.review_id not in sources:
+                sources[entry.review_id] = (
+                    merchant(entry.payee, entry.narration),
+                    entry.day,
+                    all_own(entry.accounts),
+                )
+    covering: dict[str, list[Covered]] = {}
+    for covered in RulingStore(conn).covering(sources):
+        covering.setdefault(covered.review_id, []).append(covered)
+    ruled = [
+        Ruled(review_id, name, day, held, tuple(covering[review_id]))
+        for review_id, (name, day, held) in sources.items()
+        if review_id in covering
+    ]
+    ledger = None
+    if base is not None:
+        by_id = {row.transaction_id: row for row in rows}
+        named: dict[int, set[str]] = {}
+        for entry in base.entries:
+            if (own := merchant(entry.payee, entry.narration)) is not None:
+                named.setdefault(entry.entry, set()).add(own)
+        held: list[tuple[str, int]] = []
+        for plan in plans.values():
+            for transaction_id, number in plan.held_by.items():
+                found = by_id.get(transaction_id)
+                if found is None:
+                    continue
+                if (theirs := _merchant(found)) is not None:
+                    named.setdefault(number, set()).add(theirs)
+                if found.category:
+                    held.append((found.category, number))
+        ledger = Ledger(base.entries, {n: frozenset(m) for n, m in named.items()}, held, owners)
+    proposer = Proposer(learns, ruled, ledger, opens)
+    arrived: dict[str, datetime] = {}
+    for account_id in sorted({row.account_id for row in rows}):
+        arrived |= feed.arrived(account_id)
+
+    def propose(row: Transaction, ledger_account: str) -> Proposal:
+        split = _split(row.category)
+        if split is not None and split[0] in MOVES:
+            return Proposal(None, None)
+        review_id = plaid_review_id(row.transaction_id)
+        default = proposal(row.category)
+        return proposer.propose(
+            Target(
+                review_id=review_id,
+                merchant=_merchant(row),
+                day=row.day,
+                currency=row.currency or "",
+                owners=owners(ledger_account),
+                category=row.category,
+                default=None if default == UNRESOLVED else default,
+                bank_says=bank_says(row.category),
+                arrived=arrived.get(row.transaction_id),
+                before_base=any(c.ruling.id <= base_through for c in covering.get(review_id, ())),
+            )
+        )
+
+    return propose
+
+
+def _merchant(row: Transaction) -> str | None:
+    return merchant(row.merchant_name, row.name, row.original_description)
 
 
 class _Legs(StrEnum):
@@ -395,6 +527,19 @@ def group(category: str | None) -> str:
     return named[:1].upper() + named[1:]
 
 
+def bank_says(category: str | None) -> str | None:
+    """Plaid's category as a reason says it, its most specific part in words:
+    ``FOOD_AND_DRINK_RESTAURANT`` is "Restaurant". None for one hearth does not know."""
+    split = _split(category)
+    if split is None:
+        return None
+    primary, detail = (_words(part) for part in split)
+    if detail.startswith(f"{primary} "):
+        detail = detail.removeprefix(primary).strip()
+    detail = detail or primary
+    return detail[:1].upper() + detail[1:]
+
+
 MOVES = {
     "TRANSFER_IN": Moved.TRANSFER,
     "TRANSFER_OUT": Moved.TRANSFER,
@@ -438,13 +583,23 @@ def _name(words: str) -> str:
     return component(_words(words))
 
 
-def _flagged(row: Transaction, item_id: str, account: str, against: str, group: str) -> Entry:
+def _flagged(
+    row: Transaction,
+    item_id: str,
+    account: str,
+    against: str,
+    group: str,
+    reason: Reason | None = None,
+) -> Entry:
     """A row for a member to review: their account's side as the bank sent it, balanced
-    against `against`."""
+    against `against`, and why, when something says why."""
     meta = new_metadata(ORIGIN, 0)
     meta["review-id"] = plaid_review_id(row.transaction_id)
     meta["review-group"] = group
     meta["source"] = plaid_source(item_id, row.transaction_id)
+    if reason is not None:
+        meta[reasons.WHY] = reason.why.value
+        meta[reasons.WORDS] = reason.words
     units = _units(row)
     return Entry(
         meta,

@@ -202,6 +202,14 @@ A carried account is vouched for through its connection's last successful sync, 
 A matched account that is not carried, a brokerage, is vouched for only through the base's own last day on it, never through a later sync: nothing after the base was frozen is in the books, so a month after it reads as incomplete, however current the connection is, rather than as a quiet month.
 A live ledger inherited at `HEARTH_LEDGER` is not capped, as an import outside hearth may still be adding to it.
 
+## What the ledger teaches
+
+Once a ledger is imported, hearth suggests a category for every row it books in the ledger's own terms, never inventing one beside it (`docs/review.md`, "Suggestions, and why"):
+as the row's owners decided before for the same merchant; as the ledger's latest entries for the merchant book it; as the rows of the bank's that the ledger holds say the bank's category is, by a strict majority of at least 3; and as hearth names the bank's category only when the ledger already books that category.
+Each learns only from accounts all the row's owners own, so the ledger never carries one member's categories to another's rows, nor one owner's to a joint account's.
+A row a member ruled on before the ledger was imported keeps what it was suggested without it, so an accept made then still holds.
+Otherwise nothing is suggested and the row is asked plainly, "New merchant".
+
 ## Read-only, and how that is kept
 
 Hearth never writes to the ledger it imports or inherits, or the directory it lives in; what it writes is the base and its own books file, both in its data directory (`docs/books.md`).

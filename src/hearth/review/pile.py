@@ -17,7 +17,8 @@ from enum import StrEnum
 from beancount.core.amount import Amount
 from beancount.core.data import Directive, Transaction
 
-from hearth.review import ids
+from hearth.review import ids, reasons
+from hearth.review.reasons import Reason
 
 UNRESOLVED = "Equity:Review:Unresolved"
 """Where a row sits when nothing could be proposed. Never an account anyone chose."""
@@ -73,6 +74,8 @@ class PileItem:
     transfer: bool = False
     """One side of a transfer whose other side is not in the books (`TRANSFER_PENDING`): what
     settles it is that other side arriving, not a category."""
+    reason: Reason | None = None
+    """Why it is suggested as it is, or why nothing is, in words (``hearth.proposals``)."""
 
     @property
     def says(self) -> str:
@@ -140,6 +143,7 @@ def read_pile(entries: Iterable[Directive]) -> list[PileItem]:
                 source=source if isinstance(source, str) else None,
                 location=where,
                 transfer=proposal.account == TRANSFER_PENDING,
+                reason=reasons.read(entry.meta),
             )
         )
     return items

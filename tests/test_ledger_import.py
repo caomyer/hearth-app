@@ -19,7 +19,7 @@ from beancount.parser import printer
 from hearth import base, books, cli, db, members
 from hearth.cli import main
 from hearth.config import DATA_DIR_VARIABLE, LEDGER_VARIABLE, Settings
-from hearth.disclosure import rulings_in
+from hearth.disclosure import may_learn, rulings_in
 from hearth.ledger_import import describe, import_ledger
 from hearth.plaid import feed
 from hearth.review.rulings import Action, RulingStore, Scope
@@ -258,11 +258,11 @@ def test_books_from_the_base_are_the_books_of_the_same_ledger_inherited(
 ) -> None:
     """The invented household, rulings, connections and named accounts and all: imported, its
     books are exactly the books it had inheriting the same ledger through HEARTH_LEDGER."""
-    inheriting = books.from_household(world.settings, rulings=rulings_in)(clock())
+    inheriting = books.from_household(world.settings, rulings=rulings_in, learns=may_learn)(clock())
     owning = replace(world.settings, ledger=None)
 
     import_ledger(owning, world.ledger, now=clock())
-    imported = books.from_household(owning, rulings=rulings_in)(clock())
+    imported = books.from_household(owning, rulings=rulings_in, learns=may_learn)(clock())
 
     assert _shape(imported.entries) == _shape(inheriting.entries)
     assert replace(imported, entries=(), pile=()) == replace(inheriting, entries=(), pile=())
@@ -280,8 +280,8 @@ def test_a_ledger_of_every_shape_computes_the_same_books_imported_or_inherited(
         feed.initialise(each.feed_database)
     import_ledger(owning, source, now=now)
 
-    theirs = books.from_household(inheriting, rulings=rulings_in)(now)
-    ours = books.from_household(owning, rulings=rulings_in)(now)
+    theirs = books.from_household(inheriting, rulings=rulings_in, learns=may_learn)(now)
+    ours = books.from_household(owning, rulings=rulings_in, learns=may_learn)(now)
 
     assert _shape(ours.entries, _imported(owning).base.root_path.parent) == _shape(
         theirs.entries, source.parent
@@ -295,7 +295,7 @@ def test_the_books_file_includes_the_base_and_says_it_is_the_imported_one(
 ) -> None:
     import_ledger(settings, source, now=NOW)
 
-    books.from_household(settings, rulings=rulings_in)(NOW)
+    books.from_household(settings, rulings=rulings_in, learns=may_learn)(NOW)
 
     written = settings.books_file.read_text()
     assert "; Imported: the household's ledger as it was imported, frozen" in written
@@ -338,7 +338,7 @@ def test_a_serving_hearth_takes_up_an_import_made_beside_it(
     settings: Settings, source: Path
 ) -> None:
     keeper = books.Bookkeeper(
-        books.from_household(settings, rulings=rulings_in),
+        books.from_household(settings, rulings=rulings_in, learns=may_learn),
         lambda: NOW,
         standing=lambda: books.standing(settings),
     )
@@ -403,7 +403,7 @@ def test_nothing_is_written_at_or_beside_the_ledger(
     folder_before = sorted(p.name for p in tmp_path.iterdir())
 
     import_ledger(settings, source, now=NOW)
-    books.from_household(settings, rulings=rulings_in)(NOW)
+    books.from_household(settings, rulings=rulings_in, learns=may_learn)(NOW)
 
     assert _tree(outside) == before
     assert sorted(p.name for p in tmp_path.iterdir()) == folder_before

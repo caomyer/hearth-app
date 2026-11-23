@@ -40,6 +40,27 @@ def may_review(member: MemberId, owners: Collection[MemberId]) -> bool:
     return member in owners
 
 
+def may_learn(
+    author: MemberId | None, owners: Collection[MemberId], source: Collection[MemberId]
+) -> bool:
+    """Whether what was decided for a row of an account ``source`` own may suggest a category
+    for a row of an account ``owners`` own: a member's ruling, by ``author``, or the
+    household's own ledger's booking, with no author (``hearth.proposals``).
+
+    Only when every owner of the row owns the account the decision was made on, so nobody is
+    shown a suggestion drawn from an account they do not own: one member's categories never
+    reach another's rows, and a joint account learns only from accounts all its owners own
+    together, never from one owner's own. A ruling counts only when its author is one of the
+    row's owners: a member's own decisions are suggested back to them, a joint account's rows
+    learn from either owner's, and one member's row never learns from anyone else's, not even
+    from a co-owner's ruling on the joint account they share. Sharing grants nothing here and
+    neither does being an admin. What nobody owns learns from nothing.
+    """
+    if not owners or not set(owners) <= set(source):
+        return False
+    return author is None or author in owners
+
+
 def may_see_review_state(
     viewer: Member, owners: Collection[MemberId], sharing: SharingChoices
 ) -> bool:

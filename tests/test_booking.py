@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 from hearth import accounts, books, figures, ownbooks
 from hearth.books import Books
 from hearth.connections import Connection, RegisteredConnections, item_of
-from hearth.disclosure import rulings_in
+from hearth.disclosure import may_learn, rulings_in
 from hearth.members import MemberId
 from hearth.months import Month
 from hearth.plaid import booking, opening, pairing
@@ -1572,9 +1572,9 @@ def test_a_sync_finishing_during_a_recompute_never_vouches_for_rows_the_books_la
         conn.close()
     racing = SyncFinishingNow(filed, card.item_id, card.account_id)
 
-    found = books.from_household(filed.settings, rulings=rulings_in, connections=racing)(
-        filed.clock()
-    )
+    found = books.from_household(
+        filed.settings, rulings=rulings_in, learns=may_learn, connections=racing
+    )(filed.clock())
 
     # Whatever the connection vouches for, through whichever day, the books hold all of it.
     assert PATHS["1111"] in found.synced

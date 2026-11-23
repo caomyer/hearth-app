@@ -23,8 +23,10 @@ from hearth.plaid.approval import Approval
 from hearth.refresh import ASKING, Begun, Refresher
 from hearth.sharing import DEFAULT_SHARED, Facet
 from tests import household
+from tests import learned as learned_household
 from tests.conftest import World, password_of
-from tests.test_privacy_boundary import SCENARIOS
+from tests.learned import Learned
+from tests.test_privacy_boundary import LEARNED_SCENARIOS, SCENARIOS
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -226,3 +228,52 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
         if text.replace(",", "") in seen
     ]
     assert not leaked, f"{viewer} could see private data: {leaked}"
+
+
+@pytest.mark.parametrize("scenario", LEARNED_SCENARIOS)
+@pytest.mark.parametrize("viewer", ["avery", "blake"])
+def test_no_answer_carries_a_category_a_suggestion_could_have_carried(
+    learned: Learned, scenario: str, viewer: str
+) -> None:
+    """The doorway's share of the suggestions' boundary (``tests/learned.py``): no answer holds
+    another member's category, and a reason is told only on a row the viewer reviews."""
+    choices = dict.fromkeys(("avery", "blake"), DEFAULT_SHARED)
+    choices.update(LEARNED_SCENARIOS[scenario])
+    for username, shared in choices.items():
+        learned.choose(username, shared)
+    door = Doorway(learned.fresh.settings, learned.fresh.bookkeeper, viewer)
+
+    ids = [*learned.account_ids.values(), "no-such-account"]
+    categories = [f"Expenses:Zq:{word}" for word in learned_household.SECRETS] + ["Expenses"]
+    words = [learned_household.DELI, learned_household.GROCER, *learned_household.SECRETS]
+    asked: list[tuple[str, dict[str, object]]] = [("transactions", {"limit": asks.MOST})]
+    asked += [("account", {"id": i}) for i in ids]
+    asked += [("transactions", {"account": i}) for i in ids]
+    asked += [("transactions", {"category": c}) for c in categories]
+    asked += [("transactions", {"text": w}) for w in words]
+    asked += [("transactions", {"show": "unreviewed"})]
+    answers = [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
+    answers += [door.answer(ask, given) for ask, given in asked]
+    seen = "\n".join(json.dumps(answer) for answer in answers)
+
+    leaked = [
+        word
+        for word, owner in learned_household.SECRETS.items()
+        if word in seen and not learned_household.may_see(viewer, owner, choices)
+    ]
+    assert not leaked, f"{viewer} could see another member's categories: {leaked}"
+    reviews = {
+        learned.account_ids[account]
+        for account, owners in learned_household.OWNERS.items()
+        if viewer in owners
+    }
+    reasons = []
+    for answer in answers:
+        entries = answer.get("entries", [])
+        assert isinstance(entries, list)
+        for entry in entries:
+            if entry["reason"] is not None:
+                assert {a["id"] for a in entry["accounts"]} <= reviews, entry
+                reasons.append(entry["reason"])
+    mine = {"avery": "Pantry once before", "blake": "As your ledger books it"}
+    assert mine[viewer] in reasons

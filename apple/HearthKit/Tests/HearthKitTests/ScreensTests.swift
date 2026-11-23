@@ -66,6 +66,9 @@ struct ScreenFixtureTests {
         let entries = journal.entries
         #expect(entries.map(\.kind) == [.transaction, .balance, .transfer, .transaction, .transfer])
         #expect(entries[0].suggested)
+        #expect(entries[0].reason == "Books twice before")
+        #expect(entries[1].reason == nil)
+        #expect(entries[3].reason == "New merchant")
         #expect(entries[0].category == CategoryRef(name: "Expenses:Shopping:Books", label: "Books"))
         #expect(entries[0].amount == money("-41.90"))
         #expect(entries[0].sides.count == 2)
@@ -206,7 +209,8 @@ struct JournalFilterTests {
 }
 
 /// A journal answer with `count` entries from `offset` of `total`, all on one day but the
-/// first, computed at `minute` past noon.
+/// first, computed at `minute` past noon. Its entries carry no `reason`, as an engine from before
+/// reasons sends them, which the app reads as none.
 private func journal(offset: Int, count: Int, total: Int, minute: Int = 0, payee: String = "Row") -> String {
     let entries = (0..<count).map { i in
         let day = offset + i == 0 ? "2026-10-15" : "2026-10-14"

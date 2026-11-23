@@ -22,7 +22,7 @@ from hearth.base import Base
 from hearth.cli import main
 from hearth.config import DATA_DIR_VARIABLE, LEDGER_VARIABLE, Settings
 from hearth.connections import plaid_source, transaction_of
-from hearth.disclosure import Disclosure, rulings_in
+from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.ledger_import import import_ledger
 from hearth.matching import (
     Candidate,
@@ -853,7 +853,7 @@ def test_a_live_ledger_hearth_inherits_is_vouched_for_through_the_last_sync(
     finally:
         conn.close()
 
-    found = books.from_household(settings, rulings=rulings_in)(NOW)
+    found = books.from_household(settings, rulings=rulings_in, learns=may_learn)(NOW)
 
     # Both days on the household's own calendar, by the rule every figure follows.
     synced = min(item.last_synced_at.astimezone().date(), TODAY)

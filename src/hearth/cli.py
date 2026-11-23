@@ -44,7 +44,7 @@ from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
 from hearth.clock import system_clock
 from hearth.config import DATABASE_FILE, Settings, data_dir_from_environment
-from hearth.disclosure import rulings_in
+from hearth.disclosure import may_learn, rulings_in
 from hearth.members import MemberRejectedError, normalise_username
 from hearth.native import stdio
 from hearth.native.bridge import Bridge, Outcome
@@ -350,7 +350,14 @@ def _serve(host: str, port: int, approval: Approval, tls: Tls | None = None) -> 
             " offer one (docs/connections.md).",
             flush=True,
         )
-    _run(settings, books.from_household(settings, rulings=rulings_in), host, port, setup, tls)
+    _run(
+        settings,
+        books.from_household(settings, rulings=rulings_in, learns=may_learn),
+        host,
+        port,
+        setup,
+        tls,
+    )
 
 
 def _run(
@@ -626,7 +633,9 @@ def _demo_household(*, first_review: bool) -> Iterator[_DemoHousehold]:
         setup = demo.plaid(lambda: system_clock().astimezone().date(), ledger)
         feed.initialise(settings.feed_database)
         demo.connect(settings, setup, now=now)
-        establish = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))
+        establish = books.from_household(
+            settings, rulings=rulings_in, learns=may_learn, sources=(demo.PRICE_SOURCE,)
+        )
         yield _DemoHousehold(settings, establish, setup, passwords)
 
 
@@ -660,7 +669,7 @@ def _bridge(approval: Approval) -> None:
     settings = Settings.from_environment()
     db.initialise(settings.database)
     feed.initialise(settings.feed_database)
-    establish = books.from_household(settings, rulings=rulings_in)
+    establish = books.from_household(settings, rulings=rulings_in, learns=may_learn)
     _answer_the_app(settings, establish, PlaidSetup(approval=approval))
 
 
@@ -722,5 +731,5 @@ def _demo_from_zero(host: str, port: int) -> None:
             print(f"  {username:<8} {password}", flush=True)
         print(f"Hearth writes its books to {settings.books_file}", flush=True)
         # Nothing is priced until a brokerage connected through the stand-in gives its prices.
-        establish = books.from_household(settings, rulings=rulings_in)
+        establish = books.from_household(settings, rulings=rulings_in, learns=may_learn)
         _run(settings, establish, host, port, setup)

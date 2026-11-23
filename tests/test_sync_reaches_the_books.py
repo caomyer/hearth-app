@@ -17,7 +17,7 @@ import pytest
 
 from hearth import books
 from hearth.books import Books
-from hearth.disclosure import rulings_in
+from hearth.disclosure import may_learn, rulings_in
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid.fake import FakeTransaction
 from hearth.plaid.feed import Feed
@@ -74,7 +74,7 @@ def sync_by_hand(fresh: FirstDay) -> int:
         fresh.settings,
         fresh.setup,
         fresh.clock,
-        books.from_household(fresh.settings, rulings=rulings_in),
+        books.from_household(fresh.settings, rulings=rulings_in, learns=may_learn),
     )
 
 
@@ -183,7 +183,7 @@ def test_a_change_the_serving_hearth_made_and_recomputed_is_not_recomputed_again
     watching: FirstDay,
 ) -> None:
     established: list[datetime] = []
-    establish = books.from_household(watching.settings, rulings=rulings_in)
+    establish = books.from_household(watching.settings, rulings=rulings_in, learns=may_learn)
 
     def counted(now: datetime) -> Books:
         established.append(now)

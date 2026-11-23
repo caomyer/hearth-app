@@ -35,8 +35,8 @@ from hearth.review.queue import (
     Filter,
     Order,
     category_label,
-    confidence,
     queue,
+    said,
 )
 from hearth.review.rulings import Action, Ruling, RulingStore
 from hearth.web.deps import Acting, App, Conn, SignedIn, Viewing
@@ -189,7 +189,7 @@ def review(
             "quick_orders": QUICK_ORDERS,
             "group_preview": GROUP_PREVIEW,
             "nothing_suggested": NOTHING_SUGGESTED,
-            "confidence": confidence,
+            "said": said,
             "category_label": category_label,
             "free": FREE,
             # Not "focus", which base.html takes as the narrow page without navigation.

@@ -79,6 +79,9 @@ class Gate:
     def may_name_other_side(self, owners: Collection[MemberId]) -> bool:
         return access.may_name_other_side(self.viewer, owners)
 
+    def may_review(self, owners: Collection[MemberId]) -> bool:
+        return access.may_review(self.viewer.id, owners)
+
 
 def may_administer(member: Member) -> bool:
     """Whether `member` may manage members and passwords; it shows them nobody's money."""
@@ -88,3 +91,11 @@ def may_administer(member: Member) -> bool:
 def may_review(member: MemberId, owners: Collection[MemberId]) -> bool:
     """Whether `member` may rule on set-aside rows of an account `owners` own."""
     return access.may_review(member, owners)
+
+
+def may_learn(
+    author: MemberId | None, owners: Collection[MemberId], source: Collection[MemberId]
+) -> bool:
+    """Whether a decision by `author` (None for the household's own ledger) on a row of an
+    account `source` own may suggest a category for a row of an account `owners` own."""
+    return access.may_learn(author, owners, source)

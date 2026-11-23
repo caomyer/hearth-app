@@ -17,7 +17,9 @@ from hearth.review.queue import (
     category_label,
     confidence,
     queue,
+    said,
 )
+from hearth.review.reasons import Reason, Why
 from tests.review.conftest import ALEX
 
 CHECKING = Account("a1", "Assets:Alex:Checking", "Alex checking", frozenset({ALEX}))
@@ -169,3 +171,35 @@ def test_review_names_a_category_by_its_most_specific_part_so_kinds_of_income_re
     assert category_label("Income:InterestEarned") == "Interest earned"
     assert category_label("Expenses:BankFees:ATMFees") == "ATM fees"
     assert category_label(None) == "Nothing suggested"
+
+
+def test_a_row_says_why_it_is_suggested_and_is_ranked_by_how_sure_that_is() -> None:
+    """Least sure first: nothing suggested, then the bank's category, then the ledger's own and
+    what the member decided before. A row whose suggestion changed says so, whatever its reason."""
+
+    def why(n: int, reason: Reason, proposed: str | None = "Expenses:Food") -> ItemView:
+        view = row(n, "Food", proposed=proposed, score=None)
+        return replace(view, item=replace(view.item, reason=reason))
+
+    remembered = why(1, Reason(Why.REMEMBERED, "Food twice before"))
+    ledger = why(2, Reason(Why.LEDGER, "As your ledger books it"))
+    bank = why(3, Reason(Why.BANK, "Bank says Groceries"))
+    new = why(4, Reason(Why.NEW, "New merchant"), proposed=None)
+    changed = replace(
+        remembered,
+        decision=Decision(State.UNREVIEWED, None, None, PROPOSAL_CHANGED),
+        item=replace(remembered.item, review_id="r9999"),
+    )
+    found = queue([remembered, ledger, bank, new, changed], Order.CONFIDENCE, Filter())
+
+    assert [said(v) for v in found.rows] == [
+        Confidence.CHANGED.value,
+        "New merchant",
+        "Bank says Groceries",
+        "As your ledger books it",
+        "Food twice before",
+    ]
+    assert said(row(5, "Food", score=None)) == Confidence.UNSCORED.value
+    assert queue([remembered, bank], Order.SIZE, Filter()).groups[0].lowest == (
+        "Bank says Groceries"
+    )

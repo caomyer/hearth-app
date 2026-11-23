@@ -392,6 +392,7 @@ def _entry(position: int, entry: Entry) -> Answer:
         "suggested": entry.suggested,
         "waiting": entry.waiting.value if entry.waiting else None,
         "checked": entry.checked.value if entry.checked else None,
+        "reason": entry.reason,
         "amount": _money(entry.amount),
         "sides": [_side(side) for side in entry.sides],
     }

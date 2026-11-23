@@ -39,6 +39,7 @@ from hearth.disclosure.gate import (
     Gate,
     Withheld,
     may_administer,
+    may_learn,
     may_review,
 )
 from hearth.disclosure.household import HouseholdView, household
@@ -102,6 +103,7 @@ __all__ = [
     "Worth",
     "left_out",
     "may_administer",
+    "may_learn",
     "review_decisions",
     "rulings_in",
 ]
