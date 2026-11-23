@@ -95,7 +95,7 @@ struct ReviewView: View {
             next: { review.move(1) },
             previous: { review.move(-1) },
             accept: { Task { await review.acceptSelected() } },
-            changeCategory: review.selectedRow == nil ? nil : { choosing = true },
+            changeCategory: review.canChooseForSelected ? { choosing = true } : nil,
             exclude: review.canExcludeSelected ? { if let row = review.selectedRow { Task { await review.exclude(row) } } } : nil,
             skip: { review.skip() })
     }
@@ -224,7 +224,7 @@ private struct ReviewHead: View {
                     .font(.system(size: 12))
                 }
             }
-            if queue.changed > 0 || queue.revised > 0 {
+            if queue.changed > 0 || queue.revised > 0 || queue.kept > 0 {
                 Text(cameBack)
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.ink3)
@@ -287,6 +287,10 @@ private struct ReviewHead: View {
         if queue.revised > 0 {
             said.append(
                 "\(ReviewWords.transactions(queue.revised)) came back because the bank changed \(queue.revised == 1 ? "it" : "them") after \(queue.revised == 1 ? "it was" : "they were") reviewed.")
+        }
+        if queue.kept > 0 {
+            said.append(
+                "\(ReviewWords.transactions(queue.kept)) came back because the decision on \(queue.kept == 1 ? "it" : "them") would change an account whose balance its bank decides now.")
         }
         return said.joined(separator: " ")
     }
@@ -560,7 +564,7 @@ private struct QueueRow: View {
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text(row.suggested?.label ?? "None")
+            Text(row.isReconciling ? "To confirm" : row.suggested?.label ?? "None")
                 .font(.system(size: 12))
                 .foregroundStyle(row.suggested == nil ? Palette.ink3 : Palette.ink2)
                 .lineLimit(1)
@@ -577,7 +581,8 @@ private struct QueueRow: View {
     }
 
     private var caption: String {
-        var parts = [Figures.day(row.date, asOf: asOf), row.reason]
+        // A difference's reason is what to do about it, which its detail says in full.
+        var parts = [Figures.day(row.date, asOf: asOf)] + (row.isReconciling ? [] : [row.reason])
         if showsGroup { parts.append(row.group) }
         if let account = row.account { parts.append(account.name) }
         return parts.joined(separator: " · ")

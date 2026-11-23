@@ -23,6 +23,9 @@ public struct ReviewQueue: Screen {
     public let changed: Int
     /// Rows that came back because their bank changed them after they were reviewed.
     public let revised: Int
+    /// Rows that came back because their decision would change an account whose balance its
+    /// bank decides now, which the books do not apply (`review.decision.guarded`).
+    public let kept: Int
     /// Rows waiting to be told where their money went, counted apart.
     public let elsewhere: Tally
     public let accounts: [Choice]
@@ -98,6 +101,7 @@ public struct ReviewGroup: Decodable, Sendable, Equatable, Identifiable {
 /// One row waiting for review.
 public struct ReviewRow: Decodable, Sendable, Equatable, Identifiable {
     public let id: String
+    public let kind: Kind
     public let group: String
     public let date: Day
     /// The merchant, cleaned up, when the bank or the import names one.
@@ -118,6 +122,27 @@ public struct ReviewRow: Decodable, Sendable, Equatable, Identifiable {
     public var title: String {
         if let payee, !payee.isEmpty { return payee }
         return narration.isEmpty ? "No description" : narration
+    }
+
+    /// Whether it is a carried account's difference with its bank, which is only confirmed.
+    public var isReconciling: Bool { kind == .reconciling }
+
+    /// What kind of row it is.
+    public enum Kind: String, Sendable, Equatable {
+        /// A transaction its bank or the import sent.
+        case transaction
+        /// The imported ledger and an account's bank disagree by this much as of a day: it is
+        /// confirmed as it is, never booked elsewhere, excluded or accepted with its group.
+        case reconciling
+    }
+}
+
+extension ReviewRow.Kind: Decodable {
+    /// A kind this app does not know yet is read as a transaction, whose decisions the engine
+    /// still decides by its desk's rules, rather than failing the whole queue.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw) ?? .transaction
     }
 }
 

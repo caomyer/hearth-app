@@ -277,8 +277,20 @@ private struct AccountHead: View {
 
     private var notes: [String] {
         var notes = [account.reason, account.freshness(asOf: page.asOf)].compactMap { $0 }
+        // Days always with their year, as the account's page in the browser writes them.
+        func day(_ day: Day) -> String { Figures.day(day, asOf: Day(year: 0, month: 1, day: 1)) }
         if let first = page.history.first?.from {
-            notes.append("History since \(Figures.day(first, asOf: Day(year: 0, month: 1, day: 1)))")
+            notes.append("History since \(day(first))")
+        }
+        if let held = page.heldBack {
+            notes.append(
+                "Its imported ledger holds an entry on it dated ahead, on \(day(held.from)), so Hearth brings in its bank's transactions only from then. Until then its data ends on \(day(held.through)), and the months since read as incomplete."
+            )
+        }
+        if let unseen = page.unseen {
+            notes.append(
+                "Neither the imported ledger nor its bank holds what moved from \(day(unseen.from)) to \(day(unseen.to)), so those months read as incomplete, and what moved then is part of its difference with its bank."
+            )
         }
         return notes
     }

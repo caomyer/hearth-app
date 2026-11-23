@@ -198,6 +198,8 @@ Each account says what its balance rests on, its `standing`, and every absence i
 The balance, its kind and its standing go with the account balances facet.
 The day its data is known through (`updated`), whether that is long ago (`behind`), and the day its bank's balance covers (`checked`) are when its money last moved, so they go with the transactions facet.
 Its bank's name is given only to the member whose connection feeds it, as is `attention`, which says that connection must be signed in to again; for an account hearth does not see, where its owner said it is.
+`reconciling` says an `unchecked` account's bank's balance meets the books only by a difference nobody has confirmed yet in Review, and goes with its balance.
+An `account` also says, with its transactions, the days of a carried account's history that neither its imported ledger nor its bank holds (`unseen`, `from` and `to`, `books.unseen_between`), and for a matched account its ledger holds back, the last day its data is known through (`held_back.through`) and the day its bank's transactions are brought in from (`held_back.from`, `books.held_back`).
 
 ### Review
 
@@ -205,8 +207,11 @@ The review screens are written from the viewer's own desk (`Disclosure.review_de
 The `overview` says how many of the viewer's rows wait (`review.waiting`, those waiting to be told where their money went among them, as the pages count them) and how much of their own spending this month rests on such rows (`review.spending`).
 A `transactions` entry names the review it waits on (`review`) only to whoever may make it.
 
-- `review` answers how much waits and what it moves (`remaining`), what the filter leaves (`shown`), how many are reviewed of the `total`, rows that came back (`changed`, `revised`), rows waiting to be told where their money went, counted apart (`elsewhere`), the values it may be narrowed to (`accounts`, `categories`), its `groups` in order, each with its rows by id and whether it is one decision (`one_decision`), and every row the filter leaves (`rows`), in the queue's order.
+- `review` answers how much waits and what it moves (`remaining`), what the filter leaves (`shown`), how many are reviewed of the `total`, rows that came back (`changed`, `revised`, and `kept`, those whose decision the books do not apply, as `review.decision.guarded` keeps them unreviewed), rows waiting to be told where their money went, counted apart (`elsewhere`), the values it may be narrowed to (`accounts`, `categories`), its `groups` in order, each with its rows by id and whether it is one decision (`one_decision`), and every row the filter leaves (`rows`), in the queue's order.
 - A row says why it is suggested in words (`reason`), never as a percentage; whether it may be excluded (`excludable`, false when its bank counts it); and what it says (`says`), which binds a decision to it.
+  A row that came back says why in `reason`: its decision is one the books keep unreviewed, moved onto an account whose balance its bank decides now, or excluded although its bank counts it.
+- A row's `kind` is `transaction`, or `reconciling` for a carried account's difference with its bank (`docs/review.md`, "Where the imported ledger and the bank disagree"): its `narration` says by how much they disagree as of which day, its `reason` what to do about it, and it is confirmed with an `accept` of what it proposes, never accepted with its group (its group is never `one_decision`) nor excluded.
+  The app reads a `kind` it does not know as a `transaction`, whose decisions the desk still decides.
 - The whole queue is answered at once, as the review page shows it, since a group's accept is bound to every row it shows.
 
 ### Banks

@@ -34,11 +34,29 @@ public struct AccountPage: Screen {
     /// Each source of its history, and the days it covers. Empty when its transactions are not
     /// the viewer's to see.
     public let history: [Span]
+    /// The days of a carried account's history that neither its imported ledger nor its bank
+    /// holds, told with its transactions.
+    public let unseen: Days?
+    /// For an account its imported ledger holds back, how far its data reaches until the day
+    /// its bank's transactions are brought in from, told with its transactions.
+    public let heldBack: HeldBack?
 
     public struct Span: Decodable, Sendable, Equatable {
         public let origin: String
         public let from: Day
         public let to: Day
+    }
+
+    public struct Days: Decodable, Sendable, Equatable {
+        public let from: Day
+        public let to: Day
+    }
+
+    public struct HeldBack: Decodable, Sendable, Equatable {
+        /// The last day its data is known through.
+        public let through: Day
+        /// The day ahead its ledger holds an entry on, from which its bank's are brought in.
+        public let from: Day
     }
 }
 
@@ -74,6 +92,9 @@ public struct Account: Decodable, Sendable, Equatable, Identifiable {
     public let attention: Bool
     /// What kind of account its owner said one hearth does not see is: "Loan".
     public let unseenKind: String?
+    /// Whether its bank's balance meets the books only by a difference between the imported
+    /// ledger and the bank that nobody has confirmed in Review yet.
+    public let reconciling: Bool
 
     public struct Balance: Decodable, Sendable, Equatable {
         /// Nil while it is not known, which is never the same as zero.

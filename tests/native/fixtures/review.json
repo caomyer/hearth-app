@@ -7,15 +7,16 @@
     "currency": "USD",
     "recomputing": false,
     "order": "size",
-    "remaining": {"rows": 4, "moved": "259.32"},
-    "shown": {"rows": 4, "moved": "259.32"},
+    "remaining": {"rows": 5, "moved": "271.32"},
+    "shown": {"rows": 5, "moved": "271.32"},
     "filtered": false,
     "reviewed": 3,
-    "total": 7,
-    "groups_waiting": 2,
+    "total": 8,
+    "groups_waiting": 3,
     "oldest": "2026-09-28",
     "changed": 1,
     "revised": 0,
+    "kept": 1,
     "elsewhere": {"rows": 2, "moved": "600.00"},
     "accounts": [
       {"value": "eDUVDA9IScyfzS3o", "label": "Rewards card", "rows": 3},
@@ -43,13 +44,24 @@
         "moved": "87.39",
         "suggested": [],
         "one_decision": false,
-        "least_sure": "Nothing suggested",
+        "least_sure": "Moved onto an account that now takes only its bank's transactions",
         "rows": ["91d2e6f0a8"]
+      },
+      {
+        "name": "Where the imported ledger and the bank disagree",
+        "size": 1,
+        "total": "-12.00",
+        "moved": "12.00",
+        "suggested": [{"name": "Equity:Ledger-Bank-Difference", "label": "Ledger bank difference"}],
+        "one_decision": false,
+        "least_sure": "A difference to confirm",
+        "rows": ["d40a7be915"]
       }
     ],
     "rows": [
       {
         "id": "7a1c9e04b2",
+        "kind": "transaction",
         "group": "Food and drink: groceries",
         "date": "2026-10-12",
         "payee": "Cobble Street Market",
@@ -63,6 +75,7 @@
       },
       {
         "id": "c3f0d815aa",
+        "kind": "transaction",
         "group": "Food and drink: groceries",
         "date": "2026-10-05",
         "payee": "Cobble Street Market",
@@ -76,6 +89,7 @@
       },
       {
         "id": "0e92b4d7c1",
+        "kind": "transaction",
         "group": "Food and drink: groceries",
         "date": "2026-09-28",
         "payee": null,
@@ -89,6 +103,7 @@
       },
       {
         "id": "91d2e6f0a8",
+        "kind": "transaction",
         "group": "Uncategorised",
         "date": "2026-10-09",
         "payee": "Corner Hardware",
@@ -96,9 +111,23 @@
         "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"},
         "amount": "-87.39",
         "suggested": null,
-        "reason": "Nothing suggested",
+        "reason": "Moved onto an account that now takes only its bank's transactions",
         "excludable": true,
         "says": "370f0a842d"
+      },
+      {
+        "id": "d40a7be915",
+        "kind": "reconciling",
+        "group": "Where the imported ledger and the bank disagree",
+        "date": "2026-09-02",
+        "payee": null,
+        "narration": "The imported ledger and Larkspur Savings Bank disagree by this much as of Sep 2, 2026",
+        "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"},
+        "amount": "-12.00",
+        "suggested": {"name": "Equity:Ledger-Bank-Difference", "label": "Ledger bank difference"},
+        "reason": "Confirm it once you know why they differ, or put the cause right, such as a transaction the ledger or the bank is missing, and it shrinks or goes at the next update.",
+        "excludable": false,
+        "says": "b81e3c09d7"
       }
     ]
   }

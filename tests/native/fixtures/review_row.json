@@ -8,6 +8,7 @@
     "recomputing": false,
     "row": {
       "id": "7a1c9e04b2",
+      "kind": "transaction",
       "group": "Food and drink: groceries",
       "date": "2026-10-12",
       "payee": "Cobble Street Market",

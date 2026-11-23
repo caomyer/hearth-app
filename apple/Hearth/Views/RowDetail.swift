@@ -26,6 +26,9 @@ struct RowDetail: View {
                         head(row)
                         if let detail {
                             switch detail.decision {
+                            case .waiting where row.isReconciling:
+                                difference(row)
+                                actions(row)
                             case .waiting:
                                 category(row, detail)
                                 if !detail.earlier.isEmpty {
@@ -140,6 +143,18 @@ struct RowDetail: View {
         }
     }
 
+    /// A carried account's difference with its bank: no category to choose, only what to do
+    /// about it, and Confirm.
+    private func difference(_ row: ReviewRow) -> some View {
+        Panel(title: "Difference") {
+            Text(row.reason)
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.ink3)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("review.detail.reason")
+        }
+    }
+
     private func reason(_ row: ReviewRow) -> String {
         guard let suggested = row.suggested else {
             return "Nothing could be suggested for it. Choose where it belongs."
@@ -194,8 +209,8 @@ struct RowDetail: View {
                 }
             }
             // A row its bank counts in the balance it reports offers no Exclude, which the
-            // desk would refuse.
-            if row.excludable {
+            // desk would refuse; nor does a difference with a bank, which is only confirmed.
+            if row.excludable, !row.isReconciling {
                 Button("Exclude: not a transaction") {
                     Task { await desk.decisions.make(.exclude(row)) }
                 }
@@ -211,12 +226,16 @@ struct RowDetail: View {
     private func decide(_ row: ReviewRow) -> some View {
         HStack(spacing: 8) {
             Button(decideLabel(row)) {
+                if row.isReconciling {
+                    Task { await desk.decisions.make(.accept(row)) }
+                    return
+                }
                 guard let chosen else { return }
                 Task { await desk.decisions.make(.settling(row, to: chosen)) }
             }
             .buttonStyle(PrimaryButtonStyle())
             .keyboardShortcut(inQueue ? nil : .defaultAction)
-            .disabled(chosen == nil || desk.decisions.isDeciding)
+            .disabled((chosen == nil && !row.isReconciling) || desk.decisions.isDeciding)
             .accessibilityIdentifier("review.decide")
             if inQueue {
                 Button("Skip") { desk.review.skip() }
@@ -230,12 +249,13 @@ struct RowDetail: View {
     @ViewBuilder
     private func keys(_ row: ReviewRow) -> some View {
         if inQueue {
-            KeyHint(text: row.excludable ? "↑↓ · Return · C · X" : "↑↓ · Return · C")
+            KeyHint(text: row.isReconciling ? "↑↓ · Return" : row.excludable ? "↑↓ · Return · C · X" : "↑↓ · Return · C")
                 .fixedSize()
         }
     }
 
     private func decideLabel(_ row: ReviewRow) -> String {
+        if row.isReconciling { return "Confirm" }
         guard let chosen else { return "Choose a category" }
         if case .category(let category) = chosen, category == row.suggested {
             return "Accept as \(category.label)"

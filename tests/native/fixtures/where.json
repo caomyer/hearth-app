@@ -26,6 +26,7 @@
         "rows": [
           {
             "id": "4be0d1c92f",
+            "kind": "transaction",
             "group": "Transfer out: savings",
             "date": "2026-10-01",
             "payee": null,
@@ -39,6 +40,7 @@
           },
           {
             "id": "f81ad5b3e0",
+            "kind": "transaction",
             "group": "Transfer out: savings",
             "date": "2026-09-01",
             "payee": null,

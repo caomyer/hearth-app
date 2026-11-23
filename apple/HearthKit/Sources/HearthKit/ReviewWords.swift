@@ -10,6 +10,11 @@ public enum ReviewWords {
         let label = destination(of: decision)
         switch result.outcome {
         case .accepted:
+            if case .accept(let row) = decision, row.isReconciling {
+                return Notice(
+                    text: "Confirmed. The difference stays booked as it is.",
+                    tone: .done, ruling: result.ruling, rows: result.rows)
+            }
             let text =
                 decision.count == 1 && result.rows == 1
                 ? "Accepted as \(label)." : "Accepted \(result.rows.formatted()) as \(label)."

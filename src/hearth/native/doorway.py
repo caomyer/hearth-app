@@ -221,11 +221,18 @@ def account(view: Disclosure, asked: object, around: Around) -> Answer:
     assert isinstance(asked, str)  # noqa: S101 - read by `_one`
     found = view.standing(asked, around.connections)
     spans = () if isinstance(found.spans, Withheld) else found.spans
+    unseen = None if isinstance(found.unseen_between, Withheld) else found.unseen_between
+    held = None if isinstance(found.held_back, Withheld) else found.held_back
     return {
         "account": _account(found),
         "history": [
             {"origin": s.origin, "from": _day(s.earliest), "to": _day(s.latest)} for s in spans
         ],
+        # Days of a carried account's history neither its imported ledger nor its bank holds.
+        "unseen": None if unseen is None else {"from": _day(unseen[0]), "to": _day(unseen[1])},
+        # An account its imported ledger holds back: its data ends on `through`, and its
+        # bank's transactions are brought in only from `from`, the ledger's entry ahead.
+        "held_back": None if held is None else {"through": _day(held[0]), "from": _day(held[1])},
     }
 
 
@@ -376,6 +383,8 @@ def _account(found: AccountStanding) -> Answer:
         "mask": found.mask,
         "attention": found.attention,
         "unseen_kind": found.unseen_kind,
+        # Its bank's balance meets the books only by a difference nobody has confirmed yet.
+        "reconciling": found.reconciling,
     }
 
 

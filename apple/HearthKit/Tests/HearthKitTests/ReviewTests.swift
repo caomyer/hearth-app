@@ -6,12 +6,12 @@ import Testing
 /// A review row, as the engine writes it.
 private func row(
     _ id: String, group: String, amount: String = "-10.00", suggested: String? = "Expenses:Kites",
-    excludable: Bool = true, says: String? = nil
+    excludable: Bool = true, says: String? = nil, kind: String = "transaction"
 ) -> String {
     let suggestion =
         suggested.map { #"{"name":"\#($0)","label":"\#($0.split(separator: ":").last!)"}"# } ?? "null"
     return #"""
-        {"id":"\#(id)","group":"\#(group)","date":"2026-10-04","payee":"Payee \#(id)","narration":"",
+        {"id":"\#(id)","kind":"\#(kind)","group":"\#(group)","date":"2026-10-04","payee":"Payee \#(id)","narration":"",
          "account":{"id":"acct-1","name":"Everyday checking"},"amount":"\#(amount)",
          "suggested":\#(suggestion),"reason":"Suggested by a rule","excludable":\#(excludable),
          "says":"\#(says ?? "says-\(id)")"}
@@ -32,7 +32,7 @@ private func queue(_ groups: [(name: String, rows: [String], one: Bool)], rows: 
         {"state":"ready","computed_at":"2026-10-15T12:00:00Z","as_of":"2026-10-15","currency":"USD",
          "recomputing":false,"order":"size","remaining":{"rows":\#(count),"moved":"10.00"},
          "shown":{"rows":\#(count),"moved":"10.00"},"filtered":false,"reviewed":0,"total":\#(count),
-         "groups_waiting":\#(groups.count),"oldest":null,"changed":0,"revised":0,
+         "groups_waiting":\#(groups.count),"oldest":null,"changed":0,"revised":0,"kept":0,
          "elsewhere":{"rows":0,"moved":"0"},"accounts":[],"categories":[],
          "groups":[\#(written.joined(separator: ","))],"rows":[\#(rows.joined(separator: ","))]}
         """#
@@ -87,15 +87,24 @@ struct ReviewShapeTests {
             Issue.record("the example is a ready answer")
             return
         }
-        #expect(found.remaining.rows == 4)
-        #expect(found.remaining.moved == money("259.32"))
+        #expect(found.remaining.rows == 5)
+        #expect(found.remaining.moved == money("271.32"))
         #expect(found.elsewhere.rows == 2)
+        #expect(found.kept == 1)
         #expect(found.order == .size)
-        #expect(found.groups.map(\.name) == ["Food and drink: groceries", "Uncategorised"])
+        #expect(
+            found.groups.map(\.name) == [
+                "Food and drink: groceries", "Uncategorised", "Where the imported ledger and the bank disagree",
+            ])
         #expect(found.groups[0].oneDecision)
         #expect(!found.groups[1].oneDecision)
+        #expect(!found.groups[2].oneDecision)
         #expect(found.groups[0].suggested.first?.label == "Groceries")
-        #expect(found.rows.count == 4)
+        #expect(found.rows.count == 5)
+        #expect(found.rows.filter(\.isReconciling).map(\.id) == ["d40a7be915"])
+        let difference = try #require(found.row("d40a7be915"))
+        #expect(!difference.excludable)
+        #expect(difference.reason.hasPrefix("Confirm it once you know why they differ"))
         let pos = try #require(found.row("0e92b4d7c1"))
         #expect(pos.payee == nil)
         #expect(pos.title == "POS PURCHASE 3381")
@@ -267,6 +276,46 @@ struct ReviewModelTests {
         #expect(review.selection == .group("Unsure"))
         #expect(desk.decisions.notice?.text == "Accepted 3 as Kites.")
         #expect(desk.decisions.canUndo)
+    }
+
+    @Test("a difference with a bank is only confirmed: Return accepts it, nothing excludes or rebooks it")
+    func confirmsADifference() async throws {
+        let difference = row(
+            "d1", group: "Where the imported ledger and the bank disagree", amount: "-8.00",
+            suggested: "Equity:Ledger-Bank-Difference", excludable: true, kind: "reconciling")
+        let before = queue([("Where the imported ledger and the bank disagree", ["d1"], false)], rows: [difference])
+        let after = queue([], rows: [])
+        let engine = ScriptedReview(
+            ["review": [before, after], "overview": [], "where": []],
+            results: [ActResult(outcome: .accepted, ruling: 9, rows: 1)])
+        let (review, desk) = model(engine)
+        await review.reload()
+        review.selection = .row("d1")
+        let shown = try #require(review.selectedRow)
+
+        #expect(shown.isReconciling)
+        // Even were the engine to offer it, a difference is never excluded nor given a category.
+        #expect(!review.canExcludeSelected)
+        #expect(!review.canChooseForSelected)
+        await review.exclude(shown)
+        review.chosen = .typed("Expenses:Garden")
+        await review.acceptSelected()
+
+        let acted = await engine.acted
+        #expect(acted.map(\.0) == ["accept"])
+        #expect(acted.first?.1 == ["row": .text("d1"), "shown": .text("Equity:Ledger-Bank-Difference")])
+        #expect(desk.decisions.notice?.text == "Confirmed. The difference stays booked as it is.")
+    }
+
+    @Test("a row kind this app does not know is read as a transaction, not a failed queue")
+    func unknownKind() throws {
+        let later = row("n1", group: "New", kind: "something-new")
+        guard case .ready(let found) = try decode(queue([("New", ["n1"], false)], rows: [later]), as: ReviewQueue.self)
+        else {
+            Issue.record("a ready answer")
+            return
+        }
+        #expect(found.row("n1")?.kind == .transaction)
     }
 
     @Test("a group that is not one decision is never accepted at once; Return opens its first row")

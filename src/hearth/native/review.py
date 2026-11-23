@@ -54,7 +54,7 @@ from hearth.review.queue import (
     QueueGroup,
     Tally,
     category_label,
-    confidence,
+    explain,
     queue,
 )
 from hearth.review.rulings import ACCOUNT, Ruling
@@ -138,6 +138,7 @@ def queue_screen(view: Disclosure, asked: object, around: Around) -> Answer:
         "oldest": day(found.oldest),
         "changed": found.changed,
         "revised": found.revised,
+        "kept": found.kept,
         "elsewhere": _tally(found.one_sided),
         "accounts": [_choice(choice) for choice in found.accounts],
         "categories": [_choice(choice) for choice in found.categories],
@@ -461,6 +462,9 @@ def _row(view: ItemView) -> Answer:
     item = view.item
     return {
         "id": item.review_id,
+        # A carried account's difference with its bank is its own kind of row, which is
+        # confirmed, never booked elsewhere, excluded or accepted with a group.
+        "kind": "reconciling" if item.reconciling else "transaction",
         "group": item.group,
         "date": day(item.date),
         "payee": item.payee or None,
@@ -468,7 +472,7 @@ def _row(view: ItemView) -> Answer:
         "account": {"id": view.account.id, "name": view.account.name} if view.account else None,
         "amount": money(item.amount),
         "suggested": _category(item.proposed),
-        "reason": confidence(view).value,
+        "reason": explain(view),
         # A row its bank counts in the balance it reports cannot be left out (`BanksRow`).
         "excludable": not view.bank_counts,
         "says": item.says,

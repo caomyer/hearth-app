@@ -239,7 +239,10 @@ public final class ReviewModel {
     /// as the page's own key does.
     public func acceptSelected() async {
         if let row = selectedRow {
-            if let chosen {
+            if row.isReconciling {
+                // A difference with a bank is only ever confirmed as it is.
+                await accept(row)
+            } else if let chosen {
                 await book(row, to: chosen)
             }
         } else if let group = selectedGroup {
@@ -252,8 +255,19 @@ public final class ReviewModel {
         }
     }
 
-    /// Whether the item the person is on may be excluded: a row its bank does not count.
-    public var canExcludeSelected: Bool { selectedRow?.excludable == true }
+    /// Whether the item the person is on may be excluded: a row its bank does not count, and
+    /// never a difference with a bank.
+    public var canExcludeSelected: Bool {
+        guard let row = selectedRow else { return false }
+        return row.excludable && !row.isReconciling
+    }
+
+    /// Whether the item the person is on may be given another category: any row but a
+    /// difference with a bank, which is only confirmed.
+    public var canChooseForSelected: Bool {
+        guard let row = selectedRow else { return false }
+        return !row.isReconciling
+    }
 
     public func accept(_ row: ReviewRow) async {
         guard row.suggested != nil else { return }
@@ -267,11 +281,12 @@ public final class ReviewModel {
     }
 
     public func book(_ row: ReviewRow, to destination: Destination) async {
+        guard !row.isReconciling else { return await accept(row) }
         await decide(.settling(row, to: destination))
     }
 
     public func exclude(_ row: ReviewRow) async {
-        guard row.excludable else { return }
+        guard row.excludable, !row.isReconciling else { return }
         await decide(.exclude(row))
     }
 

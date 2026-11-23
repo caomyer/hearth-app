@@ -29,7 +29,8 @@
             "institution": "Larkspur Savings Bank",
             "mask": null,
             "attention": false,
-            "unseen_kind": null
+            "unseen_kind": null,
+            "reconciling": false
           },
           {
             "id": "Ae06jAUHXgyYIk8D",
@@ -49,7 +50,8 @@
             "institution": "Larkspur Savings Bank",
             "mask": null,
             "attention": true,
-            "unseen_kind": null
+            "unseen_kind": null,
+            "reconciling": false
           }
         ]
       },
@@ -75,7 +77,8 @@
             "institution": "Larkspur Savings Bank",
             "mask": null,
             "attention": false,
-            "unseen_kind": null
+            "unseen_kind": null,
+            "reconciling": false
           }
         ]
       },
@@ -101,7 +104,8 @@
             "institution": "Larkspur Savings Bank",
             "mask": null,
             "attention": false,
-            "unseen_kind": null
+            "unseen_kind": null,
+            "reconciling": false
           }
         ]
       },
@@ -127,7 +131,8 @@
             "institution": "Thistle Lending",
             "mask": "2208",
             "attention": false,
-            "unseen_kind": "Loan"
+            "unseen_kind": "Loan",
+            "reconciling": false
           }
         ]
       },
@@ -153,7 +158,8 @@
             "institution": null,
             "mask": null,
             "attention": false,
-            "unseen_kind": null
+            "unseen_kind": null,
+            "reconciling": false
           }
         ]
       }

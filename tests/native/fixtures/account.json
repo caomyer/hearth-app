@@ -24,10 +24,13 @@
       "institution": "Larkspur Savings Bank",
       "mask": null,
       "attention": false,
-      "unseen_kind": null
+      "unseen_kind": null,
+      "reconciling": false
     },
     "history": [
       {"origin": "plaid", "from": "2026-09-25", "to": "2026-10-03"}
-    ]
+    ],
+    "unseen": {"from": "2026-09-03", "to": "2026-09-24"},
+    "held_back": null
   }
 }

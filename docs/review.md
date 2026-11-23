@@ -31,6 +31,8 @@ Its review id is made of the account and its cut-over (`ids.reconciling_review_i
 
 A row booked on an account hearth kept itself that was then moved onto the base's account it is (`docs/real-ledger.md`) keeps its rulings: a ruling is bound to the row as it was booked there (`RulingStore.formerly`).
 
+A ruling on record that would move a row onto a carried account, or leave out one of its bank's rows, decides nothing (`decision.guarded`): the row waits again at its proposal, and Review says which it was, "Moved onto an account that now takes only its bank's transactions" or "Excluded, but its bank now counts it in the balance it reports", and counts such rows apart from those whose suggestion or bank changed.
+
 ## Rulings, and how they reach the books
 
 A member can:
@@ -144,6 +146,7 @@ Everything above holds there as it does here: binding, one decision per group, U
 
 - Booking a row against another account and excluding one are bound to what the row said when the app showed it (`ReviewDesk.book_shown`, `reject_shown`), as answering a row alone under "Where did it go?" is here, so a row its bank changed in between is left waiting there too.
 - The queue's keys are menu commands: the arrows move between items, Return settles the row as chosen or accepts a group that is one decision, C changes the category, X excludes where offered, S skips, and Command-Z is Edit > Undo.
+- A difference between an imported ledger and a bank is its own kind of row there too, with its own words and one action, Confirm, which accepts what it proposes: the app offers it no other category, no Exclude and no accept with its group, and C does nothing on it.
 - Naming an account hearth does not see stays on these pages; the app answers "Where did it go?" with an account already named, or a category.
 - `hearth demo --first-review` is the app's sample too, with `-firstReview YES` in a debug build (`apple/README.md`).
 
