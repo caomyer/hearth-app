@@ -16,7 +16,7 @@ import pytest
 from beancount import loader
 from beancount.core.data import Directive
 
-from hearth import accounts, books, cli, matching
+from hearth import accounts, books, carrying, cli, matching
 from hearth.accounts import Account
 from hearth.base import Base
 from hearth.cli import main
@@ -314,6 +314,7 @@ def test_what_carrying_on_will_meet_is_counted_against_the_base(household: House
         last_entry=ledgers.CARD_PAID + timedelta(days=1),
         last_balance=ledgers.LAST_ASSERTED,
         last_pad=ledgers.PADDED_ON,
+        cut_over=ledgers.LAST_ASSERTED,
     )
 
 
@@ -358,10 +359,7 @@ def test_the_command_says_what_the_base_proposes_in_counts_and_days_alone(
         "    10 of the 14 transactions the bank sent are in the base by their Plaid ids, all on"
         " Assets:Zq:Checking, Feb 3, 2026 to Jun 10, 2026"
     ) in out
-    assert (
-        "    Not in the base, on or before its last entry there on Jun 11, 2026: 1, Mar 31, 2026"
-        in out
-    )
+    assert "    Before then and not in the base, so never brought in: 1, Mar 31, 2026" in out
     assert "  Proposed: Assets:Zq:Union, by content" in out
     assert "  Nothing proposed: the evidence points to Assets:Zq:Blake:Savings, which Avery" in out
     assert (
@@ -381,11 +379,10 @@ def test_the_command_says_what_the_base_proposes_in_counts_and_days_alone(
         assert secret not in out
 
 
-def test_confirming_records_the_match_and_books_nothing_differently(
+def test_confirming_records_the_match_and_carries_it_on(
     shell: Household, capsys: pytest.CaptureFixture[str]
 ) -> None:
     settings = shell.settings
-    before = books.household_entries(settings).entries
     owners = _ownership(shell)
     chk, union = shell.ids["ins_zq_bank/chk"], shell.ids["ins_zq_union/chk"]
     joint = shell.ids["ins_zq_blake/joint"]
@@ -408,7 +405,11 @@ def test_confirming_records_the_match_and_books_nothing_differently(
     assert mapping["ins_zq_union/chk"] == "Assets:Zq:Union"
     assert mapping["ins_zq_blake/joint"] == "Assets:Zq:Joint"
     assert sum(1 for v in mapping.values() if v) == 3
-    assert books.household_entries(settings).entries == before
+    assert set(books.household_entries(settings).carried) == {
+        "Assets:Zq:Checking",
+        "Assets:Zq:Union",
+        "Assets:Zq:Joint",
+    }
     assert _ownership(shell) == owners
     assert f"  Matched to Assets:Zq:Checking, confirmed {_said(TODAY)}" in out
 
@@ -416,13 +417,19 @@ def test_confirming_records_the_match_and_books_nothing_differently(
 def test_a_match_can_be_changed_until_carrying_begins(
     shell: Household, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Matched to the credit union's account by mistake, the checking account's rows after
+    that account's cut-over are booked there at once; nobody has ruled on one, so the match is
+    put right, and the rows go with it (``tests.test_carrying`` holds a ruling fixing it)."""
     chk = shell.ids["ins_zq_bank/chk"]
     main(["match-accounts", "--confirm", f"{chk}=Assets:Zq:Union"])
     assert _mapping(shell)["ins_zq_bank/chk"] == "Assets:Zq:Union"
+    assert "Assets:Zq:Union" in books.household_entries(shell.settings).carried
+    assert "The match is fixed" not in capsys.readouterr().out
 
     main(["match-accounts", "--confirm", chk])
 
     assert _mapping(shell)["ins_zq_bank/chk"] == "Assets:Zq:Checking"
+    assert set(books.household_entries(shell.settings).carried) == {"Assets:Zq:Checking"}
     capsys.readouterr()
 
 
@@ -497,11 +504,13 @@ def test_an_account_a_member_named_is_not_matched_to_a_connection(shell: Househo
     assert not any(_mapping(shell).values())
 
 
-def test_an_account_filed_as_one_hearth_keeps_is_not_matched_to_the_base(
+def test_an_account_filed_as_one_hearth_keeps_is_moved_onto_the_base_only_as_asked(
     shell: Household, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Filed on the Connect page as a new account, its rows are in the books there: matching
-    it to the base would take them out, which a match never does."""
+    """Filed on the Connect page as a new account, its rows are in the books there. Named for
+    an account of the base nobody has claimed, whose cut-over comes before every row hearth
+    booked on it, it is moved there: hearth's own claim becomes that account's, and hearth
+    carries it on (``tests.test_carrying`` refuses one the base lacks a row of)."""
     sav = shell.ids["ins_zq_bank/sav"]
     conn = shell.fresh.connect()
     try:
@@ -518,9 +527,12 @@ def test_an_account_filed_as_one_hearth_keeps_is_not_matched_to_the_base(
         "  Feeds Assets:Avery:Zq:Savings, an account the base does not open"
         in capsys.readouterr().out
     )
-    with pytest.raises(SystemExit, match="an account hearth keeps itself"):
-        main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
-    assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Avery:Zq:Savings"
+    main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
+
+    assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Zq:Elsewhere"
+    assert ("Assets:Zq:Elsewhere", frozenset({avery})) in _ownership(shell)
+    assert "Assets:Zq:Elsewhere" in books.household_entries(shell.settings).carried
+    capsys.readouterr()
 
 
 def test_without_an_imported_ledger_there_is_nothing_to_match(
@@ -772,15 +784,30 @@ def _history_ends(household: Household, username: str) -> date:
     return max(day for day in days if day.isoformat() != answer["as_of"])
 
 
-def test_a_matched_account_is_vouched_for_only_through_the_bases_last_day_on_it(
+def test_a_carried_account_is_vouched_for_through_its_last_sync(
     tmp_path: Path, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Avery's checking, the only account Avery owns here, is matched, and the base's entries
-    on it name the very connection that still syncs today; but hearth books nothing into it
-    after the base, so its months after June are not whole, on the page and in the app,
+    """Avery's checking, the only account Avery owns here, is matched, and hearth carries it
+    on, booking what the bank sent after the base: its connection vouches for it through its
+    last sync, so its months after June are whole, on the page and in the app."""
+    household = build(tmp_path, clock, claims={"Assets:Zq:Checking": ("avery",)})
+    _match(household, "ins_zq_bank/chk")
+    household.fresh.bookkeeper.recompute(wait=True)
+
+    assert household.fresh.books().synced["Assets:Zq:Checking"] > BASE_ENDS
+    assert all(covered for _, covered in _covered_after_the_base(household, "avery")[:-1])
+    assert _history_ends(household, "avery") > BASE_ENDS
+
+
+def test_a_matched_account_not_carried_is_vouched_for_only_through_the_bases_last_day(
+    tmp_path: Path, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same account, were it of a kind hearth does not carry on, as a brokerage is not:
+    hearth books nothing into it after the base, so its months after June are not whole,
     however current its connection is."""
     household = build(tmp_path, clock, claims={"Assets:Zq:Checking": ("avery",)})
     _match(household, "ins_zq_bank/chk")
+    monkeypatch.setattr(carrying, "carries", lambda kind: False)
     household.fresh.bookkeeper.recompute(wait=True)
 
     assert household.fresh.books().synced == {"Assets:Zq:Checking": BASE_ENDS}
@@ -789,26 +816,19 @@ def test_a_matched_account_is_vouched_for_only_through_the_bases_last_day_on_it(
     assert not any(covered for _, covered in after)
     assert _history_ends(household, "avery") <= BASE_ENDS
 
-    # Without the cap the same connection would vouch through its last sync, and those months
-    # would read as whole: the fixture is no straw man.
-    monkeypatch.setattr(books, "vouched_within_base", lambda synced, frozen: dict(synced))
-    household.fresh.bookkeeper.recompute(wait=True)
-    assert household.fresh.books().synced["Assets:Zq:Checking"] > BASE_ENDS
-    assert all(covered for _, covered in _covered_after_the_base(household, "avery")[:-1])
-    assert _history_ends(household, "avery") > BASE_ENDS
 
-
-def test_a_base_kept_by_bare_plaid_ids_is_vouched_for_by_no_connection(
+def test_a_base_kept_by_bare_plaid_ids_is_vouched_for_once_carried_on(
     household: Household,
 ) -> None:
     """Blake's checking is kept by an importer's bare `plaid-id`, which names no connection, so
-    its connection vouches for none of it, matched or not, exactly as before."""
+    until it is matched its connection vouches for none of it. Carried on, the base's entries
+    holding the bank's own rows are that connection's, so it vouches through its last sync."""
     household.fresh.bookkeeper.recompute(wait=True)
-    before = household.fresh.books().synced
+    assert household.fresh.books().synced == {}
     _match(household, "ins_zq_blake/chk")
     household.fresh.bookkeeper.recompute(wait=True)
 
-    assert household.fresh.books().synced == before == {}
+    assert household.fresh.books().synced == {"Assets:Zq:Blake:Checking": TODAY}
 
 
 def test_a_live_ledger_hearth_inherits_is_vouched_for_through_the_last_sync(

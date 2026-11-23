@@ -33,10 +33,22 @@ matched to already, as one ledger account is fed by one connection at most.
 
 ``hearth match-accounts`` prints every connected account with its proposal and, given
 ``--confirm``, records the match as the mapping a member confirms on the Connect page
-(`Registry.confirm`), which books nothing into an account the base opens
-(``hearth.plaid.booking``): nothing is booked differently for a match. `facing` says, for each
-matched account, what carrying it on will meet, the evidence the cut-over rule is to be built
-on.
+(`Registry.confirm`). From then on hearth carries the account on from the base
+(``hearth.carrying``): its history before its cut-over is the base's, and hearth books the
+bank's rows from then on that the base does not hold. `facing` says, for each account, what
+carrying it on meets.
+
+A match may be changed until carrying begins (``books.begun``): until then every row carried
+on is derived afresh each recompute, so a wrong match put right moves its rows with it and
+leaves nothing behind. Once a member has ruled on a row carried on the account, or on its
+reconciling entry, the ruling rests on the match, so it is fixed, and so is the base
+(``hearth.ledger_import``).
+
+A connected account filed as an account hearth keeps itself, whose rows the base also holds,
+would be counted twice once the base's account is matched as well. It is moved onto the base's
+account (`Moving`) only when carrying would hold every row hearth has booked on it, and the
+rulings made on those rows keep deciding them (``RulingStore.formerly``); otherwise it is
+refused, saying why.
 
 This reads the whole household's base and feed for whoever runs hearth on its machine, as
 ``hearth plaid items`` does; it is not a page. What it says is counts, days and the names of
@@ -45,34 +57,35 @@ accounts, never a payee or an amount.
 
 import sqlite3
 from collections import Counter, defaultdict
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import date, datetime
-from decimal import Decimal
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 
-from beancount.core.data import Balance, Directive, Open, Pad, Transaction
+from beancount.core.data import Transaction
 
-from hearth import books, db
+from hearth import books, carrying, db
 from hearth.accounts import Account, all_accounts
 from hearth.base import Base
-from hearth.comparison import APART, posted_on
+from hearth.carrying import APART, Held, Status
+from hearth.carrying import PADDED as PADDED
+from hearth.carrying import PLAID_ID as PLAID_ID
+from hearth.carrying import most_pairs as most_pairs
+from hearth.carrying import placed as placed
+from hearth.carrying import read as read
 from hearth.config import Settings
-from hearth.connections import transaction_of
+from hearth.db import transaction
+from hearth.disclosure import review_decisions
 from hearth.disclosure.gate import Gate
 from hearth.members import Member, get
-from hearth.plaid import feed
+from hearth.plaid import booking, feed
 from hearth.plaid.client import Transaction as Row
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import LinkedAccount, Registry
 from hearth.reports.common import is_balance_sheet, root
-
-PLAID_ID = "plaid-id"
-"""Where an importer of the household's own writes a bank transaction's Plaid id on the entry
-it books, with no Item: ``plaid-id: "<transaction id>"``."""
-
-PADDED = "P"
-"""The flag of the entry beancount makes of a `pad`: a balance the ledger filled in, no row."""
+from hearth.review.decision import State
+from hearth.review.pile import PileItem, read_pile
+from hearth.review.rulings import RulingStore
 
 MINIMUM = 5
 """The fewest rows a base account must hold one to one with a connected account's for content
@@ -141,114 +154,6 @@ class Connected:
 
 
 @dataclass(frozen=True, slots=True)
-class _Posting:
-    """A balance-sheet posting of a base transaction: its entry, its place in it, its account,
-    the day it posted (`comparison.posted_on`) and its units."""
-
-    entry: int
-    index: int
-    account: str
-    day: date
-    number: Decimal
-    currency: str
-
-
-@dataclass(frozen=True, slots=True)
-class Held:
-    """The base as matching reads it (`read`)."""
-
-    opened: frozenset[str]
-    postings: tuple[_Posting, ...]
-    by_entry: Mapping[int, tuple[_Posting, ...]]
-    ids: Mapping[str, tuple[tuple[int, int | None], ...]]
-    """Each Plaid transaction id a base entry carries, with the entry, and the posting that
-    carries it itself, or None when the entry does."""
-    last_entry: Mapping[str, date]
-    last_balance: Mapping[str, date]
-    last_pad: Mapping[str, date]
-
-
-def read(entries: Sequence[Directive]) -> Held:
-    """What matching needs of the base's entries: the accounts it opens, every balance-sheet
-    posting of its transactions, the Plaid ids they carry, and each account's last entry,
-    balance assertion and pad. An entry beancount makes of a `pad` is no row of the bank's."""
-    opened = frozenset(e.account for e in entries if isinstance(e, Open))
-    postings: list[_Posting] = []
-    ids: dict[str, list[tuple[int, int | None]]] = defaultdict(list)
-    last_entry: dict[str, date] = {}
-    last_balance: dict[str, date] = {}
-    last_pad: dict[str, date] = {}
-    for number, entry in enumerate(entries):
-        if isinstance(entry, Balance):
-            last_balance[entry.account] = max(
-                entry.date, last_balance.get(entry.account, entry.date)
-            )
-        elif isinstance(entry, Pad):
-            last_pad[entry.account] = max(entry.date, last_pad.get(entry.account, entry.date))
-        if not isinstance(entry, Transaction) or entry.flag == PADDED:
-            continue
-        for found in _ids(entry.meta):
-            ids[found].append((number, None))
-        day = posted_on(entry)
-        for index, posting in enumerate(entry.postings):
-            for found in _ids(posting.meta):
-                ids[found].append((number, index))
-            account = posting.account
-            last_entry[account] = max(entry.date, last_entry.get(account, entry.date))
-            units = posting.units
-            if not is_balance_sheet(account) or units is None:
-                continue
-            if isinstance(units.number, Decimal):
-                postings.append(_Posting(number, index, account, day, units.number, units.currency))
-    by_entry: dict[int, list[_Posting]] = defaultdict(list)
-    for kept in postings:
-        by_entry[kept.entry].append(kept)
-    return Held(
-        opened,
-        tuple(postings),
-        {entry: tuple(found) for entry, found in by_entry.items()},
-        {found: tuple(where) for found, where in ids.items()},
-        last_entry,
-        last_balance,
-        last_pad,
-    )
-
-
-def _ids(meta: Mapping[str, object] | None) -> set[str]:
-    """The Plaid transaction ids `meta` carries: hearth's own `source`, and a bare `plaid-id`."""
-    if not meta:
-        return set()
-    found = {transaction_of(meta.get("source"))}
-    bare = meta.get(PLAID_ID)
-    if isinstance(bare, str) and bare.strip():
-        found.add(bare.strip())
-    return {i for i in found if i}
-
-
-def placed(held: Held, row: Row) -> tuple[_Posting, ...]:
-    """The base postings that are `row`'s bank's own side, in every entry holding its id: the
-    posting that carries the id itself, or else the entry's balance-sheet postings of the
-    row's amount in the books' sign. Empty when the base holds the id nowhere."""
-    by_entry: dict[int, set[int | None]] = defaultdict(set)
-    for entry, posting in held.ids.get(row.transaction_id, ()):
-        by_entry[entry].add(posting)
-    found: list[_Posting] = []
-    units = -row.amount
-    for entry, carriers in by_entry.items():
-        postings = held.by_entry.get(entry, ())
-        pinned = {c for c in carriers if c is not None}
-        if pinned:
-            found += [p for p in postings if p.index in pinned]
-        else:
-            found += [
-                p
-                for p in postings
-                if p.number == units and (row.currency is None or p.currency == row.currency)
-            ]
-    return tuple(found)
-
-
-@dataclass(frozen=True, slots=True)
 class ById:
     """What the base's Plaid ids say of a connected account: each base account its rows' ids
     put their bank's side on, with those rows, and how many rows' ids are in the base without
@@ -306,44 +211,6 @@ class Candidate:
     within: int
 
 
-def most_pairs(
-    ours: Sequence[tuple[date, Decimal]], theirs: Sequence[tuple[date, Decimal]]
-) -> list[tuple[int, int]]:
-    """The most pairs of `ours` and `theirs`, by index, each used once, of the same amount and
-    at most `comparison.APART` apart: a maximum matching.
-
-    ``hearth.comparison`` pairs rows to explain a difference, and so pairs only rows whose
-    words agree and drops a row with two candidates equally near; ``hearth.plaid.pairing``
-    pairs a bank's payment with a card's. Neither counts how much two accounts hold in common,
-    which is what this is for. For one amount, rows on a line paired within a fixed distance,
-    taking the earliest two that fit is a maximum matching: were the earliest of either side
-    left out of every maximum one, pairing it with the earliest it fits frees nothing a pair
-    needs, as everything later is no further from what it was paired with.
-    """
-    by_amount: dict[Decimal, tuple[list[tuple[date, int]], list[tuple[date, int]]]] = defaultdict(
-        lambda: ([], [])
-    )
-    for index, (day, amount) in enumerate(ours):
-        by_amount[amount][0].append((day, index))
-    for index, (day, amount) in enumerate(theirs):
-        by_amount[amount][1].append((day, index))
-    pairs = []
-    for left, right in by_amount.values():
-        left.sort()
-        right.sort()
-        i = j = 0
-        while i < len(left) and j < len(right):
-            (a, x), (b, y) = left[i], right[j]
-            if abs(a - b) <= APART:
-                pairs.append((x, y))
-                i, j = i + 1, j + 1
-            elif a < b:
-                i += 1
-            else:
-                j += 1
-    return sorted(pairs)
-
-
 def by_content(held: Held, connected: Connected) -> list[Candidate]:
     """Every account the base opens on the connected account's side, held against its rows,
     the most rows held first; none for an account of a type with no side."""
@@ -351,18 +218,19 @@ def by_content(held: Held, connected: Connected) -> list[Candidate]:
     if side is None:
         return []
     rows = _posted(connected.rows)
-    ours = [(row.day, -row.amount) for row in rows]
-    on: dict[str, list[_Posting]] = defaultdict(list)
+    ours = [(row.day, -row.amount, row.currency) for row in rows]
+    on: dict[str, list[carrying.BasePosting]] = defaultdict(list)
     for posting in held.postings:
         if root(posting.account) == side:
             on[posting.account].append(posting)
     found = []
     for account in sorted(a for a in held.opened if root(a) == side):
-        theirs = [(p.day, p.number) for p in on.get(account, [])]
-        matched = len(most_pairs(ours, theirs))
+        theirs = [(p.day, p.number, p.currency) for p in on.get(account, [])]
+        matched = len(carrying.by_money(ours, theirs))
         if theirs:
-            first, last = min(d for d, _ in theirs) - APART, max(d for d, _ in theirs) + APART
-            within = sum(1 for day, _ in ours if first <= day <= last)
+            first = min(d for d, _, _ in theirs) - APART
+            last = max(d for d, _, _ in theirs) + APART
+            within = sum(1 for day, _, _ in ours if first <= day <= last)
         else:
             within = 0
         found.append(Candidate(account, matched, within))
@@ -468,54 +336,60 @@ def may_match(holder: Member, account: Account) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Facing:
-    """What carrying a connected account on from the base will meet, on the base account it
-    is matched to: the evidence a cut-over is decided on, never acted on here.
+    """What carrying a connected account on from the base meets, on the base account it is
+    matched to, or would be (``hearth.carrying``).
 
     Of the feed's posted rows, how many the base holds already, by their Plaid ids and, of the
-    rest, by content (`most_pairs`, against the base's rows on the account no id accounts for);
-    of the rows it does not hold, those dated on or before the base's last entry on the
-    account, which carrying on from that day would never bring in, and those after it. And the
-    base's last entry, balance assertion and pad on the account, which are where its own
-    record of the account stops."""
+    rest, by content; of the rows it does not hold, those dated before the cut-over, which
+    carrying never brings in, and those from it on, which hearth books. And the base's last
+    entry, balance assertion and pad on the account, which the cut-over is worked out from,
+    and whether an account of the connected account's kind is carried at all
+    (``carrying.carries``): a brokerage is not, yet, so its history ends where the base's does.
+    """
 
     account: str
     rows: Stretch
     by_id: int
     by_content: int
     missing: Stretch
+    """Rows dated before the cut-over that the base does not hold: never booked."""
     after: Stretch
+    """Rows from the cut-over on that the base does not hold: what hearth books."""
     last_entry: date | None
     last_balance: date | None
     last_pad: date | None
+    cut_over: date | None = None
+    carried: bool = True
+    postponed: bool = False
+    """Whether the cut-over is after today, so the account is not carried on yet
+    (``carrying.postponed``)."""
 
 
-def facing(held: Held, account: str, rows: Sequence[Row]) -> Facing:
+def facing(
+    held: Held,
+    account: str,
+    rows: Sequence[Row],
+    kind: str | None = None,
+    today: date = date.max,
+) -> Facing:
+    """What carrying `account` on from the base meets in `rows`, the bank's rows for a
+    connected account of Plaid type `kind`, by the one rule the books carry it on by
+    (``carrying.carry``)."""
     posted = _posted(rows)
-    used: set[_Posting] = set()
-    by_ids = []
-    rest = []
-    for row in posted:
-        mine = [p for p in placed(held, row) if p.account == account]
-        if mine:
-            by_ids.append(row)
-            used.update(mine)
-        else:
-            rest.append(row)
-    pool = [p for p in held.postings if p.account == account and p not in used]
-    pairs = most_pairs([(r.day, -r.amount) for r in rest], [(p.day, p.number) for p in pool])
-    by_contents = {i for i, _ in pairs}
-    unheld = [row for i, row in enumerate(rest) if i not in by_contents]
-    last_entry = held.last_entry.get(account)
+    plan = carrying.carry(held, account, posted)
     return Facing(
         account,
         Stretch.of([r.day for r in posted]),
-        len(by_ids),
-        len(by_contents),
-        Stretch.of([r.day for r in unheld if last_entry is not None and r.day <= last_entry]),
-        Stretch.of([r.day for r in unheld if last_entry is None or r.day > last_entry]),
-        last_entry,
+        len(plan.by_id),
+        len(plan.by_content),
+        Stretch.of([r.day for r in posted if plan.status(r) is Status.BEFORE]),
+        Stretch.of([r.day for r in posted if plan.status(r) is Status.NEW]),
+        held.last_entry.get(account),
         held.last_balance.get(account),
         held.last_pad.get(account),
+        plan.cut_over,
+        kind is None or carrying.carries(kind),
+        plan.cut_over > today,
     )
 
 
@@ -546,12 +420,21 @@ class Surveyed:
     unclaimed: str | None = None
     """The base account proposed for it, when nobody has claimed it yet, so it cannot be
     matched until somebody does."""
+    begun: bool = False
+    """Whether carrying its match on has begun (``books.begun``), which fixes the match."""
 
 
 @dataclass(frozen=True, slots=True)
 class Survey:
     base: Base
     accounts: tuple[Surveyed, ...]
+    moved_into: Mapping[str, tuple[PileItem, ...]] = field(default_factory=dict)
+    """Each account a ruling now decides a row onto, with those rows, which no connection may
+    be matched to while they are (`_target`). Empty rows for an account when the books could
+    not be derived, so any account a ruling ever named counts."""
+    unsure: str | None = None
+    """Why hearth cannot tell whether carrying has begun on any account, when it cannot: the
+    books could not be derived. No match may be changed meanwhile."""
 
     def find(self, account_id: str) -> Surveyed | None:
         return next(
@@ -560,13 +443,14 @@ class Survey:
         )
 
 
-def survey(settings: Settings) -> Survey:
+def survey(settings: Settings, today: date | None = None) -> Survey:
     """Every account a working connection reaches, with what the base says it is. Raises
     `MatchRefused` when there is no base to match to, or it cannot be read."""
-    return _survey(settings)[0]
+    return _survey(settings, today)[0]
 
 
-def _survey(settings: Settings) -> tuple[Survey, Held]:
+def _survey(settings: Settings, today: date | None = None) -> tuple[Survey, Held]:
+    today = today or datetime.now().astimezone().date()
     frozen = _base(settings)
     try:
         held = read(books.load_ledger(frozen).entries)
@@ -574,12 +458,56 @@ def _survey(settings: Settings) -> tuple[Survey, Held]:
         raise MatchRefused(error.summary) from error
     db.initialise(settings.database)
     feed.initialise(settings.feed_database)
+    unsure = None
+    try:
+        begun = books.begun_in(settings, today)
+    except books.LedgerError as error:
+        begun, unsure = frozenset(), error.summary
     conn = db.connect(settings.database)
     try:
         with Feed.open(settings.feed_database) as fed:
-            return Survey(frozen, tuple(_surveyed(conn, fed, held))), held
+            found = tuple(_surveyed(conn, fed, held, begun, today))
     finally:
         conn.close()
+    return Survey(frozen, found, _moved_onto(settings, today), unsure), held
+
+
+def _moved_onto(settings: Settings, today: date) -> dict[str, tuple[PileItem, ...]]:
+    """Each balance-sheet account a ruling now decides a row onto, other than the row's own,
+    with those rows: the latest decision on each row of the books as they stand, as the
+    recompute lays it (``review.decision``). A ruling since superseded decides nothing, so it
+    holds nothing back; were it ever to decide again, the books leave a row it would move onto
+    a carried account unreviewed (``review.decision.guarded``)."""
+    try:
+        household = books.household_entries(settings, today)
+        pile = read_pile(
+            e
+            for e in household.entries
+            if isinstance(e, Transaction) and e.flag == "!" and "review-id" in (e.meta or {})
+        )
+    except books.LedgerError, ValueError:
+        conn = db.connect(settings.database)
+        try:
+            return {a: () for a in RulingStore(conn).accounts() if is_balance_sheet(a)}
+        finally:
+            conn.close()
+    conn = db.connect(settings.database)
+    try:
+        decided = review_decisions(pile, all_accounts(conn), RulingStore(conn))
+    finally:
+        conn.close()
+    found: dict[str, list[PileItem]] = defaultdict(list)
+    for item in pile:
+        decision = decided[item.review_id]
+        account = decision.account
+        if (
+            decision.state is State.REVIEWED
+            and account is not None
+            and account != item.account
+            and is_balance_sheet(account)
+        ):
+            found[account].append(item)
+    return {account: tuple(items) for account, items in found.items()}
 
 
 def _base(settings: Settings) -> Base:
@@ -595,7 +523,9 @@ def _base(settings: Settings) -> Base:
     return found
 
 
-def _surveyed(conn: sqlite3.Connection, fed: Feed, held: Held) -> list[Surveyed]:
+def _surveyed(
+    conn: sqlite3.Connection, fed: Feed, held: Held, begun: Collection[str], today: date
+) -> list[Surveyed]:
     registry = Registry(conn)
     claimed = {a.ledger_account: a for a in all_accounts(conn)}
     by_id = {a.id: a for a in claimed.values()}
@@ -628,11 +558,25 @@ def _surveyed(conn: sqlite3.Connection, fed: Feed, held: Held) -> list[Surveyed]
                 matched,
                 current if matched is None else None,
                 one.account.confirmed_at if matched else None,
-                facing(held, target, one.rows) if target else None,
+                facing(held, target, one.rows, one.account.type, today) if target else None,
                 proposal.proposed if matched is None and proposal.proposed not in claimed else None,
+                matched in begun,
             )
         )
     return found
+
+
+@dataclass(frozen=True, slots=True)
+class Moving:
+    """A connected account filed as an account hearth keeps itself, `kept`, to be moved onto
+    the base's account `target`, which hearth then carries on: every connected account feeding
+    `kept` with it. `into` is the household's claim of `target`, when it has one, which has
+    exactly `kept`'s owners; without one, `kept` itself becomes the claim of `target`."""
+
+    kept: Account
+    target: str
+    into: Account | None
+    feeding: tuple[LinkedAccount, ...]
 
 
 def confirm(
@@ -644,19 +588,31 @@ def confirm(
     refuses raises `MatchRefused` having written nothing.
 
     A match changes nothing about who owns the base account: it must be claimed already, and
-    owned by the connection's holder among others. A match may be changed until carrying
-    begins, which is not built yet, so always for now; one confirmed again as it stands keeps
-    the day it was first confirmed."""
-    found, held = _survey(settings)
+    owned by the connection's holder among others. A match may be changed until carrying it
+    on begins (``books.begun``); one confirmed again as it stands keeps the day it was first
+    confirmed. A connected account filed as an account hearth keeps itself is moved onto the
+    base's account only as `_moving` allows."""
+    found, held = _survey(settings, now.astimezone().date())
     conn = db.connect(settings.database)
     try:
         claimed = {a.ledger_account: a for a in all_accounts(conn)}
         taking: dict[str, Account] = {}
+        moving: dict[str, Moving] = {}
         for account_id, chosen in wanted:
-            if account_id in taking:
+            if account_id in taking or account_id in moving:
                 raise MatchRefused(f"{account_id} is named twice.")
-            taking[account_id] = _checked(found, held, claimed, account_id, chosen)
-        targets = Counter(account.ledger_account for account in taking.values())
+            one = found.find(account_id)
+            if one is not None and one.filed is not None:
+                with Feed.open(settings.feed_database) as fed:
+                    moving[account_id] = _moving(conn, fed, found, held, claimed, one, chosen)
+            else:
+                taking[account_id] = _checked(found, held, claimed, account_id, chosen)
+        targets = Counter(
+            [
+                *(account.ledger_account for account in taking.values()),
+                *(move.target for move in moving.values()),
+            ]
+        )
         twice = sorted(a for a, n in targets.items() if n > 1)
         if twice:
             raise MatchRefused(
@@ -668,9 +624,11 @@ def confirm(
             one = found.find(account_id)
             if one is not None and one.matched != account.ledger_account:
                 registry.confirm(account_id, account.id, by=None, now=now)
+        for move in moving.values():
+            _move(conn, move, now=now)
     finally:
         conn.close()
-    return survey(settings)
+    return survey(settings, now.astimezone().date())
 
 
 def _checked(
@@ -686,23 +644,19 @@ def _checked(
     if one is None:
         raise MatchRefused(f"No working connection reaches an account {account_id}.")
     connected = one.proposal.connected
-    if one.filed is not None:
-        raise MatchRefused(
-            f"{account_id} feeds {one.filed}, an account hearth keeps itself, which the base does"
-            " not open; matching it to the base would take what it brought in out of the books."
-        )
-    target = chosen or one.proposal.proposed
-    if target is None:
-        raise MatchRefused(
-            f"Nothing is proposed for {account_id}; name the base account it is:"
-            f" --confirm {account_id}=<ledger account>."
-        )
-    if target not in held.opened:
-        raise MatchRefused(f"The imported ledger opens no account {target}.")
-    side = connected.side
-    if not is_balance_sheet(target) or (side is not None and root(target) != side):
-        where = side or "Assets or Liabilities"
-        raise MatchRefused(f"{target} is not under {where}, where {account_id} goes.")
+    target = _target(found, one, held, account_id, chosen)
+    if one.matched is not None and one.matched != target:
+        if found.unsure is not None:
+            raise MatchRefused(
+                f"Hearth cannot tell whether carrying {one.matched} on has begun, so its match"
+                f" is not changed: {found.unsure}"
+            )
+        if one.begun:
+            raise MatchRefused(
+                f"{account_id} is carried on from the imported ledger's {one.matched}, and a"
+                " decision has been made in Review on its transactions there. Its match is"
+                " fixed from then on: changing it would leave that decision deciding nothing."
+            )
     account = claimed.get(target)
     holder = connected.holder
     if account is None:
@@ -721,6 +675,51 @@ def _checked(
             f"{target} is not {holder.username}'s, so their connection is not matched to it;"
             " matching never changes who owns an account."
         )
+    _not_taken(found, target, account_id)
+    return account
+
+
+def _target(found: Survey, one: Surveyed, held: Held, account_id: str, chosen: str | None) -> str:
+    """The base account `chosen`, or proposed, for `one`, if a connected account of its kind
+    may go there at all."""
+    connected = one.proposal.connected
+    target = chosen or one.proposal.proposed
+    if target is None:
+        raise MatchRefused(
+            f"Nothing is proposed for {account_id}; name the base account it is:"
+            f" --confirm {account_id}=<ledger account>."
+        )
+    if target not in held.opened:
+        raise MatchRefused(f"The imported ledger opens no account {target}.")
+    side = connected.side
+    if not is_balance_sheet(target) or (side is not None and root(target) != side):
+        where = side or "Assets or Liabilities"
+        raise MatchRefused(f"{target} is not under {where}, where {account_id} goes.")
+    closed = held.closed_on.get(target)
+    if closed is not None:
+        raise MatchRefused(
+            f"The imported ledger closes {target} on {_day(closed)}, so nothing can be carried"
+            " on into it."
+        )
+    moved = found.moved_into.get(target)
+    if moved is not None and target != one.matched:
+        # Carried on, its bank's balance would be asserted beside rows its bank never sent:
+        # what carrying holds is the bank's alone.
+        rows = "; ".join(
+            f"{item.review_id}, on {item.account}, {_day(item.date)}"
+            for item in sorted(moved, key=lambda i: (i.date, i.review_id))
+        )
+        raise MatchRefused(
+            f"Rows are moved into {target} in Review, so no connection is matched to it:"
+            " carried on, it would hold them beside its bank's own transactions"
+            + (f". They are {rows}" if rows else "")
+            + ". Decide them again in Review, onto another account or a category, and"
+            " match it then."
+        )
+    return target
+
+
+def _not_taken(found: Survey, target: str, account_id: str) -> None:
     other = next(
         (
             s
@@ -734,7 +733,96 @@ def _checked(
             f"{target} is matched to another connected account already; one ledger account is"
             " fed by one connection at most."
         )
-    return account
+
+
+def _moving(
+    conn: sqlite3.Connection,
+    fed: Feed,
+    found: Survey,
+    held: Held,
+    claimed: Mapping[str, Account],
+    one: Surveyed,
+    chosen: str | None,
+) -> Moving:
+    """How `one`, filed as an account hearth keeps itself whose rows the base also holds, is
+    moved onto the base's account, or raise `MatchRefused` saying why it is not.
+
+    Once the base's account is matched too, the one bank account would be counted twice, in
+    the base and in hearth's own account. Moving it is carrying it on from the base instead,
+    which is allowed only when carrying would hold every row hearth has booked on its own
+    account: each is in the base, or dated from the cut-over on, so hearth books it again on
+    the base's account. A row before the cut-over that the base does not hold would leave the
+    books, so then nothing is moved. Rulings on the rows booked again keep deciding them, as
+    a ruling is bound to the row as it was booked (``RulingStore.formerly``); a ruling on a row
+    the base holds decides nothing more, since the base's own entry for it stands.
+
+    Who sees the account does not change: the base's account must be unclaimed, so the claim
+    of hearth's own account becomes its claim, or claimed by exactly the same members.
+    """
+    account_id = one.proposal.connected.account.account_id
+    assert one.filed is not None  # noqa: S101 - only a filed account is moved
+    kept = claimed[one.filed]
+    target = _target(found, one, held, account_id, chosen)
+    registry = Registry(conn)
+    feeding = tuple(a for a in registry.confirmed() if a.hearth_account == kept.id)
+    if not all(carrying.carries(a.type) for a in feeding):
+        raise MatchRefused(
+            f"{account_id} is not of a kind hearth carries on from the imported ledger yet:"
+            " a brokerage's history stays where the ledger left it."
+        )
+    if kept.ledger_account in RulingStore(conn).accounts():
+        raise MatchRefused(
+            f"Rows were moved into {kept.ledger_account} in Review, so it is not moved onto"
+            f" {target}: those rulings name it."
+        )
+    into = claimed.get(target)
+    if into is not None and into.owners != kept.owners:
+        raise MatchRefused(
+            f"{target} is claimed with other owners than {kept.ledger_account}, so moving it"
+            " would change who sees the account, which matching never does."
+        )
+    if into is not None and into.named is not None:
+        raise MatchRefused(
+            f"{target} is an account a member named, which no connection feeds"
+            ' (docs/books.md, "Accounts hearth does not see").'
+        )
+    _not_taken(found, target, account_id)
+    try:
+        feeds, rows = booking.taken_once(conn, fed, opened=held.opened)
+    except booking.Refused as refused:
+        raise MatchRefused(str(refused)) from refused
+    mine = [r for r in rows if feeds[r.account_id][1] == kept.ledger_account]
+    plan = carrying.carry(held, target, mine)
+    lost = [r for r in mine if plan.status(r) is Status.BEFORE]
+    if lost:
+        count = len(lost)
+        raise MatchRefused(
+            f"{count} of the transactions hearth has booked on {kept.ledger_account}"
+            f" {'is' if count == 1 else 'are'} dated before {_day(plan.cut_over)}, where"
+            f" carrying {target} on begins, and the imported ledger does not hold"
+            f" {'it' if count == 1 else 'them'}, so moving it would take"
+            f" {'it' if count == 1 else 'them'} out of the books. It stays where it is."
+        )
+    return Moving(kept, target, into, feeding)
+
+
+def _move(conn: sqlite3.Connection, move: Moving, *, now: datetime) -> None:
+    """Carry `move.kept`'s connected accounts on from the base's account (`Moving`)."""
+    with transaction(conn):
+        if move.into is None:
+            conn.execute(
+                "UPDATE accounts SET ledger_account = ? WHERE id = ?", (move.target, move.kept.id)
+            )
+        else:
+            for linked in move.feeding:
+                conn.execute(
+                    "UPDATE plaid_accounts SET hearth_account = ?, confirmed_at = ?,"
+                    " confirmed_by = NULL WHERE account_id = ?",
+                    (move.into.id, now.isoformat(), linked.account_id),
+                )
+            conn.execute("DELETE FROM account_owners WHERE account_id = ?", (move.kept.id,))
+            conn.execute("DELETE FROM accounts WHERE id = ?", (move.kept.id,))
+        RulingStore(conn).carry_over(move.kept.ledger_account, move.target, at=now)
 
 
 # What ``hearth match-accounts`` prints.
@@ -747,6 +835,11 @@ def describe(found: Survey) -> list[str]:
         "Each connected account, and which of the imported ledger's accounts it is"
         f" (the base {found.base.digest[:12]}):"
     ]
+    if found.unsure is not None:
+        lines.append(
+            "Hearth cannot tell whether carrying has begun on any account, so no match is"
+            f" changed until it can: {found.unsure}"
+        )
     if not found.accounts:
         return [*lines, "No working connection reaches an account yet."]
     unconfirmed = []
@@ -765,6 +858,10 @@ def describe(found: Survey) -> list[str]:
             lines.append(
                 f"  Matched to {one.matched}" + (f", confirmed {_day(when)}" if when else "")
             )
+            if one.begun:
+                lines.append(
+                    "  The match is fixed: a decision has been made in Review on its transactions"
+                )
         elif one.filed is not None:
             lines.append(
                 f"  Feeds {one.filed}, an account the base does not open, which hearth keeps"
@@ -775,13 +872,23 @@ def describe(found: Survey) -> list[str]:
         lines += [f"  {line}" for line in _proposal(one.proposal)]
         if one.facing is not None:
             if one.matched is not None:
-                lines.append("  Carrying it on will meet:")
+                lines.append("  Carrying it on meets:")
+            elif one.filed is not None:
+                lines.append(f"  Moving it onto {one.facing.account} would meet:")
             else:
                 lines.append(f"  Carrying it on {one.facing.account} would meet:")
             lines += [f"    {line}" for line in _facing(one.facing)]
-        if one.matched is not None or one.filed is not None:
+        if one.matched is not None:
             continue
         account_id = linked.account_id
+        if one.filed is not None:
+            if one.facing is not None and one.facing.carried and not one.facing.missing.count:
+                lines.append(
+                    f"  Every transaction hearth has booked on {one.filed} is in the base or"
+                    " comes after it: move it onto the base's account with"
+                    f" --confirm {account_id}={one.facing.account}"
+                )
+            continue
         if one.unclaimed is not None:
             lines.append(
                 f"  Nobody has claimed {one.unclaimed} yet: claim it with hearth add-account"
@@ -880,23 +987,38 @@ def _candidate(candidate: Candidate) -> str:
 
 
 def _facing(found: Facing) -> list[str]:
-    last = _day(found.last_entry) if found.last_entry else None
+    balance = _day(found.last_balance) if found.last_balance else "none"
+    pad = _day(found.last_pad) if found.last_pad else "none"
     lines = [
         f"From the bank: {found.rows.count} transactions" + _span(found.rows),
         f"In the base already: {found.by_id} by Plaid id, {found.by_content} by content",
+        f"The base's last entry on it: {_day(found.last_entry) if found.last_entry else 'none'};"
+        f" its last balance assertion: {balance}; its last pad: {pad}",
     ]
-    if last is not None:
-        lines += [
-            f"Not in the base, on or before its last entry there on {last}:"
-            f" {found.missing.count}{_span(found.missing)}",
-            f"After its last entry: {found.after.count}{_span(found.after)}",
+    if found.cut_over is None:
+        return lines
+    if found.carried and found.postponed:
+        return [
+            *lines,
+            "Not carried on yet: the base has an entry or a balance assertion on it dated after"
+            f" today, so carrying it on would begin on {_day(found.cut_over)}; until then its"
+            " history ends where the base's does",
         ]
-    else:
-        lines.append(f"The base has no entry on it; all {found.after.count} come after it")
-    balance = _day(found.last_balance) if found.last_balance else "none"
-    pad = _day(found.last_pad) if found.last_pad else "none"
-    lines.append(f"The base's last balance assertion on it: {balance}; its last pad: {pad}")
-    return lines
+    if not found.carried:
+        last = found.cut_over - timedelta(days=1)
+        return [
+            *lines,
+            "Not carried on: hearth does not carry an account of its kind on from the base"
+            f" yet, so its history ends where the base's does, on {_day(last)}",
+        ]
+    return [
+        *lines,
+        f"Carried on from {_day(found.cut_over)}: before then the base's, from then on the bank's",
+        f"Before then and not in the base, so never brought in: {found.missing.count}"
+        + _span(found.missing),
+        f"From then on and not in the base, so booked by hearth: {found.after.count}"
+        + _span(found.after),
+    ]
 
 
 def _span(stretch: Stretch) -> str:

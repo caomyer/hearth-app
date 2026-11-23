@@ -50,9 +50,67 @@ Hearth keeps a frozen copy of every file it read, its base, in the data director
 Until the import is all a household needs, `HEARTH_LEDGER` still names a ledger to inherit where it is, read exactly as a base is; the two together are refused.
 Either is loaded only through `books.load_ledger`, which runs beancount's own plugins and no other.
 Hearth's own entries go on top of it: an account the household's ledger already opens is left to it, transactions and all, and an account a member maps to a new name is opened by hearth.
-The import books nothing into such an account, since that would count every transaction the ledger already holds a second time; carrying it on from where its ledger stops is not done yet, and the import page says which accounts it leaves to the household's own records.
-So on a base, which nothing adds to, a connection vouches for such an account only through the base's own last day on it (`books.vouched_within_base`), and the months after it read as incomplete; a ledger inherited at `HEARTH_LEDGER` may still be growing, so its accounts are vouched for through the last sync as before (`docs/real-ledger.md`).
+The one exception is an account of an imported base that a connected account is matched to (`docs/real-ledger.md`), which hearth carries on from where the base stops (see "Carried on from the base", below).
+A ledger inherited at `HEARTH_LEDGER` may still be growing, so nothing of it is ever carried on: its accounts are its own, and are vouched for through the last sync as before.
 The books file includes the base, or the inherited ledger, by its full path, so the file alone holds the whole books.
+
+### Carried on from the base
+
+A matched account's history before its cut-over is the base's, and everything from the cut-over on is derived each recompute from the feed and the rulings, exactly as for an account hearth keeps itself (`hearth.carrying`).
+Nothing is stored twice, and the base is never written.
+
+The cut-over is derived from the base on every recompute, never stored: the later of the day after the base's last transaction touching the account and the day of its last `balance` or `pad` on it, since an assertion holds at the start of its day, so that day's own rows are new (`carrying.cut_over`).
+The day before it is the last day the base knows of the account (`books.frozen_through`).
+
+Which of the bank's rows the base holds already, whatever day each is dated (`carrying.carry`):
+
+- by id, in either shape a ledger carries it, hearth's own `source: "plaid:<item>:<txn>"` and an importer's bare `plaid-id`;
+- of the rest, by content: the most rows held one to one with the base's postings on the account that no feed row's id claims, for the same amount in the same currency at most a week apart, on the day each posted; a row Plaid sends with no currency is held by its amount alone, among the postings left over.
+
+Content is matched over the whole account, not only near the cut-over, so a row before it keeps the base entry that is its own, and a card row the ledger dated on the day the charge was made and the bank dates days later, after the cut-over, is still the one row.
+A row from the cut-over on that the base does not hold is booked, by every rule below: pending rows are not, each transaction is taken once, it is flagged `!` until reviewed, and its `source` names its connection.
+Its proposal is hearth's own, from Plaid's category (`booking.proposal`); proposing from the ledger's own categories is a later change's.
+A row before the cut-over that the base does not hold is one the ledger never kept: it is never booked and never put in Review, and `hearth match-accounts` and the import's check count it.
+
+A carried account has no opening entry, since the base says what it held.
+Its bank's current balance is asserted as any connected account's is, against the base's balance at the cut-over and every row booked since, and proved on every recompute.
+Where the two disagree, the account is still carried, with one reconciling entry dated its cut-over for the difference, against `Equity:Ledger-Bank-Difference`, flagged `!`, and in Review as its own kind of row (`docs/review.md`):
+
+```text
+difference = current balance - the base's balance at the cut-over - the rows booked since
+```
+
+The bank's balance less the rows since is what the bank says the account held at the start of the cut-over, so the difference is what the ledger and the bank disagree by on that day.
+It is derived from those three alone, so it stays the same from sync to sync, shrinks or vanishes when its cause is put right, such as a row the bank counts arriving, and is never a second entry: there is one per account, whose review id is made of the account and its cut-over.
+It never makes the recompute fail, and a carried account whose difference nobody has confirmed is not shown as matching its bank: the app reads it as not checked against a bank, and its balance checks as checked by the books alone (`books.reconciling`).
+Confirming it is accepting the row; a confirmation is of that difference, so a different one asks again.
+
+A carried account whose bank's balance cannot prove it, as a sync that did not finish, a balance in another currency, or none reported, has no assertion: its balance is not known, says why to its owners, and counts as not known in every total, exactly as a connected account hearth keeps itself in the same state does (`books.unknown`, `books.unanchored`), never the base and the rows since shown as known.
+
+No sequence of actions hearth allows may make a recompute fail because of carrying.
+The assertion holds by construction, as the difference is the bank's balance less exactly what the books hold on the account, so nothing may put on a carried account a posting the difference does not see:
+
+- no row may be moved onto a carried account in Review, whether or not its bank's balance is in yet, nor onto a matched account whose cut-over has not come (`desk.BanksAccount`);
+- no connected account is matched, on the command line or the Connect page, to an account of the base a ruling now moves a row into, since carried on it would hold the row beside its bank's own; the refusal names those rows, and deciding them again in Review clears it, as a ruling since superseded holds nothing back;
+- nor is an account hearth kept itself moved onto one;
+- and whatever a ruling on record comes to decide, as one superseded that decides again once its bank revises the row, the books never lay onto a carried account a row a ruling moves there, nor drop one of its bank's rows a ruling rejects: such a row stays unreviewed, at its proposal, and says why (`review.decision.guarded`).
+
+Only an account whose rows hearth books and whose bank reports money held or owed is carried (`carrying.carries`).
+A matched brokerage is not, yet: Plaid sends it no rows hearth books, so its history ends at the base's last entry, every figure that includes it says so through coverage and "data ends", and its holdings are not anchored after the base's positions.
+That is the seam for a later change, and so is an account the base closes, which is never carried.
+Nor is an account whose cut-over is after today, the household's own day, as when the base holds a balance it forecast (`carrying.postponed`): carried on, every row before it would wait unbooked and the difference would be dated where nothing shows it, so until the day comes its history ends where the base's own record up to today does, its last transaction or `pad` on or before today, or the day before its last balance assertion on or before it (`carrying.known_through`).
+Its connection vouches for it no further, the months after read as incomplete, its own page names the day its ledger holds an entry on that holds it back (`books.held_back`), and `hearth match-accounts` and the import's check say so.
+It is its bank's in Review all the same, so no row is moved onto it meanwhile.
+
+Until a member rules on a row carried on an account, or on its reconciling entry, its match may be corrected: everything carried on is derived afresh on each recompute, so its rows, its reconciling entry and its coverage move with the match and nothing is left behind on the wrong account.
+From the first such ruling carrying has begun (`books.begun`): its match can no longer be changed, on the Connect page or by `hearth match-accounts`, and the base can no longer be imported again, as the ruling rests on both.
+
+Coverage follows what is booked: a connection vouches for a carried account through its last successful sync, as for an account hearth keeps itself, and the base's entries that hold the bank's own rows count as entries from that connection (`books.vouched_over_base`).
+A bank sends less history than hearth asks for as often as not, so a base that stops before the bank's history begins leaves days neither holds (`carrying.Carry.unseen`).
+The bank's history begins on the first day hearth asked for, unless its first row comes more than two weeks later, when it evidently sent less and its history begins at that row (`carrying.window`).
+Where that is more than ten days after the cut-over, the days between are known by neither; an account quiet for a few days after it, or a base account opened and empty, is quiet, not missing.
+No month among them is whole, on any page or in the app (`books.unseen_between`, `figures.covers`), the account's own page says where the gap is, and the difference with its bank, which includes what moved then, says so in its words.
+A matched account that is not carried is vouched for no further than the base's own last day on it.
 
 ## What the books hold
 

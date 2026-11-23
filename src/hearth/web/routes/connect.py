@@ -95,6 +95,15 @@ OUTCOMES = {
     Refusal.TARGET_TAKEN.value: "That ledger account already receives transactions from another"
     " connection. One account can be fed by one connection, or every transaction would be"
     " imported twice.",
+    Refusal.CARRIED.value: "That account carries on from your household's imported ledger, and"
+    " a decision has been made in Review on its transactions there, so where it goes is fixed."
+    " Nothing was saved.",
+    Refusal.MOVED_INTO.value: "Transactions were moved into that account in Review, so no"
+    " connection can feed it: its balance would count them beside its bank's own. Nothing was"
+    " saved.",
+    Refusal.CARRY_BY_COMMAND.value: "An account Hearth keeps itself moves onto one of your"
+    " imported ledger's only through hearth match-accounts, which first checks the ledger holds"
+    " every transaction already brought in. Nothing was saved.",
     Refusal.STATEMENT_UNREADABLE.value: "That file could not be kept. Upload a CSV statement of"
     " up to 5 MB.",
     Refusal.WRONG_ADDRESS.value: "Connect from {address}. Plaid brings you back there after a"

@@ -38,6 +38,26 @@ A member settles it by naming the other account.
 A leg is unpaired for honest reasons pairing cannot tell apart: the other side is at an institution nobody connected, it came outside the window or for a different amount, or it never arrived because a connection stopped.
 When the other side does arrive, the next import pairs it.
 
+## Across the cut-over
+
+An account carried on from an imported base (`docs/books.md`, "Carried on from the base") holds two kinds of rows: those its base holds already, and those hearth books from its cut-over on.
+Pairing runs over the whole feed exactly as it does without a base, every row of every account hearth books whatever day it is dated and whether the base holds it, so a payment pairs, or ties, the same either way.
+Each pair is then booked by what carrying makes of its two rows (`booking._legs`):
+
+- **Both rows new**, each on or after its account's cut-over and not in the base, or on an account hearth keeps itself: the payment is booked once, as the transfer, as always.
+- **Either row held by the base**, both accounts carried: neither row is booked again.
+  The base's entry for a card payment is the transfer itself, both its sides, however the two banks date them, so the row the base does not seem to hold by itself, the card's arrival a week later say, is the same payment; booking it would count it twice, and the account's difference with its bank would show it.
+  It arises when the ledger dated the payment more than a week from the day one bank posted it, and holds the other bank's row by its id: so its entry holds that row by id and is beyond the reach of content for this one.
+- **Exactly one row new**, the other dated before its account's cut-over and not in the base, so never booked, or on an account of the base hearth does not carry: only the new row is booked, flagged against `Equity:Review:TransferPending`, as a leg nothing pairs with.
+  The other side is outside the books for good, so that is exactly what the books can say.
+- **A row on an account hearth keeps itself whose partner the base holds**: the base balances that side against an account of its own, never hearth's, so the row is booked alone too, against `Equity:Review:TransferPending`.
+  The account's balance needs it, as its opening is worked out from every row it was sent.
+
+A row the base holds, or one before its cut-over, is never booked whatever pairs with it.
+
+A leg booked alone because its partner's account was not carried yet pairs once it is, as any leg does when its other side arrives: it is then one transfer, marked `*`, and a ruling a member made on the leg stays on record, deciding nothing, since pairing now says what it was.
+So a ruling on a hearth-kept leg does not fix the match of the account its partner is on (`books.begun`).
+
 ## Privacy
 
 Pairing crosses accounts, and so crosses members.

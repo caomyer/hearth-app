@@ -55,7 +55,7 @@ from hearth.accounts import Account
 from hearth.clock import Clock
 from hearth.disclosure import Concealed
 from hearth.members import MemberId
-from hearth.review.decision import Decision, State, decide
+from hearth.review.decision import Decision, State, decide, guarded
 from hearth.review.pile import Moved, PileItem
 from hearth.review.rulings import Action, Covered, Ruling, RulingStore, Scope, check_account
 
@@ -203,6 +203,9 @@ def one_decision(group: str, waiting: Collection[PileItem]) -> bool:
     """
     if group.strip().casefold() in UNCERTAIN_GROUPS:
         return False
+    # Each carried account's difference with its bank is its own question, with its own cause.
+    if any(item.reconciling for item in waiting):
+        return False
     suggestions = {item.proposed for item in waiting}
     return len(suggestions) == 1 and None not in suggestions
 
@@ -236,7 +239,11 @@ def resolve(
     for covered in rulings.covering(by_id):
         if may_review(covered.ruling.member_id, owners(by_id[covered.review_id])):
             applicable[covered.review_id].append(covered)
-    return {item.review_id: decide(item, applicable[item.review_id]) for item in pile}
+    formerly = rulings.formerly()
+    return {
+        item.review_id: decide(item, applicable[item.review_id], formerly.get(item.account, ()))
+        for item in pile
+    }
 
 
 def _owners(accounts: Sequence[Account]) -> Callable[[PileItem], frozenset[MemberId]]:
@@ -263,9 +270,11 @@ class ReviewDesk:
         clock: Clock,
         banks: Collection[str] = (),
         moves: Moves = _nothing_moves,
+        carried: Collection[str] = (),
     ) -> None:
         self._member = member
         self._banks = frozenset(banks)
+        self._carried = frozenset(carried)
         self._moves = moves
         # An account a member named opens on every row's day (``hearth.ownbooks``), so it is
         # open here from the moment it is named, before the books are next recomputed.
@@ -527,7 +536,7 @@ class ReviewDesk:
             ItemView(
                 item,
                 self._owners(item),
-                decisions[item.review_id],
+                guarded(item, decisions[item.review_id], self._carried),
                 account(item),
                 bank_counts=item.account in self._banks,
                 moved=Moved.CARD if item.transfer else self._moves(item.group),

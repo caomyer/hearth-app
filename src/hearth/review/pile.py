@@ -30,6 +30,16 @@ anyone chose either, so accepting the row as proposed cannot settle it."""
 WAITING = frozenset({UNRESOLVED, TRANSFER_PENDING})
 """The accounts a row balances against while it waits for a member to say where it belongs."""
 
+LEDGER_BANK = "Equity:Ledger-Bank-Difference"
+"""What a carried account's reconciling entry balances against: the difference between what
+the imported ledger says the account held at its cut-over and what its bank's balance says it
+held then (``hearth.plaid.opening.Carrying``). Not a category and not a place a row waits: a
+member confirms the difference by accepting it, and it stays there, checked."""
+
+RECONCILING = "Where the imported ledger and the bank disagree"
+"""The review group of a carried account's reconciling entry: its own kind of row, one per
+account, which a member confirms one at a time, never as a group (``desk.one_decision``)."""
+
 
 class Moved(StrEnum):
     """What kind of move a row is whose other side hearth does not see: money that left or
@@ -68,6 +78,22 @@ class PileItem:
     def says(self) -> str:
         """What the row says, as a ruling on it is bound to it (`ids.says`)."""
         return ids.says(self.account, self.date, self.amount, self.currency)
+
+    def said(self, formerly: Iterable[str] = ()) -> frozenset[str]:
+        """What the row says (`says`), and what it said on each account it was booked on
+        before it was carried on from the base, `formerly`: the same row of the same bank
+        account, as a ruling made then is bound to it (``RulingStore.formerly``)."""
+        return frozenset(
+            {
+                self.says,
+                *(ids.says(a, self.date, self.amount, self.currency) for a in formerly),
+            }
+        )
+
+    @property
+    def reconciling(self) -> bool:
+        """Whether it is a carried account's reconciling entry (`LEDGER_BANK`)."""
+        return self.proposed == LEDGER_BANK
 
 
 def _location(entry: Transaction) -> str:

@@ -113,6 +113,10 @@ class Entry:
     review: str | None = None
     """The review id of an unreviewed row the viewer may review, which decides it from here;
     None for anyone else, and for every row nobody is waiting on."""
+    reconciling: bool = False
+    """A check of its bank's balance that the books meet only by an entry reconciling the
+    imported ledger with the bank, which nobody has confirmed yet (``books.reconciling``): it
+    is not shown as matching its bank."""
 
     @property
     def suggested(self) -> bool:
@@ -243,6 +247,7 @@ class _Reader:
         gate = h.gate
         self._currency = h.books.currency
         self._unseen = h.books.unseen
+        self._reconciling = h.books.reconciling
         self._by_ledger: Mapping[str, Account] = {a.ledger_account: a for a in accounts}
         self._sees = {a.ledger_account for a in accounts if gate.may(Facet.TRANSACTIONS, a.owners)}
         self._balances = {
@@ -353,7 +358,7 @@ class _Reader:
         checked = Checked.BOOKS
         if held(entry):
             checked = Checked.BROKERAGE
-        elif anchors(entry):
+        elif anchors(entry) and account not in self._reconciling:
             checked = Checked.BANK
         return Entry(
             kind=Kind.BALANCE,
@@ -366,4 +371,6 @@ class _Reader:
             amount=entry.amount.number,
             sides=(),
             checked=checked,
+            # Its bank's balance, met only by a difference nobody has confirmed yet.
+            reconciling=anchors(entry) and account in self._reconciling,
         )

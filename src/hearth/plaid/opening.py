@@ -60,8 +60,11 @@ from beancount.core.data import (
 from hearth.connections import plaid_balance_source
 from hearth.plaid import booking
 from hearth.plaid.client import Transaction as Row
+from hearth.plaid.feed import Balance as Reported
 from hearth.plaid.feed import Feed, Outcome, Report
 from hearth.plaid.registry import Item, LinkedAccount, Registry
+from hearth.review.ids import reconciling_review_id
+from hearth.review.pile import LEDGER_BANK, RECONCILING
 from hearth.valuation.institution import commodity
 
 EQUITY = "Equity:Opening-Balances"
@@ -81,6 +84,9 @@ class Basis(StrEnum):
     """Plaid's current balance: the money an account holds, or owes."""
     HOLDINGS = "holdings"
     """What a brokerage said an investment account holds (``Feed.holdings``)."""
+    DIFFERENCE = "difference"
+    """What a carried account's current balance and the base it is carried on from disagree
+    by, as of its cut-over (`Carrying`)."""
 
 
 BALANCED = frozenset({"depository", "credit", "loan"})
@@ -170,13 +176,17 @@ class Anchor:
         return (opening, *asserted)
 
     def _provenance(self) -> dict[str, object]:
-        # No `source` on the assertion: it is dated after the sync it came from, and a
-        # connection vouches only for what the books hold up to its sync (`books.vouched`).
-        meta = new_metadata(booking.ORIGIN, 0)
-        meta[_PROVENANCE] = self.basis.value
-        meta["reported-by"] = self.institution
-        meta["reported-at"] = self.reported_at.isoformat()
-        return meta
+        return _provenance(self.basis, self.institution, self.reported_at)
+
+
+def _provenance(basis: Basis, institution: str, reported_at: datetime) -> dict[str, object]:
+    # No `source` on an assertion: it is dated after the sync it came from, and a connection
+    # vouches only for what the books hold up to its sync (`books.vouched`).
+    meta = new_metadata(booking.ORIGIN, 0)
+    meta[_PROVENANCE] = basis.value
+    meta["reported-by"] = institution
+    meta["reported-at"] = reported_at.isoformat()
+    return meta
 
 
 def anchors(entry: Directive) -> bool:
@@ -251,6 +261,38 @@ def _anchor(
         if item is None or report is None:
             return Invested(Unknown.INVESTMENT)
         return _holdings(account, report, rows, item, feed)
+    found = _current(feed, newest, item, linked, items, rows)
+    if isinstance(found, Unknown):
+        return found
+    balance, current, currency = found
+    as_of = max([balance.recorded_at.astimezone().date(), *(row.day for row in rows)])
+    # With no rows yet, all that is known is what it holds now, not what it held before.
+    day = min(row.day for row in rows) - timedelta(days=1) if rows else as_of
+    reported = current if newest.type == "depository" else -current
+    moved = sum((-row.amount for row in rows), Decimal(0))
+    assert item is not None  # noqa: S101 - `_current` found its balance through it
+    return Anchor(
+        account=account,
+        day=day,
+        opening=(Amount(reported - moved, currency),),
+        reported=(Amount(reported, currency),),
+        as_of=as_of,
+        reported_at=balance.recorded_at,
+        institution=item.institution,
+        item_id=item.item_id,
+    )
+
+
+def _current(
+    feed: Feed,
+    newest: LinkedAccount,
+    item: Item | None,
+    linked: Sequence[LinkedAccount],
+    items: Mapping[str, Item | None],
+    rows: Sequence[Row],
+) -> tuple[Reported, Decimal, str] | Unknown:
+    """The current balance the newest connection's bank last reported, with its figure, when
+    it can be held against `rows`, or why it cannot."""
     balance = feed.balance(newest.account_id)
     if item is None or balance is None or balance.current is None:
         return Unknown.NO_BALANCE
@@ -261,21 +303,147 @@ def _anchor(
         return Unknown.CURRENCY
     if _gap(newest, linked, items, rows):
         return Unknown.GAP
-    as_of = max([balance.recorded_at.astimezone().date(), *(row.day for row in rows)])
-    # With no rows yet, all that is known is what it holds now, not what it held before.
-    day = min(row.day for row in rows) - timedelta(days=1) if rows else as_of
-    reported = balance.current if newest.type == "depository" else -balance.current
-    moved = sum((-row.amount for row in rows), Decimal(0))
-    return Anchor(
-        account=account,
-        day=day,
-        opening=(Amount(reported - moved, balance.currency),),
-        reported=(Amount(reported, balance.currency),),
-        as_of=as_of,
-        reported_at=balance.recorded_at,
-        institution=item.institution,
-        item_id=item.item_id,
-    )
+    return balance, balance.current, balance.currency
+
+
+@dataclass(frozen=True, slots=True)
+class Carrying:
+    """What proves an account hearth carries on from the base (``hearth.carrying``): its
+    bank's current balance, asserted against the base's balance at the cut-over and every row
+    booked since; and, where they do not agree, the one entry that reconciles them.
+
+    It has no opening: the account's history before its cut-over is the base's, which already
+    says what it held. The difference is derived on every recompute from three things alone,
+    the base's balance at the cut-over, the rows booked since and the bank's current balance:
+
+        difference = current balance - the base's balance at the cut-over - the rows since
+
+    Since the current balance less the rows since is what the bank says the account held at
+    the start of the cut-over, the difference is what the ledger and the bank disagree by on
+    that day. It stays the same from sync to sync, as each new row moves the bank's balance and
+    the rows since alike, and shrinks or vanishes as its cause is put right: a row the bank
+    counts that had not arrived yet arriving, say. It is never a second entry: there is one
+    for the account, dated its cut-over, with a review id made of the account and that day.
+    """
+
+    account: str
+    cut_over: date
+    reported: Amount
+    difference: Decimal
+    as_of: date
+    reported_at: datetime
+    institution: str
+    item_id: str
+    unseen: tuple[date, date] | None = None
+    """Days from the cut-over that neither the base nor the bank's history holds
+    (``carrying.Carry.unseen``): what moved in them is part of the difference."""
+
+    def entries(self) -> tuple[Transaction | Balance, ...]:
+        """The reconciling entry, if the two disagree, and the assertion of the bank's
+        balance, which the books are checked against like any connected account's."""
+        asserted = Balance(
+            _provenance(Basis.CURRENT, self.institution, self.reported_at),
+            self.as_of + timedelta(days=1),
+            self.account,
+            self.reported,
+            Decimal(0),
+            None,
+        )
+        if not self.difference:
+            return (asserted,)
+        meta = {
+            **_provenance(Basis.DIFFERENCE, self.institution, self.reported_at),
+            "review-id": reconciling_review_id(self.account, self.cut_over),
+            "review-group": RECONCILING,
+            "source": plaid_balance_source(self.item_id),
+        }
+        units = Amount(self.difference, self.reported.currency)
+        reconciling = Transaction(
+            meta,
+            self.cut_over,
+            booking.FLAGGED,
+            None,
+            f"The imported ledger and {self.institution} disagree by this much as of"
+            f" {_day(self.cut_over)}{self._unseen()}",
+            EMPTY_SET,
+            EMPTY_SET,
+            [
+                Posting(self.account, units, None, None, None, None),
+                Posting(LEDGER_BANK, -units, None, None, None, None),
+            ],
+        )
+        return (reconciling, asserted)
+
+    def _unseen(self) -> str:
+        if self.unseen is None:
+            return ""
+        first, last = self.unseen
+        if last == date.max or last < first:
+            return f", including everything since, which {self.institution} has not sent"
+        return (
+            f", including what moved from {_day(first)} to {_day(last)}, which neither the"
+            f" ledger nor {self.institution} holds"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Carried:
+    """Every carried account's proof, and each carried account whose bank's balance cannot
+    prove it yet, with why: its balance is then the base's and the rows since, unproved."""
+
+    proofs: tuple[Carrying, ...]
+    unknown: Mapping[str, Unknown]
+
+
+def carried(registry: Registry, feed: Feed, booked: booking.Booked) -> Carried:
+    """The proof of every account the import carries on from the base (`Carrying`)."""
+    proofs: list[Carrying] = []
+    unknown: dict[str, Unknown] = {}
+    twice = [{a.account_id for a in group} for group in registry.connected_twice()]
+    for account, kept in sorted(booked.carried.items()):
+        linked, rows = kept.fed, kept.taken
+        items = {a.item_id: registry.item(a.item_id) for a in linked}
+        newest = max(linked, key=lambda a: _newness(items[a.item_id]))
+        item = items[newest.item_id]
+        if len(linked) > 1 and not any({a.account_id for a in linked} <= group for group in twice):
+            unknown[account] = Unknown.SHARED
+            continue
+        found = _current(feed, newest, item, linked, items, rows)
+        if isinstance(found, Unknown):
+            unknown[account] = found
+            continue
+        assert item is not None  # noqa: S101 - `_current` found its balance through it
+        balance, current, currency = found
+        reported = current if newest.type == "depository" else -current
+        held = kept.carry.opening.get(currency, Decimal(0))
+        moved = sum((-row.amount for row in rows), Decimal(0))
+        cut_over = kept.carry.cut_over
+        proofs.append(
+            Carrying(
+                account=account,
+                cut_over=cut_over,
+                reported=Amount(reported, currency),
+                difference=reported - held - moved,
+                # On or after the cut-over, so the reconciling entry is inside what it asserts.
+                as_of=max(
+                    [balance.recorded_at.astimezone().date(), cut_over, *(r.day for r in rows)]
+                ),
+                reported_at=balance.recorded_at,
+                institution=item.institution,
+                item_id=item.item_id,
+                unseen=kept.carry.unseen,
+            )
+        )
+    return Carried(tuple(proofs), unknown)
+
+
+def _day(day: date) -> str:
+    return f"{day:%b} {day.day}, {day.year}"
+
+
+def reconciling(entry: Directive) -> bool:
+    """Whether `entry` is the one that reconciles a carried account's base with its bank."""
+    return anchors(entry) and (entry.meta or {}).get(_PROVENANCE) == Basis.DIFFERENCE.value
 
 
 def _holdings(

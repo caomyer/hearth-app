@@ -29,7 +29,10 @@ category, so that each group is one decision. Every entry carries its
 
 An account the household's own ledger opens is that ledger's (``docs/real-ledger.md``):
 hearth leaves its transactions there and books none from a connection, which would count every
-one the ledger already holds a second time.
+one the ledger already holds a second time. The one exception is an account of an imported
+base that a connection is matched to and that hearth carries on (``hearth.carrying``): its rows
+from the cut-over on that the base does not hold are booked as any other, and every other row
+of it is the base's (`book`).
 """
 
 import re
@@ -38,12 +41,15 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from enum import StrEnum
 
 from beancount.core.amount import Amount
 from beancount.core.data import EMPTY_SET, Posting, new_metadata
 from beancount.core.data import Transaction as Entry
 
+from hearth import carrying
 from hearth.accounts import all_accounts
+from hearth.carrying import Carry, Held, Status
 from hearth.connections import plaid_source
 from hearth.plaid import pairing
 from hearth.plaid.client import PRIMARIES, Transaction
@@ -98,26 +104,80 @@ class Booked:
     accounts: frozenset[str]
     fed: Mapping[str, tuple[LinkedAccount, ...]] = field(default_factory=dict)
     taken: Mapping[str, tuple[Transaction, ...]] = field(default_factory=dict)
+    carried: Mapping[str, Carried] = field(default_factory=dict)
+    """Each account of the base hearth carries on, apart from `fed`: it has no opening of its
+    own, as its history before its cut-over is the base's (``hearth.plaid.opening``)."""
+    postponed: Mapping[str, date] = field(default_factory=dict)
+    """Each account of the base hearth would carry on but for a cut-over after today, with
+    it (``carrying.postponed``)."""
 
 
-def book(conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()) -> Booked:
+@dataclass(frozen=True, slots=True)
+class Carried:
+    """An account of the base hearth carries on: every connected account feeding it, what
+    carrying makes of the bank's rows on it (``hearth.carrying``), and the rows booked on it."""
+
+    fed: tuple[LinkedAccount, ...]
+    carry: Carry
+    taken: tuple[Transaction, ...]
+
+
+def book(
+    conn: sqlite3.Connection,
+    feed: Feed,
+    *,
+    opened: Collection[str] = (),
+    base: Held | None = None,
+    today: date = date.max,
+) -> Booked:
     """Every posted row on an account a member has mapped into the books, as an entry.
 
-    Accounts in `opened`, which an inherited ledger opens, are left to it. Raises `Refused`
-    while any account is connected twice.
+    Accounts in `opened`, which an inherited ledger opens, are left to it, except those of
+    `base`, the imported base as carrying reads it, that hearth carries on (`carried_plans`):
+    of each, only the rows the base does not hold from its cut-over on are booked
+    (``hearth.carrying``). Raises `Refused` while any account is connected twice.
+
+    Pairing runs over every row of the accounts hearth books, whatever day each is dated and
+    whether the base holds it or not, exactly as it does without a base; each pair is then
+    booked by what carrying makes of its two rows (`_legs`, ``docs/pairing.md``).
     """
-    feeds, rows = taken_once(conn, feed, opened=opened)
+    carried = _carried(conn, opened, base, today)
+    feeds, rows = taken_once(conn, feed, opened=set(opened) - carried)
+    plans = _plans(Registry(conn), base, carried, feeds, rows)
     paired = pairing.staged(conn, rows)
+
+    def status(row: Transaction) -> Status:
+        plan = plans.get(feeds[row.account_id][1])
+        return plan.status(row) if plan is not None else Status.NEW
+
     entries: list[Entry] = []
+    booked: list[Transaction] = []
     for row in sorted(rows, key=lambda r: (r.day, r.transaction_id)):
+        if status(row) is not Status.NEW:
+            continue
         linked, ledger_account = feeds[row.account_id]
         found = paired.of(row.transaction_id)
         if isinstance(found, pairing.Pair):
-            if found.bank.transaction_id == row.transaction_id:
-                card, card_account = feeds[found.card.account_id]
-                entries.append(
-                    _transfer(found, (linked.item_id, ledger_account), (card.item_id, card_account))
-                )
+            mine = found.bank.transaction_id == row.transaction_id
+            other = found.card if mine else found.bank
+            legs = _legs(
+                status(other), ledger_account in plans, feeds[other.account_id][1] in plans
+            )
+            if legs is _Legs.HELD:
+                continue
+            if legs is _Legs.TRANSFER:
+                if mine:
+                    card, card_account = feeds[found.card.account_id]
+                    entries.append(
+                        _transfer(
+                            found, (linked.item_id, ledger_account), (card.item_id, card_account)
+                        )
+                    )
+                booked.append(row)
+                continue
+            entries.append(
+                _flagged(row, linked.item_id, ledger_account, TRANSFER_PENDING, pairing.GROUP)
+            )
         elif isinstance(found, pairing.Leg):
             entries.append(
                 _flagged(row, linked.item_id, ledger_account, TRANSFER_PENDING, pairing.GROUP)
@@ -128,15 +188,108 @@ def book(conn: sqlite3.Connection, feed: Feed, *, opened: Collection[str] = ()) 
                     row, linked.item_id, ledger_account, proposal(row.category), group(row.category)
                 )
             )
+        booked.append(row)
     accounts = {p.account for e in entries for p in e.postings} - {a for _, a in feeds.values()}
     fed: dict[str, tuple[LinkedAccount, ...]] = {}
     for linked, ledger_account in feeds.values():
         fed[ledger_account] = (*fed.get(ledger_account, ()), linked)
     taken: dict[str, tuple[Transaction, ...]] = dict.fromkeys(fed, ())
-    for row in rows:
+    for row in booked:
         ledger_account = feeds[row.account_id][1]
         taken[ledger_account] = (*taken[ledger_account], row)
-    return Booked(tuple(entries), frozenset(accounts), fed, taken)
+    kept = {
+        account: Carried(fed.pop(account), plan, taken.pop(account))
+        for account, plan in plans.items()
+    }
+    later = carrying.postponed(base, feeding(conn, opened), today) if base is not None else {}
+    return Booked(tuple(entries), frozenset(accounts), fed, taken, kept, later)
+
+
+class _Legs(StrEnum):
+    TRANSFER = "transfer"
+    """Both rows are new: the payment is booked once, as the transfer it is."""
+    HELD = "held"
+    """The base holds the payment already, both its sides: neither row is booked again."""
+    ALONE = "alone"
+    """Only this row is new: it is booked alone, against `TRANSFER_PENDING`."""
+
+
+def _legs(other: Status, carried: bool, other_carried: bool) -> _Legs:
+    """How a pair is booked, given what carrying makes of its other row, when this row is new
+    (``docs/pairing.md``, "Across the cut-over").
+
+    The base holding the other row says it holds the payment: between two carried accounts,
+    its entry for it is the transfer, both its sides, however the two banks date them, so
+    neither row is booked again. A row the base does not hold and never will, dated before its
+    account's cut-over, leaves this one the only side the books will hold, as a leg nothing
+    pairs with. An account hearth keeps itself is not in the base at all, so its row is always
+    booked: when its partner is in the base, the base's entry balances that side against an
+    account of the base's own, never this one, so this row is booked alone too.
+    """
+    if other is Status.NEW:
+        return _Legs.TRANSFER
+    if other is Status.HELD and carried and other_carried:
+        return _Legs.HELD
+    return _Legs.ALONE
+
+
+def _carried(
+    conn: sqlite3.Connection, opened: Collection[str], base: Held | None, today: date
+) -> set[str]:
+    """The accounts of `base` hearth carries on (``carrying.carried``): those a confirmed
+    connected account feeds, all of kinds carried. None without a base: a ledger inherited at
+    ``HEARTH_LEDGER`` may still be growing, so hearth leaves its accounts to it wholly."""
+    if base is None:
+        return set()
+    return set(carrying.carried(base, feeding(conn, opened), today))
+
+
+def feeding(conn: sqlite3.Connection, opened: Collection[str]) -> dict[str, list[str]]:
+    """Each account of `opened` a confirmed connected account feeds, with the Plaid type of
+    every one that does."""
+    named = {account.id: account.ledger_account for account in all_accounts(conn)}
+    found: dict[str, list[str]] = {}
+    for linked in Registry(conn).confirmed():
+        ledger_account = named.get(linked.hearth_account or "")
+        if ledger_account is not None and ledger_account in opened:
+            found.setdefault(ledger_account, []).append(linked.type)
+    return found
+
+
+def _plans(
+    registry: Registry,
+    base: Held | None,
+    carried: Collection[str],
+    feeds: Mapping[str, tuple[LinkedAccount, str]],
+    rows: Collection[Transaction],
+) -> dict[str, Carry]:
+    if base is None:
+        return {}
+    on: dict[str, list[Transaction]] = {account: [] for account in carried}
+    for row in rows:
+        ledger_account = feeds[row.account_id][1]
+        if ledger_account in on:
+            on[ledger_account].append(row)
+    asked: dict[str, date] = {}
+    for linked, ledger_account in feeds.values():
+        item = registry.item(linked.item_id)
+        if ledger_account in on and item is not None:
+            day = item.requested_from
+            asked[ledger_account] = min(day, asked.get(ledger_account, day))
+    return {
+        account: carrying.carry(base, account, found, asked.get(account))
+        for account, found in on.items()
+    }
+
+
+def carried_plans(
+    conn: sqlite3.Connection, feed: Feed, base: Held, today: date
+) -> dict[str, Carry]:
+    """What carrying makes of the bank's rows on each account of `base` hearth carries on,
+    exactly as `book` books them. Raises `Refused` while any account is connected twice."""
+    carried = _carried(conn, base.opened, base, today)
+    feeds, rows = taken_once(conn, feed, opened=set(base.opened) - carried)
+    return _plans(Registry(conn), base, carried, feeds, rows)
 
 
 def taken_once(

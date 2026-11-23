@@ -19,6 +19,18 @@ Metadata carries the row's `review-id`, `review-group`, `model-confidence` and `
 A row hearth books from a connection (`hearth.plaid.booking`) is named by Plaid's transaction id (`ids.plaid_review_id`), which Plaid keeps when it revises the row, and grouped by Plaid's category, so every row in a group proposes the same account.
 Plaid rates its own category in words, which the feed does not keep yet, so such a row carries no `model-confidence` and reads "Suggested by a rule".
 
+### Where the imported ledger and the bank disagree
+
+An account carried on from an imported base whose bank's balance does not agree with the base and the rows booked since has one reconciling entry, dated its cut-over, against `Equity:Ledger-Bank-Difference` (`docs/books.md`, "Carried on from the base").
+It is in Review as its own kind of row, in the group "Where the imported ledger and the bank disagree", saying so: "The imported ledger and <bank> disagree by this much as of <day>", for the difference.
+Its owner confirms it, which books it `*` where it is, or puts its cause right, such as a row the bank counts arriving, and it shrinks or goes at the next recompute.
+It is confirmed one at a time, never with a group (`desk.one_decision`), and never excluded, as its account's balance is its bank's.
+A confirmation is bound to the difference it saw, as every ruling is bound to what its row said, so a different difference asks again.
+Until it is confirmed, the account is not shown as matching its bank.
+Its review id is made of the account and its cut-over (`ids.reconciling_review_id`), so the entry derived afresh on every recompute is always the same row.
+
+A row booked on an account hearth kept itself that was then moved onto the base's account it is (`docs/real-ledger.md`) keeps its rulings: a ruling is bound to the row as it was booked there (`RulingStore.formerly`).
+
 ## Rulings, and how they reach the books
 
 A member can:

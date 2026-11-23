@@ -430,6 +430,17 @@ def _history_covers(books: Books, accounts: Sequence[Account], month: Month) -> 
     last = first.replace(day=calendar.monthrange(month.year, month.month)[1])
     by_account = {coverage.account: coverage for coverage in books.coverage}
     accounts = [a for a in accounts if a.ledger_account not in books.unseen]
+    # Days a carried account's base and its bank's history both leave out are known by
+    # neither, however current its connection is.
+    for account in accounts:
+        unseen = books.unseen_between.get(account.ledger_account)
+        if unseen is not None and unseen[0] <= last and first <= unseen[1]:
+            return False
+        # Matched, and held back by the base's entry dated ahead: only the base's own record
+        # up to today says anything, whatever its connection has sent.
+        held_back = books.held_back.get(account.ledger_account)
+        if held_back is not None and last > held_back[0]:
+            return False
     opened: list[str] = []
     for account in accounts:
         coverage = by_account.get(account.ledger_account)
