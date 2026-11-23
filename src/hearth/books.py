@@ -422,6 +422,34 @@ def synced_through(connections: Connections) -> dict[str, tuple[str, date]]:
     return through
 
 
+def frozen_through(base: Sequence[Directive]) -> dict[str, date]:
+    """Each account a frozen base opens, with the last day the base knows of it, by the rule
+    of `account_ends`: its newest transaction, or the day before its newest balance
+    assertion. An account the base opens and holds nothing on knows of no day at all."""
+    ends = account_ends(base, date.max)
+    opened = {e.account for e in base if isinstance(e, Open)}
+    return {account: ends.get(account, date.min) for account in opened}
+
+
+def vouched_within_base(
+    synced: Mapping[str, tuple[str, date]], frozen: Mapping[str, date]
+) -> dict[str, tuple[str, date]]:
+    """`synced` (`synced_through`), with each account a frozen base opens vouched for no
+    further than the base's own last day on it (`frozen_through`), never through a later
+    sync: hearth books nothing into such an account yet, so nothing after the base was frozen
+    is in the books, however current its connection is. A month the base does not reach then
+    reads as incomplete, as it is, rather than as quiet.
+
+    This is the rule only until hearth carries a matched account on from the base, when a
+    connection vouches for what hearth books after the cut-over instead. A live ledger
+    inherited at `HEARTH_LEDGER` is not capped: an import outside hearth may still be adding
+    to it."""
+    return {
+        account: (item, min(day, frozen[account]) if account in frozen else day)
+        for account, (item, day) in synced.items()
+    }
+
+
 def vouched(
     entries: Sequence[Directive], synced: Mapping[str, tuple[str, date]], today: date
 ) -> dict[str, date]:
@@ -858,6 +886,8 @@ def from_household(
         # between then vouches for rows the books hold, not for rows they do not hold yet.
         synced = synced_through(known)
         household = household_entries(settings)
+        if household.frozen is not None:
+            synced = vouched_within_base(synced, household.frozen)
         conn = db.connect(settings.database)
         try:
             prices = stored_prices(PriceStore(conn), sources)
@@ -933,6 +963,9 @@ class Entries:
     invested: frozenset[str] = frozenset()
     unfed: frozenset[str] = frozenset()
     ledger: Path | Base | None = None
+    frozen: Mapping[str, date] | None = None
+    """Each account the base opens, with its last day in it (`frozen_through`), when the
+    ledger is a frozen base; None for a live ledger, or none."""
 
 
 BOTH = (
@@ -993,4 +1026,5 @@ def household_entries(settings: Settings) -> Entries:
                 f"Hearth's own books have {count} error{'s' if count > 1 else ''}"
                 " it will not serve figures past."
             )
-    return Entries(entries, derived.unknown, derived.invested, derived.unfed, ledger)
+    frozen = frozen_through(theirs) if isinstance(ledger, Base) else None
+    return Entries(entries, derived.unknown, derived.invested, derived.unfed, ledger, frozen)

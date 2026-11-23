@@ -121,6 +121,69 @@ uv run hearth serve
 An account a member connects through Plaid instead can be filed into a new ledger account on the mapping page, which records the same name (`docs/connections.md`).
 Each claim is recorded in the activity log against every owner.
 
+## Say which of the base's accounts each connected account is
+
+A household that imported its ledger and connects its banks holds each bank account twice: in the base, as the ledger kept it, and in the feed, as Plaid sends it.
+Before hearth can carry an account on from where the base stops, it must know which of the base's accounts each connected one is.
+Nobody has to say what the ledger already says, so hearth proposes it from the ledger itself, and an admin confirms it once:
+
+```sh
+uv run hearth match-accounts                                # every connected account, what the base says it is, and why
+uv run hearth match-accounts --confirm <plaid account>      # match it to the account proposed for it
+uv run hearth match-accounts --confirm <plaid account>=<ledger account>   # or to the base's account named
+```
+
+It makes no live call and reads every member's connections, as `hearth plaid items` does: it is the machine's operator's view, not a page.
+What it prints is counts, days and the names of accounts, never a payee or an amount.
+
+### What hearth proposes (`hearth.matching`)
+
+**By id.**
+A ledger fed from hearth carries each bank transaction's Plaid transaction id, in one of two shapes, and both are read:
+hearth's own `source: "plaid:<item id>:<transaction id>"` (`connections.plaid_source`), and a bare `plaid-id: "<transaction id>"` that an importer of the household's own writes, with no Item.
+A base entry holding one of a connected account's feed ids is that row.
+The bank's own side of it is the posting that carries the id itself, as each side of a transfer hearth booked does, or else the entry's Assets or Liabilities posting of the row's amount in the sign the bank means it, Plaid's sign being money leaving the account.
+So a card payment's entry, which holds the card's posting and the paying account's of opposite signs, puts the paying account's row on the paying account and never on the card.
+The base account a strict majority of the placed ids land on is proposed, saying how many agree and how many land elsewhere; ids split with no majority propose nothing.
+
+**By content, when none of its ids is in the base**, as for a bank connected again, which Plaid gives new ids, or a base kept from statements.
+Each account the base opens on the connected account's side, a depository account under Assets and a card or a loan under Liabilities, is held against the feed's posted rows: the most rows the two hold one to one, for the same amount, at most a week apart, on the day each posted (`post-date` where the base says it).
+The best is proposed only when it clearly beats the rest, which is three things at once:
+
+- it holds at least 5 of the rows;
+- it holds at least twice as many as the runner-up, so two accounts of near-identical activity propose neither;
+- it holds at least half of the rows that fall within a week of its own first and last rows, so an account that is not the bank's, holding a few rows of the same amounts by chance, is not proposed for want of a better one.
+
+A brokerage account, which Plaid sends no transactions, and an account of any type other than depository, credit and loan, are not matched by content.
+
+**Otherwise nothing is proposed**, and the household names the base's account itself, or files the connected account as a new one on the Connect page.
+
+### What a match is
+
+A confirmed match is the mapping a member confirms on the Connect page, recorded in the same place (`plaid_accounts`, `Registry.confirm`), with no member named as having confirmed it, as a claim made on the command line names none.
+Nothing is booked differently for it: the import books nothing into an account the base opens (`docs/books.md`).
+A match may be changed until carrying begins, which is not built yet, so for now always.
+
+A match never changes who owns an account:
+
+- the base's account must be claimed already (`hearth add-account`), and its owners must include the member who holds the connection, as the Connect page asks it of the gate (`access.may_feed`);
+- an account claimed by members the holder is not among is never proposed to their connection, however strong the evidence, and the command says where the evidence points and why it is not proposed;
+- an account another connected account is matched to is not matched again, as one ledger account is fed by one connection at most;
+- a connected account already filed as an account hearth keeps itself is not matched to the base, which would take what it brought in out of the books.
+
+### What carrying it on will meet
+
+For each matched account, and each one proposed, the command also says what carrying it on from the base will meet, worked out by `matching.facing` for the cut-over to be built on:
+how many of the feed's posted rows the base holds already, by Plaid id and, of the rest, by content;
+how many it does not hold that are dated on or before the base's last entry on the account, which carrying on from that day would never bring in, and how many come after it;
+and the days of the base's last entry, last balance assertion and last `pad` on the account.
+
+Until carrying is built, a matched account is still the base's alone, and its connection books nothing into it.
+Its connection vouches for it (`books.vouched`) only when the base holds entries booked from that very connection, which hearth's own `source` names and a bare `plaid-id` does not.
+Even then it vouches only through the base's own last day on the account, its newest transaction or the day before its newest balance assertion, never through a later sync (`books.vouched_within_base`): nothing after the base was frozen is in the books yet, so a month after it reads as incomplete, however current the connection is, rather than as a quiet month.
+A live ledger inherited at `HEARTH_LEDGER` is not capped, as an import outside hearth may still be adding to it.
+Once carrying is built, the cap gives way to a connection vouching for what hearth books after the cut-over.
+
 ## Read-only, and how that is kept
 
 Hearth never writes to the ledger it imports or inherits, or the directory it lives in; what it writes is the base and its own books file, both in its data directory (`docs/books.md`).
@@ -156,7 +219,7 @@ The books note each connection's last successful sync when they are recomputed (
 Like everything else here, this is decided by month alone and is the same for every viewer.
 
 Every entry the import books from a connection carries that source (`docs/books.md`), so an account hearth opened for a connection is vouched for by it from the first recompute after its history arrives.
-An account the household's ledger opens, imported or inherited, is left to that ledger, and the Plaid import books nothing into it, so its connection vouches for nothing there: a Plaid-fed account whose ledger has stopped while its connection keeps working still reads as covered by the ledger rule below, until carrying such an account on from its ledger is built.
+An account the household's ledger opens, imported or inherited, is left to that ledger, and the Plaid import books nothing into it, so its connection vouches for nothing there unless the ledger's own entries on it name that connection in hearth's `source`, as a ledger fed from hearth's export may, and then, on an imported base, only through the base's last day on the account (see "What carrying it on will meet", above): a Plaid-fed account whose ledger has stopped while its connection keeps working otherwise still reads as covered by the ledger rule below, until carrying such an account on from its ledger is built.
 The demo marks its ledger's bank-feed rows with the source the import writes, so it shows the rule at work on an inherited ledger too.
 
 An account no connection vouches for, such as one a statement import brings in, is judged with its part by the ledger alone, and that limitation stays: one that stopped while another in its part carries on reads as complete.

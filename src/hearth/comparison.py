@@ -293,7 +293,7 @@ def _span(entries: Sequence[Directive], account: str, cycles: Sequence[Cycle]) -
         if isinstance(e, Transaction) and any(p.account == account for p in e.postings)
     ]
     booked = [e.date for e in held]
-    posted = [_posted(e) for e in held]
+    posted = [posted_on(e) for e in held]
     if not booked:
         return date.max, date.min
     lag = APART if booked != posted else timedelta(0)
@@ -382,7 +382,7 @@ def _rows(entries: Sequence[Directive], account: str, *, openings: bool = False)
     for entry in entries:
         if not isinstance(entry, Transaction) or (opening.anchors(entry) and not openings):
             continue
-        day = _posted(entry)
+        day = posted_on(entry)
         for posting in entry.postings:
             units = posting.units
             if posting.account != account or units is None or units.currency != CURRENCY:
@@ -398,7 +398,7 @@ def _rows(entries: Sequence[Directive], account: str, *, openings: bool = False)
             )
 
 
-def _posted(entry: Transaction) -> date:
+def posted_on(entry: Transaction) -> date:
     """The day `entry` counts on: the day the bank posted it, where the ledger says."""
     posted = (entry.meta or {}).get(POST_DATE)
     if isinstance(posted, str):

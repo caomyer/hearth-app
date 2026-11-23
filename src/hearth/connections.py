@@ -67,6 +67,17 @@ def item_of(source: object) -> str | None:
     return item_id if origin == PLAID and item_id and transaction_id else None
 
 
+def transaction_of(source: object) -> str | None:
+    """The Plaid transaction an entry's `source` metadata says it was booked from, if any: the
+    last field of `plaid_source`, read as `item_of` reads the first. An opening balance's
+    source (`plaid_balance_source`) names no transaction."""
+    if item_of(source) is None:
+        return None
+    assert isinstance(source, str)  # noqa: S101 - item_of reads only a string
+    transaction_id = source.split(":", 2)[2]
+    return transaction_id if transaction_id != BALANCE else None
+
+
 class State(StrEnum):
     WORKING = "working"
     EXPIRED = "expired"

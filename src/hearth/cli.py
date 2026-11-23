@@ -1,6 +1,6 @@
 """Command-line entry point: ``hearth serve``, ``hearth add-member``, ``hearth add-account``,
-``hearth accounts``, ``hearth import-ledger``, ``hearth plaid``, ``hearth compare``, ``hearth
-export``, ``hearth demo`` and ``hearth bridge``.
+``hearth accounts``, ``hearth import-ledger``, ``hearth match-accounts``, ``hearth plaid``,
+``hearth compare``, ``hearth export``, ``hearth demo`` and ``hearth bridge``.
 
 No command makes a live Plaid call unless it is approved on the command line: ``hearth serve
 --approve-plaid OPERATION`` for the web pages, and ``--approved`` for each ``hearth plaid``
@@ -29,7 +29,18 @@ from pathlib import Path
 import uvicorn
 from beancount.core.data import Open
 
-from hearth import accounts, auth, books, comparison, db, demo, ledger_import, members, runlog
+from hearth import (
+    accounts,
+    auth,
+    books,
+    comparison,
+    db,
+    demo,
+    ledger_import,
+    matching,
+    members,
+    runlog,
+)
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
 from hearth.clock import system_clock
@@ -147,6 +158,20 @@ def main(argv: list[str] | None = None) -> None:
     )
     bring.add_argument("ledger", type=Path, help="the file the ledger is opened from")
 
+    match = commands.add_parser(
+        "match-accounts",
+        help="say which of the imported ledger's accounts each connected account is, with the"
+        " evidence, and with --confirm record it (no live call; books nothing differently)",
+    )
+    match.add_argument(
+        "--confirm",
+        action="append",
+        default=[],
+        metavar="PLAID_ACCOUNT[=LEDGER_ACCOUNT]",
+        help="match a connected account to the account proposed for it, or to the imported"
+        " ledger's account named; give it once per account",
+    )
+
     against = commands.add_parser(
         "compare",
         help="hold hearth's own books against a ledger the household kept before, account by"
@@ -238,6 +263,8 @@ def main(argv: list[str] | None = None) -> None:
             _list_accounts()
         case "import-ledger":
             _import_ledger(arguments.ledger)
+        case "match-accounts":
+            _match_accounts(arguments.confirm)
         case "compare":
             _compare(
                 arguments.ledger,
@@ -441,6 +468,26 @@ def _import_ledger(ledger: Path) -> None:
     except ledger_import.ImportRefused as refused:
         sys.exit(f"hearth: {refused} Nothing was imported.")
     for line in ledger_import.describe(outcome):
+        print(line)
+
+
+def _match_accounts(confirmations: list[str]) -> None:
+    """Print which of the imported ledger's accounts each connected account is, recording
+    each match `confirmations` names first (``hearth.matching``), or say why nothing was
+    matched."""
+    settings = Settings.from_environment()
+    wanted = []
+    for given in confirmations:
+        account_id, _, ledger_account = given.partition("=")
+        wanted.append((account_id.strip(), ledger_account.strip() or None))
+    try:
+        if wanted:
+            found = matching.confirm(settings, wanted, now=system_clock())
+        else:
+            found = matching.survey(settings)
+    except matching.MatchRefused as refused:
+        sys.exit(f"hearth: {refused} Nothing was matched." if wanted else f"hearth: {refused}")
+    for line in matching.describe(found):
         print(line)
 
 

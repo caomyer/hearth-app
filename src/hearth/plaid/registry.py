@@ -297,7 +297,12 @@ class Registry:
         )
         return [_account(row) for row in rows]
 
-    def confirm(self, account_id: str, hearth_account: str, *, by: MemberId, now: datetime) -> None:
+    def confirm(
+        self, account_id: str, hearth_account: str, *, by: MemberId | None, now: datetime
+    ) -> None:
+        """Record that `account_id` feeds the hearth account `hearth_account`, confirmed by
+        member `by`, or by whoever runs hearth on its own machine (``hearth match-accounts``)
+        when None, as the activity log records a command line's claim."""
         with transaction(self._db):
             self._db.execute(
                 "UPDATE plaid_accounts SET hearth_account = ?, confirmed_at = ?, confirmed_by = ?"

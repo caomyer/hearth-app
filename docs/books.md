@@ -51,6 +51,7 @@ Until the import is all a household needs, `HEARTH_LEDGER` still names a ledger 
 Either is loaded only through `books.load_ledger`, which runs beancount's own plugins and no other.
 Hearth's own entries go on top of it: an account the household's ledger already opens is left to it, transactions and all, and an account a member maps to a new name is opened by hearth.
 The import books nothing into such an account, since that would count every transaction the ledger already holds a second time; carrying it on from where its ledger stops is not done yet, and the import page says which accounts it leaves to the household's own records.
+So on a base, which nothing adds to, a connection vouches for such an account only through the base's own last day on it (`books.vouched_within_base`), and the months after it read as incomplete; a ledger inherited at `HEARTH_LEDGER` may still be growing, so its accounts are vouched for through the last sync as before (`docs/real-ledger.md`).
 The books file includes the base, or the inherited ledger, by its full path, so the file alone holds the whole books.
 
 ## What the books hold

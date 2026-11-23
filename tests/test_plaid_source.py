@@ -1,14 +1,15 @@
 """The `source` an entry booked from a connection carries, which coverage parses back.
 
-The import writes it and `item_of` reads it, so the two must agree for every id Plaid can
-send, and nothing else may parse as a connection's entry.
+The import writes it, `item_of` reads its Item back for coverage and `transaction_of` its
+transaction for matching a base's accounts (``hearth.matching``), so they must agree for every
+id Plaid can send, and nothing else may parse as a connection's entry.
 """
 
 import pytest
 from beancount import loader
 from beancount.core.data import Transaction
 
-from hearth.connections import item_of, plaid_source
+from hearth.connections import item_of, plaid_balance_source, plaid_source, transaction_of
 
 ITEM = "Lq8vRk3Wd9TzPe2yNs7XbA"
 """Shaped like a Plaid Item id: letters and digits, no separator. Invented."""
@@ -23,6 +24,14 @@ def test_every_booked_entry_names_its_connection(transaction_id: str) -> None:
 
     assert source == f"plaid:{ITEM}:{transaction_id}"
     assert item_of(source) == ITEM
+    assert transaction_of(source) == transaction_id
+
+
+def test_an_opening_balance_names_its_connection_and_no_transaction() -> None:
+    source = plaid_balance_source(ITEM)
+
+    assert item_of(source) == ITEM
+    assert transaction_of(source) is None
 
 
 def test_the_source_survives_the_books_file() -> None:
@@ -58,6 +67,7 @@ def test_the_source_survives_the_books_file() -> None:
 )
 def test_nothing_else_passes_for_a_connections_entry(source: object) -> None:
     assert item_of(source) is None
+    assert transaction_of(source) is None
 
 
 @pytest.mark.parametrize(
