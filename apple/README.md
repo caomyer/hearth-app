@@ -5,7 +5,8 @@ The app is SwiftUI; the engine is hearth's own Python, with beancount beneath it
 Nothing is computed twice: every figure on screen is one hearth worked out.
 
 The plan and the screens it is building towards are in `.lavish/hearth-apple.html`.
-For now the app opens a household's existing hearth data on this Mac in place, for a member who signs in, or the invented sample household, and shows its net worth.
+For now the app opens a household's existing hearth data on this Mac in place, for a member who signs in, or the invented sample household.
+It shows the Overview, the journal (Transactions), the accounts and each account's own page, read-only.
 
 ## Opening books
 
@@ -22,9 +23,10 @@ For now the app opens a household's existing hearth data on this Mac in place, f
 
 ## How it fits together
 
-- `HearthKit/` is everything that is not a view: which books are open and who is signed in (`Session`, `Setup`), starting the engine, signing in to it and asking it for a screen (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Money`, `Day`), and how figures are written for a person (`Figures`).
+- `HearthKit/` is everything that is not a view: which books are open and who is signed in (`Session`, `Setup`), starting the engine, signing in to it and asking it for a screen (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Money`, `Day`), each screen's state (`Desk`, `ScreenModel`, and `JournalModel` with its `JournalFilter`), and how figures and balances are written for a person (`Figures`, `AccountWords`).
   It is a Swift package, so it builds and tests without the app.
-- `Hearth/` is the app: one window, with the start sheet, signing in, and for now one screen of the books, Overview.
+- `Hearth/` is the app: one window, with the start screen, signing in, and the books: a sidebar of Overview, Transactions, Accounts and every account the member may see, and the screen chosen.
+  An account's name anywhere opens the account; a category opens Transactions narrowed to it.
 - `engine/main.py` and `scripts/bundle-engine.sh` put a pinned Python, everything `uv.lock` names, and `src/hearth` into the app's resources, signed as the app is signed.
 - On the Python side, `hearth.native` is the doorway: `hearth bridge` answers the app over standard input and output, one JSON object a line, with views from `hearth.disclosure` and nothing else (`docs/native.md`).
 
@@ -72,6 +74,19 @@ TEST_RUNNER_HEARTH_FIXTURE_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR TEST_RUNNER_HEARTH_
 
 Without the fixture variables the household's test is skipped.
 
+A debug build opens straight onto a screen, so each can be looked at without a click; a Release build reads none of these:
+
+```sh
+APP=~/Library/Developer/Xcode/DerivedData/<yours>/Build/Products/Debug/Hearth.app/Contents/MacOS/Hearth
+"$APP" -openBooks sample -startScreen transactions
+HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE_PASSWORD \
+  "$APP" -openBooks own -signInAs avery -startScreen "account:Everyday checking"
+```
+
+- `-openBooks sample|own` opens those books at once.
+- `-startScreen overview|transactions|accounts|account:<name>` opens that screen; an account is found by its name once the accounts are in.
+- `-signInAs <username>` hands the engine that member with the password in `HEARTH_SIGN_IN_PASSWORD`, in place of the Keychain, which it leaves alone.
+
 A Mac must allow UI automation for that last one (`automationmodetool enable-automationmode-without-authentication`, which asks for an administrator's password); CI runs it on every push.
 
 If `xcodebuild` says it needs Xcode, point it at one: `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
@@ -86,4 +101,6 @@ If `xcodebuild` says it needs Xcode, point it at one: `export DEVELOPER_DIR=/App
 - The app's engine opens a household's databases in place and brings them up to the schema of the hearth it carries, as `hearth serve` of that version would.
   It reads no `HEARTH_LEDGER`: a household that inherits a ledger is shown from hearth's own books until the app learns to import one.
 - A new screen is a new entry in `hearth.native.doorway.SCREENS`, a type in `HearthKit` that decodes it, and an example in `tests/native/fixtures` that both sides' tests read.
+- What a screen is asked with travels as `Given`, text and whole numbers only; the engine reads it strictly and answers anything it does not take as missing (`docs/native.md`).
+- The start screen is the window's content, not a sheet: a modal sheet would keep the app from quitting until it was answered.
 - Beancount is GPL-2.0-only, so the app is for private use and is shared together with its source.

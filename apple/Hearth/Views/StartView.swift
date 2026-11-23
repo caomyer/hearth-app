@@ -3,7 +3,10 @@ import SwiftUI
 
 /// The first thing a person is asked: which books to open. A household hearth already keeps on
 /// this Mac is offered first; nothing about it is said before someone signs in to it.
-struct StartSheet: View {
+///
+/// It is the window's own content, as signing in is, not a sheet: a sheet is modal, and a
+/// window with a modal sheet over it cannot be closed or quit until the sheet is answered.
+struct StartView: View {
     let session: Session
     let offersSetup: Bool
 
@@ -44,7 +47,12 @@ struct StartSheet: View {
         .font(.system(size: 13))
         .padding(20)
         .frame(width: 400, alignment: .leading)
-        .background(Palette.surface)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Palette.surface))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.line, lineWidth: 1))
+        .padding(.top, 120)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("start")
     }
 
     private func choose(_ books: Books) {

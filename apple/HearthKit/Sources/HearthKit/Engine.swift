@@ -14,11 +14,37 @@ public struct EngineCommand: Sendable, Equatable {
     }
 }
 
+/// What an ask is given to narrow it, as the engine reads it (`hearth.native.doorway`): an
+/// account's id, a day, a number of entries. Only text and whole numbers ever cross.
+public enum Asked: Sendable, Hashable {
+    case text(String)
+    case number(Int)
+
+    var json: Any {
+        switch self {
+        case .text(let text): text
+        case .number(let number): number
+        }
+    }
+}
+
+/// Everything an ask is given, by the name the engine reads it by.
+public typealias Given = [String: Asked]
+
 /// Something that answers when asked for a screen: the engine, or a stand-in for it in tests.
 public protocol Asking: Sendable {
     func ask<Content: Decodable & Sendable>(
-        _ screen: String, as content: Content.Type
+        _ screen: String, with given: Given, as content: Content.Type
     ) async throws -> Answer<Content>
+}
+
+extension Asking {
+    /// A screen asked for as it is, narrowed by nothing.
+    public func ask<Content: Decodable & Sendable>(
+        _ screen: String, as content: Content.Type = Content.self
+    ) async throws -> Answer<Content> {
+        try await ask(screen, with: [:], as: content)
+    }
 }
 
 /// What the engine says when the app signs in or out (`hearth.native.bridge.Outcome`).
@@ -91,9 +117,13 @@ public actor Engine: Bridging {
     }
 
     public func ask<Content: Decodable & Sendable>(
-        _ screen: String, as content: Content.Type = Content.self
+        _ screen: String, with given: Given, as content: Content.Type = Content.self
     ) async throws -> Answer<Content> {
-        let line = try await send(["ask": screen])
+        var request: [String: Any] = ["ask": screen]
+        if !given.isEmpty {
+            request["with"] = given.mapValues(\.json)
+        }
+        let line = try await send(request)
         return try replyDecoder().decode(Reply<Content>.self, from: line).answer
     }
 
@@ -118,7 +148,9 @@ public actor Engine: Bridging {
         guard !stopped else { throw Failure.stopped }
         let id = nextID
         nextID += 1
-        var line = try JSONSerialization.data(withJSONObject: request.merging(["id": id]) { $1 })
+        // Keys in one order, so the same request is always the same line.
+        var line = try JSONSerialization.data(
+            withJSONObject: request.merging(["id": id]) { $1 }, options: [.sortedKeys])
         line.append(0x0A)
         return try await withCheckedThrowingContinuation { continuation in
             waiting[id] = continuation

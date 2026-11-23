@@ -9,10 +9,10 @@ struct HearthApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(session: session)
-                .frame(minWidth: 760, minHeight: 520)
+                .frame(minWidth: 1000, minHeight: 560)
                 .tint(Palette.accent)
         }
-        .defaultSize(width: 1040, height: 680)
+        .defaultSize(width: 1180, height: 740)
         .commands {
             // One window on one set of books: there is no second document to open, only other
             // books to open in it.
@@ -34,7 +34,8 @@ struct HearthApp: App {
         let home = NSHomeDirectory()
         let setup = Setup.from(environment: ProcessInfo.processInfo.environment, home: home)
         let resources = Bundle.main.resourceURL
-        return Session(setup: setup, defaults: .standard, credentials: Keychain()) { books in
+        let credentials = DebugLaunch.credentials ?? Keychain()
+        return Session(setup: setup, defaults: .standard, credentials: credentials) { books in
             guard let resources else { throw Engine.Failure.stopped }
             let command = EngineCommand.bundled(
                 books, setup: setup, in: resources, home: home, temporary: NSTemporaryDirectory())

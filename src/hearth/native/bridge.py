@@ -22,7 +22,7 @@ from enum import StrEnum
 from hearth import auth, db, members, sessions
 from hearth.books import Bookkeeper
 from hearth.config import Settings
-from hearth.native.doorway import Answer, Doorway
+from hearth.native.doorway import Answer, Doorway, Given
 
 CLIENT = "native app"
 """What the throttle counts the app's failed sign-ins against, as a page's are counted against
@@ -93,11 +93,13 @@ class Bridge:
                 conn.close()
         return Outcome.SIGNED_OUT
 
-    def answer(self, ask: str) -> Answer:
+    def answer(self, ask: str, given: Given | None = None) -> Answer:
+        """The doorway's answer to `ask`, narrowed by `given`. Signed out, the answer is the
+        same whatever is asked and whatever it is given."""
         viewer = self._viewer()
         if viewer is None:
             return dict(SIGNED_OUT)
-        return Doorway(self.settings, self.bookkeeper, viewer).answer(ask)
+        return Doorway(self.settings, self.bookkeeper, viewer).answer(ask, given)
 
     def _viewer(self) -> str | None:
         """The username of the member signed in, while their session lasts."""

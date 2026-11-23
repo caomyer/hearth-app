@@ -29,7 +29,7 @@ private actor ScriptedBridge: Bridging {
         self.answer = answer
     }
 
-    func ask<Content: Decodable & Sendable>(_ screen: String, as content: Content.Type) async throws -> Answer<Content> {
+    func ask<Content: Decodable & Sendable>(_ screen: String, with given: Given, as content: Content.Type) async throws -> Answer<Content> {
         guard !stopped, !failing else { throw Engine.Failure.stopped }
         return try decode(answer)
     }

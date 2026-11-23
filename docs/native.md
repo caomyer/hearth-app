@@ -16,9 +16,14 @@ Every request carries a number and exactly one of `sign_in`, `sign_out` or `ask`
 <- {"id": 2, "outcome": "signed_in"}
 -> {"id": 3, "ask": "overview"}
 <- {"id": 3, "answer": {"state": "ready", "net_worth": {"value": "162711.83", ...}, ...}}
--> {"id": 4, "sign_out": true}
-<- {"id": 4, "outcome": "signed_out"}
+-> {"id": 4, "ask": "transactions", "with": {"account": "h1LQ...", "limit": 50}}
+<- {"id": 4, "answer": {"state": "ready", "total": 412, "entries": [...], ...}}
+-> {"id": 5, "sign_out": true}
+<- {"id": 5, "outcome": "signed_out"}
 ```
+
+- An ask may carry `with`, a JSON object of what narrows it; nothing else may.
+  A `with` that is not an object, or one beside `sign_in` or `sign_out`, makes the line a bad request.
 
 - There is no socket and no port.
   The only thing that can ask is the process that started the bridge, and the bridge ends when that process closes its end, which the system does for it if it dies.
@@ -67,6 +72,68 @@ Every answer has a `state` (`hearth.native.doorway`):
 
 Money is a decimal string, never a JSON number, so nothing passes through a binary float on its way to the screen.
 Days are ISO dates; moments are UTC to the second, always in the shape `2026-10-15T12:00:00Z`.
+Every ready answer says what its books are: `computed_at`, `as_of`, `currency` and `recomputing`.
+
+## The screens
+
+| Ask | Takes | Answers |
+|---|---|---|
+| `overview` | nothing | The household's net worth and its history (`Disclosure.household`). |
+| `accounts` | nothing | Every account the viewer may see, in groups: theirs by kind (Cash, Credit, Investments), then those hearth does not see, then others' they may see into, by whose (`Disclosure.accounts`). |
+| `account` | `id` | One of those accounts, and the days its history covers (`Disclosure.standing`). |
+| `transactions` | `from`, `to`, `account`, `category`, `text`, `show`, `offset`, `limit` | A window onto the journal (`Disclosure.journal`). |
+
+What an ask takes is read strictly in `hearth.native.doorway`, and anything else is answered `missing`, as a screen that is not there is:
+
+- a key the ask does not take, or any key for an ask that takes nothing;
+- `id` and `account` that are not text of 1 to 64 characters;
+- `from` and `to` that are not real days written `YYYY-MM-DD`, or a `from` after its `to`;
+- `category` that is not `Expenses` or `Income`, alone or with parts beneath it;
+- `text` that is not text of 1 to 200 characters;
+- `show` that is not `everything`, `unreviewed`, `transfers` or `balance_checks`;
+- `offset` that is not a whole number from 0 to 1,000,000, and `limit` that is not one from 1 to 200.
+
+Whether the viewer may see what an ask names is for `hearth.disclosure` to decide, never the doorway.
+An account they may not see, or for `transactions` one whose transactions they may not see, is answered `missing`, exactly like an id that names nothing.
+A category or words that find nothing the viewer may see find nothing, whoever else's books hold them.
+No answer repeats the words or the category it was asked for, so an answer never carries what the app sent it.
+
+### Accounts
+
+Each account says what its balance rests on, its `standing`, and every absence is its own:
+
+| Standing | Meaning |
+|---|---|
+| `matches` | It agrees with the balance its bank last reported (`hearth.plaid.opening`). |
+| `holdings` | It is what its brokerage last reported the account holds. |
+| `checked` | It agrees with the books' own latest balance check, such as a statement's. |
+| `unchecked` | It is what the books hold; nothing in them checks it against a bank. |
+| `not_known` | Not known yet (`books.unanchored`); `why` is said to its owners alone. |
+| `arriving` | Hearth is bringing the account in now. |
+| `unseen` | Hearth does not see it (`books.unseen`), and its balance is never written. |
+| `failed` | The latest recompute found it disagrees with its bank; `failed` says by how much to those `FailureNotice` tells. |
+| `withheld` | Its balance is not shared with the viewer. |
+
+The balance, its kind and its standing go with the account balances facet.
+The day its data is known through (`updated`), whether that is long ago (`behind`), and the day its bank's balance covers (`checked`) are when its money last moved, so they go with the transactions facet.
+Its bank's name is given only to the member whose connection feeds it, as is `attention`, which says that connection must be signed in to again; for an account hearth does not see, where its owner said it is.
+
+### The journal
+
+`transactions` answers newest first, `limit` entries from `offset` (100 unless asked for fewer), with `total`, how many the whole filter leaves, and `counts`, how many each `show` would leave under the other filters.
+The engine never sends the whole journal: the app asks for the next window as the person scrolls to it, and starts again from the first when `computed_at` changes.
+Without `from` and `to` the journal is this year so far, and the answer says which days it covered.
+
+An entry is one of `transaction`, `transfer` or `balance` (`hearth.disclosure.journal`):
+
+- It is in the viewer's journal when it moves money in an account whose transactions they may see.
+  Its `sides` are its postings: the viewer's accounts by name, its categories, money still waiting to be told where it went, and one `elsewhere` side for every other account, whose amount the named sides already add up to.
+- A move between two of the viewer's accounts is one `transfer`, never money out and money in.
+- A side on an account hearth does not see says only which way money moved, unless the viewer owns every other side of the entry (`access.may_name_other_side`).
+- An opening balance is never an entry.
+- A `balance` is a check the books hold, on the last day it covers, for whoever may see both the account's balance and its transactions; every check in the books passed.
+- `unreviewed` marks a row nobody has checked; `suggested` says its category is hearth's suggestion, and `waiting` what one with no category waits to be told.
+- `position` is where it stands in what the filter leaves, which is how the app tells entries apart; it says nothing of the household's ledger.
 
 ## The boundary
 
@@ -77,7 +144,8 @@ The doorway is a page by another name, and is held to everything a page is.
 - Only `hearth.native.bridge` builds a `Doorway`, and only for the member of a live session; `tests/test_architecture.py` holds it to that.
 - It imports no ledger reader and touches none of the books' raw data; `tests/test_architecture.py` holds `hearth.native` to the rules it holds `hearth.web` to.
 - `tests/native/test_doorway.py` signs in to a bridge as every member under every sharing scenario the page crawl uses, asks every screen, and fails if an answer holds a datum its viewer may not see.
-  A new screen is covered the moment it is added to `SCREENS`.
+  A new screen is covered the moment it is added to `SCREENS`; one that takes something to narrow it must be named in the crawl's `NARROWED`, or its plain ask is missing and the crawl fails.
+  Narrowed screens are asked for every account in the household by id, every member's and the one nobody owns, every category and payee in it, each chip, periods and windows, and a narrowed journal must hold nothing the whole of it did not.
 - Anything private answers exactly like something missing.
 
 This is the one place hearth hands figures out as data.
@@ -85,12 +153,12 @@ It is not an HTTP endpoint and must not become one: a bridge that listened on a 
 
 ## One shape, checked from both sides
 
-`tests/native/fixtures/overview.json` is an example reply, and `tests/native/fixtures/outcomes.json` lists every outcome of signing in.
+`tests/native/fixtures/overview.json`, `accounts.json`, `account.json` and `transactions.json` are example replies, and `tests/native/fixtures/outcomes.json` lists every outcome of signing in.
 The Python tests check that the bridge still answers in their shape; the Swift tests (`apple/HearthKit`) decode the same files.
 A change of shape that only one side has been taught fails that side's tests.
 
 ## Adding a screen
 
-1. Write the function from `Disclosure` to a JSON object in `hearth.native.doorway` and add it to `SCREENS`.
+1. Write the function from `Disclosure` to a JSON object in `hearth.native.doorway` and add it to `SCREENS`, with the reader of what it takes; a view it needs is built in `hearth.disclosure`, never in the doorway.
 2. Add an example to `tests/native/fixtures` and a shape test beside the overview's.
 3. Add the type that decodes it to `apple/HearthKit`, with a test that reads the same example.

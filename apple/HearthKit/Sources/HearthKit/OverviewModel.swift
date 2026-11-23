@@ -1,19 +1,31 @@
 import Foundation
 import Observation
 
-/// What the Overview screen shows right now, and the loop that keeps it current.
+/// A screen the engine answers in one piece, and says whether newer books are on their way.
+public protocol Screen: Decodable, Sendable, Equatable {
+    /// Whether newer books are being computed right now.
+    var recomputing: Bool { get }
+}
+
+extension Overview: Screen {}
+
+/// What the Overview screen shows right now.
+public typealias OverviewModel = ScreenModel<Overview>
+
+/// What one screen shows right now, and the loop that keeps it current: the Overview, the
+/// accounts, one account.
 @MainActor
 @Observable
-public final class OverviewModel {
+public final class ScreenModel<Content: Screen> {
     public enum State: Equatable, Sendable {
         /// Nothing has been heard from the engine yet.
         case starting
         /// The engine is running and computing the books.
         case loading
-        case ready(Overview)
+        case ready(Content)
         /// The books could not be computed; the sentence says why.
         case failed(String)
-        /// The engine has no overview for this viewer.
+        /// The engine has no such screen for this viewer.
         case missing
         /// The engine says nobody is signed in: the member's session ended elsewhere, as when
         /// their password was reset.
@@ -24,6 +36,10 @@ public final class OverviewModel {
 
     public private(set) var state: State = .starting
 
+    /// What the screen is asked as, and what narrows it.
+    public let screen: String
+    public let given: Given
+
     private let engine: any Asking
     private let pause: @Sendable (Duration) async throws -> Void
     private let signedOut: @MainActor () -> Void
@@ -31,15 +47,19 @@ public final class OverviewModel {
     /// How long to wait before asking again: often while the books are being computed, so the
     /// screen fills the moment they are ready, and seldom once they are, only to notice a
     /// recompute.
-    public static let whileLoading: Duration = .milliseconds(300)
-    public static let whileReady: Duration = .seconds(15)
+    public static var whileLoading: Duration { .milliseconds(300) }
+    public static var whileReady: Duration { .seconds(15) }
 
     public init(
         engine: any Asking,
+        screen: String = "overview",
+        given: Given = [:],
         pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         signedOut: @escaping @MainActor () -> Void = {}
     ) {
         self.engine = engine
+        self.screen = screen
+        self.given = given
         self.pause = pause
         self.signedOut = signedOut
     }
@@ -49,10 +69,10 @@ public final class OverviewModel {
     @discardableResult
     public func refresh() async -> Duration? {
         do {
-            switch try await engine.ask("overview", as: Overview.self) {
-            case .ready(let overview):
-                state = .ready(overview)
-                return overview.recomputing ? Self.whileLoading : Self.whileReady
+            switch try await engine.ask(screen, with: given, as: Content.self) {
+            case .ready(let content):
+                state = .ready(content)
+                return content.recomputing ? Self.whileLoading : Self.whileReady
             case .loading:
                 // Figures already on screen stay there while newer ones are computed.
                 if case .ready = state { return Self.whileLoading }
@@ -85,5 +105,10 @@ public final class OverviewModel {
                 return
             }
         }
+    }
+
+    /// What the screen holds, once it holds anything.
+    public var content: Content? {
+        if case .ready(let content) = state { content } else { nil }
     }
 }

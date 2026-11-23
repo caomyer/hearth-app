@@ -21,6 +21,8 @@ from hearth.accounts import Account, all_accounts
 from hearth.audit import EventKind
 from hearth.books import Books, Failure, Status
 from hearth.connections import Connection, Connections
+from hearth.disclosure.balances import AccountGroup, AccountStanding, Failed, standing, standings
+from hearth.disclosure.balances import visible as _visible
 from hearth.disclosure.common import (
     IDENTITY_HUES,
     Household,
@@ -40,6 +42,7 @@ from hearth.disclosure.gate import (
     may_review,
 )
 from hearth.disclosure.household import HouseholdView, household
+from hearth.disclosure.journal import Filter, Journal, journal
 from hearth.disclosure.naming import Namer
 from hearth.disclosure.people import (
     AccountRow,
@@ -76,14 +79,18 @@ if TYPE_CHECKING:
 __all__ = [
     "COMPARE_FROM_DAY",
     "WITHHELD",
+    "AccountGroup",
     "AccountRow",
+    "AccountStanding",
     "ActivityLine",
     "Concealed",
     "Day",
     "Disclosed",
     "Disclosure",
     "FailureNotice",
+    "Filter",
     "HouseholdView",
+    "Journal",
     "LeftOut",
     "MemberRef",
     "NetWorthView",
@@ -307,6 +314,41 @@ class Disclosure:
             ),
             priced=row.priced if isinstance(row, AccountRow) and row.invested else None,
         )
+
+    def accounts(self, known: Connections) -> tuple[AccountGroup, ...]:
+        """Every account the viewer may see, grouped, and what each balance rests on: theirs by
+        kind, then those hearth does not see, then others' they may see into, by whose."""
+        return standings(self._household(), self._accounts, self.connections(known), self._failed())
+
+    def standing(self, account_id: str, known: Connections) -> AccountStanding:
+        """One account the viewer may see, and what its balance rests on."""
+        h = self._household()
+        account = next((a for a in self._accounts if a.id == account_id), None)
+        if account is None or not _visible(h, account):
+            raise Concealed
+        return standing(h, account, self.connections(known), self._failed())
+
+    def journal(self, narrowed: Filter, *, offset: int, limit: int) -> Journal:
+        """The entries the viewer may see that `narrowed` leaves, newest first, `limit` of them
+        from `offset`. An account it names that the viewer may not see the transactions of is
+        not there."""
+        h = self._household()
+        account = None
+        if narrowed.account is not None:
+            account = next((a for a in self._accounts if a.id == narrowed.account), None)
+            if account is None or not self._gate.may(Facet.TRANSACTIONS, account.owners):
+                raise Concealed
+        return journal(h, self._accounts, narrowed, offset=offset, limit=limit, account=account)
+
+    def _failed(self) -> tuple[str, Failed] | None:
+        """The account whose balance check the latest recompute failed, when the viewer may be
+        told so (`_failed_check`)."""
+        failure = self.status.failure
+        check = self._failed_check(failure) if failure is not None else None
+        if not isinstance(check, FailedCheck):
+            return None
+        found = check.check
+        return check.account, Failed(found.asserted, found.computed, check.as_of)
 
     def _unseen(self, h: Household, account: Account, rulings: RulingStore | None) -> UnseenAccount:
         """What the page of an account hearth does not see says beside its balance, which is

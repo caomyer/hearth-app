@@ -64,6 +64,7 @@ final class FirstLaunchTests: XCTestCase {
 
         signIn(app, username: nil, password: password)
         assertNetWorth(in: app)
+        assertTransactionsAndAnAccount(in: app)
 
         // Opened again, the saved sign-in is handed to the engine without asking.
         app.terminate()
@@ -74,6 +75,54 @@ final class FirstLaunchTests: XCTestCase {
         app.menuItems["Sign Out"].click()
         XCTAssertTrue(username.waitForExistence(timeout: 20), "signing out did not ask who is signing in")
         XCTAssertFalse(app.staticTexts["overview.netWorth"].exists)
+    }
+
+    /// The start screen is the window's own, so the app quits from it as from anywhere else.
+    @MainActor
+    func testTheAppQuitsFromTheStartScreen() {
+        let app = XCUIApplication()
+        app.launchEnvironment["HEARTH_DATA_DIR"] = "/var/empty/no-hearth-\(UUID().uuidString)"
+        app.launch()
+        XCTAssertTrue(app.buttons["start.sample"].waitForExistence(timeout: 20), "no start screen")
+
+        app.menuBarItems["Hearth"].click()
+        app.menuItems["Quit Hearth"].click()
+
+        XCTAssertTrue(app.wait(for: .notRunning, timeout: 20), "the app did not quit from its start screen")
+    }
+
+    /// The journal lists the household's rows, narrows to words, and an account opens from
+    /// the sidebar with its balance to the cent.
+    @MainActor
+    private func assertTransactionsAndAnAccount(in app: XCUIApplication) {
+        app.descendants(matching: .any)["sidebar.transactions"].firstMatch.click()
+        let market = payee("Cobble Street Market", in: app)
+        XCTAssertTrue(market.waitForExistence(timeout: 30), "the journal did not list a known row")
+        XCTAssertTrue(payee("Quill Bookshop", in: app).exists)
+
+        let search = app.searchFields.firstMatch
+        search.click()
+        search.typeText("quill")
+        XCTAssertTrue(
+            app.buttons["Remove \u{201C}quill\u{201D}"].waitForExistence(timeout: 20),
+            "the words were not shown as a filter")
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: market)
+        wait(for: [gone], timeout: 20)
+        XCTAssertTrue(payee("Quill Bookshop", in: app).exists, "narrowing lost the row it was for")
+
+        app.descendants(matching: .any)["sidebar.account.Everyday checking"].firstMatch.click()
+        let balance = app.staticTexts["account.balance"]
+        XCTAssertTrue(balance.waitForExistence(timeout: 30), "the account did not open")
+        XCTAssertEqual(text(of: balance), "$3,250.40")
+        let standing = app.descendants(matching: .any)["account.standing"].firstMatch
+        XCTAssertTrue(text(of: standing).hasPrefix("Matches bank"), "\(text(of: standing)) is not a match")
+        app.descendants(matching: .any)["sidebar.overview"].firstMatch.click()
+    }
+
+    /// A row of the journal, by its payee.
+    @MainActor
+    private func payee(_ name: String, in app: XCUIApplication) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "identifier == 'journal.payee' AND value == %@", name)).firstMatch
     }
 
     @MainActor

@@ -1,0 +1,33 @@
+{
+  "id": 3,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "account": {
+      "id": "h1LQFxEvalLFwj4a",
+      "name": "Everyday checking",
+      "owners": ["Avery"],
+      "yours": true,
+      "kind": "Cash",
+      "balance": {"value": "3250.40", "is_known": true, "is_floor": false, "unpriced": []},
+      "standing": "matches",
+      "why": null,
+      "checked": "2026-10-15",
+      "failed": null,
+      "updated": "2026-10-15",
+      "behind": false,
+      "priced": null,
+      "transactions": true,
+      "institution": "Larkspur Savings Bank",
+      "mask": null,
+      "attention": false,
+      "unseen_kind": null
+    },
+    "history": [
+      {"origin": "plaid", "from": "2026-09-25", "to": "2026-10-03"}
+    ]
+  }
+}

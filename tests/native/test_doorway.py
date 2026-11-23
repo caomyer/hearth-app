@@ -138,6 +138,43 @@ def differences(told: object, example: object, at: str = "answer") -> list[str]:
     return [] if type(told) is type(example) else [f"{at}: {type(told).__name__}"]
 
 
+NARROWED = {"account": "id", "transactions": "with"}
+"""Screens that are asked with what narrows them, which the crawl asks every way
+`narrowings` names. A screen added to `SCREENS` is asked plainly unless it is named here."""
+
+
+def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
+    """Every way the crawl narrows a screen: every account in the household by id, each
+    member's and the one nobody owns among them, every category and payee in it, each chip,
+    periods, windows, and things that are in nobody's books at all."""
+    ids = [*world.account_ids.values(), "no-such-account"]
+    categories = [*sorted({t[3] for t in household.TRANSACTIONS}), "Expenses", "Income"]
+    words = [t[1] for t in household.TRANSACTIONS] + [p[1] for p in household.PILE]
+    words += [m[1] for m in household.MOVED] + ["Transfer", "Memo", "zz-nothing"]
+    asked: list[tuple[str, dict[str, object]]] = [("transactions", {})]
+    asked += [("account", {"id": i}) for i in ids]
+    asked += [("transactions", {"account": i}) for i in ids]
+    asked += [("transactions", {"category": c}) for c in categories]
+    asked += [("transactions", {"text": w}) for w in words]
+    asked += [("transactions", {"show": s}) for s in ("unreviewed", "transfers", "balance_checks")]
+    asked += [
+        ("transactions", {"from": "2025-01-01", "to": "2026-12-31"}),
+        ("transactions", {"from": "2026-09-01", "to": "2026-09-30", "show": "unreviewed"}),
+    ]
+    asked += [("transactions", {"offset": n, "limit": 1}) for n in range(0, 12, 3)]
+    return asked
+
+
+def assert_within(narrowed: dict[str, object], whole: dict[str, object]) -> None:
+    def rows(answer: dict[str, object]) -> list[str]:
+        entries = answer["entries"]
+        assert isinstance(entries, list)
+        return [json.dumps({k: v for k, v in e.items() if k != "position"}) for e in entries]
+
+    held = rows(whole)
+    assert all(row in held for row in rows(narrowed)), "a narrowed journal found more"
+
+
 @pytest.mark.parametrize("scenario", SCENARIOS)
 @pytest.mark.parametrize("viewer", household.USERNAMES)
 def test_no_answer_holds_what_its_viewer_may_not_see(
@@ -151,8 +188,16 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     # Asked as the app asks: through a bridge the viewer signed in to with their password.
     door = Bridge(world.settings, world.bookkeeper, world.clock)
     assert door.sign_in(viewer, password_of(viewer)) is Outcome.SIGNED_IN
-    answers = [door.answer(ask) for ask in asks.SCREENS]
+    answers = [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
     assert all(answer["state"] == "ready" for answer in answers)
+    whole = door.answer("transactions", {"limit": asks.MOST})
+    for ask, given in narrowings(world):
+        answer = door.answer(ask, given)
+        answers.append(answer)
+        if ask == "transactions" and answer["state"] == "ready":
+            # Narrowing the journal only ever leaves out: it never finds what the whole of it
+            # did not hold, whatever it is asked to look for.
+            assert_within(answer, whole)
     # The doorway writes money without the thousands separators a page shows it with.
     seen = "\n".join(json.dumps(answer) for answer in answers)
 

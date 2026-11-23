@@ -47,8 +47,10 @@ public final class Session {
     public typealias Launch = @MainActor (Books) throws -> any Bridging
 
     public private(set) var screen: Screen = .starting
+    /// The screens of the books, while they are open to someone.
+    public private(set) var desk: Desk?
     /// The Overview screen, while the books are open to someone.
-    public private(set) var overview: OverviewModel?
+    public var overview: OverviewModel? { desk?.overview }
     /// True while a sign-in the person asked for is with the engine.
     public private(set) var isSigningIn = false
     public let setup: Setup
@@ -138,7 +140,7 @@ public final class Session {
     public func signOut() async {
         guard isSignedIn, let engine else { return }
         generation += 1
-        overview = nil
+        desk = nil
         screen = .signIn(nil)
         try? await credentials.forget(for: setup.key)
         try? await engine.signOut()
@@ -147,7 +149,7 @@ public final class Session {
     /// Stops the engine, as the app quits.
     public func stop() async {
         generation += 1
-        overview = nil
+        desk = nil
         await stopEngine()
     }
 
@@ -156,7 +158,7 @@ public final class Session {
     private func open(_ books: Books) async {
         generation += 1
         let mine = generation
-        overview = nil
+        desk = nil
         if running != books || engine == nil {
             await stopEngine()
             guard mine == generation else { return }
@@ -211,7 +213,7 @@ public final class Session {
 
     private func show(_ books: Books, on engine: any Bridging) {
         let mine = generation
-        overview = OverviewModel(engine: engine, signedOut: { [weak self] in self?.endedElsewhere(mine) })
+        desk = Desk(engine: engine, signedOut: { [weak self] in self?.endedElsewhere(mine) })
         screen = .open(books)
     }
 
@@ -222,7 +224,7 @@ public final class Session {
         guard shown == generation, running == .own, let engine else { return }
         generation += 1
         let mine = generation
-        overview = nil
+        desk = nil
         screen = .opening(.own)
         Task { await presentSaved(to: engine, generation: mine) }
     }

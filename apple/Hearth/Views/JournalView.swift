@@ -1,0 +1,579 @@
+import HearthKit
+import SwiftUI
+
+/// Fava's journal, natively: entries newest first, a day at a time, one line each until
+/// opened, when every side shows. Balance checks sit in line, on the day they cover.
+struct JournalView: View {
+    let model: JournalModel
+    /// The accounts the journal may be narrowed to, for the toolbar's account menu; none on an
+    /// account's own page, whose journal keeps to it.
+    let accounts: Accounts?
+    let identifier: String
+
+    @Environment(Navigator.self) private var navigator
+    @State private var selected: Int?
+    @State private var text = ""
+    @State private var choosingRange = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            JournalHead(model: model)
+                .padding(.horizontal, 28)
+                .padding(.top, 18)
+                .padding(.bottom, 10)
+            Divider().overlay(Palette.line)
+            content
+        }
+        .searchable(text: $text, placement: .toolbar, prompt: "Payee or description")
+        .task(id: text) {
+            // Asked once typing pauses, not at every key.
+            guard text.trimmingCharacters(in: .whitespaces) != model.filter.words else { return }
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            var filter = model.filter
+            filter.text = text
+            await model.apply(filter)
+        }
+        .onChange(of: model.filter.words) { _, words in
+            if words != text.trimmingCharacters(in: .whitespaces) { text = words }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                PeriodMenu(model: model, choosingRange: $choosingRange)
+                if let accounts, model.pinned == nil {
+                    AccountMenu(model: model, accounts: accounts)
+                }
+            }
+        }
+        .task {
+            if model.state == .starting { await model.reload() }
+            await model.watch()
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.state {
+        case .starting, .loading:
+            Waiting(text: "Working out the books", identifier: "\(identifier).loading")
+        case .signedOut:
+            Color.clear
+        case .failed(let summary):
+            Unavailable(title: "The books could not be worked out", detail: summary)
+        case .missing:
+            Unavailable(title: "Nothing to show", detail: "These transactions are not shared with you.")
+        case .stopped:
+            Unavailable(title: "Hearth's engine stopped", detail: "Quit Hearth and open it again.")
+        case .ready:
+            if model.entries.isEmpty {
+                Unavailable(
+                    title: model.filter.tokens.isEmpty && model.filter.show == .everything
+                        ? "No transactions in this period" : "Nothing matches",
+                    detail: model.filter.tokens.isEmpty && model.filter.show == .everything
+                        ? "Choose another period from the toolbar." : "Remove a filter to see more.")
+            } else {
+                entries
+            }
+        }
+    }
+
+    private var entries: some View {
+        List(selection: $selected) {
+            ForEach(model.days) { day in
+                Section {
+                    ForEach(day.entries) { entry in
+                        EntryRow(
+                            entry: entry, open: selected == entry.id,
+                            currency: model.header?.currency ?? "USD", pinned: model.pinned
+                        )
+                        .tag(entry.id)
+                        .listRowSeparator(.hidden)
+                        .onAppear {
+                            if entry.id == model.entries.last?.id {
+                                Task { await model.loadMore() }
+                            }
+                        }
+                    }
+                } header: {
+                    Text(Figures.heading(day.day, asOf: model.header?.asOf ?? day.day))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.ink2)
+                        .accessibilityAddTraits(.isHeader)
+                }
+            }
+            if model.hasMore || model.isLoadingMore {
+                HStack {
+                    Spacer()
+                    ProgressView().controlSize(.small)
+                    Spacer()
+                }
+                .listRowSeparator(.hidden)
+            }
+        }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .background(Palette.surface)
+        .accessibilityIdentifier("\(identifier).list")
+    }
+}
+
+/// What the journal is narrowed to: the chips, the filters as tokens, and how many entries
+/// over which days that leaves.
+private struct JournalHead: View {
+    let model: JournalModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                ForEach(Show.allCases, id: \.self) { show in
+                    Chip(
+                        label: show.label, count: show == .everything ? nil : model.counts.count(show),
+                        on: model.filter.show == show
+                    ) {
+                        var filter = model.filter
+                        filter.show = show
+                        Task { await model.apply(filter) }
+                    }
+                    .accessibilityIdentifier("journal.show.\(show.rawValue)")
+                }
+                Spacer(minLength: 0)
+            }
+            if !model.tokens.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(model.tokens) { token in
+                        TokenView(label: label(token)) {
+                            Task { await model.remove(token) }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            if let summary {
+                Text(summary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.ink3)
+                    .monospacedDigit()
+                    .accessibilityIdentifier("journal.summary")
+            }
+        }
+    }
+
+    private var summary: String? {
+        guard let header = model.header, model.state == .ready else { return nil }
+        let count = model.total == 1 ? "1 entry" : "\(model.total.formatted()) entries"
+        let span = Figures.span(from: header.from, to: header.to)
+        let whose = model.filter.account?.name ?? "all accounts"
+        return "\(count) · \(span) · \(whose)"
+    }
+
+    private func label(_ token: JournalFilter.Token) -> String {
+        switch token {
+        case .period(let period): period.label(asOf: model.header?.asOf ?? Day(Date()))
+        case .account(let account): account.name
+        case .category(let category): category.label
+        case .text(let words): "\u{201C}\(words)\u{201D}"
+        }
+    }
+}
+
+/// One chip over the journal, on or off, with how many entries it leaves.
+private struct Chip: View {
+    let label: String
+    let count: Int?
+    let on: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(label)
+                if let count {
+                    Text(count.formatted())
+                        .monospacedDigit()
+                        .foregroundStyle(on ? Palette.accent : Palette.ink3)
+                }
+            }
+            .font(.system(size: 12, weight: on ? .semibold : .regular))
+            .foregroundStyle(on ? Palette.accent : Palette.ink2)
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(Capsule().fill(on ? Palette.accentBackground : Color.clear))
+            .overlay(Capsule().strokeBorder(on ? Palette.accent : Palette.lineStrong, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// A filter, which one click removes.
+private struct TokenView: View {
+    let label: String
+    let remove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .lineLimit(1)
+            Button(action: remove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(label)")
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(Palette.ink)
+        .padding(.leading, 9)
+        .padding(.trailing, 5)
+        .frame(height: 22)
+        .background(RoundedRectangle(cornerRadius: 5).fill(Palette.background))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Palette.line, lineWidth: 1))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("journal.token")
+    }
+}
+
+/// One entry, a line until it is opened, then every side of it.
+private struct EntryRow: View {
+    let entry: Entry
+    let open: Bool
+    let currency: String
+    let pinned: AccountRef?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            line
+            if open, !entry.sides.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(entry.sides.enumerated()), id: \.offset) { _, side in
+                        SideLine(side: side)
+                    }
+                }
+                .padding(.leading, 17)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+            }
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("journal.entry")
+    }
+
+    private var line: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            marker
+                .frame(width: 8)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .foregroundStyle(entry.kind == .balance ? Palette.favourable : Palette.ink)
+                    .lineLimit(1)
+                    .accessibilityIdentifier("journal.payee")
+                if !entry.narration.isEmpty {
+                    Text(entry.narration)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ink3)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            AccountsCell(accounts: entry.accounts, pinned: pinned)
+                .frame(width: 250, alignment: .leading)
+            CategoryCell(entry: entry)
+                .frame(width: 160, alignment: .leading)
+            Text(amount)
+                .monospacedDigit()
+                .foregroundStyle(amountColour)
+                .frame(width: 110, alignment: .trailing)
+                .accessibilityIdentifier("journal.amount")
+        }
+        .font(.system(size: 13))
+    }
+
+    @ViewBuilder
+    private var marker: some View {
+        if entry.unreviewed {
+            Circle()
+                .fill(Palette.warning)
+                .frame(width: 7, height: 7)
+                .help("Not reviewed yet")
+                .accessibilityLabel("Not reviewed yet")
+        } else if entry.kind == .balance {
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Palette.favourable)
+                .accessibilityHidden(true)
+        } else {
+            Color.clear.frame(width: 7, height: 7)
+        }
+    }
+
+    private var title: String {
+        guard entry.kind == .balance else { return entry.payee }
+        switch entry.checked {
+        case .bank: return "Balance matches bank"
+        case .brokerage: return "Holdings match brokerage"
+        case .books, nil: return "Balance check passed"
+        }
+    }
+
+    private var amount: String {
+        switch entry.kind {
+        case .balance: Figures.amount(entry.amount, signed: false)
+        case .transfer where entry.isOwnTransfer: Figures.amount(entry.amount, signed: false)
+        default: Figures.amount(entry.amount)
+        }
+    }
+
+    /// Money in is favourable; a check or a move between one's own accounts is neither.
+    private var amountColour: Color {
+        if entry.kind == .balance || entry.isOwnTransfer { return Palette.ink2 }
+        return entry.amount.amount > 0 ? Palette.favourable : Palette.ink
+    }
+}
+
+/// The accounts an entry moved: one, or a transfer's from and to. On an account's own page
+/// its own name goes without saying, and a transfer names only where the money went or came
+/// from.
+private struct AccountsCell: View {
+    let accounts: [AccountRef]
+    let pinned: AccountRef?
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let pinned {
+                if let index = accounts.firstIndex(where: { $0.id != pinned.id }), accounts.count > 1 {
+                    Text(index == 0 ? "From" : "To").foregroundStyle(Palette.ink3)
+                    AccountLink(account: accounts[index])
+                }
+            } else {
+                ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
+                    if index > 0 {
+                        Text("→").foregroundStyle(Palette.ink3).accessibilityLabel("to")
+                    }
+                    AccountLink(account: account)
+                }
+            }
+        }
+        .lineLimit(1)
+    }
+}
+
+/// An entry's category, which opens the journal narrowed to it, or what it is instead.
+private struct CategoryCell: View {
+    let entry: Entry
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let category = entry.category {
+                CategoryLink(category: category)
+                if entry.suggested {
+                    Text("suggested")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.warning)
+                }
+            } else {
+                Text(words)
+                    .foregroundStyle(entry.waiting != nil ? Palette.warning : Palette.ink3)
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private var words: String {
+        switch (entry.kind, entry.waiting) {
+        case (.balance, _): "Balance check"
+        case (_, .category): "Uncategorized"
+        case (_, .transfer): "Transfer, other side not found"
+        case (.transfer, nil): "Transfer"
+        case (.transaction, nil): "Split, \(entry.sides.filter { $0.category != nil }.count)"
+        }
+    }
+}
+
+/// One side of an opened entry.
+private struct SideLine: View {
+    let side: Side
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let account = side.account {
+                    AccountLink(account: account)
+                } else if let category = side.category {
+                    CategoryLink(category: category)
+                } else if side.waiting {
+                    Text("Uncategorized").foregroundStyle(Palette.warning)
+                } else {
+                    Text("Another account").foregroundStyle(Palette.ink3)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(Figures.amount(side.amount))
+                .monospacedDigit()
+                .foregroundStyle(Palette.ink2)
+                .frame(width: 110, alignment: .trailing)
+        }
+        .font(.system(size: 12))
+    }
+}
+
+/// An account's name, which opens the account.
+struct AccountLink: View {
+    let account: AccountRef
+    @Environment(Navigator.self) private var navigator
+
+    var body: some View {
+        ClickThrough(text: account.name) { navigator.open(account) }
+            .accessibilityIdentifier("link.account.\(account.name)")
+    }
+}
+
+/// A category's name, which opens the journal narrowed to it.
+struct CategoryLink: View {
+    let category: CategoryRef
+    @Environment(Navigator.self) private var navigator
+
+    var body: some View {
+        ClickThrough(text: category.label) { navigator.show(category) }
+            .help(category.name)
+            .accessibilityIdentifier("link.category.\(category.label)")
+    }
+}
+
+/// Text that takes you somewhere: quiet until the pointer is over it, then the accent, as
+/// blue is kept for what can be acted on.
+struct ClickThrough: View {
+    let text: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(text)
+                .underline(hovering)
+                .foregroundStyle(hovering ? Palette.accent : Palette.ink2)
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .pointerStyle(.link)
+    }
+}
+
+/// The period the journal covers: this year so far, a year, a month, or any range.
+private struct PeriodMenu: View {
+    let model: JournalModel
+    @Binding var choosingRange: Bool
+
+    var body: some View {
+        Menu {
+            Button("This year so far") { choose(.yearToDate) }
+            Section("Year") {
+                ForEach(0..<3, id: \.self) { back in
+                    Button(String(asOf.year - back)) { choose(.year(asOf.year - back)) }
+                }
+            }
+            Section("Month") {
+                ForEach(months, id: \.self) { month in
+                    Button(JournalFilter.Period.month(year: month.year, month: month.month).label(asOf: asOf)) {
+                        choose(.month(year: month.year, month: month.month))
+                    }
+                }
+            }
+            Divider()
+            Button("Custom Range…") { choosingRange = true }
+        } label: {
+            Label(model.filter.period.label(asOf: asOf), systemImage: "calendar")
+                .labelStyle(.titleAndIcon)
+        }
+        .help("Period")
+        .accessibilityIdentifier("journal.period")
+        .popover(isPresented: $choosingRange, arrowEdge: .bottom) {
+            RangePicker(asOf: asOf) { from, to in
+                choosingRange = false
+                choose(.range(from: from, to: to))
+            }
+        }
+    }
+
+    private var asOf: Day { model.header?.asOf ?? Day(Date()) }
+
+    /// The last twelve months, newest first.
+    private var months: [Day] {
+        (0..<12).map { back in
+            let index = asOf.year * 12 + (asOf.month - 1) - back
+            return Day(year: index / 12, month: index % 12 + 1, day: 1)
+        }
+    }
+
+    private func choose(_ period: JournalFilter.Period) {
+        var filter = model.filter
+        filter.period = period
+        Task { await model.apply(filter) }
+    }
+}
+
+/// Two days, both included.
+private struct RangePicker: View {
+    let asOf: Day
+    let pick: (Day, Day) -> Void
+    @State private var from = Date()
+    @State private var to = Date()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            DatePicker("From", selection: $from, displayedComponents: .date)
+            DatePicker("To", selection: $to, displayedComponents: .date)
+            HStack {
+                Spacer()
+                Button("Show") { pick(Day(from), Day(to)) }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .datePickerStyle(.field)
+        .font(.system(size: 13))
+        .padding(16)
+        .frame(width: 260)
+        .onAppear {
+            to = asOf.date()
+            from = Day(year: asOf.year, month: asOf.month, day: 1).date()
+        }
+    }
+}
+
+/// The account the journal is narrowed to, or all of them.
+private struct AccountMenu: View {
+    let model: JournalModel
+    let accounts: Accounts
+
+    var body: some View {
+        Menu {
+            Button("All Accounts") { choose(nil) }
+            ForEach(accounts.groups) { group in
+                let open = group.accounts.filter(\.transactions)
+                if !open.isEmpty {
+                    Section(group.name) {
+                        ForEach(open) { account in
+                            Button(account.name) { choose(AccountRef(id: account.id, name: account.name)) }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(model.filter.account?.name ?? "All accounts", systemImage: "building.columns")
+                .labelStyle(.titleAndIcon)
+        }
+        .help("Account")
+        .accessibilityIdentifier("journal.account")
+    }
+
+    private func choose(_ account: AccountRef?) {
+        var filter = model.filter
+        filter.account = account
+        Task { await model.apply(filter) }
+    }
+}

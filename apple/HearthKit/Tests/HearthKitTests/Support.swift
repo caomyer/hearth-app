@@ -38,15 +38,22 @@ func echoEngine(answer: String) -> EngineCommand {
 actor Scripted: Asking {
     private var answers: [String]
     private(set) var asked: [String] = []
+    /// What each ask was given, in order.
+    private(set) var given: [Given] = []
 
     init(_ answers: [String]) {
         self.answers = answers
     }
 
+    func more(_ answers: [String]) {
+        self.answers += answers
+    }
+
     func ask<Content: Decodable & Sendable>(
-        _ screen: String, as content: Content.Type
+        _ screen: String, with given: Given, as content: Content.Type
     ) async throws -> Answer<Content> {
         asked.append(screen)
+        self.given.append(given)
         guard !answers.isEmpty else { throw Engine.Failure.stopped }
         return try decode(answers.removeFirst())
     }

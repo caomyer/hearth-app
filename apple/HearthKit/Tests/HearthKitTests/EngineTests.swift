@@ -75,7 +75,7 @@ struct EngineTests {
             while IFS= read -r line; do
               id=$(printf '%s' "$line" | sed -E 's/.*"id":([0-9]+).*/\1/')
               case "$line" in
-                *'"sign_in":{'*'"username":"avery"'*'"password":"an invented passphrase"'*) outcome=signed_in ;;
+                *'"sign_in":{"password":"an invented passphrase","username":"avery"}'*) outcome=signed_in ;;
                 *'"sign_out":true'*) outcome=signed_out ;;
                 *) outcome=rejected ;;
               esac
@@ -88,6 +88,27 @@ struct EngineTests {
         #expect(try await engine.signIn(username: "avery", password: "an invented passphrase") == .signedIn)
         #expect(try await engine.signIn(username: "avery", password: "a guess") == .rejected)
         try await engine.signOut()
+    }
+
+    @Test("an ask carries what narrows it under with, and an ask of nothing carries no with")
+    func narrows() async throws {
+        let script = #"""
+            while IFS= read -r line; do
+              id=$(printf '%s' "$line" | sed -E 's/.*"id":([0-9]+).*/\1/')
+              case "$line" in
+                '{"ask":"account","id":'*',"with":{"id":"acc","limit":2}}') state=loading ;;
+                *'"with"'*) state=missing ;;
+                *) state=signed_out ;;
+              esac
+              printf '{"id":%s,"answer":{"state":"%s"}}\n' "$id" "$state"
+            done
+            """#
+        let engine = try Engine.launch(EngineCommand(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script]))
+        defer { Task { await engine.stop() } }
+
+        let narrowed = try await engine.ask("account", with: ["id": .text("acc"), "limit": .number(2)], as: AccountPage.self)
+        #expect(narrowed == .loading)
+        #expect(try await engine.ask("accounts", as: Accounts.self) == .signedOut)
     }
 
     @Test("an engine that is not there cannot be launched")

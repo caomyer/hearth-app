@@ -88,3 +88,33 @@ def test_a_refusal_never_repeats_the_line_it_refused(world: World) -> None:
 
     assert len(written) == 3
     assert secret not in "".join(written)
+
+
+def test_an_ask_carries_what_narrows_it_with_it(world: World) -> None:
+    signed, narrowed, malformed = answers(
+        world,
+        sign_in("avery", password_of("avery")),
+        '{"id": 2, "ask": "transactions", "with": {"limit": 1}}\n',
+        '{"id": 3, "ask": "transactions", "with": {"limit": "one"}}\n',
+    )
+
+    assert signed == {"id": 1, "outcome": "signed_in"}
+    assert narrowed["id"] == 2
+    assert isinstance(narrowed["answer"], dict)
+    assert len(narrowed["answer"]["entries"]) == 1
+    assert malformed == {"id": 3, "answer": {"state": "missing"}}
+
+
+def test_with_is_an_object_beside_an_ask_or_the_line_is_not_a_request(world: World) -> None:
+    replies = answers(
+        world,
+        '{"id": 1, "ask": "transactions", "with": [1]}\n',
+        '{"id": 1, "ask": "transactions", "with": "limit=1"}\n',
+        '{"id": 1, "ask": "transactions", "with": null}\n',
+        '{"id": 1, "sign_out": true, "with": {}}\n',
+        '{"id": 1, "sign_in": {"username": "avery", "password": "x"}, "with": {}}\n',
+        '{"id": 2, "ask": "transactions", "with": {}}\n',
+    )
+
+    assert replies[:-1] == [{"id": None, "error": "bad request"}] * 5
+    assert replies[-1] == {"id": 2, "answer": {"state": "signed_out"}}

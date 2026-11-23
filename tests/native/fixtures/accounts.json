@@ -1,0 +1,162 @@
+{
+  "id": 2,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "groups": [
+      {
+        "name": "Cash",
+        "yours": true,
+        "accounts": [
+          {
+            "id": "h1LQFxEvalLFwj4a",
+            "name": "Everyday checking",
+            "owners": ["Avery"],
+            "yours": true,
+            "kind": "Cash",
+            "balance": {"value": "3250.40", "is_known": true, "is_floor": false, "unpriced": []},
+            "standing": "matches",
+            "why": null,
+            "checked": "2026-10-15",
+            "failed": null,
+            "updated": "2026-10-15",
+            "behind": false,
+            "priced": null,
+            "transactions": true,
+            "institution": "Larkspur Savings Bank",
+            "mask": null,
+            "attention": false,
+            "unseen_kind": null
+          },
+          {
+            "id": "Ae06jAUHXgyYIk8D",
+            "name": "Savings",
+            "owners": ["Avery"],
+            "yours": true,
+            "kind": "Cash",
+            "balance": {"value": null, "is_known": false, "is_floor": false, "unpriced": []},
+            "standing": "not_known",
+            "why": "no-balance",
+            "checked": null,
+            "failed": null,
+            "updated": "2026-10-10",
+            "behind": false,
+            "priced": null,
+            "transactions": true,
+            "institution": "Larkspur Savings Bank",
+            "mask": null,
+            "attention": true,
+            "unseen_kind": null
+          }
+        ]
+      },
+      {
+        "name": "Credit",
+        "yours": true,
+        "accounts": [
+          {
+            "id": "eDUVDA9IScyfzS3o",
+            "name": "Rewards card",
+            "owners": ["Avery"],
+            "yours": true,
+            "kind": "Credit",
+            "balance": {"value": "-612.15", "is_known": true, "is_floor": false, "unpriced": []},
+            "standing": "failed",
+            "why": null,
+            "checked": "2026-10-14",
+            "failed": {"asserted": "-640.05", "computed": "-612.15", "as_of": "2026-10-15"},
+            "updated": "2026-09-30",
+            "behind": true,
+            "priced": null,
+            "transactions": true,
+            "institution": "Larkspur Savings Bank",
+            "mask": null,
+            "attention": false,
+            "unseen_kind": null
+          }
+        ]
+      },
+      {
+        "name": "Investments",
+        "yours": true,
+        "accounts": [
+          {
+            "id": "Wm3vQ0brK2xYe7Lp",
+            "name": "Brokerage",
+            "owners": ["Avery"],
+            "yours": true,
+            "kind": "Investments",
+            "balance": {"value": "48210.77", "is_known": true, "is_floor": true, "unpriced": ["ZQXX"]},
+            "standing": "holdings",
+            "why": null,
+            "checked": "2026-10-14",
+            "failed": null,
+            "updated": null,
+            "behind": false,
+            "priced": "2026-10-14",
+            "transactions": true,
+            "institution": "Larkspur Savings Bank",
+            "mask": null,
+            "attention": false,
+            "unseen_kind": null
+          }
+        ]
+      },
+      {
+        "name": "Not seen by hearth",
+        "yours": true,
+        "accounts": [
+          {
+            "id": "10omYJBYKWbu7QCF",
+            "name": "Car loan",
+            "owners": ["Avery", "Blake"],
+            "yours": true,
+            "kind": "Credit",
+            "balance": null,
+            "standing": "unseen",
+            "why": null,
+            "checked": null,
+            "failed": null,
+            "updated": null,
+            "behind": false,
+            "priced": null,
+            "transactions": true,
+            "institution": "Thistle Lending",
+            "mask": "2208",
+            "attention": false,
+            "unseen_kind": "Loan"
+          }
+        ]
+      },
+      {
+        "name": "Blake",
+        "yours": false,
+        "accounts": [
+          {
+            "id": "pQ8sTt2uVw9xYz0a",
+            "name": "Blake's checking",
+            "owners": ["Blake"],
+            "yours": false,
+            "kind": null,
+            "balance": null,
+            "standing": "withheld",
+            "why": null,
+            "checked": null,
+            "failed": null,
+            "updated": "2026-10-12",
+            "behind": false,
+            "priced": null,
+            "transactions": true,
+            "institution": null,
+            "mask": null,
+            "attention": false,
+            "unseen_kind": null
+          }
+        ]
+      }
+    ]
+  }
+}

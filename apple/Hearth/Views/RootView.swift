@@ -8,15 +8,20 @@ struct RootView: View {
     var body: some View {
         Group {
             switch session.screen {
-            case .starting, .choosing:
-                // The start sheet sits over an empty window: nothing is open yet.
+            case .starting:
                 Color.clear
+            case .choosing(let offersSetup):
+                StartView(session: session, offersSetup: offersSetup)
             case .opening:
                 Waiting(text: "Opening your books", identifier: "session.opening")
             case .signIn(let problem):
                 SignInView(session: session, problem: problem)
             case .open(let books):
-                BooksView(session: session, isSample: books == .sample)
+                if let desk = session.desk {
+                    BooksView(desk: desk, isSample: books == .sample)
+                } else {
+                    Waiting(text: "Opening your books", identifier: "session.opening")
+                }
             case .unavailable(.engineMissing):
                 Unavailable(
                     title: "Hearth could not start",
@@ -29,60 +34,18 @@ struct RootView: View {
         .background(Palette.background)
         .toolbarBackground(Palette.background, for: .windowToolbar)
         .navigationTitle("Hearth")
-        .sheet(isPresented: .constant(isChoosing)) {
-            StartSheet(session: session, offersSetup: offersSetup)
-                .interactiveDismissDisabled()
-        }
-        .task { await session.start() }
-    }
-
-    private var isChoosing: Bool {
-        if case .choosing = session.screen { true } else { false }
-    }
-
-    private var offersSetup: Bool {
-        if case .choosing(let offers) = session.screen { offers } else { false }
-    }
-}
-
-/// The books, open: the places you can go on the left, the place you are on the right.
-private struct BooksView: View {
-    let session: Session
-    let isSample: Bool
-    @State private var place: Place? = .overview
-
-    enum Place: Hashable {
-        case overview
-    }
-
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $place) {
-                Label("Overview", systemImage: "house").tag(Place.overview)
+        .task {
+            if let books = DebugLaunch.books {
+                await session.choose(books)
+            } else {
+                await session.start()
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
-        } detail: {
-            VStack(spacing: 0) {
-                if isSample {
-                    SampleBanner()
-                }
-                if let overview = session.overview {
-                    OverviewView(model: overview)
-                } else {
-                    Waiting(text: "Opening your books", identifier: "session.opening")
-                }
-            }
-            .background(Palette.surface)
-            // The banner is the first thing under the toolbar, and the toolbar would otherwise
-            // take its colour.
-            .toolbarBackground(Palette.surface, for: .windowToolbar)
-            .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         }
     }
 }
 
 /// Says, on every screen, that the figures are not anyone's real money.
-private struct SampleBanner: View {
+struct SampleBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")

@@ -14,6 +14,56 @@ public enum Figures {
         return trueMinus(magnitude(money).formatted(style), negative: money.amount < 0)
     }
 
+    /// A balance to the cent, as what reconciles is written: "$3,250.40", "−$612.15".
+    ///
+    /// Cents round half to even, as the pages round an amount, so a figure the books hold to
+    /// more places is never nudged one way.
+    public static func cents(_ money: Money, currency: String, locale: Locale = .current) -> String {
+        let style = Decimal.FormatStyle.Currency(code: currency, locale: locale)
+            .precision(.fractionLength(2))
+            .rounded(rule: .toNearestOrEven)
+        return trueMinus(magnitude(money).formatted(style), negative: money.amount < 0)
+    }
+
+    /// A transaction's amount, to the cent and without the currency, signed: "+3,299.60",
+    /// "−84.12". `signed: false` writes what is neither in nor out, as what moved between two
+    /// of one's own accounts or a balance checked, with no plus: "300.00", "−612.15".
+    public static func amount(_ money: Money, signed: Bool = true, locale: Locale = .current) -> String {
+        let style = Decimal.FormatStyle(locale: locale)
+            .precision(.fractionLength(2))
+            .rounded(rule: .toNearestOrEven)
+            .grouping(.automatic)
+        let text = magnitude(money).formatted(style)
+        let isZero = !text.contains(where: { ("1"..."9").contains($0) })
+        if isZero { return text }
+        if money.amount < 0 { return "\u{2212}" + text }
+        return signed ? "+" + text : text
+    }
+
+    /// A day as a heading of the journal: "Saturday, Oct 3", with its year when it is not
+    /// the year of `asOf`: "Saturday, Oct 3, 2025".
+    public static func heading(_ day: Day, asOf: Day, locale: Locale = .current) -> String {
+        var style = Date.FormatStyle(locale: locale).weekday(.wide).month(.abbreviated).day()
+        if day.year != asOf.year { style = style.year() }
+        return day.date(in: Day.calendar).formatted(style.utc)
+    }
+
+    /// A day in a line of text: "Oct 3", with its year when it is not the year of `asOf`.
+    public static func day(_ day: Day, asOf: Day? = nil, locale: Locale = .current) -> String {
+        var style = Date.FormatStyle(locale: locale).month(.abbreviated).day()
+        if let asOf, day.year != asOf.year { style = style.year() }
+        return day.date(in: Day.calendar).formatted(style.utc)
+    }
+
+    /// Two days as a span: "Jan 1 to Oct 15, 2026", "Dec 3, 2025 to Jan 2, 2026".
+    public static func span(from: Day, to: Day, locale: Locale = .current) -> String {
+        let end = Date.FormatStyle(locale: locale).month(.abbreviated).day().year()
+        var start = Date.FormatStyle(locale: locale).month(.abbreviated).day()
+        if from.year != to.year { start = start.year() }
+        let first = from.date(in: Day.calendar).formatted(start.utc)
+        return "\(first) to \(to.date(in: Day.calendar).formatted(end.utc))"
+    }
+
     /// A change, said four ways as the design asks: arrow, word, amount, and the colour its
     /// caller gives it. "▲ Up $12,960", "▼ Down $1,205", "No change".
     public static func change(_ money: Money, currency: String, locale: Locale = .current) -> String {
