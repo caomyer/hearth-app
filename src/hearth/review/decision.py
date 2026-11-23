@@ -57,6 +57,9 @@ REVISED = "its bank has changed it since it was reviewed"
 KEPT_OFF = "it was moved onto an account whose balance its bank decides now"
 """Why a row a ruling would move onto a carried account is unreviewed (`guarded`)."""
 
+KEPT_IN = "it was excluded, but its bank counts it in the balance it reports now"
+"""Why a row of a carried account that a ruling would leave out is unreviewed (`guarded`)."""
+
 
 def guarded(item: PileItem, decision: Decision, carried: Collection[str]) -> Decision:
     """`decision`, unless it would put on an account carried on from the imported base a
@@ -72,7 +75,7 @@ def guarded(item: PileItem, decision: Decision, carried: Collection[str]) -> Dec
     if decision.state is State.REVIEWED and moved:
         return Decision(State.UNREVIEWED, None, decision.ruling, KEPT_OFF)
     if decision.state is State.REJECTED and item.account in carried:
-        return Decision(State.UNREVIEWED, None, decision.ruling, KEPT_OFF)
+        return Decision(State.UNREVIEWED, None, decision.ruling, KEPT_IN)
     return decision
 
 
