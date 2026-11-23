@@ -197,17 +197,18 @@ final class FirstLaunchTests: XCTestCase {
 
         app.descendants(matching: .any)["sidebar.review"].firstMatch.click()
         XCTAssertTrue(remaining.waitForExistence(timeout: 30))
-        let payroll = app.staticTexts.matching(
-            NSPredicate(format: "identifier == 'review.payee' AND value == 'Payroll'")
+        // Plaid gave the bookshop's row no category, so its group is open, row by row.
+        let bookshop = app.staticTexts.matching(
+            NSPredicate(format: "identifier == 'review.payee' AND value == 'Quill Bookshop'")
         ).firstMatch
-        XCTAssertTrue(payroll.waitForExistence(timeout: 10), "the payroll row is not in the queue")
-        payroll.click()
+        XCTAssertTrue(bookshop.waitForExistence(timeout: 10), "the bookshop's row is not in the queue")
+        bookshop.click()
         let other = app.buttons["review.other"]
         XCTAssertTrue(other.waitForExistence(timeout: 20), "the row's detail offers no other category")
         other.click()
         let field = app.descendants(matching: .any)["review.chooser.field"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "choosing another category offered nothing")
-        // Return takes the first category the member's own rows use, which is not payroll's.
+        // Return takes the first category the member's own rows use.
         field.typeText("\r")
         let decide = app.buttons["review.decide"]
         XCTAssertTrue(decide.label.hasPrefix("Save as "), "\(decide.label) does not book another category")
