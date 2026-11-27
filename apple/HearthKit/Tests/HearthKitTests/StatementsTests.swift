@@ -136,7 +136,7 @@ struct StatementsTests {
             from: Data(#"{"key":"savings_rate","label":"Savings rate","now":"0.44","before":"0.47","change":"-0.03","share":null,"tone":"quiet","categories":[],"total":false,"depth":0}"#.utf8))
         #expect(StatementWords.change(rate, currency: "USD", locale: unitedStates) == "▼ Down 3 points")
         #expect(StatementWords.rate(money("0.4712"), locale: unitedStates) == "47%")
-        #expect(StatementWords.figure(nil, rate: false, currency: "USD") == "\u{2014}")
+        #expect(StatementWords.figure(nil, rate: false, currency: "USD") == "\u{2013}")
         #expect(StatementWords.meaning(.unfavourable) == "worse for the household")
     }
 

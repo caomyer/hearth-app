@@ -500,6 +500,17 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertTrue(said.hasPrefix("Nov\u{00A0}21 · Confident"), "\(said) does not keep its day and reason")
         app.terminate()
 
+        // A Statements tab's table scrolls within itself; it never widens the window.
+        let statements = sample(startingOn: "statements:balance", size: "1000x560")
+        let sheet = statements.descendants(matching: .any)["statements.sheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 60), "the balance sheet did not open")
+        let shown = statements.windows.firstMatch.frame
+        let itsSidebar = statements.outlines.firstMatch.frame
+        let sheetFrames = "window \(shown), sidebar \(itsSidebar), the sheet \(sheet.frame)"
+        XCTAssertGreaterThanOrEqual(itsSidebar.minX, shown.minX, "the sidebar was cut: \(sheetFrames)")
+        XCTAssertLessThanOrEqual(sheet.frame.maxX, shown.maxX, "the sheet runs past the window: \(sheetFrames)")
+        statements.terminate()
+
         let holdings = sample(startingOn: "holding:BIDX", size: "1000x560")
         let source = holdings.descendants(matching: .any)["price.source"].firstMatch
         XCTAssertTrue(source.waitForExistence(timeout: 60), "the holding's price was not shown beside the list")
