@@ -6,6 +6,7 @@ enum Place: Hashable {
     case overview
     case review
     case transactions
+    case holdings
     case accounts
     case account(String)
 }
@@ -127,6 +128,8 @@ struct BooksView: View {
         case .transactions:
             TransactionsView(model: navigator.desk.transactions, accounts: navigator.desk.accounts.content)
                 .id("transactions")
+        case .holdings:
+            HoldingsView(model: navigator.desk.holdings)
         case .accounts:
             AccountsView(model: navigator.desk.accounts)
         case .account(let id):
@@ -159,6 +162,9 @@ private struct Sidebar: View {
                 Label("Transactions", systemImage: "list.bullet.rectangle")
                     .tag(Place.transactions)
                     .accessibilityIdentifier("sidebar.transactions")
+                Label("Holdings", systemImage: "chart.line.uptrend.xyaxis")
+                    .tag(Place.holdings)
+                    .accessibilityIdentifier("sidebar.holdings")
                 Label("Accounts", systemImage: "building.columns")
                     .tag(Place.accounts)
                     .accessibilityIdentifier("sidebar.accounts")

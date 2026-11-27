@@ -42,6 +42,7 @@ from hearth.disclosure import (
     Withheld,
 )
 from hearth.disclosure.balances import Standing
+from hearth.disclosure.holdings import Held, HeldAccount, Price, Totals
 from hearth.disclosure.journal import Entry, Show, Side
 from hearth.names import readable
 from hearth.native import review
@@ -67,6 +68,7 @@ from hearth.native.common import moment as _moment
 from hearth.native.common import money as _money
 from hearth.refresh import NOT_SYNCING, Syncing
 from hearth.review.rulings import RulingStore
+from hearth.valuation.pricestore import PriceStore
 
 __all__ = ["SCREENS", "Acted", "Answer", "Decided", "Done", "Doorway", "Given"]
 
@@ -116,6 +118,7 @@ class Doorway:
             self.syncing(),
             RulingStore(conn),
             self.clock,
+            PriceStore(conn),
         )
         if not screen.of_books:
             return {"state": "ready", **screen.write(view, asked, around)}
@@ -211,7 +214,8 @@ def accounts(view: Disclosure, _asked: object, around: Around) -> Answer:
 def _one(given: Given) -> str:
     """An account, by its id."""
     match dict(given):
-        case {"id": str(identity)} if 0 < len(identity) <= LONGEST_ID:
+        # A mapping pattern takes keys besides those it names, so they are refused apart.
+        case {"id": str(identity)} if given.keys() == {"id"} and 0 < len(identity) <= LONGEST_ID:
             return identity
     raise Malformed
 
@@ -331,6 +335,55 @@ def banks(view: Disclosure, _asked: object, around: Around) -> Answer:
     }
 
 
+def holdings(view: Disclosure, _asked: object, _around: Around) -> Answer:
+    """What the investment accounts the viewer may see hold, each holding with its price,
+    value, cost and gain, and whose positions are withheld from them."""
+    found = view.holdings()
+    return {
+        "priced_on": _day(found.priced_on),
+        "accounts": [_held_account(account) for account in found.accounts],
+        "totals": _totals(found.totals),
+        "withheld": [
+            {
+                "name": withheld.part.name,
+                "owners": [owner.display_name for owner in withheld.part.owners],
+                "joint": withheld.part.is_joint,
+                # Their value is inside the household's total only where their total is shared.
+                "in_total": withheld.total_shared,
+            }
+            for withheld in found.withheld
+        ],
+    }
+
+
+def _symbol(given: Given) -> str:
+    """A security, by the symbol the books hold it as."""
+    match dict(given):
+        case {"symbol": str(symbol)} if (
+            given.keys() == {"symbol"} and 0 < len(symbol) <= LONGEST_ID
+        ):
+            return symbol
+    raise Malformed
+
+
+def price_history(view: Disclosure, asked: object, around: Around) -> Answer:
+    """Where a security's price comes from and every price hearth holds of it, for a security
+    the viewer may see a holding of."""
+    assert isinstance(asked, str)  # noqa: S101 - read by `_symbol`
+    found = view.price_history(asked, around.prices)
+    return {
+        "symbol": found.commodity,
+        "ticker": found.ticker,
+        "name": found.name,
+        "freshness": found.freshness.value,
+        "price": _price(found.price),
+        "closes": [
+            {"day": _day(close.day), "price": _money(close.price), "source": close.source}
+            for close in found.closes
+        ],
+    }
+
+
 SCREENS: Mapping[str, Screen] = {
     "overview": Screen(_nothing, overview),
     "accounts": Screen(_nothing, accounts),
@@ -340,6 +393,8 @@ SCREENS: Mapping[str, Screen] = {
     "review": Screen(review.read_queue, review.queue_screen),
     "review_row": Screen(_one, review.row_screen),
     "where": Screen(_nothing, review.where_screen),
+    "holdings": Screen(_nothing, holdings),
+    "price_history": Screen(_symbol, price_history),
 }
 """Every screen the app may ask for, by the name it asks with."""
 
@@ -393,6 +448,59 @@ def _account(found: AccountStanding) -> Answer:
         "unseen_kind": found.unseen_kind,
         # Its bank's balance meets the books only by a difference nobody has confirmed yet.
         "reconciling": found.reconciling,
+    }
+
+
+def _held_account(account: HeldAccount) -> Answer:
+    return {
+        "id": account.id,
+        "name": account.name,
+        "owners": [owner.display_name for owner in account.owners],
+        "yours": account.part.is_viewers,
+        "known": account.known,
+        "why": account.why,
+        "held": [_held(held) for held in account.held],
+        "totals": _totals(account.totals),
+    }
+
+
+def _held(held: Held) -> Answer:
+    return {
+        "symbol": held.commodity,
+        "ticker": held.ticker,
+        "name": held.name,
+        "is_cash": held.is_cash,
+        "units": _money(held.units),
+        "freshness": held.freshness.value,
+        "price": _price(held.price),
+        # Not known is never zero: a value, a cost or a gain the books do not hold is null.
+        "value": _money(held.value),
+        "cost": _money(held.cost),
+        "gain": _money(held.gain),
+    }
+
+
+def _price(price: Price | None) -> Answer | None:
+    if price is None:
+        return None
+    return {
+        "value": _money(price.value),
+        "day": _day(price.day),
+        "source": price.source,
+        "fetched_at": _moment(price.fetched_at),
+        "age": price.age,
+    }
+
+
+def _totals(totals: Totals) -> Answer:
+    return {
+        "value": _money(totals.value),
+        "unpriced": totals.unpriced,
+        "cost": _money(totals.cost),
+        "uncosted": totals.uncosted,
+        "gain": _money(totals.gain),
+        "ungained": totals.ungained,
+        "waiting": totals.waiting,
     }
 
 

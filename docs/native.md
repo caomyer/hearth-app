@@ -165,11 +165,13 @@ Every ready answer says what its books are: `computed_at`, `as_of`, `currency` a
 | `review` | `order`, `account`, `category`, `group`, `text` | The viewer's own review queue, counted as the desk counts it, in the order asked (`hearth.review.queue`). |
 | `review_row` | `id` | One row on the viewer's desk: where it stands, what it may be booked against, and the rows from the same merchant before it. |
 | `where` | nothing | The viewer's rows whose other side hearth does not see, grouped so that one answer settles each (`hearth.review.where`). |
+| `holdings` | nothing | What the investment accounts the viewer may see hold, each holding with its price, value, cost and gain, and whose positions are withheld (`Disclosure.holdings`). |
+| `price_history` | `symbol` | Where one security's price comes from, and every price hearth holds of it (`Disclosure.price_history`). |
 
 What an ask takes is read strictly in `hearth.native.doorway`, and anything else is answered `missing`, as a screen that is not there is:
 
 - a key the ask does not take, or any key for an ask that takes nothing;
-- `id` and `account` that are not text of 1 to 64 characters;
+- `id`, `account` and `symbol` that are not text of 1 to 64 characters;
 - `from` and `to` that are not real days written `YYYY-MM-DD`, or a `from` after its `to`;
 - `category` that is not `Expenses` or `Income`, alone or with parts beneath it;
 - `text` that is not text of 1 to 200 characters;
@@ -203,6 +205,26 @@ The day its data is known through (`updated`), whether that is long ago (`behind
 Its bank's name is given only to the member whose connection feeds it, as is `attention`, which says that connection must be signed in to again; for an account hearth does not see, where its owner said it is.
 `reconciling` says an `unchecked` account's bank's balance meets the books only by a difference nobody has confirmed yet in Review, and goes with its balance.
 An `account` also says, with its transactions, the days of a carried account's history that neither its imported ledger nor its bank holds (`unseen`, `from` and `to`, `books.unseen_between`), and for a matched account its ledger holds back, the last day its data is known through (`held_back.through`) and the day its bank's transactions are brought in from (`held_back.from`, `books.held_back`).
+
+### Holdings
+
+`holdings` is the net worth page's positions (`hearth.disclosure.holdings`): an account's go with its balances, so a part of the household whose balances the viewer may not see is never listed.
+It is named under `withheld` instead, with `in_total`, whether its value is inside the household's net worth, which it is only where that part shares its total, exactly as the net worth page says it.
+
+An account is listed when it is a brokerage's (`books.invested`) or holds anything but cash, with `totals` and `held`, its holdings: securities by what they are called, then its cash, with `is_cash`.
+Each holding says what the books hold it as (`symbol`), its `ticker` and `name` where it has them, its `units`, and its `freshness`, `current`, `stale` or `unpriced` (`hearth.valuation.networth`).
+Every absence is its own, and none is ever written as zero:
+
+- `price` is the stored price it is valued at, with its `day`, its `source`, when it was fetched (`fetched_at`), and its `age` in days; null for cash and for a holding with no price.
+- `value` is null for a holding with no price, which every total then leaves out and counts in `unpriced`, so it is a floor.
+- `cost` is what its lots cost in the books (`valuation.holdings.Holding.cost`); cash costs itself.
+  It is null where the books hold no cost, as for anything a brokerage reported in hearth's own books, and `gain` is then null too: never a gain against zero.
+- `known` is false for an account whose holdings the books do not know yet, which shows no holdings and is in no total (`waiting`); `why` says why to its owners alone (`investment`: its brokerage has not said what it holds, which a bridge not approved for `holdings` never asks).
+
+`totals`, for each account and for all of them, are `value` and `cost` with how many holdings each leaves out (`unpriced`, `uncosted`), `gain` with how many holdings that are not cash it leaves out (`ungained`), and how many accounts are not known yet (`waiting`).
+
+`price_history` answers a security the viewer may see a holding of, and nothing else: one held only in an account whose balances they may not see is `missing`, exactly like one nobody holds, as is cash.
+It says where today's price came from (`price`), and `closes`, oldest first, one a day up to the books' own: the price a valuation of that day would take from the sources the books were valued from (`books.price_sources`), with its source.
 
 ### Review
 
@@ -266,7 +288,8 @@ The doorway is a page by another name, and is held to everything a page is.
 - It imports no ledger reader and touches none of the books' raw data; `tests/test_architecture.py` holds `hearth.native` to the rules it holds `hearth.web` to.
 - `tests/native/test_doorway.py` signs in to a bridge as every member under every sharing scenario the page crawl uses, asks every screen, and fails if an answer holds a datum its viewer may not see.
   A new screen is covered the moment it is added to `SCREENS`; one that takes something to narrow it must be named in the crawl's `NARROWED`, or its plain ask is missing and the crawl fails.
-  Narrowed screens are asked for every account in the household by id, every member's and the one nobody owns, every category and payee in it, each chip, periods and windows, and a narrowed journal must hold nothing the whole of it did not.
+  Narrowed screens are asked for every account in the household by id, every member's and the one nobody owns, every category and payee in it, each chip, periods and windows, and every security in it, cash and one nobody holds for a price history, and a narrowed journal must hold nothing the whole of it did not.
+  Beside the household's secrets, it looks for each position's units and price as the doorway writes them, which every close of its history is too.
   It makes every review decision on every review row in the household and on rows in nobody's books, against every account, as the row said and as it did not, under forged groups, and takes back every ruling: one on anything not on the viewer's desk must answer `missing` and record nothing, and no review screen or decision may name a row on anyone else's desk.
 - Anything private answers exactly like something missing.
 
@@ -275,7 +298,7 @@ It is not an HTTP endpoint and must not become one: a bridge that listened on a 
 
 ## One shape, checked from both sides
 
-`tests/native/fixtures/overview.json`, `accounts.json`, `account.json`, `transactions.json`, `banks.json`, `review.json`, `review_row.json`, `where.json` and `decided.json` are example replies, `tests/native/fixtures/outcomes.json` lists every outcome of signing in, and `acted.json` every outcome of an action.
+`tests/native/fixtures/overview.json`, `accounts.json`, `account.json`, `transactions.json`, `banks.json`, `review.json`, `review_row.json`, `where.json`, `holdings.json`, `price_history.json` and `decided.json` are example replies, `tests/native/fixtures/outcomes.json` lists every outcome of signing in, and `acted.json` every outcome of an action.
 The Python tests check that the bridge still answers in their shape; the Swift tests (`apple/HearthKit`) decode the same files.
 A change of shape that only one side has been taught fails that side's tests.
 

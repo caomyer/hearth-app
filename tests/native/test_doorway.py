@@ -7,6 +7,8 @@ signed in to the bridge.
 """
 
 import json
+import re
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -152,7 +154,13 @@ def differences(told: object, example: object, at: str = "answer") -> list[str]:
     return [] if type(told) is type(example) else [f"{at}: {type(told).__name__}"]
 
 
-NARROWED = {"account": "id", "transactions": "with", "review": "with", "review_row": "id"}
+NARROWED = {
+    "account": "id",
+    "transactions": "with",
+    "review": "with",
+    "review_row": "id",
+    "price_history": "symbol",
+}
 """Screens that are asked with what narrows them, which the crawl asks every way
 `narrowings` names. A screen added to `SCREENS` is asked plainly unless it is named here."""
 
@@ -193,7 +201,22 @@ def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
     asked += [("review", {"text": w}) for w in words]
     asked += [("review_row", {"id": row[0]}) for row in REVIEW_ROWS]
     asked += [("review_row", {"id": "no-such-row"})]
+    # Every security in the household, cash, and one nobody holds: a price history is a
+    # holding's, so one the viewer may not see is missing, whoever holds it.
+    symbols = [*household.SECURITIES, "USD", "ZQZZ"]
+    asked += [("price_history", {"symbol": s}) for s in symbols]
     return asked
+
+
+def positions() -> Iterator[household.Secret]:
+    """What each position is, as the doorway writes it: its units and its price, each a quoted
+    decimal, which every close of its price history is too. They go with its account's
+    balances, as its symbol and its value do (``household.secrets``)."""
+    for symbol, (held_in, units, price) in household.SECURITIES.items():
+        owners = next(a.owners for a in household.ACCOUNTS if a.ledger_account == held_in)
+        visible = household.shared(Facet.ACCOUNT_BALANCES, owners)
+        yield household.secret(f'"units": "{units}"', f"{symbol} units", visible)
+        yield household.secret(f'"{price}"', f"{symbol} price", visible)
 
 
 def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]]]:
@@ -232,6 +255,15 @@ def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]
     # Whose each ruling is, the crawl's own decisions among them, is the desk's to say.
     found += [("undo", frozenset(USERNAMES), {"ruling": n}) for n in range(1, 40)]
     return found
+
+
+def holds(seen: str, text: str) -> bool:
+    """Whether `text` is in what the app was told. A figure is found as a figure, never as
+    digits inside another figure or inside an id: a review id is hex drawn from a random Plaid
+    id, and one that happened to hold "9135" is not Ocelot Orphan's balance of $9,135."""
+    if not text[:1].isdigit():
+        return text in seen
+    return re.search(rf"(?<![0-9A-Za-z.]){re.escape(text)}(?![0-9])", seen) is not None
 
 
 def assert_within(narrowed: dict[str, object], whole: dict[str, object]) -> None:
@@ -301,10 +333,10 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
 
     leaked = [
         f"{secret.what}: {text!r}"
-        for secret in household.secrets(world.account_ids)
+        for secret in [*household.secrets(world.account_ids), *positions()]
         if not secret.visible(viewer, choices)
         for text in secret.texts
-        if text.replace(",", "") in seen
+        if holds(seen, text.replace(",", ""))
     ]
     assert not leaked, f"{viewer} could see private data: {leaked}"
 
