@@ -84,8 +84,21 @@ It answers three things that share one set of numbers, so they always agree:
   One booked before anything priced it, as a brokerage's report can be, stays on its own day and is converted at its first price, and so is money in a currency received before its first rate, with its income or spending in its own month; each figure that holds such an amount says how many (`Flows.later`), as a stale price is said.
   At market value such a holding is not valued until its first price, which is then said on the unpriced line.
 - Less of a holding with no lot gives up its average cost, whatever it went for; moved between two accounts in one entry, it keeps what it cost.
-- A split is recognised by its shape, never by its other leg: in one commodity, with no lot and no price, an entry that takes the old position out of an account and puts the new one in the same account changes units and nothing else, no cost, no value, no opening, whatever else balances it.
-  Units added to a holding against an opening or a reconciling entry alone are never a split: they came from somewhere, and are an opening at what they were worth.
+- A split of a holding with no lot is an entry in one commodity, with no lot and no price, of one of two shapes alone, and it changes units and nothing else: no cost, no value, no opening (`Ledger._splits`).
+  One takes the old position out of an account and puts the new one in the same account, whatever else balances it.
+  The other adds units to, or takes some but not all units from, accounts that each already hold that commodity, against equity accounts every one of which is named for a split: a whole word of its name is split, splits, stocksplit or stocksplits, as `Equity:Splits`, `Equity:StockSplit`, `Equity:Stock-Split` or `Equity:Reverse-Splits` (`statements.SPLIT_WORDS`).
+  Part of a word is not enough: `Equity:Splitwise`, `Equity:Splitting-Bills` and `Equity:Unsplit` are named for no split.
+  Anything else is an opening at what the units were worth, in either direction: units moved against any other equity account, as `Equity:Transfers`, `Equity:Gifts`, `Equity:Opening-Balances` or `Equity:Ledger-Bank-Difference`, came from somewhere or went somewhere.
+  So is every entry a `pad` makes, whatever account it pads from; units of a commodity the account did not hold; and units taken until the account holds none, which leaves nothing to carry their cost.
+  To have hearth read a split as one, book the change of units against an equity account named for it, for example ten shares becoming twenty:
+
+  ```beancount
+  2025-02-10 * "Two-for-one split"
+    Assets:Broker  10 XX
+    Equity:Splits  -10 XX
+  ```
+
+  or take the old position out and put the new one in the same account in one entry.
   A split of lots, the old lots taken out at their cost and the new ones put in at theirs, needs no rule: its cost is the same, and the gap between its marks and its lots' cost is what the market did.
 - A holding with neither a price nor a cost is left out of both values and named (`Held.unvalued`).
 - Each statement says how many of the positions it values are at a stale price (`Held.stale`), as Overview does.

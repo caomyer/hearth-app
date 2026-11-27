@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 
 from hearth.disclosure import Concealed
 from hearth.valuation.pricestore import PriceStore
-from hearth.valuation.quotes import Quote, enterable
+from hearth.valuation.quotes import Quote, as_entered, enterable
 from hearth.valuation.refresh import refresh_prices
 from hearth.web.deps import Acting, App, Conn, Viewing
 
@@ -47,7 +47,7 @@ def enter_price(
         Quote(
             symbol=symbol,
             as_of=day,
-            price=amount,
+            price=as_entered(amount),
             currency=view.books.currency,
             source=HAND,
             source_ref=f"entered by {session.member.username}",

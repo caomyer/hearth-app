@@ -56,6 +56,7 @@ from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
 from hearth.plaid.setup import PlaidSetup
 from hearth.refresh import ASKING, Refresher
 from hearth.reports.common import is_balance_sheet
+from hearth.valuation import pricetable
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -646,7 +647,7 @@ def _compare(ledger: Path, cycles: Path | None, *, monthly: bool, accounts: list
             try:
                 ours = books.compute(
                     household.entries,
-                    lambda symbol, day: None,
+                    pricetable.none(),
                     now=now,
                     decide=rulings_in(conn),
                     unknown=household.unknown,

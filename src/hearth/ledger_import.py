@@ -35,7 +35,8 @@ from hearth.reports.balances import check_balance_assertions
 from hearth.reports.common import is_balance_sheet
 from hearth.review.rulings import RulingStore
 from hearth.valuation.holdings import holdings_at
-from hearth.valuation.networth import NetWorth, PriceLookup, value_holdings
+from hearth.valuation.networth import NetWorth, value_holdings
+from hearth.valuation.pricetable import PriceTable
 from hearth.valuation.quotes import Quote
 
 LEDGER_PRICE = "ledger"
@@ -379,26 +380,17 @@ def _unused(note: _Noted, top: bool) -> str:
             return f'custom "{note.value}"'
 
 
-def _priced(entries: tuple[Directive, ...], now: datetime) -> PriceLookup:
-    """The newest price the ledger holds for a commodity on or before a day."""
-    prices: dict[str, list[Price]] = {}
-    for entry in entries:
-        number = entry.amount.number if isinstance(entry, Price) else None
-        if isinstance(entry, Price) and isinstance(number, Decimal) and number > 0:
-            prices.setdefault(entry.currency, []).append(entry)
-
-    def lookup(symbol: str, on_or_before: date) -> Quote | None:
-        found = [p for p in prices.get(symbol, ()) if p.date <= on_or_before]
-        if not found:
-            return None
-        newest = max(found, key=lambda p: p.date)
-        number = newest.amount.number
-        assert isinstance(number, Decimal)  # noqa: S101 - only priced entries are kept
-        return Quote(
-            symbol, newest.date, number, newest.amount.currency, LEDGER_PRICE, "price", now
-        )
-
-    return lookup
+def _priced(entries: tuple[Directive, ...], now: datetime) -> PriceTable:
+    """Every price the ledger holds, as the books' own price table holds stored ones: the
+    newest on or before a day, and each commodity's first in a currency, so an imported
+    ledger is valued, and converted at a first price, exactly as the books are."""
+    return PriceTable.of(
+        Quote(entry.currency, entry.date, number, entry.amount.currency, LEDGER_PRICE, "price", now)
+        for entry in entries
+        if isinstance(entry, Price)
+        and isinstance(number := entry.amount.number, Decimal)
+        and number > 0
+    )
 
 
 def describe(outcome: Outcome) -> list[str]:
