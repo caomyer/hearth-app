@@ -7,7 +7,7 @@ from typing import Protocol
 
 MOST_DIGITS = 15
 """The most digits a price typed by hand may have: more than any close or NAV is quoted to."""
-LEAST_PRICE = Decimal("0.000001")
+LEAST_PRICE = Decimal("0.000000000001")
 MOST_PRICE = Decimal("1000000000")
 """The range a price typed by hand must be in: wider than anything a household holds trades at,
 narrow enough that a slip of the keyboard is not a price."""

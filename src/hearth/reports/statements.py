@@ -61,7 +61,7 @@ from beancount.core.position import Cost
 
 from hearth.categories import Kind
 from hearth.reports.common import is_balance_sheet, root, units
-from hearth.review.pile import WAITING
+from hearth.review.pile import LEDGER_BANK, WAITING
 from hearth.valuation.networth import STALE_AFTER_MISSED_SESSIONS, missed_sessions
 
 ZERO = Decimal(0)
@@ -609,7 +609,10 @@ class Ledger:
             reducing = held.units != 0 and (held.units > 0) != (amount.number > 0)
             if reducing and posting.cost is not None:
                 lots.add(id(posting))
-            if bare and reducing and held.cost is not None:
+            if splits:
+                # A split changes units and nothing else: no leg gives up or takes on cost.
+                moved.append((posting, held, ZERO))
+            elif bare and reducing and held.cost is not None:
                 given = held.cost * amount.number / held.units
                 pool[amount.currency][0] += -amount.number
                 pool[amount.currency][1] += -given
@@ -641,7 +644,7 @@ class Ledger:
                 cost = weighs
             held.units += amount.number
             held.cost = None if held.cost is None or cost is None else held.cost + cost
-            if held.units == 0:
+            if held.units == 0 and not splits:
                 held.cost = ZERO
             held.note(ordinal)
             rate = self._rate(amount.currency, day)
@@ -688,10 +691,13 @@ class Ledger:
         return weighs.number * rate, late
 
     def _splits(self, entry: Transaction, postings: list[Posting], legs: list[Posting]) -> bool:
-        """Whether a part is a split of a holding with no lot: in one commodity, with no lot
-        and no price, it takes the old position out of an account and puts the new one in the
-        same account. Units added against an opening or a reconciling entry alone are never
-        one: they came from somewhere, and are an opening."""
+        """Whether a part is a split of a holding with no lot, in one commodity, with no lot
+        and no price, which changes units and nothing else. It is one when it takes the old
+        position out of an account and puts the new one in the same account; or when it adds
+        or removes units of a commodity each of its accounts already holds, against an equity
+        account that is neither an opening nor a reconciling one (`opening_equity`), such as
+        `Equity:Splits`. Units moved against an opening or a reconciling entry are never one:
+        they came from somewhere, and are an opening."""
         commodities = {units(p, entry).currency for p in postings}
         if len(commodities) != 1 or self.currency in commodities:
             return False
@@ -700,7 +706,17 @@ class Ledger:
         by_account: defaultdict[str, set[bool]] = defaultdict(set)
         for posting in legs:
             by_account[posting.account].add(units(posting, entry).number > 0)
-        return any(signs == {True, False} for signs in by_account.values())
+        if any(signs == {True, False} for signs in by_account.values()):
+            return True
+        equity = [p.account for p in postings if root(p.account) == "Equity"]
+        if not legs or not equity or len(equity) + len(legs) != len(postings):
+            return False
+        if any(opening_equity(account) or account in WAITING for account in equity):
+            return False
+        (commodity,) = commodities
+        return all(
+            self._positions.get((p.account, commodity), _Position()).units != 0 for p in legs
+        )
 
     def _file(self, event: _Event) -> None:
         signature = self._signatures.setdefault(event.accounts, _Signature(event.accounts))
@@ -878,6 +894,18 @@ class Ledger:
             if quantity and price is not None:
                 found += quantity * price
         return found
+
+
+def opening_equity(account: str) -> bool:
+    """Whether an equity account is one that opens what an account holds, or reconciles it
+    with its bank: an opening balance (any equity account named for an opening, as
+    `Equity:Opening-Balances` or a pad's), or `Equity:Ledger-Bank-Difference`. Units moved
+    against one came from somewhere, and are an opening, never a split."""
+    if account == LEDGER_BANK:
+        return True
+    return root(account) == "Equity" and any(
+        "opening" in part.lower() for part in account.split(":")[1:]
+    )
 
 
 _KINDS = ("open", "earn", "beside")

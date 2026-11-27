@@ -445,6 +445,67 @@ def test_a_split_of_lots_is_read_by_their_cost() -> None:
     assert market.other == 0
 
 
+@pytest.mark.parametrize(
+    ("units", "split_price", "end_price", "end", "movement"),
+    [
+        # Ten at 100 become twenty at 50, worth 55: up 100.
+        ("10", "50", "55", Decimal(1100), Decimal(100)),
+        # A reverse split: ten at 100 become five at 200, worth 210: up 50.
+        ("-5", "200", "210", Decimal(1050), Decimal(50)),
+    ],
+)
+def test_a_split_against_an_equity_account_of_its_own_changes_units_and_nothing_else(
+    units: str, split_price: str, end_price: str, end: Decimal, movement: Decimal
+) -> None:
+    """Units of a holding already held, added or taken away against an equity account that
+    neither opens nor reconciles, as `Equity:Splits`: a split, at no cost and no value."""
+    entries = load(
+        MOVED
+        + f"""
+2024-01-01 open Equity:Splits
+2025-01-02 * "Holdings as reported"
+  Assets:A  10 X
+  Equity:Opening-Balances  -10 X
+2025-02-10 * "Split"
+  Assets:A  {units} X
+  Equity:Splits  {-Decimal(units)} X
+"""
+    )
+    prices = {
+        "X": [
+            (date(2025, 1, 2), "100"),
+            (date(2025, 2, 10), split_price),
+            (date(2025, 3, 31), end_price),
+        ]
+    }
+    period = Period(date(2025, 2, 1), date(2025, 3, 31))
+    scope = frozenset({"Assets:A"})
+
+    market = why(entries, period, market=True, scope=scope, prices=prices)
+    cost = why(entries, period, market=False, scope=scope, prices=prices)
+
+    assert (market.start, market.end, market.movement) == (Decimal(1000), end, movement)
+    assert market.other == 0
+    assert (cost.start, cost.end, cost.other) == (Decimal(1000), Decimal(1000), Decimal(0))
+
+
+def test_units_of_a_holding_not_held_against_any_equity_account_are_an_opening() -> None:
+    """Nothing of X was held: ten against `Equity:Splits` came from somewhere, at 100."""
+    entries = load(
+        MOVED
+        + """
+2024-01-01 open Equity:Splits
+2025-02-10 * "In"
+  Assets:A  10 X
+  Equity:Splits  -10 X
+"""
+    )
+    prices = {"X": [(date(2025, 2, 10), "100")]}
+    found = why(entries, FIRST_QUARTER, market=False, scope=frozenset({"Assets:A"}), prices=prices)
+
+    assert found.others[Other.OPENING] == Decimal(1000)
+
+
 def test_units_added_against_an_opening_are_an_opening_never_a_split() -> None:
     """Ten held at 100; five more moved in against the opening account when the price is 120,
     and the price is 130 at the end: 600 came in, and the market added 350."""

@@ -74,8 +74,12 @@ It answers three things that share one set of numbers, so they always agree:
   One booked before anything priced it, as a brokerage's report can be, stays on its own day and is converted at its first price, and so is money in a currency received before its first rate, with its income or spending in its own month; each figure that holds such an amount says how many (`Flows.later`), as a stale price is said.
   At market value such a holding is not valued until its first price, which is then said on the unpriced line.
 - Less of a holding with no lot gives up its average cost, whatever it went for; moved between two accounts in one entry, it keeps what it cost.
-- A split is recognised by its shape, never by its other leg: in one commodity, with no lot and no price, an entry that takes the old position out of an account and puts the new one in the same account changes units and nothing else, no cost, no value, no opening, whatever else balances it.
-  Units added to a holding against an opening or a reconciling entry alone are never a split: they came from somewhere, and are an opening at what they were worth.
+- A split of a holding with no lot is an entry in one commodity, with no lot and no price, of either of two shapes, and it changes units and nothing else: no cost, no value, no opening (`Ledger._splits`).
+  One takes the old position out of an account and puts the new one in the same account, whatever else balances it.
+  The other adds units to, or takes units from, accounts that each already hold that commodity, against equity accounts alone, none of them an opening or a reconciling one, as `Equity:Splits`; ten units become twenty, or five, at the cost the ten had.
+  An opening or a reconciling equity account is one named for an opening, as `Equity:Opening-Balances` or a pad's, or `Equity:Ledger-Bank-Difference` (`statements.opening_equity`).
+  Units added against one of those are never a split: they came from somewhere, and are an opening at what they were worth.
+  So are units of a commodity the account did not hold, whatever equity account they are booked against.
   A split of lots, the old lots taken out at their cost and the new ones put in at theirs, needs no rule: its cost is the same, and the gap between its marks and its lots' cost is what the market did.
 - A holding with neither a price nor a cost is left out of both values and named (`Held.unvalued`).
 - Each statement says how many of the positions it values are at a stale price (`Held.stale`), as Overview does.

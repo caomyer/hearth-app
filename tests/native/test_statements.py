@@ -650,7 +650,7 @@ def test_a_price_no_table_can_pack_is_refused_at_entry_and_never_stops_a_recompu
 
     assert refused.headers["location"] == "/net-worth?outcome=price-out-of-range"
     page = avery.get(refused.headers["location"]).text
-    assert "between 0.000001 and 1,000,000,000" in page
+    assert "between 0.000000000001 and 1,000,000,000" in page
     conn = world.connect()
     try:
         PriceStore(conn).record(
@@ -658,6 +658,26 @@ def test_a_price_no_table_can_pack_is_refused_at_entry_and_never_stops_a_recompu
         )
     finally:
         conn.close()
+    world.recompute()
+    status = world.bookkeeper.status
+    assert status.failure is None, status.failure
+    assert status.books is not None
+    assert status.books.prices("ZQAA", date(2026, 10, 15)).price == Decimal(price)  # type: ignore[union-attr]
+    assert ask(world, "avery", "balance_sheet")["state"] == "ready"
+
+
+@pytest.mark.parametrize("price", ["0.00000002", "0.000000000001", "0.000000000001234567890123"])
+def test_a_token_priced_at_a_tiny_fraction_of_a_cent_is_kept_when_typed_by_hand(
+    world: World, price: str
+) -> None:
+    """A token can trade at 0.00000002 or less: typed by hand, it is kept as typed, and the
+    books are worked out at it."""
+    avery = world.signed_in("avery")
+    form = {"csrf": world.csrf(avery), "symbol": "ZQAA", "day": "2026-10-14", "price": price}
+
+    recorded = avery.post("/net-worth/prices", data=form)
+
+    assert recorded.headers["location"] == "/net-worth?outcome=price-recorded"
     world.recompute()
     status = world.bookkeeper.status
     assert status.failure is None, status.failure

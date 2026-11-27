@@ -9,6 +9,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ from hearth import base, books, cli, db, members
 from hearth.cli import main
 from hearth.config import DATA_DIR_VARIABLE, LEDGER_VARIABLE, Settings
 from hearth.disclosure import may_learn, rulings_in
-from hearth.ledger_import import describe, import_ledger
+from hearth.ledger_import import _priced, describe, import_ledger
 from hearth.plaid import feed
 from hearth.review.rulings import Action, RulingStore, Scope
 from tests import ledgers
@@ -37,6 +38,30 @@ def _today() -> date:
 
 def _said(day: date) -> str:
     return f"{day:%b} {day.day}, {day.year}"
+
+
+def test_the_ledgers_prices_are_a_price_table_as_the_books_own_are() -> None:
+    """The import values a ledger at its own prices exactly as the books value theirs: the
+    newest on or before a day, each commodity's first in a currency, and a price too small to
+    pack kept wide, never refused."""
+    entries, errors, _ = loader.load_string(
+        """
+2026-01-01 commodity ZQAA
+2026-01-01 commodity ZQTK
+2026-03-02 price ZQAA 9.50 EUR
+2026-03-05 price ZQAA 10.25 USD
+2026-04-01 price ZQAA 11.75 USD
+2026-04-01 price ZQTK 0.00000002 USD
+"""
+    )
+    assert not errors
+    table = _priced(tuple(entries), NOW)
+
+    assert table.first("ZQAA", "USD") == date(2026, 3, 5)
+    assert table.first("ZQAA", "EUR") == date(2026, 3, 2)
+    assert table.first("ZQAA", "GBP") is None
+    assert table.price("ZQAA", date(2026, 3, 31), "USD") == Decimal("10.25")
+    assert table.price("ZQTK", date(2026, 4, 2), "USD") == Decimal("0.00000002")
 
 
 @pytest.fixture
