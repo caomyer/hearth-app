@@ -906,10 +906,12 @@ class Ledger:
         return found
 
 
-SPLIT_WORDS = frozenset({"split"})
-"""The generic words an equity account is named for a split by, read inside the words of its
-name as ``hearth.categories`` reads them: `Equity:Splits`, `Equity:StockSplit`. Units moved
-against an equity account named for nothing here are an opening, never a split."""
+SPLIT_WORDS = frozenset({"split", "splits", "stocksplit", "stocksplits"})
+"""The words an equity account is named for a split by, each a whole word of its name as
+``hearth.categories`` reads them, which separates `Equity:StockSplit`, `Equity:Stock-Split` and
+`Equity:Reverse-Splits` into words of their own. Never part of a word: `Equity:Splitwise`,
+`Equity:Splitting-Bills` and `Equity:Unsplit` are named for no split, and units moved against
+an equity account named for nothing here are an opening."""
 PADDED = "P"
 """The flag beancount gives an entry a `pad` made."""
 
@@ -917,7 +919,7 @@ PADDED = "P"
 def split_equity(account: str) -> bool:
     """Whether an equity account is named for a split, by `SPLIT_WORDS`."""
     return root(account) == "Equity" and any(
-        known in word for word in category_words(account) for known in SPLIT_WORDS
+        word in SPLIT_WORDS for word in category_words(account)
     )
 
 

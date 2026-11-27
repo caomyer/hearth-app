@@ -76,7 +76,8 @@ It answers three things that share one set of numbers, so they always agree:
 - Less of a holding with no lot gives up its average cost, whatever it went for; moved between two accounts in one entry, it keeps what it cost.
 - A split of a holding with no lot is an entry in one commodity, with no lot and no price, of one of two shapes alone, and it changes units and nothing else: no cost, no value, no opening (`Ledger._splits`).
   One takes the old position out of an account and puts the new one in the same account, whatever else balances it.
-  The other adds units to, or takes some but not all units from, accounts that each already hold that commodity, against equity accounts every one of which is named for a split: a word of its name contains "split", as `Equity:Splits` or `Equity:StockSplit` (`statements.SPLIT_WORDS`).
+  The other adds units to, or takes some but not all units from, accounts that each already hold that commodity, against equity accounts every one of which is named for a split: a whole word of its name is split, splits, stocksplit or stocksplits, as `Equity:Splits`, `Equity:StockSplit`, `Equity:Stock-Split` or `Equity:Reverse-Splits` (`statements.SPLIT_WORDS`).
+  Part of a word is not enough: `Equity:Splitwise`, `Equity:Splitting-Bills` and `Equity:Unsplit` are named for no split.
   Anything else is an opening at what the units were worth, in either direction: units moved against any other equity account, as `Equity:Transfers`, `Equity:Gifts`, `Equity:Opening-Balances` or `Equity:Ledger-Bank-Difference`, came from somewhere or went somewhere.
   So is every entry a `pad` makes, whatever account it pads from; units of a commodity the account did not hold; and units taken until the account holds none, which leaves nothing to carry their cost.
   To have hearth read a split as one, book the change of units against an equity account named for it, for example ten shares becoming twenty:

@@ -6,7 +6,13 @@ from typing import cast
 import pytest
 
 from hearth.valuation.pricetable import WIDE, PriceTable
-from hearth.valuation.quotes import LEAST_PRICE, MOST_DIGITS, MOST_PRICE, enterable
+from hearth.valuation.quotes import (
+    LEAST_PRICE,
+    MOST_DIGITS,
+    MOST_PRICE,
+    as_entered,
+    enterable,
+)
 from tests.valuation.conftest import quote
 
 
@@ -46,6 +52,21 @@ def test_every_price_a_hand_may_type_is_packed_and_kept_exactly(price: str) -> N
 @pytest.mark.parametrize("price", ["0.0000000000009", "1000000000.1", "0.1234567890123456"])
 def test_a_price_outside_the_bounds_or_too_long_is_not_one_a_hand_may_type(price: str) -> None:
     assert not enterable(Decimal(price))
+
+
+@pytest.mark.parametrize(
+    ("price", "kept"),
+    [
+        ("1.000000000000000000000000000000", "1"),
+        ("1E+2", "100"),
+        ("101.2500", "101.25"),
+        ("0.000000000001", "1E-12"),
+    ],
+)
+def test_a_price_is_kept_as_entered_without_the_zeros_that_say_nothing(
+    price: str, kept: str
+) -> None:
+    assert str(as_entered(Decimal(price))) == kept
 
 
 def test_a_quote_refuses_a_naive_fetch_time() -> None:

@@ -457,7 +457,16 @@ def _held_then(text: str, *, opened: str = "") -> list[Directive]:
     return load(MOVED + opened + HELD + text)
 
 
-@pytest.mark.parametrize("equity", ["Equity:Splits", "Equity:StockSplit", "Equity:Reverse-Splits"])
+@pytest.mark.parametrize(
+    "equity",
+    [
+        "Equity:Splits",
+        "Equity:StockSplit",
+        "Equity:Stocksplits",
+        "Equity:Stock-Split",
+        "Equity:Reverse-Splits",
+    ],
+)
 @pytest.mark.parametrize(
     ("units", "split_price", "end_price", "end", "movement"),
     [
@@ -511,6 +520,9 @@ _SECOND_MONTHS = Period(date(2025, 2, 1), date(2025, 3, 31))
         "Equity:Beginning-Balances",
         "Equity:Gifts",
         "Equity:Ledger-Bank-Difference",
+        "Equity:Splitwise",  # the shared-bills app, not a split
+        "Equity:Splitting-Bills",
+        "Equity:Unsplit",
     ],
 )
 @pytest.mark.parametrize(

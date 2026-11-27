@@ -22,8 +22,9 @@ def enterable(price: Decimal) -> bool:
 
 def as_entered(price: Decimal) -> Decimal:
     """A price typed by hand as it is checked and kept: without the zeros that say nothing,
-    and never in exponent form, so "1.000000000000000000000000000000" is kept as 1 and "1E+2"
-    as 100."""
+    and never with a positive exponent, so "1.000000000000000000000000000000" is kept as 1 and
+    "1E+2" as 100. A very small price is still written in exponent form, as Decimal writes it
+    ("0.000000000001" is kept as 1E-12); it packs all the same."""
     found = price.normalize()
     exponent = found.as_tuple().exponent
     return found.quantize(Decimal(1)) if isinstance(exponent, int) and exponent > 0 else found
