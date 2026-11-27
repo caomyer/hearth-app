@@ -62,9 +62,23 @@ public enum ReviewWords {
                 text:
                     "That transaction is still waiting. Its bank counts it in the balance it reports for this account, so Hearth cannot leave it out without disagreeing with the bank. Here it can go to any spending or income category.",
                 tone: .problem)
+        case .notOpen:
+            if case .moveGroup = decision {
+                return Notice(
+                    text:
+                        "That was not saved. Your books close that category before the day of a transaction here, or keep it for another currency. Choose a category that is open then.",
+                    tone: .problem)
+            }
+            return Notice(
+                text:
+                    "That transaction is still waiting. Your books close that category before the day of this transaction, or keep it for another currency, so it cannot be booked there. Choose a category that is open on its day.",
+                tone: .problem)
         case .missing:
             return Notice(
                 text: "That is no longer waiting for you. Here is what is waiting now.", tone: .problem)
+        case .unknown:
+            return Notice(
+                text: "Hearth could not say what became of that. Here is what is waiting now.", tone: .problem)
         case .undone, .started, .running, .notAllowed, .signedOut:
             return nil
         }
@@ -115,6 +129,20 @@ public enum ReviewWords {
         case .book(_, let to), .moveGroup(_, let to), .moveRow(_, let to): to.label
         case .exclude: ""
         }
+    }
+
+    /// What this month's own totals leave out as nobody has said what it was yet, one sentence
+    /// for money out and one for money in, as the person's own page says it.
+    public static func unplaced(
+        _ waiting: Overview.Waiting, month: String, currency: String, locale: Locale = .current
+    ) -> [String] {
+        func said(_ found: Overview.Unplaced?, _ total: String) -> String? {
+            guard let found, found.rows > 0 else { return nil }
+            let one = found.rows == 1
+            let money = Figures.total(found.moved, currency: currency, locale: locale)
+            return "\(month)'s \(total) leaves out \(transactions(found.rows)) of \(money) nobody has said what \(one ? "it was" : "they were") yet, which \(one ? "is" : "are") in no total until placed in Review."
+        }
+        return [said(waiting.unplacedSpending, "spending"), said(waiting.unplacedIncome, "income")].compactMap { $0 }
     }
 
     /// A count of transactions: "1 transaction", "1,144 transactions".

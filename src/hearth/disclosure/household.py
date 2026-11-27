@@ -709,12 +709,16 @@ def _unreviewed(
     flows: MonthFlows,
     measure: Callable[[MonthFlows, Owners], Decimal],
 ) -> Unreviewed:
+    income = measure == MonthFlows.earned_unreviewed
+    placed = MonthFlows.earned_unplaced if income else MonthFlows.spent_unplaced
     return unreviewed(
         h.gate,
         parts,
         h.part_ref,
         lambda part: measure(flows, part.owners),
         lambda part: flows.unreviewed.get(part.owners, 0),
+        lambda part: placed(flows, part.owners),
+        None if income else (lambda part: flows.kept_out(part.owners)),
     )
 
 

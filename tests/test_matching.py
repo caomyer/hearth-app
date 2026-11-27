@@ -22,7 +22,7 @@ from hearth.base import Base
 from hearth.cli import main
 from hearth.config import DATA_DIR_VARIABLE, LEDGER_VARIABLE, Settings
 from hearth.connections import plaid_source, transaction_of
-from hearth.disclosure import Disclosure, rulings_in
+from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.ledger_import import import_ledger
 from hearth.matching import (
     Candidate,
@@ -44,6 +44,7 @@ from hearth.native.doorway import Doorway
 from hearth.plaid.client import Transaction
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import LinkedAccount, Registry
+from hearth.review.rulings import Action, RulingStore, Scope
 from tests import ledgers
 from tests.conftest import FakeClock
 from tests.firstday import FirstDay, first_day
@@ -535,6 +536,40 @@ def test_an_account_filed_as_one_hearth_keeps_is_moved_onto_the_base_only_as_ask
     capsys.readouterr()
 
 
+def test_an_accept_naming_an_account_does_not_hold_it_back_from_being_moved(
+    shell: Household, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only a row moved onto an account in Review holds it back (``RulingStore.ruled_onto``),
+    since that ruling names the account as where the row went; an accept on record that names
+    it, as no accept of a category could but the store allows, moves nothing onto it."""
+    sav = shell.ids["ins_zq_bank/sav"]
+    conn = shell.fresh.connect()
+    try:
+        avery = shell.fresh.member_ids["avery"]
+        kept = accounts.register(
+            conn, ledger_account="Assets:Avery:Zq:Savings", name="Savings", owners=[avery]
+        )
+        Registry(conn).confirm(sav, kept.id, by=avery, now=NOW)
+        RulingStore(conn).record(
+            member_id=avery,
+            scope=Scope.ROW,
+            group=None,
+            action=Action.ACCEPT,
+            account=None,
+            note=None,
+            rows={"zq-no-such-row": "Assets:Avery:Zq:Savings"},
+            says={"zq-no-such-row": "zq"},
+            at=NOW,
+        )
+    finally:
+        conn.close()
+
+    main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
+
+    assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Zq:Elsewhere"
+    capsys.readouterr()
+
+
 def test_without_an_imported_ledger_there_is_nothing_to_match(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -853,7 +888,7 @@ def test_a_live_ledger_hearth_inherits_is_vouched_for_through_the_last_sync(
     finally:
         conn.close()
 
-    found = books.from_household(settings, rulings=rulings_in)(NOW)
+    found = books.from_household(settings, rulings=rulings_in, learns=may_learn)(NOW)
 
     # Both days on the household's own calendar, by the rule every figure follows.
     synced = min(item.last_synced_at.astimezone().date(), TODAY)

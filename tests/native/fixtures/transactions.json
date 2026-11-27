@@ -24,6 +24,7 @@
         "suggested": true,
         "waiting": null,
         "checked": null,
+        "reason": "Books twice before",
         "amount": "-41.90",
         "sides": [
           {"amount": "-41.90", "account": {"id": "eDUVDA9IScyfzS3o", "name": "Rewards card"}, "category": null, "waiting": false, "elsewhere": false},
@@ -44,6 +45,7 @@
         "suggested": false,
         "waiting": null,
         "checked": "bank",
+        "reason": null,
         "amount": "3250.40",
         "sides": [],
         "review": null
@@ -63,6 +65,7 @@
         "suggested": false,
         "waiting": null,
         "checked": null,
+        "reason": null,
         "amount": "300.00",
         "sides": [
           {"amount": "-300.00", "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"}, "category": null, "waiting": false, "elsewhere": false},
@@ -83,6 +86,7 @@
         "suggested": false,
         "waiting": "category",
         "checked": null,
+        "reason": "New merchant",
         "amount": "-84.12",
         "sides": [
           {"amount": "-84.12", "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"}, "category": null, "waiting": false, "elsewhere": false},
@@ -103,6 +107,7 @@
         "suggested": false,
         "waiting": null,
         "checked": null,
+        "reason": null,
         "amount": "250.00",
         "sides": [
           {"amount": "250.00", "account": {"id": "10omYJBYKWbu7QCF", "name": "Car loan"}, "category": null, "waiting": false, "elsewhere": false},

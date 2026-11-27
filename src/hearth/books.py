@@ -34,6 +34,7 @@ from beancount import loader
 from beancount.core.account import is_valid as is_valid_account
 from beancount.core.data import (
     Balance,
+    Close,
     Commodity,
     Custom,
     Directive,
@@ -47,21 +48,23 @@ from beancount.ops import validation
 from beancount.parser import booking as beancount_booking
 from beancount.parser import options
 
-from hearth import base, carrying, db, ownbooks
+from hearth import base, carrying, categories, db, ownbooks
 from hearth.base import Base, BaseError
 from hearth.carrying import Carry
+from hearth.categories import Kind
 from hearth.clock import Clock
 from hearth.config import Settings
 from hearth.connections import Connections, RegisteredConnections, item_of
 from hearth.months import Month
 from hearth.plaid import booking, feed, opening
 from hearth.plaid.opening import Unknown
+from hearth.proposals import MayLearn, Opens, learn_nothing
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.common import is_balance_sheet, root
 from hearth.reports.coverage import AccountCoverage, account_coverage
-from hearth.review.decision import Decision, guarded
+from hearth.review.decision import Decision, guarded, postable
 from hearth.review.overlay import reviewed
-from hearth.review.pile import PileItem, read_pile
+from hearth.review.pile import UNRESOLVED, PileItem, read_pile
 from hearth.review.rulings import RulingStore
 from hearth.valuation import institution
 from hearth.valuation.holdings import holdings_at
@@ -165,6 +168,19 @@ class Books:
     begun: frozenset[str] = frozenset()
     """Carried accounts with a ruling on one of their review rows (`begun`): from then on the
     match, and the base, are fixed."""
+    kinds: Mapping[str, Kind] = field(default_factory=dict)
+    """Each income and expense account the books name, with what kind of money it is: as a
+    person said, or as its name says (``hearth.categories``)."""
+
+    def kind(self, account: str) -> Kind:
+        """What kind of money an income or expense account is (``hearth.categories``)."""
+        return self.kinds.get(account) or categories.guess(account)
+
+    def spends(self, account: str) -> bool:
+        """Whether money booked to `account` is spending: an expense account of any kind but
+        "not spending", such as a retirement contribution booked as an expense, which is money
+        kept somewhere else. What it leaves out of spending is in what was left over."""
+        return root(account) == "Expenses" and self.kind(account) is not Kind.NOT_SPENDING
 
     @property
     def balance_unknown(self) -> frozenset[str]:
@@ -349,13 +365,15 @@ def compute(
     carried: Mapping[str, Carry] | None = None,
     unproved: Mapping[str, Unknown] | None = None,
     held_back: Mapping[str, tuple[date, date]] | None = None,
+    kinds: Mapping[str, Kind] | None = None,
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
     recent month end. `synced` is each fed ledger account's connection and its last successful
     sync (`synced_through`); `unknown`, each account whose opening balance could not be
     derived, with why; `invested`, each account a brokerage account feeds; `unfed`, each the
     household holds that nothing opens; `carried`, each account of the base hearth carries on;
-    `unproved`, each of those its bank's balance cannot prove yet, with why.
+    `unproved`, each of those its bank's balance cannot prove yet, with why; `kinds`, each
+    income or expense account a person said the kind of (``hearth.categories``).
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
@@ -364,8 +382,10 @@ def compute(
     pile = tuple(read_pile(e for e in ledger if _set_aside(e)))
     decisions = decide(pile)
     # No ruling on record may put a posting on a carried account its bank never sent.
+    # Nor may one lay a row on an account the books do not hold open for it on its day.
+    opens = _opens(ledger)
     decided = {
-        item.review_id: guarded(item, decisions[item.review_id], carried)
+        item.review_id: postable(item, guarded(item, decisions[item.review_id], carried), opens)
         for item in pile
         if item.review_id in decisions
     }
@@ -423,7 +443,15 @@ def compute(
         },
         reconciling=reconciling(entries),
         begun=begun(ledger, carried, {r for r, d in decided.items() if d.ruling is not None}),
+        kinds=categories.kinds(_categories(entries), kinds or {}),
     )
+
+
+def _categories(entries: Sequence[Directive]) -> set[str]:
+    """Every income and expense account `entries` open or post to."""
+    found = {e.account for e in entries if isinstance(e, Open)}
+    found |= {p.account for e in entries if isinstance(e, Transaction) for p in e.postings}
+    return {a for a in found if categories.root(a) is not None}
 
 
 def begun_in(settings: Settings, today: date | None = None) -> frozenset[str]:
@@ -737,18 +765,35 @@ def _connected(entries: Sequence[Directive]) -> set[str]:
 
 
 def flowing(entries: Sequence[Directive]) -> frozenset[str]:
-    """Balance-sheet accounts with a posting beside an Expenses or Income one anywhere.
+    """Balance-sheet accounts with a posting beside an Expenses or Income one anywhere, or
+    beside a row waiting to be told what it was that is no move between accounts (`uncategorised`).
 
     Only they can move a spending or income figure; an account that only ever takes transfers,
-    such as a retirement account, cannot.
+    such as a retirement account, cannot. A row nothing was suggested for, such as one from a
+    merchant never seen before, is spending or income all the same once a member says which.
     """
     return frozenset(
         posting.account
         for entry in entries
         if isinstance(entry, Transaction)
-        and any(root(p.account) in ("Expenses", "Income") for p in entry.postings)
+        and (
+            any(root(p.account) in ("Expenses", "Income") for p in entry.postings)
+            or uncategorised(entry)
+        )
         for posting in entry.postings
         if is_balance_sheet(posting.account)
+    )
+
+
+def uncategorised(entry: Transaction) -> bool:
+    """Whether `entry` is a review row waiting against `UNRESOLVED` that is not a move to or
+    from an account the row does not name (``booking.moved``): what it was is still to say."""
+    group = (entry.meta or {}).get("review-group")
+    return (
+        entry.flag == "!"
+        and isinstance(group, str)
+        and booking.moved(group) is None
+        and any(p.account == UNRESOLVED for p in entry.postings)
     )
 
 
@@ -985,6 +1030,7 @@ def from_household(
     settings: Settings,
     *,
     rulings: Rulings,
+    learns: MayLearn,
     sources: Sequence[str] = PRICE_SOURCES,
     connections: Connections | None = None,
 ) -> Establish:
@@ -994,6 +1040,8 @@ def from_household(
     (``hearth.ownbooks``).
 
     `connections` are the Plaid connections registered in the app database unless given.
+    `learns` is the access policy's say on what each row's suggestion may learn from
+    (``access.may_learn``, through ``hearth.disclosure``).
     """
     known = connections or RegisteredConnections(settings.database)
 
@@ -1001,7 +1049,7 @@ def from_household(
         # Each sync is noted before the feed is read, never after: a sync that finishes in
         # between then vouches for rows the books hold, not for rows they do not hold yet.
         synced = synced_through(known)
-        household = household_entries(settings, now.astimezone().date())
+        household = household_entries(settings, now.astimezone().date(), learns=learns)
         if household.frozen is not None:
             synced = vouched_over_base(synced, household.frozen, household.carried)
         conn = db.connect(settings.database)
@@ -1019,6 +1067,7 @@ def from_household(
                 unfed=household.unfed,
                 carried=household.carried,
                 held_back=household.held_back,
+                kinds=categories.stored(conn),
             )
         finally:
             conn.close()
@@ -1036,10 +1085,11 @@ def standing(settings: Settings) -> Hashable:
 
     The feed's runs, holdings reports and balances (``Feed.standing``); and in the app database
     the stored prices, every connection and the account each of its accounts feeds, the
-    household's accounts and their owners, each named account, each ruling and each uploaded
-    statement. An inherited ledger is the household's, read on every recompute, so its size and
-    modification time are part of it too; and so is the digest of the base hearth imported,
-    which changes when an import, in this process or another, replaces it (``hearth.base``).
+    household's accounts and their owners, each named account, each ruling, each uploaded
+    statement and each kind of category a person set. An inherited ledger is the household's,
+    read on every recompute, so its size and modification time are part of it too; and so is
+    the digest of the base hearth imported, which changes when an import, in this process or
+    another, replaces it (``hearth.base``).
     """
     with feed.Feed.open(settings.feed_database) as fed:
         fed_at = fed.standing()
@@ -1057,6 +1107,7 @@ def standing(settings: Settings) -> Hashable:
                 "SELECT max(id) FROM review_rulings",
                 "SELECT max(id) FROM statement_uploads",
                 "SELECT id, before, after FROM carried_over ORDER BY id",
+                "SELECT account, kind FROM category_kinds ORDER BY account",
             )
         )
     finally:
@@ -1097,6 +1148,26 @@ class Entries:
     (``carrying.known_through``, ``carrying.ahead``)."""
 
 
+def _opens(entries: Sequence[Directive]) -> Opens:
+    """Each account `entries` open: the day it opens, the day it closes, if it does, and the
+    currencies it takes, if it names any."""
+    found: dict[str, tuple[date, date | None, frozenset[str] | None]] = {}
+    closes: dict[str, date] = {}
+    for entry in entries:
+        if isinstance(entry, Open):
+            found[entry.account] = (
+                entry.date,
+                None,
+                frozenset(entry.currencies) if entry.currencies else None,
+            )
+        elif isinstance(entry, Close):
+            closes[entry.account] = entry.date
+    return {
+        account: (opens, closes.get(account), currencies)
+        for account, (opens, _, currencies) in found.items()
+    }
+
+
 BOTH = (
     "Hearth was given two ledgers: HEARTH_LEDGER, and the ledger imported into its data"
     " directory. It reads the imported one now, so unset HEARTH_LEDGER."
@@ -1119,7 +1190,9 @@ def inherited(settings: Settings) -> Path | Base | None:
     return found.base if found is not None else settings.ledger
 
 
-def household_entries(settings: Settings, today: date | None = None) -> Entries:
+def household_entries(
+    settings: Settings, today: date | None = None, *, learns: MayLearn = learn_nothing
+) -> Entries:
     """The household's entries before any ruling: hearth's own over the ledger it inherits,
     imported or not (`inherited`), each read exactly alike (`load_ledger`).
 
@@ -1128,6 +1201,10 @@ def household_entries(settings: Settings, today: date | None = None) -> Entries:
 
     `today` is the household's own day, the clock's local day, which decides whether a carried
     account's cut-over has come (``carrying.postponed``); the system clock's when not given.
+
+    Each row hearth books is suggested a category from what `learns` lets its owners learn
+    (``hearth.proposals``); by default from nothing, which suits a reader of the books that
+    shows no suggestion, such as a command that only needs which accounts there are.
     """
     today = today or datetime.now().astimezone().date()
     ledger = inherited(settings)
@@ -1145,7 +1222,15 @@ def household_entries(settings: Settings, today: date | None = None) -> Entries:
     try:
         with feed.Feed.open(settings.feed_database) as fed:
             derived = ownbooks.derive(
-                conn, fed, opened=opened, declared=declared, since=since, base=held, today=today
+                conn,
+                fed,
+                opened=opened,
+                declared=declared,
+                since=since,
+                base=held,
+                today=today,
+                learns=learns,
+                opens=_opens(theirs),
             )
     except booking.Refused as refused:
         raise LedgerError(str(refused)) from refused

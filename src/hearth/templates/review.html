@@ -8,7 +8,7 @@
 <input type="hidden" name="focus" value="{{ next_id }}">
 {% endmacro %}
 {% macro row_day(d) %}{{ d | day if d.year == today.year else d | year_day }}{% endmacro %}
-{% macro reason(row) %}{% if row.item.reconciling %}<span class="second">{{ explain(row) }}</span>{% else %}{% set band = confidence(row) %}<span class="second">{{ band.value }}{% if not where.filter.group %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}</span>{% endif %}{% endmacro %}
+{% macro reason(row) %}<span class="second">{{ explain(row) }}{% if not row.item.reconciling %}{% if not where.filter.group %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}{% endif %}</span>{% endmacro %}
 {# One row and its decision: the suggestion is already in the box, so Accept keeps it and
    typing another account books that instead. The page sends back what it showed. #}
 {% macro decide_row(row, next_id) %}
@@ -187,7 +187,7 @@
     <div class="rgroup-head">
       <div class="rgroup-what">
         <h2 id="{{ gid }}-h">{{ group.name }}</h2>
-        <p class="muted">{% if group.one_decision %}Each has the same suggestion, so one decision settles them.{% elif suggested %}Not one kind of transaction, so there is no accepting them together; each needs its own look.{% else %}Nothing could be suggested; each needs a look.{% endif %}{% if suggested %} <span class="faint">Least sure: {{ group.lowest.value | lower }}.</span>{% endif %}</p>
+        <p class="muted">{% if group.one_decision %}Each has the same suggestion, so one decision settles them.{% elif suggested %}Not one kind of transaction, so there is no accepting them together; each needs its own look.{% else %}Nothing could be suggested; each needs a look.{% endif %}{% if suggested %} <span class="faint">Least sure: {{ group.lowest }}.</span>{% endif %}</p>
       </div>
       <dl class="rgroup-figs">
         <div><dt>Transactions</dt><dd class="tnum">{% if group.rows | length < group.size %}{{ "{:,}".format(group.rows | length) }} <span class="faint">of {{ "{:,}".format(group.size) }}</span>{% else %}{{ "{:,}".format(group.size) }}{% endif %}</dd></div>

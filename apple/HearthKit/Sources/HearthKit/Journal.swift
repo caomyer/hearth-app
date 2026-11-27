@@ -94,6 +94,10 @@ public struct Entry: Decodable, Sendable, Equatable, Identifiable {
     public let suggested: Bool
     public let waiting: Waiting?
     public let checked: Checked?
+    /// Why an unreviewed entry is suggested as it is, or why nothing is, in words: "Dining
+    /// twice before", "As your ledger books it", "Bank says Restaurant", "New merchant". Only
+    /// ever for an entry the viewer reviews, and absent from an engine older than it.
+    public let reason: String?
     /// What it did to the accounts it names; for a transfer between two of them, what moved.
     public let amount: Money
     public let sides: [Side]

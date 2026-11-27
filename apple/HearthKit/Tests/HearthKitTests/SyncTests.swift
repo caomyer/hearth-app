@@ -71,7 +71,7 @@ struct SyncTests {
     func outcomes() throws {
         let told = try JSONDecoder().decode([String].self, from: fixture("acted"))
         #expect(told.compactMap(ActOutcome.init(rawValue:)).count == told.count)
-        #expect(Set(told) == Set(ActOutcome.allCases.map(\.rawValue)))
+        #expect(Set(told) == Set(ActOutcome.told.map(\.rawValue)))
         let troubles = Trouble.allCases.map(\.rawValue)
         #expect(troubles == ["sign_in", "unreachable", "keys", "refused", "failed"])
     }

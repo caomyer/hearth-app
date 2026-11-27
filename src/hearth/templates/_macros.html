@@ -141,7 +141,7 @@
     {% for group in days %}
     <tr class="day"><th scope="rowgroup" colspan="2">{{ group.day | full_day }}{% if group.spent %} <span class="num">{{ (-group.spent) | money }}</span>{% endif %}</th></tr>
     {% for line in group.lines %}
-    <tr><td><span class="primary">{{ line.payee }}</span>{% if line.unreviewed %} <a class="tag tag-review" href="/review{% if line.one_sided %}/where{% endif %}">To review</a>{% endif %}{% if line.unseen %}<span class="second">{% if line.review_id in said %}You said it went here, {{ said[line.review_id].astimezone() | day }}{% else %}Moved between accounts, not spending{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}</span>{% else %}<span class="second">{{ line.category | category }}{% if line.unreviewed %}, suggested{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}{% if line.narration %} &middot; {{ line.narration }}{% endif %}</span>{% endif %}</td><td class="num amt{% if line.amount > 0 %} amt-in{% endif %}">{{ line.amount | amount }}</td></tr>
+    <tr><td><span class="primary">{{ line.payee }}</span>{% if line.unreviewed %} <a class="tag tag-review" href="/review{% if line.one_sided %}/where{% endif %}">To review</a>{% endif %}{% if line.unseen %}<span class="second">{% if line.review_id in said %}You said it went here, {{ said[line.review_id].astimezone() | day }}{% else %}Moved between accounts, not spending{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}</span>{% else %}<span class="second">{{ line.category | category }}{% if line.unreviewed %}, suggested{% endif %}{% if line.kept %}, not counted as spending{% endif %}{% if show_account %} &middot; {{ line.account.name }}{% endif %}{% if line.narration %} &middot; {{ line.narration }}{% endif %}</span>{% endif %}</td><td class="num amt{% if line.amount > 0 %} amt-in{% endif %}">{{ line.amount | amount }}</td></tr>
     {% endfor %}
     {% endfor %}
   </tbody>
@@ -162,6 +162,26 @@
 {% if u.leans %}
 <p class="fig-sub">{% if href %}<a class="tag tag-review" href="{{ href }}">{% else %}<span class="tag tag-review">{% endif %}<span class="tnum">{{ (u.amount | abs) | dollars }}</span> not yet reviewed{% if href %}</a>{% else %}</span>{% endif %}</p>
 {% endif %}
+{{ kept_note(u.kept) }}
+{% if u.leaves_out %}
+<p class="fig-sub">{% if href %}<a class="tag tag-review" href="{{ href }}">{% else %}<span class="tag tag-review">{% endif %}Leaves out <span class="tnum">{{ (u.unplaced.amount | abs) | dollars }}</span> not placed yet{% if href %}</a>{% else %}</span>{% endif %}</p>
+{% endif %}
+{% endmacro %}
+
+{# Rows nobody has said what they were yet, such as a new merchant's, are in no total until a
+   member places them: a total says so, as far as the viewer may know it, in one sentence. #}
+{% macro unplaced_note(u) %}
+{% if u.leaves_out %} Leaves out {{ plural(u.unplaced.rows, "transaction") }} of <span class="tnum">{{ (u.unplaced.amount | abs) | dollars }}</span> nobody has said what {{ "it was" if u.unplaced.rows == 1 else "they were" }} yet, which {{ "is" if u.unplaced.rows == 1 else "are" }} in no total until placed in Review.{% endif %}
+{% endmacro %}
+
+{# Money booked to an expense account that is not spending, such as a retirement
+   contribution, is left out of every spending figure; the figure says how much, plainly. #}
+{% macro kept_note(amount) %}
+{% if amount %}<p class="fig-sub"><span class="tnum">{{ (amount | abs) | dollars }}</span> booked as not spending, such as a retirement contribution, is not counted here.</p>{% endif %}
+{% endmacro %}
+
+{% macro kept_sentence(amount) %}
+{% if amount %} <span class="tnum">{{ (amount | abs) | dollars }}</span> booked as not spending, such as a retirement contribution, is not counted as spending.{% endif %}
 {% endmacro %}
 
 {% macro unreviewed_caveat(u) %}

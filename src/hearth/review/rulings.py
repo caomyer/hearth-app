@@ -65,6 +65,10 @@ class Covered(NamedTuple):
     says: str | None
     """What the row said when the ruling was made; None for a ruling recorded before that
     was kept."""
+    bank: str | None = None
+    """What the bank said the row's category was when the ruling was made, for a row hearth
+    booked from a bank (`PileItem.bank`); None for any other row, or a ruling recorded before
+    that was kept."""
 
 
 def check_account(account: str) -> None:
@@ -92,9 +96,11 @@ class RulingStore:
         rows: Mapping[str, str | None],
         says: Mapping[str, str],
         at: datetime,
+        banks: Mapping[str, str | None] | None = None,
     ) -> Ruling:
         """Record a ruling covering `rows`: each review id, with the account it was accepted as
-        and what it said (`says`)."""
+        and what it said (`says`), and, for a row hearth booked from a bank, what the bank said
+        its category was (`banks`)."""
         if (scope is Scope.GROUP) != (group is not None):
             raise ValueError("a group is named exactly when the ruling is on a group")
         if (action is Action.ACCOUNT) != (account is not None):
@@ -120,10 +126,16 @@ class RulingStore:
                 (member_id, scope, group, action, account, note, at.isoformat()),
             ).lastrowid
             self._db.executemany(
-                "INSERT INTO review_ruling_rows (ruling_id, review_id, account, says)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO review_ruling_rows (ruling_id, review_id, account, says, bank)"
+                " VALUES (?, ?, ?, ?, ?)",
                 [
-                    (ruling_id, review_id, rows[review_id], says[review_id])
+                    (
+                        ruling_id,
+                        review_id,
+                        rows[review_id],
+                        says[review_id],
+                        (banks or {}).get(review_id),
+                    )
                     for review_id in sorted(rows)
                 ],
             )
@@ -134,7 +146,8 @@ class RulingStore:
     def covering(self, review_ids: Collection[str]) -> Iterator[Covered]:
         """Every ruling that covers one of `review_ids`, oldest first, row by row."""
         rows = self._db.execute(
-            "SELECT r.review_id, r.account, r.says, s.id, s.member_id, s.scope, s.group_name,"
+            "SELECT r.review_id, r.account, r.says, r.bank, s.id, s.member_id, s.scope,"
+            " s.group_name,"
             " s.action, s.account, s.note, s.at"
             " FROM review_ruling_rows AS r JOIN review_rulings AS s ON s.id = r.ruling_id"
             " WHERE r.review_id IN (SELECT value FROM json_each(?))"
@@ -145,6 +158,7 @@ class RulingStore:
             review_id,
             accepted,
             said,
+            bank,
             ruling_id,
             member,
             scope,
@@ -168,6 +182,7 @@ class RulingStore:
                 ),
                 accepted,
                 said,
+                bank,
             )
 
     def get(self, ruling_id: int) -> tuple[Ruling, list[str]] | None:
@@ -197,10 +212,11 @@ class RulingStore:
         return ruling, [row["review_id"] for row in rows]
 
     def accounts(self) -> set[str]:
-        """Every account a ruling has booked a row against, whether or not it still decides
-        one."""
+        """Every account a ruling has booked a row against, an accept's included, whether or
+        not it still decides one."""
         rows = self._db.execute(
-            "SELECT DISTINCT account FROM review_rulings WHERE account IS NOT NULL"
+            "SELECT account FROM review_rulings WHERE account IS NOT NULL"
+            " UNION SELECT account FROM review_ruling_rows WHERE account IS NOT NULL"
         )
         return {row["account"] for row in rows}
 

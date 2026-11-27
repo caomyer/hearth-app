@@ -55,7 +55,7 @@ from hearth.accounts import Account
 from hearth.clock import Clock
 from hearth.disclosure import Concealed
 from hearth.members import MemberId
-from hearth.review.decision import Decision, State, decide, guarded
+from hearth.review.decision import NOT_OPEN, Decision, State, decide, guarded, postable
 from hearth.review.pile import Moved, PileItem
 from hearth.review.rulings import Action, Covered, Ruling, RulingStore, Scope, check_account
 
@@ -69,6 +69,7 @@ __all__ = [
     "Learned",
     "Moved",
     "NotOneDecision",
+    "NotOpen",
     "NotTheirs",
     "ReviewDesk",
     "State",
@@ -187,6 +188,14 @@ class BanksRow(ValueError):  # noqa: N818 - it names a refusal, as Concealed doe
         super().__init__("its bank counts this row in the balance it reports")
 
 
+class NotOpen(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
+    """A category the books hold, but not open on the row's day, or not in its currency: a
+    ruling booking the row there could not be laid in the books (``decision.postable``)."""
+
+    def __init__(self) -> None:
+        super().__init__(NOT_OPEN)
+
+
 class NotOneDecision(ValueError):  # noqa: N818 - it names a refusal, as Concealed does
     """A group that is no one kind of transaction, so no single accept may settle it."""
 
@@ -246,6 +255,13 @@ def resolve(
     }
 
 
+def _open_for(item: PileItem, opens: tuple[date, date | None, frozenset[str] | None]) -> bool:
+    opened, closed, currencies = opens
+    return opened <= item.date <= (closed or date.max) and (
+        currencies is None or item.currency in currencies
+    )
+
+
 def _owners(accounts: Sequence[Account]) -> Callable[[PileItem], frozenset[MemberId]]:
     by_ledger_account = {account.ledger_account: account.owners for account in accounts}
     return lambda item: by_ledger_account.get(item.account, frozenset())
@@ -271,6 +287,7 @@ class ReviewDesk:
         banks: Collection[str] = (),
         moves: Moves = _nothing_moves,
         carried: Collection[str] = (),
+        currencies: Mapping[str, frozenset[str]] | None = None,
     ) -> None:
         self._member = member
         self._banks = frozenset(banks)
@@ -288,6 +305,8 @@ class ReviewDesk:
             and may_move_to(account.owners)
         }
         self._owners = _owners(accounts)
+        taken = currencies or {}
+        self._opens = {a: (o, c, taken.get(a)) for a, (o, c) in {**opened, **self._movable}.items()}
         self._accounts = list(accounts)
         self._rulings = rulings
         self._may_review = may_review
@@ -467,6 +486,11 @@ class ReviewDesk:
     def _check_target(self, account: str, rows: Sequence[PileItem]) -> None:
         check_account(account)
         if account.split(":")[0] in FREE:
+            # A category the books do not open yet opens with the ruling; one they hold must be
+            # open on every row's day, in its currency, as the books would refuse it otherwise.
+            found = self._opens.get(account)
+            if found is not None and not all(_open_for(item, found) for item in rows):
+                raise NotOpen
             return
         opens, closes = self._movable.get(account, (date.max, None))
         if not all(opens <= item.date <= (closes or date.max) for item in rows):
@@ -525,6 +549,7 @@ class ReviewDesk:
             note=note,
             rows=rows,
             says={review_id: self._mine[review_id].says for review_id in rows},
+            banks={review_id: self._mine[review_id].bank for review_id in rows},
             at=self._clock(),
         )
 
@@ -536,7 +561,12 @@ class ReviewDesk:
             ItemView(
                 item,
                 self._owners(item),
-                guarded(item, decisions[item.review_id], self._carried),
+                postable(
+                    item,
+                    guarded(item, decisions[item.review_id], self._carried),
+                    self._opens,
+                    unknown_is_open=True,
+                ),
                 account(item),
                 bank_counts=item.account in self._banks,
                 moved=Moved.CARD if item.transfer else self._moves(item.group),

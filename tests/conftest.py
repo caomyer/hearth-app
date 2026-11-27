@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from hearth import accounts, auth, books, db, members, sessions
 from hearth.app import create_app
 from hearth.config import Settings
-from hearth.disclosure import Disclosure, rulings_in
+from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.members import MemberId
 from hearth.plaid.connector import Connector
 from hearth.plaid.fake import FakeAccount, FakeInstitution, FakePlaid, FakeTransaction
@@ -31,6 +31,7 @@ from tests.vault.conftest import MemoryKeyStore
 
 if TYPE_CHECKING:
     from tests.firstday import FirstDay
+    from tests.learned import Learned
 
 
 class FakeClock:
@@ -81,7 +82,7 @@ class World:
     @property
     def bookkeeper_establish(self) -> books.Establish:
         """How this world's books are recomputed, for a bookkeeper of a test's own."""
-        return books.from_household(self.settings, rulings=rulings_in)
+        return books.from_household(self.settings, rulings=rulings_in, learns=may_learn)
 
     def connect(self) -> sqlite3.Connection:
         return db.connect(self.settings.database)
@@ -269,7 +270,9 @@ def build_world(tmp_path: Path, clock: FakeClock) -> World:
             store.record(Quote(symbol, day, price, "USD", "eodhd", "test", clock()))
     finally:
         conn.close()
-    bookkeeper = books.Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
+    bookkeeper = books.Bookkeeper(
+        books.from_household(settings, rulings=rulings_in, learns=may_learn), clock
+    )
     bookkeeper.recompute()
     assert bookkeeper.status.failure is None, bookkeeper.status.failure
     fake = FakePlaid(institutions(), today=lambda: clock().astimezone().date())
@@ -305,3 +308,13 @@ def fresh(tmp_path: Path, clock: FakeClock) -> FirstDay:
     from tests.firstday import first_day
 
     return first_day(tmp_path, clock)
+
+
+@pytest.fixture(scope="module")
+def learned(tmp_path_factory: pytest.TempPathFactory) -> Learned:
+    """Two members whose suggestions could leak each other's categories (`tests.learned`),
+    built once for each module that crawls it, as building it links two banks and imports a
+    ledger."""
+    from tests.learned import build
+
+    return build(tmp_path_factory.mktemp("learned"), FakeClock(household.NOW))

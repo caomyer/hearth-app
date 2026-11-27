@@ -157,8 +157,9 @@ private struct Change: View {
     }
 }
 
-/// What waits in Review, and the way there: how many transactions, and how much of this
-/// month's own spending rests on them.
+/// What waits in Review, and the way there: how many transactions, how much of this month's
+/// own spending rests on them, what no total holds until it is placed, and what was booked as
+/// not spending, as the person's own page says them.
 private struct ReviewBanner: View {
     let waiting: Overview.Waiting
     let currency: String
@@ -181,6 +182,20 @@ private struct ReviewBanner: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.ink2)
                         .accessibilityIdentifier("overview.review.spending")
+                }
+                ForEach(HearthKit.ReviewWords.unplaced(waiting, month: month, currency: currency), id: \.self) { line in
+                    Text(line)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("overview.review.unplaced")
+                }
+                if let kept = waiting.notSpending {
+                    Text("\(HearthKit.Figures.total(kept, currency: currency)) booked as not spending, such as a retirement contribution, is not counted as spending.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("overview.review.not-spending")
                 }
             }
             Spacer(minLength: 12)

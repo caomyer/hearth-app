@@ -27,7 +27,7 @@ from hearth.disclosure.common import (
 )
 from hearth.disclosure.gate import Concealed, Disclosed
 from hearth.disclosure.household import CategoryPanel, category_panel
-from hearth.figures import Line, MonthFlows, Part
+from hearth.figures import Line, MonthFlows, Part, Unplaced
 from hearth.members import Member
 from hearth.months import Month
 from hearth.reports.common import root
@@ -274,19 +274,47 @@ def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
         spent_unreviewed=gate.disclose(
             Facet.MONTHLY_SPENDING_TOTAL,
             part.owners,
-            lambda: _unreviewed(h, part, this_month.spent_unreviewed(part.owners), this_month),
+            lambda: _unreviewed(
+                h,
+                part,
+                this_month.spent_unreviewed(part.owners),
+                this_month,
+                this_month.spent_unplaced(part.owners),
+                this_month.kept_out(part.owners),
+            ),
         ),
         earned_unreviewed=gate.disclose(
             Facet.MONTHLY_INCOME_TOTAL,
             part.owners,
-            lambda: _unreviewed(h, part, this_month.earned_unreviewed(part.owners), this_month),
+            lambda: _unreviewed(
+                h,
+                part,
+                this_month.earned_unreviewed(part.owners),
+                this_month,
+                this_month.earned_unplaced(part.owners),
+            ),
         ),
     )
 
 
-def _unreviewed(h: Household, part: Part, amount: Decimal, flows: MonthFlows) -> Unreviewed:
+def _unreviewed(
+    h: Household,
+    part: Part,
+    amount: Decimal,
+    flows: MonthFlows,
+    placed: Unplaced,
+    kept: Decimal = Decimal(0),
+) -> Unreviewed:
     rows = flows.unreviewed.get(part.owners, 0)
-    return unreviewed(h.gate, [part], h.part_ref, lambda _: amount, lambda _: rows)
+    return unreviewed(
+        h.gate,
+        [part],
+        h.part_ref,
+        lambda _: amount,
+        lambda _: rows,
+        lambda _: placed,
+        lambda _: kept,
+    )
 
 
 def _payments_in(h: Household, part: Part) -> int:
@@ -387,16 +415,14 @@ def days(h: Household, accounts: Sequence[Account], month: Month) -> tuple[Day, 
     end = min(h.books.as_of, start.replace(day=calendar.monthrange(month.year, month.month)[1]))
     grouped: defaultdict[date, list[Line]] = defaultdict(list)
     for line in figures.lines(h.books, accounts, start, end):
-        grouped[line.date].append(named_side(h, line))
+        kept = bool(line.category) and root(line.category or "") == "Expenses"
+        kept = kept and not h.books.spends(line.category or "")
+        grouped[line.date].append(replace(named_side(h, line), kept=kept))
     return tuple(
         Day(
             day=day,
             spent=sum(
-                (
-                    -line.amount
-                    for line in found
-                    if line.category and root(line.category) == "Expenses"
-                ),
+                (-line.amount for line in found if line.category and h.books.spends(line.category)),
                 Decimal(0),
             ),
             lines=tuple(found),

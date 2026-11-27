@@ -782,6 +782,17 @@ class Feed:
             date.fromisoformat(row["latest"]) if row["latest"] else None,
         )
 
+    def arrived(self, account_id: str) -> dict[str, datetime]:
+        """When each of the account's transactions first arrived: the start of the run that
+        first stored it, which a revision, a removal or its return never changes. A proposal
+        is learned only from what was decided before its row arrived (``hearth.proposals``)."""
+        rows = self._db.execute(
+            "SELECT t.transaction_id, r.started_at FROM feed_transaction AS t"
+            " JOIN feed_run AS r ON r.id = t.first_run WHERE t.account_id = ?",
+            (account_id,),
+        )
+        return {row["transaction_id"]: datetime.fromisoformat(row["started_at"]) for row in rows}
+
     def transactions(self, account_id: str) -> list[Transaction]:
         """The account's transactions as last sent, oldest first; removed ones left out."""
         rows = self._db.execute(

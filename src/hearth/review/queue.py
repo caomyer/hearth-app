@@ -18,8 +18,16 @@ from enum import StrEnum
 from typing import Any
 
 from hearth.names import readable
-from hearth.review.decision import KEPT_IN, KEPT_OFF, PROPOSAL_CHANGED, REVISED, State
+from hearth.review.decision import (
+    KEPT_IN,
+    KEPT_OFF,
+    PROPOSAL_CHANGED,
+    REDESCRIBED,
+    REVISED,
+    State,
+)
 from hearth.review.desk import ItemView, one_decision
+from hearth.review.reasons import Why
 
 PAGE_SIZE = 50
 """Rows on one page of the one-by-one view: enough to work through, few enough to render."""
@@ -69,6 +77,7 @@ class Confidence(StrEnum):
     UNSCORED = "Suggested by a rule"
     CHANGED = "Suggestion changed since you accepted it"
     REVISED = "Changed by the bank since it was reviewed"
+    REDESCRIBED = "The bank changed how it describes it since you accepted it"
     KEPT_OFF = "Moved onto an account that now takes only its bank's transactions"
     KEPT_IN = "Excluded, but its bank now counts it in the balance it reports"
     RECONCILING = "A difference to confirm"
@@ -77,6 +86,7 @@ class Confidence(StrEnum):
 _CAME_BACK = {
     PROPOSAL_CHANGED: Confidence.CHANGED,
     REVISED: Confidence.REVISED,
+    REDESCRIBED: Confidence.REDESCRIBED,
     # Decisions the books keep unreviewed, as they would break a carried account's balance.
     KEPT_OFF: Confidence.KEPT_OFF,
     KEPT_IN: Confidence.KEPT_IN,
@@ -91,14 +101,18 @@ RECONCILING_REASON = (
 
 
 def explain(view: ItemView) -> str:
-    """Why a row waits, in the words Review gives it beside the row: what a reconciling entry
-    asks of its owner, and for any other row how sure its suggestion is (`confidence`)."""
+    """Why a row waits, in the words Review gives it beside the row, on the page and in the
+    app alike: what a reconciling entry asks of its owner, and for any other row why it is
+    suggested as it is (`said`)."""
     if view.item.reconciling and view.decision.reason not in _CAME_BACK:
         return RECONCILING_REASON
-    return confidence(view).value
+    return said(view)
 
 
 def confidence(view: ItemView) -> Confidence:
+    """How sure the suggestion is, as a band: why a decided row waits again, first; then a
+    categoriser's score where the import kept one, and otherwise what was suggested, if
+    anything (`said` gives the words a row is shown with)."""
     came_back = _CAME_BACK.get(view.decision.reason or "")
     if came_back is not None:
         return came_back
@@ -112,6 +126,38 @@ def confidence(view: ItemView) -> Confidence:
     if score < LOW_CONFIDENCE:
         return Confidence.LOW
     return Confidence.MEDIUM if score < HIGH_CONFIDENCE else Confidence.HIGH
+
+
+SURER = {
+    Why.REMEMBERED: Confidence.HIGH,
+    Why.LEDGER: Confidence.HIGH,
+    Why.BANK: Confidence.UNSCORED,
+}
+"""Where a reason ranks among the bands, for ordering by confidence: what a member decided
+before, or the ledger books, is as sure as a confident score; the bank's category is as sure as
+any rule."""
+
+
+def said(view: ItemView) -> str:
+    """Why a row is suggested as it is, or why nothing is, in words: "Dining twice before",
+    "As your ledger books it", "Bank says Restaurant", "New merchant", or the band a
+    categoriser's score falls in. Why a decided row waits again, such as the suggestion having
+    changed since it was accepted, comes first, as what the member must know."""
+    band = confidence(view)
+    reason = view.item.reason
+    if band in _CAME_BACK.values() or reason is None:
+        return band.value
+    if view.item.proposed is None and reason.why not in (Why.NEW, Why.MIXED, Why.ELSEWHERE):
+        return band.value
+    return reason.words
+
+
+def _rank(view: ItemView) -> int:
+    band = confidence(view)
+    reason = view.item.reason
+    if band is Confidence.UNSCORED and reason is not None:
+        band = SURER.get(reason.why, band)
+    return _CONFIDENCE_RANK.index(band)
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,8 +250,9 @@ class QueueGroup:
         return one_decision(self.name, [v.item for v in self.waiting])
 
     @property
-    def lowest(self) -> Confidence:
-        return min((confidence(v) for v in self.rows), key=_CONFIDENCE_RANK.index)
+    def lowest(self) -> str:
+        """Why the least sure of its rows is suggested as it is, in words (`said`)."""
+        return said(min(self.rows, key=lambda v: (_rank(v), v.item.date, v.item.review_id)))
 
     @property
     def total(self) -> Decimal:
@@ -216,6 +263,7 @@ _CONFIDENCE_RANK = [
     Confidence.KEPT_OFF,
     Confidence.KEPT_IN,
     Confidence.REVISED,
+    Confidence.REDESCRIBED,
     Confidence.CHANGED,
     Confidence.RECONCILING,
     Confidence.NONE,
@@ -321,7 +369,7 @@ def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
         reviewed=len(decided),
         remaining=Tally.of(waiting),
         changed=sum(1 for v in waiting if v.decision.reason == PROPOSAL_CHANGED),
-        revised=sum(1 for v in waiting if v.decision.reason == REVISED),
+        revised=sum(1 for v in waiting if v.decision.reason in (REVISED, REDESCRIBED)),
         kept=sum(1 for v in waiting if v.decision.reason in (KEPT_OFF, KEPT_IN)),
         oldest=min((v.item.date for v in waiting), default=None),
         accounts=_choices(waiting, lambda v: (v.account.id, v.account.name) if v.account else None),
@@ -368,7 +416,7 @@ def _row_key(order: Order) -> Callable[[ItemView], Any]:
 
     match order:
         case Order.CONFIDENCE:
-            return lambda v: (_CONFIDENCE_RANK.index(confidence(v)), _score(v), *newest(v))
+            return lambda v: (_rank(v), _score(v), *newest(v))
         case Order.AMOUNT:
             return lambda v: (-abs(v.item.amount), *newest(v))
         case Order.ACCOUNT:

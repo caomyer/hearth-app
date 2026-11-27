@@ -54,6 +54,7 @@ from hearth.carrying import Carry, Held
 from hearth.plaid import booking, opening
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
+from hearth.proposals import MayLearn, Opens, learn_nothing
 from hearth.reports.common import is_balance_sheet
 from hearth.review.pile import LEDGER_BANK, WAITING
 from hearth.review.rulings import RulingStore
@@ -109,6 +110,8 @@ def derive(
     since: date | None = None,
     base: Held | None = None,
     today: date | None = None,
+    learns: MayLearn = learn_nothing,
+    opens: Opens | None = None,
 ) -> Derived:
     """Hearth's own entries: an `open` for each ledger account a confirmed mapping feeds,
     every transaction the import books for them (``hearth.plaid.booking``), and each one's
@@ -135,6 +138,9 @@ def derive(
     ruling is never refused for a day before it opened. Every other account the household
     holds opens nowhere (`Derived.unfed`). Raises ``booking.Refused`` when the feed cannot be
     booked.
+
+    `learns` and `opens` say what each row's suggestion may learn from
+    (``booking.book``); by default nothing, for a reader of the books that shows no suggestion.
     """
     registry = Registry(conn)
     named = {account.id: account for account in all_accounts(conn)}
@@ -154,7 +160,15 @@ def derive(
             found[start.account] = start
     if base is not None and today is None:
         raise ValueError("carrying on from a base needs the household's own day")
-    booked = booking.book(conn, feed, opened=opened, base=base, today=today or date.max)
+    booked = booking.book(
+        conn,
+        feed,
+        opened=opened,
+        base=base,
+        today=today or date.max,
+        learns=learns,
+        opens=opens,
+    )
     openings = opening.derive(registry, feed, booked)
     proved = opening.carried(registry, feed, booked)
     for anchor in openings.anchors:

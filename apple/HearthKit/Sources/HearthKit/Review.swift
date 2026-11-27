@@ -90,7 +90,8 @@ public struct ReviewGroup: Decodable, Sendable, Equatable, Identifiable {
     public let suggested: [CategoryRef]
     /// Whether accepting it is one decision about one kind of transaction (`desk.one_decision`).
     public let oneDecision: Bool
-    /// How sure the least sure of its rows is, in words.
+    /// Why the least sure of its rows is suggested as it is, in words: "Dining twice before",
+    /// "Bank says Restaurant", "Low confidence". Never a percentage.
     public let leastSure: String
     /// Its rows the filter leaves, by id, in the queue's order.
     public let rows: [String]

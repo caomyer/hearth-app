@@ -167,9 +167,14 @@ def test_ownership_never_reaches_the_file(fresh: FirstDay) -> None:
     booked = [e for e in entries if isinstance(e, Transaction) and not opening.anchors(e)]
     assert booked
     for row in booked:
+        # Why a row is suggested as it is names no member: only a category, or the bank's.
         assert set(row.meta) - {"filename", "lineno", "__tolerances__"} <= {
             "review-id",
             "review-group",
+            "review-why",
+            "review-reason",
+            "review-bank",
+            "review-plain",
             "source",
         }
         assert all(set(p.meta or {}) <= {"filename", "lineno", "source"} for p in row.postings)

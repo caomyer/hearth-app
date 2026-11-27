@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from hearth.disclosure import Concealed, Disclosure
 from hearth.disclosure.naming import Checked, Draft, NotTheirs, Wrong
 from hearth.plaid.mapping import Problem
-from hearth.review.desk import ItemView, ReviewDesk
+from hearth.review.desk import ItemView, NotOpen, ReviewDesk
 from hearth.review.desk import NotTheirs as NotTheirsRow
 from hearth.review.queue import category_label
 from hearth.review.rulings import Action, Ruling, RulingStore
@@ -51,6 +51,8 @@ OUTCOMES = {
     "changed": "Some of those changed since the page showed them, so they were left waiting."
     " Here they are as they are now.",
     "not-yours": "That was not saved. Choose one of your own accounts, or a category.",
+    "not-open": "That was not saved. Your books close that category before the day of a"
+    " transaction here, or keep it for another currency. Choose a category that is open then.",
     "undone": "Taken back. Those transactions are waiting for an answer again.",
 }
 """Fixed messages for what an answer did; the query names one, it never carries text."""
@@ -174,6 +176,8 @@ def move(
         return _to("not-yours", focus=group)
     try:
         moved = desk.move_group(title.strip()[:200] or "Where did it go?", target, shown)
+    except NotOpen:
+        return _to("not-open", focus=group)
     except NotTheirsRow, ValueError:
         return _to("not-yours", focus=group)
     if moved.accepted:
@@ -260,6 +264,8 @@ def answer_row(
         return _back(desk, group, "not-yours", None)
     try:
         ruling = _set_one(desk, shown, target)
+    except NotOpen:
+        return _back(desk, group, "not-open", None)
     except NotTheirsRow, ValueError:
         return _back(desk, group, "not-yours", None)
     if ruling is None:

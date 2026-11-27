@@ -69,7 +69,7 @@ Which of the bank's rows the base holds already, whatever day each is dated (`ca
 
 Content is matched over the whole account, not only near the cut-over, so a row before it keeps the base entry that is its own, and a card row the ledger dated on the day the charge was made and the bank dates days later, after the cut-over, is still the one row.
 A row from the cut-over on that the base does not hold is booked, by every rule below: pending rows are not, each transaction is taken once, it is flagged `!` until reviewed, and its `source` names its connection.
-Its proposal is hearth's own, from Plaid's category (`booking.proposal`); proposing from the ledger's own categories is a later change's.
+It is suggested a category in the ledger's own terms: as its owners decided before for the merchant, as the ledger books the merchant, as the ledger books the bank's category, or as hearth names the bank's category only where the ledger already has that category (`hearth.proposals`, `docs/review.md`, "Suggestions, and why").
 A row before the cut-over that the base does not hold is one the ledger never kept: it is never booked and never put in Review, and `hearth match-accounts` and the import's check count it.
 
 A carried account has no opening entry, since the base says what it held.
@@ -118,8 +118,11 @@ Every transaction a connected bank has posted, from the day its history starts (
 Each recompute reads the feed afresh, so what is booked is always exactly what Plaid last sent: a row Plaid revises is booked as it now stands, and a row Plaid withdraws is not booked at all.
 Running it again never books anything twice.
 
-- A row is booked flagged `!`, against the account Plaid's category proposes (`INCOME_WAGES` is `Income:Wages`, `FOOD_AND_DRINK_COFFEE` is `Expenses:FoodAndDrink:Coffee`), and waits in Review (`docs/review.md`).
-  A transfer, a loan payment, or a category Plaid could not decide proposes nothing, and balances against `Equity:Review:Unresolved` until a member says where it went.
+- A row is booked flagged `!`, against the category `hearth.proposals` suggests, and waits in Review (`docs/review.md`, "Suggestions, and why").
+  Without an imported ledger that is what its owners decided before for the same merchant, or else the account Plaid's category names (`INCOME_WAGES` is `Income:Wages`, `FOOD_AND_DRINK_COFFEE` is `Expenses:FoodAndDrink:Coffee`).
+  It says why in words, as `review-why` and `review-reason`, which name no member.
+  A transfer, a loan payment, or a row nothing suggests anything for balances against `Equity:Review:Unresolved` until a member says where it went or what it was.
+  Such a row is not in any spending or income total until then, but its account still counts as one that moves them (`books.flowing`), so a month it waits in reads as what the books hold of it, never as a month with nothing in it.
 - A payment from a bank account to a card the household also connects is booked once, as a transfer between the two, and marked `*`: both banks' own rows say it, and nothing in it is a guess (`docs/pairing.md`).
   A side of a card payment nothing pairs with balances against `Equity:Review:TransferPending`, never as spending or income.
 - A pending row is not booked: it may still change or vanish, and its posted version would compete with it.
