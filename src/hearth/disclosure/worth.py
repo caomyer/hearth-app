@@ -133,14 +133,14 @@ def net_worth(h: Household) -> NetWorthView:
     moving = [part for part in detailed if h.gate.may(Facet.TRANSACTIONS, part.owners)]
     return NetWorthView(
         headline=headline(h, parts),
-        adds_up=tuple(_contribution(h, part) for part in _viewer_first(h, parts)),
+        adds_up=tuple(_contribution(h, part) for part in viewer_first(h, parts)),
         moves=_moves(h, moving),
         moves_cover=tuple(h.part_ref(p) for p in moving),
         moves_leave_out=tuple(h.part_ref(p) for p in parts if p not in moving),
         moves_priced_from=h.priced_from(moving),
         holdings=tuple(
             holding
-            for part in _viewer_first(h, detailed)
+            for part in viewer_first(h, detailed)
             for holding in _holdings(h, part)
             if holding.held
         ),
@@ -150,11 +150,13 @@ def net_worth(h: Household) -> NetWorthView:
             if p not in detailed
         ),
         provenance=_provenance(h, detailed),
-        names=_names(h, detailed),
+        names=security_names(h, detailed),
     )
 
 
-def _names(h: Household, parts: Sequence[Part]) -> dict[str, str]:
+def security_names(h: Household, parts: Sequence[Part]) -> dict[str, str]:
+    """What each security the parts hold today is called, from the ledger's commodity
+    directives: those with no name there are left out, and go by their symbol."""
     held = {
         p.holding.commodity for part in parts for p in figures.worth(h.books.today, part).positions
     }
@@ -165,7 +167,7 @@ def _names(h: Household, parts: Sequence[Part]) -> dict[str, str]:
     }
 
 
-def _viewer_first(h: Household, parts: Sequence[Part]) -> list[Part]:
+def viewer_first(h: Household, parts: Sequence[Part]) -> list[Part]:
     """The viewer's own accounts, then joint accounts, then everyone else."""
     return sorted(parts, key=lambda p: (p.owners != {h.viewer.id}, not p.is_joint))
 
@@ -237,7 +239,7 @@ def _holdings(h: Household, part: Part) -> list[Holding]:
     """Each of the part's accounts with its positions: its securities by what they are called,
     then its cash, as the design lists them."""
     ref = h.part_ref(part)
-    names = _names(h, [part])
+    names = security_names(h, [part])
     return [
         Holding(
             account_id=account.id,

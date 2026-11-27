@@ -3,7 +3,9 @@ from decimal import Decimal
 
 import pytest
 from beancount import loader
+from beancount.core.amount import Amount
 from beancount.core.data import Directive, Transaction
+from beancount.core.number import D
 
 from hearth.valuation.holdings import Holding, holdings_at
 
@@ -51,8 +53,9 @@ def entries() -> list[Directive]:
 def test_positions_on_a_day_sum_every_lot_up_to_it(entries: list[Directive]) -> None:
     assert holdings_at(entries, date(2026, 2, 28)) == [
         Holding("Assets:Bank:Checking", "USD", Decimal("900.00")),
-        Holding("Assets:Broker:Taxable", "FUNDA", Decimal("10.123")),
-        Holding("Assets:Broker:Taxable", "FUNDB", Decimal("2.5")),
+        # 10.123 at 50.00 and 2.5 at 40.00, lots at cost; cash costs nothing the books hold.
+        Holding("Assets:Broker:Taxable", "FUNDA", Decimal("10.123"), Amount(D("506.15"), "USD")),
+        Holding("Assets:Broker:Taxable", "FUNDB", Decimal("2.5"), Amount(D("100.00"), "USD")),
         Holding("Liabilities:Card", "USD", Decimal("-25.10")),
     ]
 
@@ -86,3 +89,55 @@ def test_unbooked_entries_are_refused_rather_than_guessed() -> None:
 
     with pytest.raises(ValueError, match="no number"):
         holdings_at(unbooked, date(2026, 12, 31))
+
+
+COSTS = """
+option "operating_currency" "USD"
+
+2026-01-01 open Assets:Broker:Taxable
+2026-01-01 open Income:Gains
+2026-01-01 open Equity:Opening
+
+2026-01-02 * "Two lots"
+  Assets:Broker:Taxable  10 FUNDA {50.00 USD}
+  Assets:Broker:Taxable  4 FUNDA {62.50 USD}
+  Equity:Opening
+
+2026-02-02 * "Sell the first lot in part"
+  Assets:Broker:Taxable  -3 FUNDA {50.00 USD} @ 70.00 USD
+  Assets:Broker:Taxable  210.00 USD
+  Income:Gains  -60.00 USD
+
+2026-01-02 * "Moved in at no cost the ledger says"
+  Assets:Broker:Taxable  6 FUNDC
+  Equity:Opening
+
+2026-01-02 * "A lot in euros beside a lot in dollars"
+  Assets:Broker:Taxable  1 FUNDD {10.00 USD}
+  Assets:Broker:Taxable  1 FUNDD {9.00 EUR}
+  Equity:Opening
+"""
+
+
+@pytest.fixture(scope="module")
+def costed() -> list[Directive]:
+    loaded, errors, _ = loader.load_string(COSTS)
+    assert errors == []
+    return loaded
+
+
+def test_a_positions_cost_is_its_lots_less_what_was_sold_at_cost(costed: list[Directive]) -> None:
+    held = {h.commodity: h for h in holdings_at(costed, date(2026, 12, 31))}
+
+    # 10 at 50.00 and 4 at 62.50 is 750.00; three of the first sold take 150.00 of it.
+    assert held["FUNDA"].units == Decimal(11)
+    assert held["FUNDA"].cost == Amount(D("600.00"), "USD")
+
+
+def test_a_position_any_of_whose_units_came_at_no_cost_has_none(costed: list[Directive]) -> None:
+    held = {h.commodity: h for h in holdings_at(costed, date(2026, 12, 31))}
+
+    assert held["FUNDC"].cost is None
+    # Lots in two currencies add up to no one cost.
+    assert held["FUNDD"].cost is None
+    assert held["USD"].cost is None

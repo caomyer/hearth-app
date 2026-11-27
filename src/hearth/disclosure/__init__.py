@@ -42,6 +42,7 @@ from hearth.disclosure.gate import (
     may_learn,
     may_review,
 )
+from hearth.disclosure.holdings import HoldingsView, PriceHistory, holdings, price_history
 from hearth.disclosure.household import HouseholdView, household
 from hearth.disclosure.journal import Filter, Journal, journal
 from hearth.disclosure.naming import Namer
@@ -76,6 +77,7 @@ if TYPE_CHECKING:
     from hearth.review.desk import Decision, ReviewDesk
     from hearth.review.pile import PileItem
     from hearth.review.rulings import RulingStore
+    from hearth.valuation.pricestore import PriceStore
 
 __all__ = [
     "COMPARE_FROM_DAY",
@@ -91,6 +93,7 @@ __all__ = [
     "Disclosure",
     "FailureNotice",
     "Filter",
+    "HoldingsView",
     "HouseholdView",
     "Journal",
     "LeftOut",
@@ -99,6 +102,7 @@ __all__ = [
     "Pace",
     "PartRef",
     "PersonView",
+    "PriceHistory",
     "Withheld",
     "Worth",
     "left_out",
@@ -282,6 +286,16 @@ class Disclosure:
 
     def net_worth(self) -> NetWorthView:
         return net_worth(self._household())
+
+    def holdings(self) -> HoldingsView:
+        """What the investment accounts the viewer may see the balances of hold, what each
+        holding cost and is worth, and whose positions are withheld from them."""
+        return holdings(self._household())
+
+    def price_history(self, symbol: str, prices: PriceStore) -> PriceHistory:
+        """Where the price of a security comes from and every price hearth holds of it, for one
+        the viewer may see a holding of; any other is concealed, whoever holds it."""
+        return price_history(self._household(), symbol, prices)
 
     def account(
         self, account_id: str, month: Month, rulings: RulingStore | None = None

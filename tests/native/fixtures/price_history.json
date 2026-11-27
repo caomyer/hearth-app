@@ -1,0 +1,21 @@
+{
+  "id": 10,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "symbol": "ZQAA",
+    "ticker": "ZQAA",
+    "name": "Zq Total Market",
+    "freshness": "current",
+    "price": {"value": "1234.56", "day": "2026-10-14", "source": "eodhd", "fetched_at": "2026-10-15T06:00:00Z", "age": 1},
+    "closes": [
+      {"day": "2026-09-30", "price": "1218.40", "source": "eodhd"},
+      {"day": "2026-10-01", "price": "1221.05", "source": "eodhd"},
+      {"day": "2026-10-02", "price": "1219.88", "source": "hand"},
+      {"day": "2026-10-14", "price": "1234.56", "source": "eodhd"}
+    ]
+  }
+}
