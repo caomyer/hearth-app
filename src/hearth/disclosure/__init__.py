@@ -39,6 +39,7 @@ from hearth.disclosure.gate import (
     Gate,
     Withheld,
     may_administer,
+    may_learn,
     may_review,
 )
 from hearth.disclosure.holdings import HoldingsView, PriceHistory, holdings, price_history
@@ -106,6 +107,7 @@ __all__ = [
     "Worth",
     "left_out",
     "may_administer",
+    "may_learn",
     "review_decisions",
     "rulings_in",
 ]
@@ -542,6 +544,11 @@ class Disclosure:
             may_review=may_review,
             opened={
                 e.account: (e.date, closes.get(e.account)) for e in entries if isinstance(e, Open)
+            },
+            currencies={
+                e.account: frozenset(e.currencies)
+                for e in entries
+                if isinstance(e, Open) and e.currencies
             },
             may_move_to=self._gate.may_feed,
             banks={e.account for e in entries if isinstance(e, Balance) and anchors(e)}

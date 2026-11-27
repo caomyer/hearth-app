@@ -31,7 +31,6 @@ from beancount.core.data import Balance, Posting, Transaction
 from hearth.accounts import Account
 from hearth.books import REVIEW_EQUITY
 from hearth.disclosure.common import Household
-from hearth.disclosure.gate import may_review
 from hearth.figures import MOVED_IN, MOVED_OUT
 from hearth.plaid.opening import anchors, held
 from hearth.reports.common import is_balance_sheet, root, units
@@ -254,7 +253,7 @@ class _Reader:
             a.ledger_account for a in accounts if gate.may(Facet.ACCOUNT_BALANCES, a.owners)
         }
         self._owns = {a.ledger_account for a in accounts if gate.may_name_other_side(a.owners)}
-        self._reviews = {a.ledger_account for a in accounts if may_review(gate.viewer.id, a.owners)}
+        self._reviews = {a.ledger_account for a in accounts if gate.may_review(a.owners)}
 
     def _ref(self, ledger_account: str) -> AccountRef:
         account = self._by_ledger[ledger_account]

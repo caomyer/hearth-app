@@ -20,10 +20,38 @@ public struct Overview: Decodable, Sendable, Equatable {
     public let review: Waiting
 
     /// What waits for the viewer in Review: their own rows nobody has checked, and how much of
-    /// their own spending this month rests on them, when any does.
+    /// their own spending this month rests on them, when any does. Each figure is absent when
+    /// there is none, the viewer may not know it, or the engine is older than it.
     public struct Waiting: Decodable, Sendable, Equatable {
         public let waiting: Int
+        /// This month's own spending resting on unreviewed rows, at their suggested category.
         public let spending: Money?
+        /// This month's rows taking money out that nobody has said what they were yet, such as
+        /// a new merchant's: in no spending total until placed in Review.
+        public let unplacedSpending: Unplaced?
+        /// The same, of rows bringing money in: in no income total until placed.
+        public let unplacedIncome: Unplaced?
+        /// What this month was booked to expense categories that are not spending, such as a
+        /// retirement contribution, which no spending figure counts.
+        public let notSpending: Money?
+
+        public init(
+            waiting: Int, spending: Money? = nil, unplacedSpending: Unplaced? = nil,
+            unplacedIncome: Unplaced? = nil, notSpending: Money? = nil
+        ) {
+            self.waiting = waiting
+            self.spending = spending
+            self.unplacedSpending = unplacedSpending
+            self.unplacedIncome = unplacedIncome
+            self.notSpending = notSpending
+        }
+    }
+
+    /// Rows a total leaves out as nobody has said what they were yet: how many, and how much
+    /// money they moved its way.
+    public struct Unplaced: Decodable, Sendable, Equatable {
+        public let rows: Int
+        public let moved: Money
     }
 
     public struct NetWorth: Decodable, Sendable, Equatable {

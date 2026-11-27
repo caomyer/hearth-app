@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from hearth import auth, books, db, members, sessions, throttle
-from hearth.disclosure import rulings_in
+from hearth.disclosure import may_learn, rulings_in
 from hearth.native import doorway as asks
 from hearth.native.bridge import SIGNED_OUT, Acted, Bridge, Outcome
 from hearth.native.doorway import Doorway
@@ -179,7 +179,9 @@ def test_the_household_the_mac_app_is_tested_on_is_worth_what_its_test_expects(
     """The household ``tests.native.on_disk`` writes for the Mac app's end-to-end test, read
     as ``hearth bridge`` reads it: from its own books, with no ledger."""
     settings = on_disk.build(tmp_path / "data", "fixture-passphrase", now=clock())
-    keeper = books.Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
+    keeper = books.Bookkeeper(
+        books.from_household(settings, rulings=rulings_in, learns=may_learn), clock
+    )
     keeper.recompute(wait=True)
     assert keeper.status.failure is None, keeper.status.failure
     door = Bridge(settings, keeper, clock)

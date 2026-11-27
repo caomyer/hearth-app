@@ -109,6 +109,27 @@ class BasePosting:
 
 
 @dataclass(frozen=True, slots=True)
+class BaseEntry:
+    """A transaction of the base, as proposals read it (``hearth.proposals``): what it says,
+    the balance-sheet accounts it moves, and the one category it books, if it books one."""
+
+    entry: int
+    day: date
+    payee: str | None
+    narration: str
+    accounts: frozenset[str]
+    """The Assets and Liabilities accounts it posts to."""
+    category: str | None
+    """Its one Income or Expenses account, or None for an entry that books none, as a
+    transfer does, or several, as a split does."""
+    checked: bool
+    """Whether the ledger marks it complete: not `!`, a row its importer set aside."""
+    review_id: str | None = None
+    """The review id of a row the ledger's importer set aside for review, which a ruling may
+    decide."""
+
+
+@dataclass(frozen=True, slots=True)
 class Held:
     """The base as carrying and matching read it (`read`)."""
 
@@ -128,6 +149,8 @@ class Held:
     says the account holds, by day and currency."""
     balanced: Mapping[str, tuple[date, ...]] = field(default_factory=dict)
     """The day of every balance assertion on each account."""
+    entries: tuple[BaseEntry, ...] = ()
+    """Every transaction of the base but those beancount makes of a `pad`, in order."""
 
 
 def read(entries: Sequence[Directive]) -> Held:
@@ -144,6 +167,7 @@ def read(entries: Sequence[Directive]) -> Held:
     last_pad: dict[str, date] = {}
     moved: dict[str, list[tuple[date, str, Decimal]]] = defaultdict(list)
     balanced: dict[str, list[date]] = defaultdict(list)
+    described: list[BaseEntry] = []
     for number, entry in enumerate(entries):
         if isinstance(entry, Open):
             opened[entry.account] = min(entry.date, opened.get(entry.account, entry.date))
@@ -168,6 +192,7 @@ def read(entries: Sequence[Directive]) -> Held:
                 moved[posting.account].append((entry.date, units.currency, units.number))
         if entry.flag == PADDED:
             continue
+        described.append(_described(number, entry))
         for found in ids_of(entry.meta):
             ids[found].append((number, None))
         day = posted_on(entry)
@@ -198,6 +223,23 @@ def read(entries: Sequence[Directive]) -> Held:
         closed,
         {account: tuple(found) for account, found in moved.items()},
         {account: tuple(found) for account, found in balanced.items()},
+        tuple(described),
+    )
+
+
+def _described(number: int, entry: Transaction) -> BaseEntry:
+    categories = {p.account for p in entry.postings if not is_balance_sheet(p.account)}
+    flows = {a for a in categories if a.split(":", 1)[0] in ("Income", "Expenses")}
+    review_id = (entry.meta or {}).get("review-id")
+    return BaseEntry(
+        number,
+        entry.date,
+        entry.payee,
+        entry.narration or "",
+        frozenset(p.account for p in entry.postings if is_balance_sheet(p.account)),
+        next(iter(flows)) if len(flows) == 1 and flows == categories else None,
+        entry.flag != "!",
+        review_id if isinstance(review_id, str) and review_id else None,
     )
 
 
@@ -384,6 +426,9 @@ class Carry:
     reaches: date | None = None
     """The first day of the bank's history for the account (`window`): what hearth asked
     for, or, where the bank evidently sent less, its earliest posted row."""
+    held_by: Mapping[str, int] = field(default_factory=dict)
+    """The Plaid id of each row the base holds, with the base entry holding it: the ledger's
+    own record of the row, which says how the ledger booked it (``hearth.proposals``)."""
 
     @property
     def held(self) -> frozenset[str]:
@@ -434,11 +479,13 @@ def carry(held: Held, account: str, rows: Sequence[Row], asked: date | None = No
     used: set[BasePosting] = set()
     by_ids: list[Row] = []
     rest: list[Row] = []
+    held_by: dict[str, int] = {}
     for row in posted:
         mine = [p for p in placed(held, row) if p.account == account]
         if mine:
             by_ids.append(row)
             used.update(mine)
+            held_by[row.transaction_id] = min(p.entry for p in mine)
         else:
             rest.append(row)
     pool = [p for p in held.postings if p.account == account and p not in used]
@@ -447,6 +494,7 @@ def carry(held: Held, account: str, rows: Sequence[Row], asked: date | None = No
         [(p.day, p.number, p.currency) for p in pool],
     )
     by_contents = [rest[i] for i, _ in pairs]
+    held_by |= {rest[i].transaction_id: pool[j].entry for i, j in pairs}
     content_ids = {r.transaction_id for r in by_contents}
     opening: defaultdict[str, Decimal] = defaultdict(Decimal)
     for moved_on, currency, number in held.moved.get(account, ()):
@@ -464,6 +512,7 @@ def carry(held: Held, account: str, rows: Sequence[Row], asked: date | None = No
         dict(opening),
         max((r.day for r in holding), default=None),
         window(asked, posted),
+        held_by,
     )
 
 

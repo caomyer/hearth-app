@@ -21,7 +21,7 @@ from hearth import auth, books, db, sessions
 from hearth.app import create_app
 from hearth.books import Bookkeeper
 from hearth.config import Settings
-from hearth.disclosure import Disclosure, rulings_in
+from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.members import MemberId, find
 from hearth.plaid.connector import NEW
 from hearth.plaid.fake import FakeAccount, FakeInstitution, FakePlaid
@@ -203,7 +203,7 @@ def first_day(
     finally:
         conn.close()
     bookkeeper = Bookkeeper(
-        books.from_household(settings, rulings=rulings_in),
+        books.from_household(settings, rulings=rulings_in, learns=may_learn),
         clock,
         standing=lambda: books.standing(settings),
     )

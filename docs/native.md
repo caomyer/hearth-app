@@ -130,6 +130,9 @@ What a decision says:
 | `not_yours` | A row goes only to a category or one of the viewer's own accounts; which rule an account broke is never said. |
 | `banks_account` | That account's balance is its bank's, so only the bank's rows go in it. |
 | `banks_row` | Its bank counts the row in the balance it reports, so it cannot be excluded. |
+| `not_open` | The books hold that category, but close it before a row's day or keep it for another currency, so no row may be booked there (`desk.NotOpen`); told for `book`, `move_row` and `move_group`. |
+
+The app reads an outcome it does not know as `unknown`, says it cannot tell what became of the decision, and asks for Review afresh.
 
 A row, group or ruling that is not on the viewer's desk is `missing`, exactly like one that does not exist, and changes nothing.
 There is no auto-accept, and no action accepts more than one group.
@@ -226,12 +229,15 @@ It says where today's price came from (`price`), and `closes`, oldest first, one
 ### Review
 
 The review screens are written from the viewer's own desk (`Disclosure.review_desk`) and nothing else: a member is shown only rows they may rule on, and never another member's queue, not even a count, whatever is shared.
-The `overview` says how many of the viewer's rows wait (`review.waiting`, those waiting to be told where their money went among them, as the pages count them) and how much of their own spending this month rests on such rows (`review.spending`).
+The `overview` says how many of the viewer's rows wait (`review.waiting`, those waiting to be told where their money went among them, as the pages count them) and how much of their own spending this month rests on such rows, at their suggested category (`review.spending`).
+It also says, as the viewer's own page does, the rows this month nobody has said what they were yet, such as a new merchant's, which are in no total until placed (`review.unplaced_spending` and `review.unplaced_income`, each `rows` and the money they `moved` that way), and what was booked to expense categories that are not spending, such as a retirement contribution, which no spending figure counts (`review.not_spending`).
+Each is null when there is none, or when the viewer's own totals are not complete enough to show (`docs/review.md`, "Totals that lean on unreviewed rows").
 A `transactions` entry names the review it waits on (`review`) only to whoever may make it.
 
 - `review` answers how much waits and what it moves (`remaining`), what the filter leaves (`shown`), how many are reviewed of the `total`, rows that came back (`changed`, `revised`, and `kept`, those whose decision the books do not apply, as `review.decision.guarded` keeps them unreviewed), rows waiting to be told where their money went, counted apart (`elsewhere`), the values it may be narrowed to (`accounts`, `categories`), its `groups` in order, each with its rows by id and whether it is one decision (`one_decision`), and every row the filter leaves (`rows`), in the queue's order.
-- A row says why it is suggested in words (`reason`), never as a percentage; whether it may be excluded (`excludable`, false when its bank counts it); and what it says (`says`), which binds a decision to it.
-  A row that came back says why in `reason`: its decision is one the books keep unreviewed, moved onto an account whose balance its bank decides now, or excluded although its bank counts it.
+- A row says why it is suggested in words (`reason`, `review.queue.explain`, the very words the review page gives it): "Dining twice before", "As your ledger books it", "Bank says Restaurant", "New merchant", "Not booked to a category before", or a band an importer's score falls in, never a percentage; whether it may be excluded (`excludable`, false when its bank counts it); and what it says (`says`), which binds a decision to it.
+  A row that came back says why in `reason`: its suggestion changed since it was accepted, the bank changed it since it was reviewed or changed how it describes it since it was accepted, or its decision is one the books keep unreviewed, moved onto an account whose balance its bank decides now, or excluded although its bank counts it.
+- A group is named for the category its rows suggest, or for the bank's category said to be suggesting nothing (`docs/review.md`, "The queue at a thousand rows"); `least_sure` says, in the same words as a row's `reason`, why the least sure of its rows is suggested as it is.
 - A row's `kind` is `transaction`, or `reconciling` for a carried account's difference with its bank (`docs/review.md`, "Where the imported ledger and the bank disagree"): its `narration` says by how much they disagree as of which day, its `reason` what to do about it, and it is confirmed with an `accept` of what it proposes, never accepted with its group (its group is never `one_decision`) nor excluded.
   The app reads a `kind` it does not know as a `transaction`, whose decisions the desk still decides.
 - The whole queue is answered at once, as the review page shows it, since a group's accept is bound to every row it shows.
@@ -267,6 +273,9 @@ An entry is one of `transaction`, `transfer` or `balance` (`hearth.disclosure.jo
 - An opening balance is never an entry.
 - A `balance` is a check the books hold, on the last day it covers, for whoever may see both the account's balance and its transactions; every check in the books passed.
 - `unreviewed` marks a row nobody has checked; `suggested` says its category is hearth's suggestion, and `waiting` what one with no category waits to be told.
+- `reason` says, in words, why an unreviewed row is suggested as it is, or why nothing is: "Dining twice before", "As your ledger books it", "Bank says Restaurant", "New merchant" (`docs/review.md`, "Suggestions, and why").
+  It is the row's `reason` in `review`, from the viewer's own desk, so the journal and Review never say two things of one row.
+  It is told only on a row that names its `review`, one the viewer reviews, and is null on everything else, as it says what the row's owners decided before; an app that does not know it ignores it, and one that does reads it as none when an older engine leaves it out.
 - `position` is where it stands in what the filter leaves, which is how the app tells entries apart; it says nothing of the household's ledger.
 
 ## The boundary

@@ -456,6 +456,49 @@ struct ReviewModelTests {
         #expect(!desk.decisions.canUndo)
     }
 
+    @Test("a category the books close on the row's day is refused in the page's words")
+    func notOpen() async throws {
+        let engine = ScriptedReview(
+            ["review": [full], "overview": []], results: [ActResult(outcome: .notOpen)])
+        let (review, desk) = model(engine)
+        await review.reload()
+
+        await desk.decisions.make(.book(review.queue!.row("k1")!, to: .typed("Expenses:Garden")))
+
+        let notice = try #require(desk.decisions.notice)
+        #expect(notice.tone == .problem)
+        #expect(notice.text.contains("Your books close that category before the day of this transaction"))
+        #expect(!desk.decisions.canUndo)
+    }
+
+    @Test("an outcome this app does not know says so, and offers no Undo")
+    func unknownOutcome() async throws {
+        let engine = ScriptedReview(
+            ["review": [full], "overview": []], results: [ActResult(outcome: .unknown, ruling: 7, rows: 1)])
+        let (review, desk) = model(engine)
+        await review.reload()
+
+        await desk.decisions.make(.exclude(review.queue!.row("k1")!))
+
+        let notice = try #require(desk.decisions.notice)
+        #expect(notice.tone == .problem)
+        #expect(notice.text == "Hearth could not say what became of that. Here is what is waiting now.")
+        #expect(!desk.decisions.canUndo)
+    }
+
+    @Test("what this month's totals leave out unplaced is said as the person's own page says it")
+    func unplaced() {
+        let waiting = Overview.Waiting(
+            waiting: 4, unplacedSpending: Overview.Unplaced(rows: 1, moved: money("12.00")),
+            unplacedIncome: Overview.Unplaced(rows: 2, moved: money("300.00")))
+        #expect(
+            ReviewWords.unplaced(waiting, month: "October", currency: "USD", locale: Locale(identifier: "en_US")) == [
+                "October's spending leaves out 1 transaction of $12 nobody has said what it was yet, which is in no total until placed in Review.",
+                "October's income leaves out 2 transactions of $300 nobody has said what they were yet, which are in no total until placed in Review.",
+            ])
+        #expect(ReviewWords.unplaced(Overview.Waiting(waiting: 4), month: "October", currency: "USD") == [])
+    }
+
     @Test("narrowing asks again with what it is narrowed to")
     func narrows() async {
         let engine = ScriptedReview(["review": [full]])

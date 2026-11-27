@@ -1,7 +1,7 @@
 """The household as disclosure sees it before any decision, and the view types pages share."""
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -11,7 +11,7 @@ from hearth import figures
 from hearth.accounts import Account
 from hearth.books import Books
 from hearth.disclosure.gate import Disclosed, Gate, Withheld
-from hearth.figures import Part
+from hearth.figures import Part, Unplaced
 from hearth.members import Member, MemberId
 from hearth.months import Month
 from hearth.reports.flows import OwnersOf
@@ -118,11 +118,27 @@ class Unreviewed:
     amount: Decimal
     rows: int
     unknown: tuple[PartRef, ...]
+    unplaced: Unplaced = field(default_factory=Unplaced)
+    """Of the same parts, the rows nothing says what they were yet (``books.uncategorised``),
+    such as a new merchant's, moving money the total's way: they are in no total at all until
+    a member places them, so the total says how many there are and how much they moved."""
+
+    kept: Decimal = Decimal(0)
+    """Of the parts in a spending total whose categories or transactions the viewer may see,
+    what was booked to expense accounts that are not spending (``hearth.categories``), such as
+    a retirement contribution: left out of the total, which says so, as it is part of what was
+    left over instead. Which categories a part books to is its detail, so for any other part
+    it is not said."""
 
     @property
     def leans(self) -> bool:
-        """Whether the total is known to rest on unreviewed rows."""
+        """Whether the total is known to rest on unreviewed rows, at their suggested category."""
         return self.amount != 0
+
+    @property
+    def leaves_out(self) -> bool:
+        """Whether the total is known to leave out rows nobody has said what they were yet."""
+        return self.unplaced.rows > 0
 
 
 def unreviewed(
@@ -131,6 +147,8 @@ def unreviewed(
     ref: Callable[[Part], PartRef],
     amount: Callable[[Part], Decimal],
     rows: Callable[[Part], int],
+    unplaced: Callable[[Part], Unplaced] | None = None,
+    kept: Callable[[Part], Decimal] | None = None,
 ) -> Unreviewed:
     """What of a total over `parts` is unreviewed, as far as the viewer may know it.
 
@@ -138,10 +156,23 @@ def unreviewed(
     decides, part by part, whether they may also know how much of that share is unreviewed.
     """
     known = [part for part in parts if gate.may_see_review_state(part.owners)]
+    # Which categories a part books money to is its detail, so what it booked as not spending is
+    # said only to whoever may see its categories or its transactions.
+    detail = [
+        part
+        for part in parts
+        if gate.may(Facet.CATEGORY_BREAKDOWN, part.owners)
+        or gate.may(Facet.TRANSACTIONS, part.owners)
+    ]
+    placed = Unplaced()
+    for part in known:
+        placed += unplaced(part) if unplaced is not None else Unplaced()
     return Unreviewed(
         amount=sum((amount(part) for part in known), Decimal(0)),
         rows=sum(rows(part) for part in known),
         unknown=tuple(ref(part) for part in parts if part not in known),
+        unplaced=placed,
+        kept=sum((kept(part) for part in detail), Decimal(0)) if kept is not None else Decimal(0),
     )
 
 

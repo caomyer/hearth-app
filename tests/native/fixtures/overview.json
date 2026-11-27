@@ -23,6 +23,12 @@
       {"day": "2026-09-30", "value": "163916.33", "is_floor": false},
       {"day": "2026-10-15", "value": "162711.83", "is_floor": false}
     ],
-    "review": {"waiting": 14, "spending": "1120.37"}
+    "review": {
+      "waiting": 14,
+      "spending": "1120.37",
+      "unplaced_spending": {"rows": 3, "moved": "41.20"},
+      "unplaced_income": null,
+      "not_spending": "500.00"
+    }
   }
 }

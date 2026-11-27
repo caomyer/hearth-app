@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import delta, hero_value, asof, failure_alert, seen_tag, avatar, day_table %}
-{% from "_macros.html" import unreviewed_sub %}
+{% from "_macros.html" import unreviewed_sub, unplaced_note, kept_sentence %}
 {% set me = view %}
 {% set books = status.books %}
 {% set shares = me.shares | selectattr(1) | map(attribute=0) | list %}
@@ -236,8 +236,8 @@
         {% endif %}
         {% endif %}
       </div>
-      {% if totals.covered and cats.unreviewed.leans %}
-      <div class="panel-foot"><span>Includes <span class="tnum">{{ cats.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.</span></div>
+      {% if totals.covered and (cats.unreviewed.leans or cats.unreviewed.leaves_out or cats.unreviewed.kept) %}
+      <div class="panel-foot"><span>{% if cats.unreviewed.leans %}Includes <span class="tnum">{{ cats.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ kept_sentence(cats.unreviewed.kept) }}{{ unplaced_note(cats.unreviewed) }}</span></div>
       {% endif %}
     </section>
   </div>

@@ -14,7 +14,7 @@ it said then (``PileItem.says``). A row that changed in between is left waiting,
 is told.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 
 from hearth.disclosure import Disclosure
@@ -42,6 +42,7 @@ from hearth.review.desk import (
     BanksRow,
     ItemView,
     NotOneDecision,
+    NotOpen,
     NotTheirs,
     ReviewDesk,
     State,
@@ -74,14 +75,41 @@ def _desk(view: Disclosure, around: Around) -> ReviewDesk:
 def waiting(view: Disclosure, around: Around) -> Answer:
     """What waits for the viewer in Review, for the Overview to say: how many of their rows
     nobody has checked, those waiting to be told where their money went among them, as the
-    pages count them, and how much of their own spending this month rests on such rows."""
+    pages count them; how much of their own spending this month rests on such rows, at their
+    suggested category; the rows nobody has said what they were yet, which are in no spending
+    or income total until placed; and what they booked as not spending, which no spending
+    figure counts. All of it as their own page says it (``disclosure.common.Unreviewed``)."""
     desk = _desk(view, around)
     totals = view.you().totals
-    spent = totals.spent_unreviewed
-    leaning = isinstance(spent, Unreviewed) and totals.covered and spent.leans
+    spent = totals.spent_unreviewed if totals.covered else None
+    earned = totals.earned_unreviewed if totals.covered else None
+    out = spent if isinstance(spent, Unreviewed) else None
     return {
         "waiting": sum(1 for item in desk.items() if item.unreviewed),
-        "spending": money(abs(spent.amount)) if isinstance(spent, Unreviewed) and leaning else None,
+        "spending": money(abs(out.amount)) if out is not None and out.leans else None,
+        "unplaced_spending": _unplaced(spent),
+        "unplaced_income": _unplaced(earned),
+        "not_spending": money(abs(out.kept)) if out is not None and out.kept else None,
+    }
+
+
+def _unplaced(found: object) -> Answer | None:
+    """How many rows a total leaves out as nobody has said what they were yet, and how much
+    money they moved its way; None when it leaves out none, or the viewer may not know."""
+    if not isinstance(found, Unreviewed) or not found.leaves_out:
+        return None
+    return {"rows": found.unplaced.rows, "moved": money(abs(found.unplaced.amount))}
+
+
+def reasons(view: Disclosure, around: Around, review_ids: Collection[str]) -> Mapping[str, str]:
+    """Why each of `review_ids` on the viewer's own desk is suggested as it is, in the words
+    Review gives it beside the row (`explain`); a row not on their desk has none."""
+    if not review_ids:
+        return {}
+    return {
+        found.item.review_id: explain(found)
+        for found in _desk(view, around).items()
+        if found.item.review_id in review_ids
     }
 
 
@@ -296,6 +324,8 @@ def _book(desk: ReviewDesk, asked: object) -> Decided:
         return Decided(Acted.NOT_YOURS)
     except BanksAccount:
         return Decided(Acted.BANKS_ACCOUNT)
+    except NotOpen:
+        return Decided(Acted.NOT_OPEN)
     except ValueError:
         return Decided(Acted.NOT_AN_ACCOUNT)
     return _settled(ruling, target)
@@ -311,6 +341,8 @@ def _move_row(desk: ReviewDesk, asked: object) -> Decided:
         return Decided(Acted.NOT_YOURS)
     try:
         ruling = desk.answer_shown(asked.row, asked.says, target)
+    except NotOpen:
+        return Decided(Acted.NOT_OPEN)
     except ValueError:
         return Decided(Acted.NOT_YOURS)
     return _settled(ruling, target)
@@ -389,6 +421,8 @@ def _move_group(desk: ReviewDesk, asked: object) -> Decided:
         return Decided(Acted.NOT_YOURS)
     try:
         moved = desk.move_group(asked.title or "Where did it go?", target, asked.shown)
+    except NotOpen:
+        return Decided(Acted.NOT_OPEN)
     except ValueError:
         return Decided(Acted.NOT_YOURS)
     ruling = moved.ruling.id if moved.ruling is not None else None
@@ -453,7 +487,7 @@ def _group(group: QueueGroup) -> Answer:
         "moved": money(group.tally.moved),
         "suggested": [_category(name) for name in group.suggested],
         "one_decision": group.one_decision,
-        "least_sure": group.lowest.value,
+        "least_sure": group.lowest,
         "rows": [row.item.review_id for row in group.rows],
     }
 

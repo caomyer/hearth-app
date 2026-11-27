@@ -16,8 +16,9 @@ from typing import Any
 
 import pytest
 
-from hearth import books, db
-from hearth.disclosure import rulings_in
+from hearth import books, categories, db
+from hearth.categories import Kind
+from hearth.disclosure import may_learn, rulings_in
 from hearth.native import stdio
 from hearth.native.bridge import Acted, Bridge
 from hearth.native.common import Decided
@@ -218,12 +219,49 @@ def test_the_overview_says_how_much_waits_for_the_viewer(kites: World) -> None:
     review = ready(bridge(kites, "casey").answer("overview"))["review"]
 
     # The row nothing was suggested for, and the one waiting to be told where its money went,
-    # count at no category, so only the kites are spending.
-    assert review == {"waiting": 5, "spending": "33.00"}
+    # count at no category, so only the kites are spending. The first is in no total until
+    # Casey places it, which is said; the second is a move, so it is not.
+    assert review == {
+        "waiting": 5,
+        "spending": "33.00",
+        "unplaced_spending": {"rows": 1, "moved": "23.45"},
+        "unplaced_income": None,
+        "not_spending": None,
+    }
     assert ready(bridge(kites, "avery").answer("overview"))["review"] == {
         "waiting": 0,
         "spending": None,
+        "unplaced_spending": None,
+        "unplaced_income": None,
+        "not_spending": None,
     }
+
+
+def test_the_overview_says_of_this_months_totals_what_the_viewers_own_page_says(
+    kites: World,
+) -> None:
+    """Kites booked as not spending: no spending figure counts them, which the banner says, as
+    Casey's own page does; and nobody else is told it, whatever Casey shares."""
+    conn = kites.connect()
+    try:
+        categories.set_kind(conn, KITES, Kind.NOT_SPENDING, now=kites.clock())
+    finally:
+        conn.close()
+    kites.choose("casey", frozenset(Facet))
+    kites.recompute()
+
+    review = ready(bridge(kites, "casey").answer("overview"))["review"]
+
+    assert review["spending"] is None
+    # Every kite this month, the one already reviewed among them, as the page counts it.
+    assert review["not_spending"] == "45.34"
+    assert review["unplaced_spending"] == {"rows": 1, "moved": "23.45"}
+    page = kites.signed_in("casey").get("/you").text
+    assert "booked as not spending, such as a retirement contribution" in page
+    assert "Leaves out" in page
+    for other in ("avery", "blake"):
+        told = ready(bridge(kites, other).answer("overview"))["review"]
+        assert (told["not_spending"], told["unplaced_spending"]) == (None, None), other
 
 
 def test_an_unreviewed_journal_entry_names_the_review_it_waits_on_to_its_reviewer(
@@ -437,7 +475,9 @@ def test_a_row_its_bank_counts_offers_no_exclude_and_refuses_one(
     tmp_path: Path, clock: FakeClock
 ) -> None:
     settings = on_disk.build(tmp_path / "data", "fixture-passphrase", now=clock())
-    keeper = books.Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
+    keeper = books.Bookkeeper(
+        books.from_household(settings, rulings=rulings_in, learns=may_learn), clock
+    )
     keeper.recompute(wait=True)
     door = Bridge(settings, keeper, clock)
     door.sign_in("avery", "fixture-passphrase")
@@ -605,7 +645,9 @@ def test_the_household_the_mac_app_reviews_has_a_group_one_accept_settles_and_a_
     """What the Mac app's end-to-end test of Review counts on, read as ``hearth bridge``
     reads the household ``tests.native.on_disk`` writes."""
     settings = on_disk.build(tmp_path / "data", "fixture-passphrase", now=clock())
-    keeper = books.Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
+    keeper = books.Bookkeeper(
+        books.from_household(settings, rulings=rulings_in, learns=may_learn), clock
+    )
     keeper.recompute(wait=True)
     door = Bridge(settings, keeper, clock)
     door.sign_in("avery", "fixture-passphrase")

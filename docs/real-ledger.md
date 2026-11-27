@@ -202,6 +202,30 @@ A carried account is vouched for through its connection's last successful sync, 
 A matched account that is not carried, a brokerage, is vouched for only through the base's own last day on it, never through a later sync: nothing after the base was frozen is in the books, so a month after it reads as incomplete, however current the connection is, rather than as a quiet month.
 A live ledger inherited at `HEARTH_LEDGER` is not capped, as an import outside hearth may still be adding to it.
 
+## What the ledger teaches
+
+Once a ledger is imported, hearth suggests a category for every row it books in the ledger's own terms, never inventing one beside it (`docs/review.md`, "Suggestions, and why"):
+as the row's owners decided before for the same merchant; as the ledger's latest entries for the merchant book it; as the rows of the bank's that the ledger holds say the bank's category is, by a strict majority of at least 3; and as hearth names the bank's category only when the ledger already books that category.
+Each learns only from accounts with exactly the row's owners, so the ledger never carries one member's categories to another's rows, one owner's to a joint account's, nor a joint account's to one owner's own.
+A row a member ruled on, before the import or since, is never moved by what the ledger teaches: an accept holds while the bank's own inputs to the row are what they were (`docs/review.md`).
+Otherwise nothing is suggested and the row is asked plainly, "New merchant".
+
+### What kind of money each category is
+
+Every income and expense account is a kind of money (`hearth.categories`): pay, investment income or other income under Income; spending, tax, or not spending under Expenses.
+"Not spending" is a move booked on the expense side, such as a retirement contribution taken from pay.
+Kinds are guessed from generic words in the account's name: "Salary" or "Wages" is pay, "Interest" or "Dividends" investment income, "Tax" tax, "Retirement", "401k", "IRA", "Roth" or "Pension" not spending, and only those, never a word such as "Contribution", "Transfer" or "Savings" that names fees and charity as often; anything else is spending under Expenses and other income under Income, so nothing is ever left out.
+A guess is never stored; a kind is stored only when a person sets one:
+
+```sh
+uv run hearth categories                                            # every income and expense account, its kind, and whether it is set or guessed
+uv run hearth categories --kind Expenses:Payroll:Retirement=not-spending   # say what kind one is
+uv run hearth categories --guess Expenses:Payroll:Retirement               # forget it, and guess from the name again
+```
+
+It refuses an account the books do not name and a kind its root does not take, changing nothing; a serving hearth sees the change at once (`books.standing`).
+Every figure that means spending leaves "not spending" out, says so in a plain line with how much, to whoever may see the categories or transactions of the parts behind it, and what it leaves out is in what was left over, so the household's figures still add up (`docs/reports.md`).
+
 ## Read-only, and how that is kept
 
 Hearth never writes to the ledger it imports or inherits, or the directory it lives in; what it writes is the base and its own books file, both in its data directory (`docs/books.md`).

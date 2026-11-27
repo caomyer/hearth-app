@@ -488,7 +488,7 @@ def _moved_onto(settings: Settings, today: date) -> dict[str, tuple[PileItem, ..
     except books.LedgerError, ValueError:
         conn = db.connect(settings.database)
         try:
-            return {a: () for a in RulingStore(conn).accounts() if is_balance_sheet(a)}
+            return {a: () for a in RulingStore(conn).ruled_onto() if is_balance_sheet(a)}
         finally:
             conn.close()
     conn = db.connect(settings.database)
@@ -770,7 +770,8 @@ def _moving(
             f"{account_id} is not of a kind hearth carries on from the imported ledger yet:"
             " a brokerage's history stays where the ledger left it."
         )
-    if kept.ledger_account in RulingStore(conn).accounts():
+    # Only a row moved onto it is named by a ruling as its own; an accept names a category.
+    if kept.ledger_account in RulingStore(conn).ruled_onto():
         raise MatchRefused(
             f"Rows were moved into {kept.ledger_account} in Review, so it is not moved onto"
             f" {target}: those rulings name it."

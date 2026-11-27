@@ -43,7 +43,7 @@ from hearth.books import Books
 from hearth.cli import main
 from hearth.config import DATA_DIR_VARIABLE, LEDGER_VARIABLE, Settings
 from hearth.connections import plaid_source
-from hearth.disclosure import Disclosure, rulings_in
+from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.disclosure.balances import Standing
 from hearth.ledger_import import ImportRefused, import_ledger
 from hearth.members import find
@@ -956,7 +956,7 @@ def test_a_ledger_inherited_where_it_is_is_left_wholly_to_itself(
     finally:
         conn.close()
 
-    found = books.from_household(settings, rulings=rulings_in)(NOW)
+    found = books.from_household(settings, rulings=rulings_in, learns=may_learn)(NOW)
 
     assert found.carried == {}
     assert not [e for e in _own(found) if any(p.account == CHECKING for p in e.postings)]

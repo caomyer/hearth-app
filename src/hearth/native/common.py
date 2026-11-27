@@ -96,6 +96,9 @@ class Acted(StrEnum):
     """That account's balance is the one its bank reports, so only the bank's rows go in it."""
     BANKS_ROW = "banks_row"
     """Its bank counts the row in the balance it reports, so it cannot be left out."""
+    NOT_OPEN = "not_open"
+    """The books hold that category, but close it before a row's day or keep it for another
+    currency, so no row may be booked there (``desk.NotOpen``)."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -13,7 +13,7 @@ from beancount.core.data import Transaction
 from hearth import accounts, books, db, demo, members
 from hearth.books import Books, Status
 from hearth.config import Settings
-from hearth.disclosure import Disclosure, rulings_in
+from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.months import Month
 from hearth.plaid import feed
 from hearth.plaid.fake import DEMO_INSTITUTIONS
@@ -112,9 +112,9 @@ def test_the_first_review_demo_is_a_backfill_at_full_size(tmp_path: Path) -> Non
     finally:
         conn.close()
 
-    found: Books = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))(
-        now
-    )
+    found: Books = books.from_household(
+        settings, rulings=rulings_in, learns=may_learn, sources=(demo.PRICE_SOURCE,)
+    )(now)
 
     assert len(found.pile) > 1000
     assert len({item.group for item in found.pile}) > 15
@@ -171,7 +171,9 @@ def test_the_demos_connections_vouch_for_what_they_booked_and_its_stopped_card_s
     feed.initialise(settings.feed_database)
     demo.connect(settings, demo.plaid(lambda: now.astimezone().date(), ledger), now=now)
 
-    found = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))(now)
+    found = books.from_household(
+        settings, rulings=rulings_in, learns=may_learn, sources=(demo.PRICE_SOURCE,)
+    )(now)
     today = now.astimezone().date()
     stopped = now.astimezone().date() - timedelta(days=demo.CARD_EXPIRED_DAYS_AGO)
 
@@ -209,7 +211,9 @@ def test_the_from_zero_demo_is_a_household_with_members_and_nothing_else(tmp_pat
     finally:
         conn.close()
 
-    found = books.from_household(settings, rulings=rulings_in, sources=(demo.PRICE_SOURCE,))(now)
+    found = books.from_household(
+        settings, rulings=rulings_in, learns=may_learn, sources=(demo.PRICE_SOURCE,)
+    )(now)
 
     assert set(passwords) == {"avery", "blake"}
     assert found.entries == ()

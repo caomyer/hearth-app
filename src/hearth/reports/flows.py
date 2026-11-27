@@ -118,13 +118,20 @@ def payers(entry: Transaction, owners_of: OwnersOf) -> Owners | str:
 
 
 def spending_by_category(
-    entries: Iterable[Directive], owners_of: OwnersOf, *, start: date, end: date, currency: str
+    entries: Iterable[Directive],
+    owners_of: OwnersOf,
+    *,
+    start: date,
+    end: date,
+    currency: str,
+    counts: Callable[[str], bool] | None = None,
 ) -> Flows:
-    """Expenses from start to end, inclusive, by expense account and by who paid.
+    """Expenses from start to end, inclusive, by expense account and by who paid: of every
+    expense account, or of those `counts` says to count (``books.Books.spends``).
 
     Amounts in any currency other than `currency` are left out and listed, never converted.
     """
-    return _flows(entries, owners_of, "Expenses", Decimal(1), start, end, currency)
+    return _flows(entries, owners_of, "Expenses", Decimal(1), start, end, currency, counts)
 
 
 def income_by_source(
@@ -146,6 +153,7 @@ def _flows(
     start: date,
     end: date,
     currency: str,
+    counts: Callable[[str], bool] | None = None,
 ) -> Flows:
     by_owners: defaultdict[Owners, defaultdict[str, Decimal]] = defaultdict(
         lambda: defaultdict(Decimal)
@@ -155,7 +163,9 @@ def _flows(
     for entry in transactions(entries, start, end):
         categories: defaultdict[str, Decimal] = defaultdict(Decimal)
         for posting in entry.postings:
-            if root(posting.account) != kind:
+            if root(posting.account) != kind or (
+                counts is not None and not counts(posting.account)
+            ):
                 continue
             amount = units(posting, entry)
             if amount.currency != currency:

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from hearth import books
-from hearth.disclosure import rulings_in
+from hearth.disclosure import may_learn, rulings_in
 from hearth.figures import MOVED_IN
 from hearth.native.doorway import MOST, PAGE, Doorway
 from hearth.sharing import DEFAULT_SHARED, Facet
@@ -48,7 +48,9 @@ def payees(answer: dict[str, Any]) -> list[str]:
 def kept(tmp_path: Path, clock: FakeClock) -> Doorway:
     """Avery's doorway onto the household whose books hearth keeps from what its bank sent."""
     settings = on_disk.build(tmp_path / "data", "fixture-passphrase", now=clock())
-    keeper = books.Bookkeeper(books.from_household(settings, rulings=rulings_in), clock)
+    keeper = books.Bookkeeper(
+        books.from_household(settings, rulings=rulings_in, learns=may_learn), clock
+    )
     keeper.recompute(wait=True)
     assert keeper.status.failure is None, keeper.status.failure
     return Doorway(settings, keeper, "avery")

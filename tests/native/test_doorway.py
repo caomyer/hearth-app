@@ -12,6 +12,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,16 +20,20 @@ from hearth import books
 from hearth.books import LedgerError
 from hearth.native import doorway as asks
 from hearth.native.bridge import Acted, Bridge, Outcome
+from hearth.native.common import Decided
 from hearth.native.doorway import Doorway
 from hearth.plaid.approval import Approval
 from hearth.refresh import ASKING, Begun, Refresher
 from hearth.review.ids import says
+from hearth.review.queue import Order
 from hearth.review.rulings import RulingStore
 from hearth.sharing import DEFAULT_SHARED, Facet
 from tests import household
+from tests import learned as learned_household
 from tests.conftest import World, password_of
 from tests.household import USERNAMES
-from tests.test_privacy_boundary import SCENARIOS
+from tests.learned import Learned
+from tests.test_privacy_boundary import LEARNED_SCENARIOS, SCENARIOS
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -335,3 +340,118 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     others = [row for row in household.PILE + household.MOVED if OWNER[row[2]] != viewer]
     found = [text for row in others for text in (row[1], row[4]) if text in reviewing]
     assert not found, f"{viewer} was shown another member's review rows: {found}"
+
+
+@pytest.mark.parametrize("scenario", LEARNED_SCENARIOS)
+@pytest.mark.parametrize("viewer", learned_household.USERNAMES)
+def test_no_answer_carries_a_category_a_suggestion_could_have_carried(
+    learned: Learned, scenario: str, viewer: str
+) -> None:
+    """The doorway's share of the suggestions' boundary (``tests/learned.py``): no answer holds
+    another member's category, and a reason is told only on a row the viewer reviews."""
+    choices = dict.fromkeys(learned_household.USERNAMES, DEFAULT_SHARED)
+    choices.update(LEARNED_SCENARIOS[scenario])
+    for username, shared in choices.items():
+        learned.choose(username, shared)
+    door = Doorway(learned.fresh.settings, learned.fresh.bookkeeper, viewer)
+
+    ids = [*learned.account_ids.values(), "no-such-account"]
+    categories = [f"Expenses:Zq:{word}" for word in learned_household.SECRETS] + ["Expenses"]
+    words = [
+        learned_household.DELI,
+        learned_household.GROCER,
+        learned_household.MARKET,
+        *learned_household.SECRETS,
+    ]
+    asked: list[tuple[str, dict[str, object]]] = [("transactions", {"limit": asks.MOST})]
+    asked += [("account", {"id": i}) for i in ids]
+    asked += [("transactions", {"account": i}) for i in ids]
+    asked += [("transactions", {"category": c}) for c in categories]
+    asked += [("transactions", {"text": w}) for w in words]
+    asked += [("transactions", {"show": "unreviewed"})]
+    # Review, every way it is narrowed, and every row of everyone's pile on its own.
+    pile = learned.pile()
+    asked += [("review", {"category": c}) for c in categories]
+    asked += [("review", {"text": w}) for w in words]
+    asked += [("review", {"account": i}) for i in ids]
+    asked += [("review", {"group": g}) for g in sorted({i.group for i in pile})]
+    asked += [("review", {"order": o.value}) for o in Order]
+    asked += [("review_row", {"id": i.review_id}) for i in pile]
+    answers = [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
+    answers += [door.answer(ask, given) for ask, given in asked]
+    # Every decision on a row of another's desk is told it is missing, and records nothing,
+    # whatever it would book it to: one of the secret categories among them.
+    owner = {i.review_id: learned_household.OWNERS[i.account] for i in pile}
+    others = [i for i in pile if viewer not in owner[i.review_id]]
+    grouped = {i.group for i in pile if viewer in owner[i.review_id]}
+    conn = learned.fresh.connect()
+    try:
+        rulings = RulingStore(conn)
+        before = rulings.newest()
+        for item in others:
+            for category in categories:
+                tries: list[tuple[str, dict[str, object]]] = [
+                    ("accept", {"row": item.review_id, "shown": category}),
+                    ("accept_group", {"group": item.group, "rows": {item.review_id: category}}),
+                    ("book", {"row": item.review_id, "says": item.says, "category": category}),
+                    ("exclude", {"row": item.review_id, "says": item.says}),
+                    ("move_row", {"row": item.review_id, "says": item.says, "category": category}),
+                    (
+                        "move_group",
+                        {"title": "x", "rows": {item.review_id: item.says}, "category": category},
+                    ),
+                ]
+                for action, given in tries:
+                    done = door.act(action, given)
+                    if action == "accept_group" and item.group in grouped:
+                        # A group is on the desk of everyone with a row in it: another's row
+                        # in it is told what a row that is not there is, and decides nothing.
+                        assert isinstance(done, Decided), (given, done)
+                        assert done.rows == 0, (given, done)
+                    else:
+                        assert done is Acted.MISSING, (action, given)
+        assert rulings.newest() == before
+    finally:
+        conn.close()
+    seen = "\n".join(json.dumps(answer) for answer in answers)
+
+    leaked = [
+        word
+        for word, owner in learned_household.SECRETS.items()
+        if word in seen and not learned_household.may_see(viewer, owner, choices)
+    ]
+    assert not leaked, f"{viewer} could see another member's categories: {leaked}"
+    reviews = {
+        learned.account_ids[account]
+        for account, owners in learned_household.OWNERS.items()
+        if viewer in owners
+    }
+    reasons = []
+    for answer in answers:
+        entries = answer.get("entries", [])
+        assert isinstance(entries, list)
+        for entry in entries:
+            if entry["reason"] is not None:
+                assert {a["id"] for a in entry["accounts"]} <= reviews, entry
+                reasons.append(entry["reason"])
+    mine = {"avery": "Pantry once before", "blake": "As your ledger books it"}
+    assert mine[viewer] in reasons if viewer in mine else reasons == []
+
+    # Review in the app shows only the viewer's own rows, and the journal says of each the
+    # very words Review does: one source for a row's reason.
+    said: dict[str, str] = {}
+    shown: list[Any] = answers
+    for answer in shown:
+        rows = answer.get("rows")
+        found = [*(rows if isinstance(rows, list) else []), *filter(None, [answer.get("row")])]
+        found += [
+            r for g in answer.get("groups", []) for r in g.get("rows", []) if isinstance(r, dict)
+        ]
+        for row in found:
+            assert row["account"]["id"] in reviews, row
+            assert said.setdefault(row["id"], row["reason"]) == row["reason"], row
+    for answer in shown:
+        for entry in answer.get("entries", []):
+            if entry["review"] is not None:
+                assert entry["reason"] == said[entry["review"]], entry
+    assert (mine[viewer] in said.values()) if viewer in mine else said == {}
