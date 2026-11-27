@@ -40,6 +40,7 @@ from hearth.reports.statements import (
     Held,
     Ledger,
     Other,
+    PayBooking,
     Period,
     Tone,
     Unreviewed,
@@ -96,6 +97,7 @@ with tax counted in it, which the app may show instead (`WithTax`)."""
 
 PAY = "Take-home pay"
 PAY_BEFORE_TAX = "Pay before tax"
+PAY_MIXED = "Pay"
 """Pay as the books hold it is called what it is: where the scope books pay before what was
 withheld from it (`pay_label`), "take-home" would not be true; anywhere else, pay is what
 reached the bank, whatever tax was paid apart from it."""
@@ -292,15 +294,16 @@ def taxed(h: Household, s: Scope) -> bool:
     return any(h.books.kind(a) is Kind.TAX for a in ledger(h).books_to(s.ledger))
 
 
-def pays_gross(h: Household, s: Scope) -> bool:
-    """Whether the scope's books ever book pay before tax: a tax posting in the same entry as a
-    pay posting, as a payslip that books what was withheld beside pay does. Over all their
-    history, so pay is called one thing in every period and column of the scope's statements."""
-    return ledger(h).pays_gross(s.ledger, h.books.kind)
-
-
 def pay_label(h: Household, s: Scope) -> str:
-    return PAY_BEFORE_TAX if pays_gross(h, s) else PAY
+    """What pay is called over the scope (`Ledger.pay_booking`): "Pay before tax" where every
+    pay posting is booked beside its tax, "Take-home pay" where none is, and plain "Pay" where
+    the books do some of each, as one member's payslip beside another's take-home pay."""
+    booking = ledger(h).pay_booking(s.ledger, h.books.kind)
+    return {
+        PayBooking.GROSS: PAY_BEFORE_TAX,
+        PayBooking.NET: PAY,
+        PayBooking.MIXED: PAY_MIXED,
+    }[booking]
 
 
 def _months(period: Period) -> list[Month]:

@@ -274,6 +274,16 @@ class Other(StrEnum):
     """What entries leave over within the tolerance beancount balances them to."""
 
 
+class PayBooking(StrEnum):
+    """How a statement's books book pay: before tax, with what was withheld beside it in the
+    same entry (`GROSS`); as it reached the bank (`NET`, and where there is no pay); or some of
+    each (`MIXED`)."""
+
+    GROSS = "gross"
+    NET = "net"
+    MIXED = "mixed"
+
+
 @dataclass(frozen=True, slots=True)
 class Unreviewed:
     """Of a flow, what rests on rows nobody has checked yet, at their suggested category, and
@@ -781,13 +791,12 @@ class Ledger:
             for account, weighs in event.others:
                 if weighs is not None and root(account) == "Expenses":
                     add(("unreviewed-o", account), day, weighs)
-        # Pay booked before tax: a pay account and an expense account in one entry, which a
-        # payslip is; whether they are pay and tax is a recompute's to say (`pays_gross`).
-        earned = {a for a, _ in event.others if root(a) == "Income"}
-        paid = {a for a, _ in event.others if root(a) == "Expenses"}
-        for income_account in earned:
-            for expense_account in paid:
-                add(("together", income_account, expense_account), day, Decimal(1))
+        # Each income account with the expense accounts of its entry, so whether pay was
+        # booked before tax, with a tax posting beside it as a payslip books one, is a
+        # recompute's to say (`pay_booking`), which knows what kind each account is.
+        paid = tuple(sorted({a for a, _ in event.others if root(a) == "Expenses"}))
+        for income_account in {a for a, _ in event.others if root(a) == "Income"}:
+            add(("with", income_account, *paid), day, Decimal(1))
         waiting = [w for a, w in event.others if a in WAITING and w is not None]
         if waiting:
             add(("prow",), day, Decimal(1))
@@ -796,17 +805,22 @@ class Ledger:
 
     # Asking it.
 
-    def pays_gross(self, scope: Collection[str], kind: Callable[[str], Kind]) -> bool:
-        """Whether any entry read in full over `scope` books pay and tax together, as a
-        payslip that books pay before what was withheld from it does: at any time, so every
-        period and column of the scope's statements calls pay the same."""
+    def pay_booking(self, scope: Collection[str], kind: Callable[[str], Kind]) -> PayBooking:
+        """How the entries read in full over `scope` book pay, over all their history: every
+        pay posting beside a tax posting in its entry, as a payslip that books pay before
+        what was withheld does; none; or some of each. All history, so every period and every
+        column of the scope's statements call pay one thing."""
         inside = frozenset(scope)
-        return any(
-            key[0] == "together" and kind(key[1]) is Kind.PAY and kind(key[2]) is Kind.TAX
+        found = {
+            any(kind(e) is Kind.TAX for e in key[2:])
             for accounts, signature in self._signatures.items()
             if accounts and accounts <= inside
             for key in signature.sums
-        )
+            if key[0] == "with" and kind(key[1]) is Kind.PAY
+        }
+        if found == {True}:
+            return PayBooking.GROSS
+        return PayBooking.MIXED if True in found else PayBooking.NET
 
     def books_to(self, scope: Collection[str]) -> frozenset[str]:
         """Every income and expense account that an entry read in full over `scope` posts to,

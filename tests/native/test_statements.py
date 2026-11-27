@@ -1046,7 +1046,25 @@ def test_what_rests_on_unreviewed_rows_is_said_by_kind(world: World) -> None:
     book(world, household.tax_text())
     after = ask(world, "avery", "statement_summary")["unreviewed"]
 
-    assert D(after["tax"]) == D("1527.46")
+    assert D(after["tax"]) == D("1348.27")
     assert D(after["spending"]) == D(before["spending"])
-    assert D(after["spending_with_tax"]) == D(after["spending"]) + D("1527.46")
+    assert D(after["spending_with_tax"]) == D(after["spending"]) + D("1348.27")
     assert D(after["expenses"]) == D(after["spending_with_tax"]) + D(after["not_spending"])
+
+
+def test_pay_booked_both_ways_is_called_pay(world: World) -> None:
+    """One payslip booked before tax, and pay that reached the bank booked as it came: pay is
+    neither all before tax nor all take-home, so it is plain "Pay", in every period; and the
+    savings rates beside it still say how tax is counted."""
+    book(world, PAYSLIP)
+    book(
+        world,
+        '\n2026-10-12 * "Payee Employer" ""\n  Assets:Zq:AverySolo  600.00 USD\n  Income:Salary\n',
+    )
+    summary = ask(world, "avery", "statement_summary")
+
+    assert line(summary, "pay")["label"] == "Pay"
+    assert ask(world, "avery", "year_by_year")["pay_label"] == "Pay"
+    august = ask(world, "avery", "statement_summary", **{"from": "2026-08-01", "to": "2026-08-31"})
+    assert line(august, "pay")["label"] == "Pay"
+    assert summary["savings_rate"]["label"] == "Savings rate, after tax"
