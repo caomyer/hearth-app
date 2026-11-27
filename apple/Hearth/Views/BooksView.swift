@@ -109,7 +109,7 @@ struct BooksView: View {
             // asked to open on one of the ledger's sheets opens it instead.
             if let sheet = LedgerLaunch.requested {
                 await LedgerLaunch.open(sheet, flow: navigator.desk.ledger)
-            } else if !isSample {
+            } else if !isSample, DebugLaunch.asksAboutLedger {
                 await navigator.desk.ledger.askOnce()
             }
         }

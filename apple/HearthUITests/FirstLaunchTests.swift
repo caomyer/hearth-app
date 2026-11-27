@@ -48,6 +48,8 @@ final class FirstLaunchTests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchEnvironment["HEARTH_DATA_DIR"] = household
+        // Not about a ledger: the question an admin is asked once would stand over it.
+        app.launchArguments += ["-askAboutLedger", "NO"]
         app.launch()
 
         let setup = app.buttons["start.setup"]
@@ -133,6 +135,8 @@ final class FirstLaunchTests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchEnvironment["HEARTH_DATA_DIR"] = household
+        // Not about a ledger: the question an admin is asked once would stand over it.
+        app.launchArguments += ["-askAboutLedger", "NO"]
         app.launchEnvironment["HEARTH_SIGN_IN_PASSWORD"] = password
         app.launchArguments += ["-openBooks", "own", "-signInAs", "avery"]
         app.launch()
@@ -175,6 +179,8 @@ final class FirstLaunchTests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchEnvironment["HEARTH_DATA_DIR"] = household
+        // Not about a ledger: the question an admin is asked once would stand over it.
+        app.launchArguments += ["-askAboutLedger", "NO"]
         app.launchEnvironment["HEARTH_SIGN_IN_PASSWORD"] = password
         app.launchArguments += ["-openBooks", "own", "-signInAs", "avery"]
         app.launch()
@@ -240,6 +246,8 @@ final class FirstLaunchTests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchEnvironment["HEARTH_DATA_DIR"] = household
+        // Not about a ledger: the question an admin is asked once would stand over it.
+        app.launchArguments += ["-askAboutLedger", "NO"]
         app.launchEnvironment["HEARTH_SIGN_IN_PASSWORD"] = password
         app.launchArguments += ["-openBooks", "own", "-signInAs", "avery", "-startScreen", "review"]
         app.launch()

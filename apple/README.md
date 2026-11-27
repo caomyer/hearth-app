@@ -167,6 +167,7 @@ HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR "$APP" -openBooks own -signInProblem th
 - `-windowSize <width>x<height>` draws the window at that size, such as `1000x560` for the smallest the window allows, and holds it there, as a screen too small for it to grow would; the size is that run's alone and is not saved.
 - `-firstReview YES` opens the sample as a first import leaves it: two years, over a thousand rows, none reviewed (`hearth demo --first-review`).
 - `-sampleAsOf YYYY-MM-DD` opens the sample as it stood on that day (`hearth demo --as-of`).
+- `-askAboutLedger NO` leaves out the question an admin is asked once after signing in, as the UI tests about anything else do.
 - `-ledgerFile <path>` is the ledger the open panel would ask for, so bringing one in can be looked at, and tested, without the panel.
 - `-ledgerSheet <step>` opens the books with the ledger's sheet on that step, each reached through the engine with the file `-ledgerFile` names: `question`, `check` (what the file holds, or its refusal), `confirm`, `bringingIn` (the progress, drawn without starting an import), `refused` (an import's refusal), `bringIn` (checked, confirmed and brought in for real, then matching), `matching` and `done`.
   For example, `HEARTH_DATA_DIR=$HEARTH_FIXTURE_LEDGER_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE_PASSWORD "$APP" -openBooks own -signInAs avery -ledgerSheet check -ledgerFile "$HEARTH_FIXTURE_LEDGER" -windowSize 1000x560`.

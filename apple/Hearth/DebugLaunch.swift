@@ -10,7 +10,7 @@ import os
 /// reviewed yet, `-sampleAsOf YYYY-MM-DD` for the sample as it stood that day, and, for a
 /// household's own books, `-signInAs <username>` with the password in the environment's
 /// `HEARTH_SIGN_IN_PASSWORD`; `-ledgerSheet <step>` with `-ledgerFile <path>` (see
-/// `LedgerLaunch`). A Release build reads none of them.
+/// `LedgerLaunch`); `-askAboutLedger NO`. A Release build reads none of them.
 enum DebugLaunch {
     /// Draws the app light or dark whatever the Mac is set to, so each screen can be looked at
     /// both ways.
@@ -73,6 +73,16 @@ enum DebugLaunch {
             UserDefaults.standard.string(forKey: "ledgerFile").map { URL(fileURLWithPath: $0) }
         #else
             nil
+        #endif
+    }
+
+    /// Whether an admin is asked once if they keep a ledger; `-askAboutLedger NO` leaves the
+    /// question out, as a test about something else does.
+    static var asksAboutLedger: Bool {
+        #if DEBUG
+            UserDefaults.standard.object(forKey: "askAboutLedger") as? Bool ?? true
+        #else
+            true
         #endif
     }
 
