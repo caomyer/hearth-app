@@ -64,6 +64,22 @@ def test_the_ledgers_prices_are_a_price_table_as_the_books_own_are() -> None:
     assert table.price("ZQTK", date(2026, 4, 2), "USD") == Decimal("0.00000002")
 
 
+def test_of_two_prices_a_ledger_gives_on_one_day_the_last_is_the_price() -> None:
+    """As beancount's own price map reads them: the later line on the same day wins."""
+    entries, errors, _ = loader.load_string(
+        """
+2026-01-01 commodity ZQAA
+2026-03-05 price ZQAA 10.25 USD
+2026-03-05 price ZQAA 10.75 USD
+"""
+    )
+    assert not errors
+    table = _priced(tuple(entries), NOW)
+
+    assert table.price("ZQAA", date(2026, 3, 5), "USD") == Decimal("10.75")
+    assert table("ZQAA", date(2026, 3, 9)).price == Decimal("10.75")  # type: ignore[union-attr]
+
+
 @pytest.fixture
 def source(tmp_path: Path) -> Path:
     """The invented ledger, in a folder of its own, outside any data directory."""

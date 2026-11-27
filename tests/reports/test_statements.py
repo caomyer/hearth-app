@@ -445,6 +445,19 @@ def test_a_split_of_lots_is_read_by_their_cost() -> None:
     assert market.other == 0
 
 
+HELD = """
+2025-01-02 * "Holdings as reported"
+  Assets:A  10 X
+  Equity:Opening-Balances  -10 X
+"""
+"""Ten X, opened before the period at 100: worth 1,000 and costing 1,000 when it starts."""
+
+
+def _held_then(text: str, *, opened: str = "") -> list[Directive]:
+    return load(MOVED + opened + HELD + text)
+
+
+@pytest.mark.parametrize("equity", ["Equity:Splits", "Equity:StockSplit", "Equity:Reverse-Splits"])
 @pytest.mark.parametrize(
     ("units", "split_price", "end_price", "end", "movement"),
     [
@@ -454,22 +467,18 @@ def test_a_split_of_lots_is_read_by_their_cost() -> None:
         ("-5", "200", "210", Decimal(1050), Decimal(50)),
     ],
 )
-def test_a_split_against_an_equity_account_of_its_own_changes_units_and_nothing_else(
-    units: str, split_price: str, end_price: str, end: Decimal, movement: Decimal
+def test_a_split_against_an_equity_account_named_for_one_changes_units_and_nothing_else(
+    equity: str, units: str, split_price: str, end_price: str, end: Decimal, movement: Decimal
 ) -> None:
-    """Units of a holding already held, added or taken away against an equity account that
-    neither opens nor reconciles, as `Equity:Splits`: a split, at no cost and no value."""
-    entries = load(
-        MOVED
-        + f"""
-2024-01-01 open Equity:Splits
-2025-01-02 * "Holdings as reported"
-  Assets:A  10 X
-  Equity:Opening-Balances  -10 X
+    """Units of a holding already held, added or some taken away against an equity account
+    named for a split: a split, at no cost and no value."""
+    entries = _held_then(
+        f"""
 2025-02-10 * "Split"
   Assets:A  {units} X
-  Equity:Splits  {-Decimal(units)} X
-"""
+  {equity}  {-Decimal(units)} X
+""",
+        opened=f"2024-01-01 open {equity}\n",
     )
     prices = {
         "X": [
@@ -489,7 +498,106 @@ def test_a_split_against_an_equity_account_of_its_own_changes_units_and_nothing_
     assert (cost.start, cost.end, cost.other) == (Decimal(1000), Decimal(1000), Decimal(0))
 
 
-def test_units_of_a_holding_not_held_against_any_equity_account_are_an_opening() -> None:
+_MOVED_IN = {
+    "X": [(date(2025, 1, 2), "100"), (date(2025, 2, 10), "120"), (date(2025, 3, 31), "130")]
+}
+_SECOND_MONTHS = Period(date(2025, 2, 1), date(2025, 3, 31))
+
+
+@pytest.mark.parametrize(
+    "equity",
+    [
+        "Equity:Transfers",  # moved in from an old broker
+        "Equity:Beginning-Balances",
+        "Equity:Gifts",
+        "Equity:Ledger-Bank-Difference",
+    ],
+)
+@pytest.mark.parametrize(
+    ("units", "opening", "movement", "cost_end"),
+    [
+        # Five more at 120, worth 130 at the end: 600 came in, and the market added 350.
+        ("5", Decimal(600), Decimal(350), Decimal(1600)),
+        # Five out at 120: 600 went out, and the market added 200 on ten, then 50 on five.
+        ("-5", Decimal(-600), Decimal(250), Decimal(500)),
+    ],
+)
+def test_units_against_an_equity_account_named_for_no_split_are_an_opening(
+    equity: str, units: str, opening: Decimal, movement: Decimal, cost_end: Decimal
+) -> None:
+    """Real money moved in or out against an equity account hearth does not know is never a
+    split: it is an opening, in either direction, at what the units were worth."""
+    entries = _held_then(
+        f"""
+2025-02-10 * "Moved"
+  Assets:A  {units} X
+  {equity}  {-Decimal(units)} X
+""",
+        opened=f"2024-01-01 open {equity}\n" if equity != "Equity:Opening-Balances" else "",
+    )
+    scope = frozenset({"Assets:A"})
+
+    market = why(entries, _SECOND_MONTHS, market=True, scope=scope, prices=_MOVED_IN)
+    cost = why(entries, _SECOND_MONTHS, market=False, scope=scope, prices=_MOVED_IN)
+
+    assert market.others[Other.OPENING] == opening
+    assert market.movement == movement
+    assert (cost.start, cost.end) == (Decimal(1000), cost_end)
+
+
+@pytest.mark.parametrize("equity", ["Equity:Adjustments", "Equity:Splits"])
+def test_units_a_pad_adds_are_an_opening_whatever_account_it_pads_from(equity: str) -> None:
+    """A pad of a security, even from an account named for a split, made the units appear:
+    they came from somewhere, and are an opening at what they were worth."""
+    entries = _held_then(
+        f"""
+2025-02-10 pad Assets:A {equity}
+2025-02-11 balance Assets:A  15 X
+""",
+        opened=f"2024-01-01 open {equity}\n",
+    )
+    scope = frozenset({"Assets:A"})
+
+    market = why(entries, _SECOND_MONTHS, market=True, scope=scope, prices=_MOVED_IN)
+
+    assert market.others[Other.OPENING] == Decimal(600)
+    assert market.movement == Decimal(350)
+
+
+def test_every_unit_taken_against_a_split_account_and_put_back_is_an_opening_each_way() -> None:
+    """Ten taken out against `Equity:Splits`, leaving nothing to carry their cost, and ten put
+    back later: not a split, but money out and money in, each at what it was worth."""
+    entries = _held_then(
+        """
+2025-02-10 * "All out"
+  Assets:A  -10 X
+  Equity:Splits  10 X
+2025-03-01 * "All back"
+  Assets:A  10 X
+  Equity:Splits  -10 X
+""",
+        opened="2024-01-01 open Equity:Splits\n",
+    )
+    prices = {
+        "X": [
+            (date(2025, 1, 2), "100"),
+            (date(2025, 2, 10), "120"),
+            (date(2025, 3, 1), "120"),
+            (date(2025, 3, 31), "130"),
+        ]
+    }
+    scope = frozenset({"Assets:A"})
+
+    market = why(entries, _SECOND_MONTHS, market=True, scope=scope, prices=prices)
+    cost = why(entries, _SECOND_MONTHS, market=False, scope=scope, prices=prices)
+
+    assert (market.start, market.end) == (Decimal(1000), Decimal(1300))
+    assert market.others[Other.OPENING] == Decimal(0)  # 1,200 out, then 1,200 in
+    assert market.movement == Decimal(300)
+    assert (cost.start, cost.end) == (Decimal(1000), Decimal(1200))
+
+
+def test_units_of_a_holding_not_held_against_a_split_account_are_an_opening() -> None:
     """Nothing of X was held: ten against `Equity:Splits` came from somewhere, at 100."""
     entries = load(
         MOVED

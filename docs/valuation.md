@@ -45,7 +45,8 @@ A raw close is what a share was worth that day.
 A dividend-adjusted close rewrites history every time a fund distributes, and would misstate past net worth, so adjusted figures are never read.
 
 A price typed by hand is kept only between 0.000000000001 and 1,000,000,000 and with at most 15 digits (`quotes.enterable`), so a token that trades at 0.00000002 is kept as typed; anything else is refused in plain words.
-Every price in those bounds packs exactly in the price table's arrays (`valuation.pricetable`).
+It is checked and kept without the zeros that say nothing (`quotes.as_entered`): typed as 1.000000000000000000000000000000, it is kept as 1.
+So every price kept by hand packs exactly in the price table's arrays (`valuation.pricetable`).
 A price stored outside those bounds all the same is held whole and valued as it is, and never stops a recompute.
 
 The table is append-only.

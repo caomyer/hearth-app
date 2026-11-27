@@ -17,7 +17,16 @@ def enterable(price: Decimal) -> bool:
     """Whether a price typed by hand is one to keep: finite, in range, and not too long."""
     if not price.is_finite() or not LEAST_PRICE <= price <= MOST_PRICE:
         return False
-    return len(price.normalize().as_tuple().digits) <= MOST_DIGITS
+    return len(as_entered(price).as_tuple().digits) <= MOST_DIGITS
+
+
+def as_entered(price: Decimal) -> Decimal:
+    """A price typed by hand as it is checked and kept: without the zeros that say nothing,
+    and never in exponent form, so "1.000000000000000000000000000000" is kept as 1 and "1E+2"
+    as 100."""
+    found = price.normalize()
+    exponent = found.as_tuple().exponent
+    return found.quantize(Decimal(1)) if isinstance(exponent, int) and exponent > 0 else found
 
 
 @dataclass(frozen=True, slots=True)

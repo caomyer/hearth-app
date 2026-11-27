@@ -60,8 +60,9 @@ from beancount.core.data import Directive, Posting, Transaction
 from beancount.core.position import Cost
 
 from hearth.categories import Kind
+from hearth.categories import words as category_words
 from hearth.reports.common import is_balance_sheet, root, units
-from hearth.review.pile import LEDGER_BANK, WAITING
+from hearth.review.pile import WAITING
 from hearth.valuation.networth import STALE_AFTER_MISSED_SESSIONS, missed_sessions
 
 ZERO = Decimal(0)
@@ -691,13 +692,16 @@ class Ledger:
         return weighs.number * rate, late
 
     def _splits(self, entry: Transaction, postings: list[Posting], legs: list[Posting]) -> bool:
-        """Whether a part is a split of a holding with no lot, in one commodity, with no lot
-        and no price, which changes units and nothing else. It is one when it takes the old
-        position out of an account and puts the new one in the same account; or when it adds
-        or removes units of a commodity each of its accounts already holds, against an equity
-        account that is neither an opening nor a reconciling one (`opening_equity`), such as
-        `Equity:Splits`. Units moved against an opening or a reconciling entry are never one:
-        they came from somewhere, and are an opening."""
+        """Whether a part is a split of a holding with no lot: in one commodity, with no lot
+        and no price, it changes units and nothing else. It is one of two shapes alone. Either
+        it takes the old position out of an account and puts the new one in the same account;
+        or it adds units to, or takes some but not all units from, accounts that each already
+        hold that commodity, against equity accounts every one of which is named for a split
+        (`split_equity`), as `Equity:Splits`. Anything else, against any other equity account
+        and in either direction, came from somewhere or went somewhere, and is an opening at
+        what it was worth; so is every entry a `pad` made, whatever account it pads from."""
+        if entry.flag == PADDED:
+            return False
         commodities = {units(p, entry).currency for p in postings}
         if len(commodities) != 1 or self.currency in commodities:
             return False
@@ -711,12 +715,18 @@ class Ledger:
         equity = [p.account for p in postings if root(p.account) == "Equity"]
         if not legs or not equity or len(equity) + len(legs) != len(postings):
             return False
-        if any(opening_equity(account) or account in WAITING for account in equity):
+        if not all(split_equity(account) for account in equity):
             return False
         (commodity,) = commodities
-        return all(
-            self._positions.get((p.account, commodity), _Position()).units != 0 for p in legs
-        )
+        changed: defaultdict[str, Decimal] = defaultdict(lambda: ZERO)
+        for posting in legs:
+            changed[posting.account] += units(posting, entry).number
+        for account, change in changed.items():
+            held = self._positions.get((account, commodity), _Position()).units
+            # Nothing left to carry the cost, or more taken than was held: not a split.
+            if held == 0 or (held > 0) != (held + change > 0) or held + change == 0:
+                return False
+        return True
 
     def _file(self, event: _Event) -> None:
         signature = self._signatures.setdefault(event.accounts, _Signature(event.accounts))
@@ -896,15 +906,18 @@ class Ledger:
         return found
 
 
-def opening_equity(account: str) -> bool:
-    """Whether an equity account is one that opens what an account holds, or reconciles it
-    with its bank: an opening balance (any equity account named for an opening, as
-    `Equity:Opening-Balances` or a pad's), or `Equity:Ledger-Bank-Difference`. Units moved
-    against one came from somewhere, and are an opening, never a split."""
-    if account == LEDGER_BANK:
-        return True
+SPLIT_WORDS = frozenset({"split"})
+"""The generic words an equity account is named for a split by, read inside the words of its
+name as ``hearth.categories`` reads them: `Equity:Splits`, `Equity:StockSplit`. Units moved
+against an equity account named for nothing here are an opening, never a split."""
+PADDED = "P"
+"""The flag beancount gives an entry a `pad` made."""
+
+
+def split_equity(account: str) -> bool:
+    """Whether an equity account is named for a split, by `SPLIT_WORDS`."""
     return root(account) == "Equity" and any(
-        "opening" in part.lower() for part in account.split(":")[1:]
+        known in word for word in category_words(account) for known in SPLIT_WORDS
     )
 
 
