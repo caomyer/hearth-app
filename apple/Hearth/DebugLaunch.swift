@@ -122,6 +122,11 @@ enum DebugLaunch {
                 frame.origin.y = max(visible.minY, min(frame.minY, visible.maxY - frame.height))
             }
             window.setFrame(frame, display: true)
+            // And held there, as a window on a screen too small for it to grow is: content that
+            // asks for more than it is given then shows here as it would there, never hidden by
+            // a window that quietly grew.
+            window.maxSize = window.frame.size
+            window.contentMaxSize = window.contentLayoutRect.size
         #endif
     }
 }
