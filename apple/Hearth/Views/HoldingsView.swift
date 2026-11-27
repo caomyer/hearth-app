@@ -130,6 +130,21 @@ private struct HoldingsList: View {
     @State private var width: CGFloat = 0
 
     var body: some View {
+        // The width the window gives the list, never what the list would like to be: it is
+        // measured on a space of its own, which takes only the narrowest fit as its least, and
+        // the list is laid over it, so no column drawn at an earlier width can ask for more.
+        // Measured on the list itself, the fixed columns of the widest fit held the list at that
+        // width wherever a scroll view passes its content's least width up, and on a screen too
+        // small for the window to grow, the window's content was laid out wider than the window
+        // and centred over both edges, the sidebar off the leading one (a test runner's
+        // 1024-point screen).
+        Color.clear
+            .frame(minWidth: Fit.narrowest, idealWidth: Fit.narrowest, maxWidth: .infinity, maxHeight: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .overlay { list }
+    }
+
+    private var list: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 HoldingsHead(holdings: holdings, atCost: $atCost)
@@ -166,14 +181,6 @@ private struct HoldingsList: View {
             .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // The width the window gives the list, never what the list would like to be: the list
-        // asks for no more than its narrowest fit, as its least and as its ideal, and its columns
-        // follow what it is given. Asked its ideal, fixed columns would answer with the widest
-        // fit they were last drawn at; on a screen too small for the window to grow, the
-        // window's content was then laid out wider than the window and centred over both edges,
-        // the sidebar off the leading one (a test runner's 1024-point screen).
-        .frame(minWidth: Fit.narrowest, idealWidth: Fit.narrowest, maxWidth: .infinity)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 
     /// Where the prices shown come from, and when the newest was fetched, as the net worth
