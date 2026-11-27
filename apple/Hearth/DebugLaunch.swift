@@ -80,7 +80,9 @@ enum DebugLaunch {
     /// question out, as a test about something else does.
     static var asksAboutLedger: Bool {
         #if DEBUG
-            UserDefaults.standard.object(forKey: "askAboutLedger") as? Bool ?? true
+            // A launch argument's NO arrives as text, which bool(forKey:) reads and a cast does not.
+            UserDefaults.standard.object(forKey: "askAboutLedger") == nil
+                || UserDefaults.standard.bool(forKey: "askAboutLedger")
         #else
             true
         #endif
