@@ -47,16 +47,21 @@ private func ready<Content: Decodable & Sendable>(_ name: String, as content: Co
     return found
 }
 
-private func standing(running: Bool = false, outcome: String? = nil, refused: String? = nil, mayBringIn: Bool = true)
-    -> String
-{
+private func standing(
+    running: Bool = false, outcome: String? = nil, refused: String? = nil, mayBringIn: Bool = true,
+    importing: Bool = false, imported: Bool = false, booksFailed: Bool = false, mine: Bool = true
+) -> String {
+    let said = refused.map { #"{"why":"once","said":"\#($0)"}"# } ?? "null"
     let bringing =
-        outcome == nil && !running
+        !mine || (outcome == nil && !running)
         ? "null"
-        : #"{"running":\#(running),"outcome":\#(outcome.map { "\"\($0)\"" } ?? "null"),"refused":\#(refused.map { "\"\($0)\"" } ?? "null"),"finished_at":null,"books_failed":false}"#
+        : #"{"running":\#(running),"outcome":\#(outcome.map { "\"\($0)\"" } ?? "null"),"refused":\#(said),"finished_at":null,"books_failed":\#(booksFailed)}"#
+    let base = imported ? #"{"on":"2026-11-22","files":1,"unclaimed":null}"# : "null"
     return
-        #"{"state":"ready","imported":null,"inherited":false,"may_bring_in":\#(mayBringIn),"why_not":null,"bringing_in":\#(bringing)}"#
+        #"{"state":"ready","imported":\#(base),"inherited":false,"importing":\#(importing),"may_bring_in":\#(mayBringIn),"why_not":null,"bringing_in":\#(bringing)}"#
 }
+
+private let loading = #"{"state":"loading"}"#
 
 private let file = URL(fileURLWithPath: "/Users/zq/Ledger/household.beancount")
 private let noPause: @Sendable (Duration) async throws -> Void = { _ in }
@@ -79,7 +84,7 @@ struct LedgerTests {
         #expect(matching.imported)
         #expect(matching.accounts.first?.state == .matched)
         #expect(matching.accounts.first?.facing?.inLedger.count != nil)
-        #expect(matching.accounts.contains { $0.whyNot == "not_yours" && $0.proposed == nil })
+        #expect(matching.accounts.contains { $0.whyNot == "unclear" && $0.proposed == nil })
         #expect(matching.accounts.flatMap(\.choices).contains { $0.refused?.why == "taken" })
     }
 
@@ -100,7 +105,7 @@ struct LedgerTests {
                 == "2 under Assets, 1 under Liabilities, 1 under Equity, 1 under Income and 1 under Expenses")
         #expect(LedgerWords.checkTitle(file: "household.beancount", LedgerCheck(found: found, refused: nil))
             == "household.beancount is ready to bring in")
-        #expect(LedgerWords.checkTitle(file: "household.beancount", LedgerCheck(found: nil, refused: "No."))
+        #expect(LedgerWords.checkTitle(file: "household.beancount", LedgerCheck(found: nil, refused: LedgerRefusal(why: "not_clean", said: "No.")))
             == "household.beancount cannot be brought in")
     }
 
@@ -116,8 +121,8 @@ struct LedgerTests {
         #expect(LedgerWords.matchedCount(matching, locale: unitedStates) == "1 of 8 accounts matched")
         #expect(LedgerWords.matchedExample(matching) == "SHARE DRAFT \u{00B7}\u{00B7}\u{00B7}0606 is Assets:Zq:Union.")
         #expect(LedgerWords.inLedger(matching, locale: unitedStates) == "8 transactions already in your ledger")
-        let blakes = try #require(matching.accounts.first { $0.whyNot == "not_yours" })
-        #expect(LedgerWords.whyNot(blakes) == "Your ledger holds its transactions on an account that is not yours.")
+        let blakes = try #require(matching.accounts.first { $0.whyNot == "unclear" })
+        #expect(LedgerWords.whyNot(blakes) == "No account of your ledger clearly holds its transactions.")
         #expect(
             LedgerWords.refused(Choice.Refused(why: "would_lose", count: 2, day: Day("2026-06-12")), locale: unitedStates)
                 == "Your ledger does not hold 2 transactions from before Jun 12 that Hearth has, so matching it would take them out of your books."
@@ -159,9 +164,10 @@ struct LedgerTests {
     func flow() async throws {
         let engine = ScriptedLedger(
             [
-                "ledger_check": [try answer(of: "ledger_check")],
+                // Slow screens are worked out off the wire and answered `loading` meanwhile.
+                "ledger_check": [loading, try answer(of: "ledger_check")],
                 "ledger": [standing(running: true), standing(outcome: "imported")],
-                "matching": [try answer(of: "matching")],
+                "matching": [loading, try answer(of: "matching")],
             ],
             outcomes: [.started, .matched])
         let flow = LedgerFlow(engine: engine, pause: noPause)
@@ -188,17 +194,18 @@ struct LedgerTests {
             return
         }
         let acted = await engine.acted
-        #expect(acted.map(\.0) == ["bring_in_ledger", "match_account"])
+        #expect(acted.map(\.0) == ["bring_in_ledger", "match_accounts"])
         #expect(acted[0].1 == ["path": .text(file.path)])
-        // Only the card is matched: the union's is matched already, and Blake's has nothing.
-        #expect(acted[1].1 == ["account": .text(matching.accounts[1].id), "to": .text("Liabilities:Zq:Card")])
+        // One act for the whole step: only the card, as the union's is matched already, and
+        // Blake's is left as it is.
+        #expect(acted[1].1 == ["matches": .table([matching.accounts[1].id: "Liabilities:Zq:Card"])])
     }
 
     @Test("a refusal is said in the engine's words, and a refused file cannot be confirmed")
     func refused() async throws {
         let said = "Your ledger was brought in on Nov 22, 2026, and a ledger is brought in once: hearth's books are the truth from then on."
         let engine = ScriptedLedger([
-            "ledger_check": [#"{"state":"ready","found":null,"refused":"\#(said)"}"#]
+            "ledger_check": [#"{"state":"ready","found":null,"refused":{"why":"once","said":"\#(said)"}}"#]
         ])
         let flow = LedgerFlow(engine: engine, pause: noPause)
 
@@ -208,7 +215,7 @@ struct LedgerTests {
             Issue.record("a refused file went on to its confirmation")
             return
         }
-        #expect(check.refused == said)
+        #expect(check.refused == LedgerRefusal(why: "once", said: said))
 
         let importing = ScriptedLedger(
             ["ledger": [standing(outcome: "refused", refused: said)], "ledger_check": [try answer(of: "ledger_check")]],
@@ -217,7 +224,71 @@ struct LedgerTests {
         await other.check(file)
         other.confirm()
         await other.bringIn()
-        #expect(other.step == .notBroughtIn(said))
+        #expect(other.step == .notBroughtIn(LedgerRefusal(why: "once", said: said)))
+    }
+
+    @Test("an import someone else started is waited on, never taken for this one")
+    func anothersImport() async throws {
+        let engine = ScriptedLedger(
+            [
+                "ledger_check": [try answer(of: "ledger_check")],
+                "ledger": [
+                    standing(importing: true, mine: false),
+                    standing(importing: false, imported: true, mine: false),
+                ],
+                "matching": [try answer(of: "matching")],
+            ],
+            outcomes: [.running])
+        let flow = LedgerFlow(engine: engine, pause: noPause)
+        await flow.check(file)
+        flow.confirm()
+
+        await flow.bringIn()
+
+        guard case .matching = flow.step else {
+            Issue.record("the ledger brought in by someone else did not lead to matching: \(String(describing: flow.step))")
+            return
+        }
+        #expect(await engine.acted.map(\.0) == ["bring_in_ledger"])
+    }
+
+    @Test("a ledger in whose books could not be worked out does not go on to matching")
+    func booksFailed() async throws {
+        let engine = ScriptedLedger(
+            [
+                "ledger_check": [try answer(of: "ledger_check")],
+                "ledger": [standing(outcome: "imported", booksFailed: true)],
+            ],
+            outcomes: [.started])
+        let flow = LedgerFlow(engine: engine, pause: noPause)
+        await flow.check(file)
+        flow.confirm()
+
+        await flow.bringIn()
+
+        #expect(flow.step == .inButBooksFailed)
+        #expect(!(await engine.asked).contains("matching"))
+    }
+
+    @Test("an account with nothing to match to is said once, plainly, and matching never dead-ends")
+    func nothingToMatch() throws {
+        let matching = try ready("matching", as: Matching.self)
+        #expect(LedgerWords.cannotMatch(matching) == nil)
+        #expect(LedgerFlow.hasChoices(matching))
+        // Blake's savings as it would be with no account of Avery's to offer it.
+        var reply = try JSONSerialization.jsonObject(with: fixture("matching")) as! [String: Any]
+        var found = reply["answer"] as! [String: Any]
+        var accounts = found["accounts"] as! [[String: Any]]
+        accounts[2]["choices"] = []
+        found["accounts"] = [accounts[2]]
+        reply["answer"] = found
+        let data = try JSONSerialization.data(withJSONObject: reply)
+        guard case .ready(let stuck) = try replyDecoder().decode(Reply<Matching>.self, from: data).answer else {
+            Issue.record("not a ready answer")
+            return
+        }
+        #expect(LedgerWords.cannotMatch(stuck)?.hasPrefix("An account here can be matched only to one of your ledger's accounts that is yours.") == true)
+        #expect(!LedgerFlow.hasChoices(stuck))
     }
 
     @Test("an engine that stops says so, rather than leave a sheet waiting")

@@ -22,9 +22,14 @@ public final class LedgerFlow {
         case confirming(URL, LedgerCheck)
         /// The engine is bringing it in.
         case bringingIn(URL)
-        /// It was not brought in, for the reason given in the engine's words, or nil when
-        /// something went wrong the engine does not know the cause of.
-        case notBroughtIn(String?)
+        /// The engine is bringing in a ledger someone else started on this Mac; whose is
+        /// never said.
+        case waitingForAnother
+        /// It was not brought in, for the reason the engine gave, or nil when something went
+        /// wrong the engine does not know the cause of.
+        case notBroughtIn(LedgerRefusal?)
+        /// It is in, but the books could not be worked out from it yet.
+        case inButBooksFailed
         /// Which of the ledger's accounts each connected account is.
         case matching(Matching)
         /// What was matched, and what is in the books now.
@@ -40,8 +45,8 @@ public final class LedgerFlow {
     /// What each connected account is to be matched to, by its id; an account with none is
     /// left as it is.
     public var chosen: [String: String] = [:]
-    /// Each match the engine refused when asked, by account, since it was offered.
-    public private(set) var refusedNow: Set<String> = []
+    /// Whether the engine refused the last matches asked, since they were offered.
+    public private(set) var refusedNow = false
     /// True while the engine is asked to do something.
     public private(set) var isWorking = false
 
@@ -51,8 +56,11 @@ public final class LedgerFlow {
     private let asked: () -> Bool
     private let remember: () -> Void
 
-    /// How long to wait between asks while the engine brings a ledger in.
-    public static var whileBringingIn: Duration { .milliseconds(500) }
+    /// How long to wait between asks while the engine brings a ledger in, or works a slow
+    /// screen out.
+    public static var whileWorking: Duration { .milliseconds(400) }
+    /// How many times to ask before saying the engine would not say: twenty minutes.
+    static let mostAsks = 3000
 
     /// `asked` says whether the question was put to this member on this Mac before, and
     /// `remember` keeps that it was, so it is put once.
@@ -73,20 +81,9 @@ public final class LedgerFlow {
     /// Asks where the household's ledger stands.
     @discardableResult
     public func refresh() async -> LedgerStanding? {
-        do {
-            switch try await engine.ask("ledger", as: LedgerStanding.self) {
-            case .ready(let found):
-                standing = found
-                return found
-            case .signedOut:
-                signedOut()
-                return nil
-            case .loading, .failed, .missing:
-                return nil
-            }
-        } catch {
-            return nil
-        }
+        guard case .ready(let found)? = await settled("ledger", as: LedgerStanding.self) else { return nil }
+        standing = found
+        return found
     }
 
     /// Puts the question, once: to a member who may bring a ledger in, where none is in yet.
@@ -106,24 +103,19 @@ public final class LedgerFlow {
     public func close() {
         step = nil
         chosen = [:]
-        refusedNow = []
+        refusedNow = false
     }
 
     /// Reads the file the person chose, writing nothing.
     public func check(_ file: URL) async {
         step = .checking(file)
-        do {
-            switch try await engine.ask("ledger_check", with: ["path": .text(file.path)], as: LedgerCheck.self) {
-            case .ready(let found):
-                guard step == .checking(file) else { return }
-                step = .checked(file, found)
-            case .signedOut:
-                close()
-                signedOut()
-            case .loading, .failed, .missing:
-                step = .unavailable
-            }
-        } catch {
+        switch await settled("ledger_check", with: ["path": .text(file.path)], as: LedgerCheck.self) {
+        case .ready(let found)?:
+            guard step == .checking(file) else { return }
+            step = .checked(file, found)
+        case .signedOut?, nil:
+            return
+        case .loading?, .failed?, .missing?:
             step = .unavailable
         }
     }
@@ -148,29 +140,42 @@ public final class LedgerFlow {
             return
         }
         switch outcome {
-        case .started, .running:
-            break
+        case .started:
+            await follow(mine: true)
+        case .running:
+            // Someone is bringing one in on this engine already: wait on it, never told whose.
+            step = .waitingForAnother
+            await follow(mine: false)
         case .signedOut:
             close()
             signedOut()
-            return
         default:
             step = .notBroughtIn(nil)
-            return
         }
-        // The engine has the import in hand once it replies, so the first answer that says it
-        // is not running is the one after it ended.
-        for _ in 0..<2400 {
+    }
+
+    /// Asks where the import stands until it ends. An import of this member's own says how it
+    /// went; another's only that it ended, and whether a ledger is in now.
+    private func follow(mine: Bool) async {
+        for _ in 0..<Self.mostAsks {
             guard let found = await refresh() else {
                 step = .unavailable
                 return
             }
-            if let bringing = found.bringingIn, !bringing.running {
+            if mine, let bringing = found.bringingIn, !bringing.running {
                 await ended(bringing)
                 return
             }
+            if !mine, !found.importing {
+                if found.imported != nil {
+                    await openMatching()
+                } else {
+                    step = .notBroughtIn(nil)
+                }
+                return
+            }
             do {
-                try await pause(Self.whileBringingIn)
+                try await pause(Self.whileWorking)
             } catch {
                 return
             }
@@ -181,7 +186,11 @@ public final class LedgerFlow {
     private func ended(_ bringing: LedgerStanding.BringingIn) async {
         switch bringing.outcome {
         case .imported?, .unchanged?:
-            await openMatching()
+            if bringing.booksFailed {
+                step = .inButBooksFailed
+            } else {
+                await openMatching()
+            }
         case .refused?:
             step = .notBroughtIn(bringing.refused)
         case .failed?, .unknown?, nil:
@@ -195,15 +204,19 @@ public final class LedgerFlow {
         // Where the ledger stands too, which the last step says what nobody sees yet of.
         await refresh()
         guard let found = await matching() else { return }
-        refusedNow = []
+        refusedNow = false
         chosen = Self.chosen(in: found)
-        let open = found.accounts.contains { $0.state != .matched && !$0.choices.isEmpty }
-        step = open ? .matching(found) : .done(found)
+        step = Self.hasChoices(found) ? .matching(found) : .done(found)
+    }
+
+    /// Whether any account is left that the person may choose an account of the ledger for.
+    public nonisolated static func hasChoices(_ found: Matching) -> Bool {
+        found.accounts.contains { $0.state != .matched && !$0.fixed && !open($0).isEmpty }
     }
 
     /// What each account starts chosen as: where it is matched now, or else what the ledger
     /// proposes, when matching it there would not be refused.
-    public static func chosen(in found: Matching) -> [String: String] {
+    public nonisolated static func chosen(in found: Matching) -> [String: String] {
         var chosen: [String: String] = [:]
         for account in found.accounts {
             if let matched = account.matched?.account {
@@ -216,48 +229,55 @@ public final class LedgerFlow {
     }
 
     /// The choices the person may pick for `account`: those the engine would not refuse.
-    public static func open(_ account: ConnectedAccount) -> [Choice] {
+    public nonisolated static func open(_ account: ConnectedAccount) -> [Choice] {
         account.choices.filter { $0.refused == nil || $0.account == account.matched?.account }
     }
 
-    /// Matches every account the person chose an account for that it is not matched to now,
-    /// then shows what is matched.
-    public func match() async {
-        guard case .matching(let found) = step, !isWorking else { return }
-        isWorking = true
-        defer { isWorking = false }
-        var refused: Set<String> = []
+    /// The matches the person chose that are not as things stand, by connected account.
+    public func changes(in found: Matching) -> [String: String] {
+        var asked: [String: String] = [:]
         for account in found.accounts where !account.fixed {
             guard let to = chosen[account.id], to != account.matched?.account,
                 Self.open(account).contains(where: { $0.account == to })
             else { continue }
+            asked[account.id] = to
+        }
+        return asked
+    }
+
+    /// Matches every account the person chose an account for that it is not matched to now,
+    /// all in one act, then shows what is matched.
+    public func match() async {
+        guard case .matching(let found) = step, !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+        let asked = changes(in: found)
+        if !asked.isEmpty {
             let outcome: ActOutcome
             do {
-                outcome = try await engine.act("match_account", with: ["account": .text(account.id), "to": .text(to)]).outcome
+                outcome = try await engine.act("match_accounts", with: ["matches": .table(asked)]).outcome
             } catch {
                 step = .unavailable
                 return
             }
             switch outcome {
             case .matched:
-                break
+                refusedNow = false
             case .signedOut:
                 close()
                 signedOut()
                 return
             default:
-                refused.insert(account.id)
+                // Something changed since it was shown: show it again as it is now, and say so.
+                guard let after = await matching() else { return }
+                chosen = Self.chosen(in: after)
+                refusedNow = true
+                step = .matching(after)
+                return
             }
         }
         guard let after = await matching() else { return }
-        if refused.isEmpty {
-            step = .done(after)
-        } else {
-            // Something changed since it was shown: show it again as it is now, and say which.
-            chosen = Self.chosen(in: after)
-            refusedNow = refused
-            step = .matching(after)
-        }
+        step = .done(after)
     }
 
     /// From what was matched back to matching, to change it.
@@ -268,21 +288,46 @@ public final class LedgerFlow {
     }
 
     private func matching() async -> Matching? {
-        do {
-            switch try await engine.ask("matching", as: Matching.self) {
-            case .ready(let found):
-                return found
+        switch await settled("matching", as: Matching.self) {
+        case .ready(let found)?:
+            return found
+        case .signedOut?, nil:
+            return nil
+        case .loading?, .failed?, .missing?:
+            step = .unavailable
+            return nil
+        }
+    }
+
+    /// A screen's answer once the engine has worked it out: a slow one is answered `loading`
+    /// while it is, and asked again. Nil when the engine stopped, which leaves the sheet saying
+    /// so, or when nobody is signed in any more, which closes it.
+    private func settled<Content: Decodable & Sendable>(
+        _ screen: String, with given: Given = [:], as content: Content.Type
+    ) async -> Answer<Content>? {
+        for _ in 0..<Self.mostAsks {
+            let answer: Answer<Content>
+            do {
+                answer = try await engine.ask(screen, with: given, as: content)
+            } catch {
+                step = .unavailable
+                return nil
+            }
+            switch answer {
+            case .loading:
+                do {
+                    try await pause(Self.whileWorking)
+                } catch {
+                    return nil
+                }
             case .signedOut:
                 close()
                 signedOut()
                 return nil
-            case .loading, .failed, .missing:
-                step = .unavailable
-                return nil
+            default:
+                return answer
             }
-        } catch {
-            step = .unavailable
-            return nil
         }
+        return .loading
     }
 }

@@ -41,7 +41,21 @@ NET_WORTH = Decimal("21038.25")
 """Checking and savings, less what the card owes: what Avery's overview says."""
 
 
-def larkspur(today: date) -> FakeInstitution:
+EARLIER = 6
+"""How many earlier rows each of Avery's accounts has in the household that brings a ledger in:
+enough of the bank's own ids in that ledger, five or more on each account, for matching to move
+an account hearth keeps onto the ledger's (``matching.recorded``)."""
+
+
+def earlier(today: date, name: str, amount: str) -> tuple[FakeTransaction, ...]:
+    """`EARLIER` rows of `amount` from `name`, a week apart, the last a month before today."""
+    return tuple(
+        FakeTransaction(name, Decimal(amount), today - timedelta(days=30 + 7 * n))
+        for n in range(EARLIER)
+    )
+
+
+def larkspur(today: date, *, history: bool = False) -> FakeInstitution:
     """Avery's bank. What it sent waits in Review: two market rows of one kind, which one
     accept settles, beside rows of a kind each, one Plaid gave no category, and a transfer to
     an account nobody connected, which waits under "Where did it go?"."""
@@ -58,6 +72,7 @@ def larkspur(today: date) -> FakeInstitution:
                 "checking",
                 Decimal("3250.40"),
                 transactions=(
+                    *(earlier(today, "Cobble Street Market", "12.34") if history else ()),
                     FakeTransaction("Cobble Street Market", Decimal("84.12"), days[0], GROCERIES),
                     FakeTransaction("Cobble Street Market", Decimal("31.06"), days[3], GROCERIES),
                     FakeTransaction("Payroll", Decimal("-2400.00"), days[1], "INCOME_WAGES"),
@@ -77,6 +92,7 @@ def larkspur(today: date) -> FakeInstitution:
                 "savings",
                 Decimal("18400.00"),
                 transactions=(
+                    *(earlier(today, "Interest", "-1.25") if history else ()),
                     FakeTransaction(
                         "Interest", Decimal("-12.50"), days[2], "INCOME_INTEREST_EARNED"
                     ),
@@ -89,7 +105,10 @@ def larkspur(today: date) -> FakeInstitution:
                 "credit",
                 "credit card",
                 Decimal("612.15"),
-                transactions=(FakeTransaction("Quill Bookshop", Decimal("41.90"), days[2]),),
+                transactions=(
+                    *(earlier(today, "Quill Bookshop", "9.99") if history else ()),
+                    FakeTransaction("Quill Bookshop", Decimal("41.90"), days[2]),
+                ),
             ),
         ),
     )
@@ -102,8 +121,9 @@ LEDGER_ACCOUNTS = {
 }
 
 
-def build(data_dir: Path, password: str, *, now: datetime) -> Settings:
-    """A household in `data_dir`, which holds none yet."""
+def build(data_dir: Path, password: str, *, now: datetime, history: bool = False) -> Settings:
+    """A household in `data_dir`, which holds none yet; with `history`, its bank sends each
+    account `EARLIER` rows more, as the household that brings a ledger in needs."""
     settings = Settings.in_directory(data_dir)
     db.initialise(settings.database)
     feed.initialise(settings.feed_database)
@@ -121,7 +141,9 @@ def build(data_dir: Path, password: str, *, now: datetime) -> Settings:
             )
         avery = members.find(conn, "avery")
         assert avery is not None
-        stand_in = FakePlaid([larkspur(now.date())], today=now.date, accept_any_keys=True)
+        stand_in = FakePlaid(
+            [larkspur(now.date(), history=history)], today=now.date, accept_any_keys=True
+        )
         keys = MemoryKeyStore()
         setup = PlaidSetup(stand_in=stand_in, keys=lambda: keys, wait=lambda _seconds: None)
         status = Status(books=None, failure=None, recomputing=False)
@@ -224,6 +246,9 @@ def write_ledger(settings: Settings, folder: Path) -> Path:
 
 
 if __name__ == "__main__":
-    made = build(Path(sys.argv[1]), os.environ["HEARTH_FIXTURE_PASSWORD"], now=system_clock())
-    if len(sys.argv) > 2 and sys.argv[2] == "--ledger":
+    ledger = len(sys.argv) > 2 and sys.argv[2] == "--ledger"
+    made = build(
+        Path(sys.argv[1]), os.environ["HEARTH_FIXTURE_PASSWORD"], now=system_clock(), history=ledger
+    )
+    if ledger:
         print(write_ledger(made, Path(sys.argv[3])))

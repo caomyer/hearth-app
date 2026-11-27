@@ -23,9 +23,13 @@ struct LedgerSheet: View {
                 Confirming(flow: flow, file: file)
             case .bringingIn?:
                 Working(title: LedgerWords.bringingIn, detail: LedgerWords.bringingInDetail)
-            case .notBroughtIn(let said)?:
+            case .waitingForAnother?:
+                Working(title: LedgerWords.waitingForAnother, detail: LedgerWords.waitingForAnotherDetail)
+            case .notBroughtIn(let refused)?:
                 Finished(
-                    title: LedgerWords.notBroughtIn, detail: said ?? LedgerWords.failed, flow: flow)
+                    title: LedgerWords.notBroughtIn, detail: refused?.said ?? LedgerWords.failed, flow: flow)
+            case .inButBooksFailed?:
+                InButBooksFailed(flow: flow, openBooks: openBooks)
             case .matching(let matching)?:
                 MatchingStep(flow: flow, matching: matching)
             case .done(let matching)?:
@@ -308,7 +312,7 @@ private struct Checked: View {
             }
         }
         if let refused = check.refused {
-            Refusal(text: refused)
+            Refusal(text: refused.said)
         }
         Foot {
             Button("Choose Another File\u{2026}") { chooseFile(flow) }
@@ -398,16 +402,19 @@ private struct MatchingStep: View {
         if let unsure = matching.unsure {
             Refusal(text: unsure)
         }
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(matching.accounts) { account in
-                    MatchRow(flow: flow, account: account)
-                }
-            }
+        if flow.refusedNow {
+            Refusal(text: LedgerWords.changedSince)
         }
-        .frame(maxHeight: 280)
-        .fixedSize(horizontal: false, vertical: matching.accounts.count < 4)
-        .scrollIndicators(matching.accounts.count < 4 ? .never : .automatic)
+        if matching.accounts.count < 4 {
+            rows
+        } else {
+            // More than fit in the smallest window scroll, the sheet's foot staying in view.
+            ScrollView { rows }
+                .frame(maxHeight: 240)
+        }
+        if let cannot = LedgerWords.cannotMatch(matching) {
+            Said(text: cannot, identifier: "ledger.cannotMatch")
+        }
         Foot {
             Spacer()
             Button(LedgerWords.notNow) { flow.close() }
@@ -418,6 +425,16 @@ private struct MatchingStep: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(flow.isWorking)
                 .accessibilityIdentifier("ledger.match")
+        }
+    }
+}
+
+extension MatchingStep {
+    fileprivate var rows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(matching.accounts) { account in
+                MatchRow(flow: flow, account: account)
+            }
         }
     }
 }
@@ -456,12 +473,6 @@ private struct MatchRow: View {
                     .foregroundStyle(Palette.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if flow.refusedNow.contains(account.id) {
-                Text("That changed since it was shown, so it was not matched. Here is how it stands now.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.unfavourable)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -497,6 +508,28 @@ private struct MatchRow: View {
     }
 }
 
+/// The ledger is in, but the books could not be worked out from it yet: matching waits on
+/// them, and the Overview says why.
+private struct InButBooksFailed: View {
+    let flow: LedgerFlow
+    let openBooks: () -> Void
+
+    var body: some View {
+        Heading(text: LedgerWords.inTitle)
+        Refusal(text: LedgerWords.booksFailed)
+        Foot {
+            Spacer()
+            Button(LedgerWords.openBooks) {
+                flow.close()
+                openBooks()
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .keyboardShortcut(.defaultAction)
+            .accessibilityIdentifier("ledger.openBooks")
+        }
+    }
+}
+
 /// What is matched, and what the books hold now.
 private struct Done: View {
     let flow: LedgerFlow
@@ -528,7 +561,9 @@ private struct Done: View {
         if flow.standing?.bringingIn?.booksFailed == true {
             Refusal(text: LedgerWords.booksFailed)
         }
-        if let unclaimed = LedgerWords.unclaimed(flow.standing) {
+        if let cannot = LedgerWords.cannotMatch(matching) {
+            Said(text: cannot, identifier: "ledger.cannotMatch")
+        } else if let unclaimed = LedgerWords.unclaimed(flow.standing) {
             Said(text: unclaimed, identifier: "ledger.unclaimed")
         }
         Foot {

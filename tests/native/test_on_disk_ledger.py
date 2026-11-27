@@ -11,12 +11,13 @@ from hearth.native.bridge import Acted, Bridge, Outcome
 from hearth.native.importer import Importer
 from tests.conftest import FakeClock
 from tests.native import on_disk
+from tests.native.test_ledger import settled
 
 
 def test_the_on_disk_household_brings_its_ledger_in_and_matches_every_account(
     tmp_path: Path, clock: FakeClock
 ) -> None:
-    settings = on_disk.build(tmp_path / "data", "fixture-passphrase", now=clock())
+    settings = on_disk.build(tmp_path / "data", "fixture-passphrase", now=clock(), history=True)
     ledger = on_disk.write_ledger(settings, tmp_path / "kept")
     keeper = books.Bookkeeper(
         books.from_household(settings, rulings=rulings_in, learns=may_learn), clock
@@ -26,7 +27,7 @@ def test_the_on_disk_household_brings_its_ledger_in_and_matches_every_account(
     door = Bridge(settings, keeper, clock, importer=importer)
     assert door.sign_in("avery", "fixture-passphrase") is Outcome.SIGNED_IN
 
-    checked: dict[str, Any] = door.answer("ledger_check", {"path": str(ledger)})
+    checked = settled(door, "ledger_check", {"path": str(ledger)})
     assert checked["refused"] is None
     assert checked["found"]["files"] == 2
     assert checked["found"]["unused_kinds"] == {"plugins": 1, "custom": 1, "documents": 0}
@@ -35,7 +36,7 @@ def test_the_on_disk_household_brings_its_ledger_in_and_matches_every_account(
     standing: dict[str, Any] = door.answer("ledger")
     assert standing["bringing_in"]["outcome"] == "imported"
 
-    matching: dict[str, Any] = door.answer("matching")
+    matching = settled(door, "matching")
     proposed = {a["name"]: a["proposed"]["account"] for a in matching["accounts"]}
     assert proposed == {
         name: on_disk.LEDGER_ACCOUNTS_BEFORE[mask]
@@ -50,12 +51,12 @@ def test_the_on_disk_household_brings_its_ledger_in_and_matches_every_account(
         first = account["choices"][0]
         assert first["proposed"] is True
         assert first["refused"] is None, first
-        done = door.act("match_account", {"account": account["id"], "to": first["account"]})
+        done = door.act("match_accounts", {"matches": {account["id"]: first["account"]}})
         assert done is Acted.MATCHED
     keeper.recompute(wait=True)
     assert keeper.status.failure is None, keeper.status.failure
 
-    after: dict[str, Any] = door.answer("matching")
+    after = settled(door, "matching")
     assert after["totals"]["matched"] == 3
     overview: dict[str, Any] = door.answer("overview")
     assert overview["net_worth"]["value"] == format(on_disk.NET_WORTH, "f")

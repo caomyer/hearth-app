@@ -97,7 +97,7 @@ private struct LedgerPane: View {
                         Text(LedgerWords.standing(standing))
                             .accessibilityIdentifier("settings.ledger")
                         if let whyNot = standing.whyNot, standing.imported == nil {
-                            Text(whyNot).foregroundStyle(.secondary)
+                            Text(whyNot.said).foregroundStyle(.secondary)
                         }
                     }
                 } footer: {

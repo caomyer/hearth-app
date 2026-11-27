@@ -260,13 +260,15 @@ enum StartScreen {
 /// - `check`, what the file holds, or why it cannot be brought in;
 /// - `confirm`, the confirmation after the check;
 /// - `bringingIn`, the import's progress, drawn without starting one;
+/// - `waiting`, waiting on a ledger someone else is bringing in, drawn without one;
+/// - `booksFailed`, a ledger in whose books could not be worked out, drawn without one;
 /// - `refused`, the file's refusal as an import that was refused says it;
 /// - `bringIn`, the file checked, confirmed and brought in for real, then matching;
 /// - `matching`, matching the accounts connected to the ledger brought in;
 /// - `done`, what matching leaves matched.
 enum LedgerLaunch {
     enum Sheet: String {
-        case question, check, confirm, bringingIn, refused, bringIn, matching, done
+        case question, check, confirm, bringingIn, waiting, refused, booksFailed, bringIn, matching, done
     }
 
     static var requested: Sheet? {
@@ -290,6 +292,10 @@ enum LedgerLaunch {
             flow.confirm()
         case .bringingIn:
             flow.begin(at: .bringingIn(file))
+        case .waiting:
+            flow.begin(at: .waitingForAnother)
+        case .booksFailed:
+            flow.begin(at: .inButBooksFailed)
         case .refused:
             await flow.check(file)
             if case .checked(_, let check) = flow.step {

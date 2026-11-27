@@ -108,7 +108,7 @@ public enum LedgerWords {
     public static let failed =
         "Something went wrong while bringing it in, so nothing was kept. Hearth's log says what."
     public static let booksFailed =
-        "Your ledger is in, but Hearth could not work out your books from it yet. The Overview says why."
+        "Hearth could not work out your books from it yet. The Overview says why. Match your accounts in Settings, Ledger, once it can."
 
     // Matching.
 
@@ -172,10 +172,7 @@ public enum LedgerWords {
         case "unplaced": return "Your ledger holds its transactions, but not which side of each is the bank's."
         case "no_side", "wrong_side": return "Hearth cannot tell which of your ledger's accounts it is."
         case "unclear": return "No account of your ledger clearly holds its transactions."
-        case "not_yours": return "Your ledger holds its transactions on an account that is not yours."
         case "taken": return "The account your ledger holds its transactions on is matched to another already."
-        case "unclaimed":
-            return "Your ledger holds its transactions on an account nobody has said is whose yet."
         default: return "Hearth cannot tell which of your ledger's accounts it is."
         }
     }
@@ -201,9 +198,29 @@ public enum LedgerWords {
             return "Your ledger does not hold \(rows)\(day) that Hearth has, so matching it would take them out of your books."
         case "unsure":
             return "Hearth cannot tell yet whether a decision rests on its match, so it is not changed."
+        case "booking":
+            return "Hearth cannot tell yet which of its bank's transactions it already has, so it cannot be matched now."
+        case "unrecorded":
+            return "Nobody has said whose it is, and your ledger does not show that it is this account."
         default: return "Hearth cannot match it to that account."
         }
     }
+
+    /// What cannot be done here, said once whenever some account has nothing to match to:
+    /// matching offers only the ledger's accounts that are the member's own, and an account
+    /// becomes someone's only on the command line for now.
+    public static func cannotMatch(_ matching: Matching) -> String? {
+        let stuck = matching.accounts.contains { $0.state != .matched && LedgerFlow.open($0).isEmpty }
+        guard stuck else { return nil }
+        return "An account here can be matched only to one of your ledger's accounts that is yours. Until someone says whose your ledger's accounts are, with hearth add-account on this Mac, those with nothing to choose stay as they are. Match them later in Settings, Ledger."
+    }
+
+    public static let waitingForAnother = "A ledger is being brought in"
+    public static let waitingForAnotherDetail =
+        "One is being brought in on this Mac already. Hearth waits for it to finish, then shows what it brought in."
+    public static let inTitle = "Your ledger is in"
+    public static let changedSince =
+        "Something changed since these were shown, so none was matched. Here is how they stand now."
 
     // Done.
 
@@ -268,6 +285,7 @@ public enum LedgerWords {
             return "Your ledger was brought in on \(day), \(counted(imported.files, "file", "files", locale: locale))."
         }
         if standing.inherited { return "Hearth reads your ledger where it is." }
+        if standing.importing { return "A ledger is being brought in." }
         return "No ledger is brought in. Hearth keeps your books from your connected accounts."
     }
 

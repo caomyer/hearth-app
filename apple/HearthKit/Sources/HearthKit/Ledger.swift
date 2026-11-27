@@ -18,8 +18,8 @@ public struct LedgerStanding: Decodable, Sendable, Equatable {
         public let running: Bool
         /// `imported`, `unchanged`, `refused` or `failed`; nil while it runs.
         public let outcome: Outcome?
-        /// Why it was refused, in the engine's words.
-        public let refused: String?
+        /// Why it was refused.
+        public let refused: LedgerRefusal?
         public let finishedAt: Date?
         /// Whether the books could not be worked out after it, so they do not hold it yet.
         public let booksFailed: Bool
@@ -39,10 +39,13 @@ public struct LedgerStanding: Decodable, Sendable, Equatable {
     public let imported: Imported?
     /// Whether the engine reads a ledger where it is (`HEARTH_LEDGER`).
     public let inherited: Bool
+    /// Whether the engine is bringing a ledger in now, whoever started it: told only to a
+    /// member who may bring one in, and never whose it is.
+    public let importing: Bool
     /// Whether this member may bring a ledger in now.
     public let mayBringIn: Bool
     /// Why not, to a member who could but for where the household stands.
-    public let whyNot: String?
+    public let whyNot: LedgerRefusal?
     public let bringingIn: BringingIn?
 }
 
@@ -53,13 +56,25 @@ extension LedgerStanding.Outcome: Decodable {
     }
 }
 
+/// Why a ledger cannot be brought in: the engine's word for it, and a sentence in the app's
+/// words, which names no path, command or setting (`hearth.ledger_import.Refusal`).
+public struct LedgerRefusal: Decodable, Sendable, Equatable {
+    public let why: String
+    public let said: String
+
+    public init(why: String, said: String) {
+        self.why = why
+        self.said = said
+    }
+}
+
 /// What a ledger file holds, and why it would not be brought in: the `ledger_check` screen.
 public struct LedgerCheck: Decodable, Sendable, Equatable {
     /// What the file holds; nil where it does not load, or the household may not bring a ledger
     /// in at all.
     public let found: Found?
-    /// Why it would not be brought in, in the engine's words; nil when it would.
-    public let refused: String?
+    /// Why it would not be brought in; nil when it would.
+    public let refused: LedgerRefusal?
 
     public struct Found: Decodable, Sendable, Equatable {
         public let files: Int
