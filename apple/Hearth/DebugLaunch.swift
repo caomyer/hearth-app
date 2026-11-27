@@ -265,7 +265,8 @@ enum StartScreen {
 /// - `refused`, the file's refusal as an import that was refused says it;
 /// - `bringIn`, the file checked, confirmed and brought in for real, then matching;
 /// - `matching`, matching the accounts connected to the ledger brought in;
-/// - `done`, what matching leaves matched.
+/// - `done`, the file brought in for real, every account matched as proposed, and what is
+///   matched then.
 enum LedgerLaunch {
     enum Sheet: String {
         case question, check, confirm, bringingIn, waiting, refused, booksFailed, bringIn, matching, done
@@ -308,9 +309,13 @@ enum LedgerLaunch {
         case .matching:
             await flow.openMatching()
         case .done:
-            await flow.openMatching()
-            if case .matching(let found) = flow.step {
-                flow.begin(at: .done(found))
+            // Reached for real: the file checked, brought in, every account matched as the
+            // ledger proposes, and then what is matched.
+            await flow.check(file)
+            flow.confirm()
+            await flow.bringIn()
+            if case .matching = flow.step {
+                await flow.match()
             }
         }
     }

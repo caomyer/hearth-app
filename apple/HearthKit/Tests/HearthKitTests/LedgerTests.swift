@@ -291,6 +291,32 @@ struct LedgerTests {
         #expect(!LedgerFlow.hasChoices(stuck))
     }
 
+    @Test("each refusal is headed by what happened, and the engine's sentence says the rest")
+    func refusalHeadings() {
+        #expect(LedgerWords.notBroughtIn(LedgerRefusal(why: "too_slow", said: "")) == "Hearth stopped reading it")
+        #expect(LedgerWords.notBroughtIn(LedgerRefusal(why: "busy", said: "")) == "Another ledger is being brought in")
+        #expect(LedgerWords.notBroughtIn(LedgerRefusal(why: "lock_unavailable", said: "")) == "Hearth cannot bring a ledger in here")
+        #expect(LedgerWords.notBroughtIn(LedgerRefusal(why: "line_too_long", said: "")) == "That is not a ledger")
+        #expect(LedgerWords.notBroughtIn(LedgerRefusal(why: "include_outside", said: "")) == LedgerWords.notBroughtIn)
+        #expect(LedgerWords.notBroughtIn(nil) == LedgerWords.notBroughtIn)
+    }
+
+    @Test("a done step with nothing to match still says something true")
+    func doneWithNothing() throws {
+        let matching = try ready("matching", as: Matching.self)
+        #expect(LedgerWords.doneBody(matching, standing: nil) == nil)
+        var reply = try JSONSerialization.jsonObject(with: fixture("matching")) as! [String: Any]
+        var found = reply["answer"] as! [String: Any]
+        found["accounts"] = []
+        reply["answer"] = found
+        let data = try JSONSerialization.data(withJSONObject: reply)
+        guard case .ready(let none) = try replyDecoder().decode(Reply<Matching>.self, from: data).answer else {
+            Issue.record("not a ready answer")
+            return
+        }
+        #expect(LedgerWords.doneBody(none, standing: nil)?.hasPrefix("Its history is in your books now.") == true)
+    }
+
     @Test("an engine that stops says so, rather than leave a sheet waiting")
     func stopped() async {
         let flow = LedgerFlow(engine: ScriptedLedger([:]), pause: noPause)

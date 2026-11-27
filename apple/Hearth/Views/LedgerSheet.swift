@@ -27,7 +27,7 @@ struct LedgerSheet: View {
                 Working(title: LedgerWords.waitingForAnother, detail: LedgerWords.waitingForAnotherDetail)
             case .notBroughtIn(let refused)?:
                 Finished(
-                    title: LedgerWords.notBroughtIn, detail: refused?.said ?? LedgerWords.failed, flow: flow)
+                    title: LedgerWords.notBroughtIn(refused), detail: refused?.said ?? LedgerWords.failed, flow: flow)
             case .inButBooksFailed?:
                 InButBooksFailed(flow: flow, openBooks: openBooks)
             case .matching(let matching)?:
@@ -539,6 +539,9 @@ private struct Done: View {
 
     var body: some View {
         Heading(text: LedgerWords.doneTitle(matching))
+        if let body = LedgerWords.doneBody(matching, standing: flow.standing) {
+            Said(text: body, identifier: "ledger.doneBody")
+        }
         if matching.totals.of > 0 {
             Fact(
                 mark: matching.totals.matched > 0 ? .passed : .look,

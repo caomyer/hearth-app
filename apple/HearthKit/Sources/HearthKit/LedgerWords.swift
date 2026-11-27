@@ -105,6 +105,18 @@ public enum LedgerWords {
     public static let bringingIn = "Bringing in your ledger"
     public static let bringingInDetail = "Hearth is copying it and working out your books. This can take a minute."
     public static let notBroughtIn = "Your ledger was not brought in"
+
+    /// The heading of a refusal: what happened, by the engine's word for why
+    /// (`hearth.ledger_import.Refusal`); the engine's own sentence says the rest.
+    public static func notBroughtIn(_ refused: LedgerRefusal?) -> String {
+        switch refused?.why {
+        case "too_slow": "Hearth stopped reading it"
+        case "busy": "Another ledger is being brought in"
+        case "lock_unavailable": "Hearth cannot bring a ledger in here"
+        case "line_too_long", "too_large", "too_many", "not_a_file": "That is not a ledger"
+        default: notBroughtIn
+        }
+    }
     public static let failed =
         "Something went wrong while bringing it in, so nothing was kept. Hearth's log says what."
     public static let booksFailed =
@@ -225,6 +237,13 @@ public enum LedgerWords {
     // Done.
 
     /// "Your accounts are matched", or that the ledger is in when nothing is connected.
+    /// What a done step says when nothing else is to be said: no connected account to match,
+    /// and nothing of the books nobody's.
+    public static func doneBody(_ matching: Matching, standing: LedgerStanding?) -> String? {
+        guard matching.accounts.isEmpty, unclaimed(standing) == nil else { return nil }
+        return "Its history is in your books now. A bank you connect later, in Hearth in the browser, is matched to its account in Settings, Ledger."
+    }
+
     public static func doneTitle(_ matching: Matching) -> String {
         if matching.accounts.isEmpty { return "Your ledger is in" }
         return matching.totals.matched == 0 ? "Your ledger is in" : "Your accounts are matched"

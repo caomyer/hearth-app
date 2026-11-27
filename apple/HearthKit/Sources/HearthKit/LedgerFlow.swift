@@ -277,6 +277,8 @@ public final class LedgerFlow {
             }
         }
         guard let after = await matching() else { return }
+        // What nobody's yet is as things stand after the matches, which may have moved claims.
+        await refresh()
         step = .done(after)
     }
 
