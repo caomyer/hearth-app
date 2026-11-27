@@ -713,14 +713,17 @@ private struct GroupDetail: View {
         }
     }
 
+    /// As the review page says it: whether one decision settles the group, and why the least
+    /// sure of its rows is suggested as it is, in the engine's words ("Dining twice before").
     private var explained: String {
-        if group.oneDecision {
-            return "Each has the same suggestion, so one decision settles them. Least sure: \(group.leastSure.lowercased())."
-        }
         if group.suggested.isEmpty {
             return "Nothing could be suggested; each needs a look."
         }
-        return "Not one kind of transaction, so there is no accepting them together; each needs its own look."
+        let settles =
+            group.oneDecision
+            ? "Each has the same suggestion, so one decision settles them."
+            : "Not one kind of transaction, so there is no accepting them together; each needs its own look."
+        return "\(settles) Least sure: \(group.leastSure)."
     }
 }
 

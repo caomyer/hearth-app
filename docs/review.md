@@ -20,6 +20,18 @@ A row hearth books from a connection (`hearth.plaid.booking`) is named by Plaid'
 It is grouped by the category it suggests, so every row in a group suggests the same one, and a row with nothing suggested by Plaid's category, said to be suggesting nothing.
 It carries no `model-confidence`: it says instead why it is suggested as it is, in words (`review-why` and `review-reason`, "Suggestions, and why" below).
 
+### Where the imported ledger and the bank disagree
+
+An account carried on from an imported base whose bank's balance does not agree with the base and the rows booked since has one reconciling entry, dated its cut-over, against `Equity:Ledger-Bank-Difference` (`docs/books.md`, "Carried on from the base").
+It is in Review as its own kind of row, in the group "Where the imported ledger and the bank disagree", saying so: "The imported ledger and <bank> disagree by this much as of <day>", for the difference.
+Its owner confirms it, which books it `*` where it is, or puts its cause right, such as a row the bank counts arriving, and it shrinks or goes at the next recompute.
+It is confirmed one at a time, never with a group (`desk.one_decision`), and never excluded, as its account's balance is its bank's.
+A confirmation is bound to the difference it saw, as every ruling is bound to what its row said, so a different difference asks again.
+Until it is confirmed, the account is not shown as matching its bank.
+Its review id is made of the account and its cut-over (`ids.reconciling_review_id`), so the entry derived afresh on every recompute is always the same row.
+
+A row booked on an account hearth kept itself that was then moved onto the base's account it is (`docs/real-ledger.md`) keeps its rulings: a ruling is bound to the row as it was booked there (`RulingStore.formerly`).
+
 ## Suggestions, and why
 
 What a row hearth books is suggested as comes from `hearth.proposals`, afresh on every recompute, and is the first of these that gives one:
@@ -208,6 +220,9 @@ Everything above holds there as it does here: binding, one decision per group, U
 - Booking a row against another account and excluding one are bound to what the row said when the app showed it (`ReviewDesk.book_shown`, `reject_shown`), as answering a row alone under "Where did it go?" is here, so a row its bank changed in between is left waiting there too.
 - The queue's keys are menu commands: the arrows move between items, Return settles the row as chosen or accepts a group that is one decision, C changes the category, X excludes where offered, S skips, and Command-Z is Edit > Undo.
 - A difference between an imported ledger and a bank is its own kind of row there too, with its own words and one action, Confirm, which accepts what it proposes: the app offers it no other category, no Exclude and no accept with its group, and C does nothing on it.
+- Each row says why it is suggested as it is in the very words the page gives it beside the row (`queue.explain`), and a group the same of its least sure row; the journal says the same of a row waiting on the member, and nothing of anyone else's.
+- A category the books hold that is not open on a row's day, or not in its currency, is refused there too (`desk.NotOpen`), for booking a row, answering one alone and answering a group of "Where did it go?", in the page's words.
+- The Overview's review banner says what the member's own page says of this month's totals: what rests on unreviewed rows, what nobody has placed yet, and what was booked as not spending.
 - Naming an account hearth does not see stays on these pages; the app answers "Where did it go?" with an account already named, or a category.
 - `hearth demo --first-review` is the app's sample too, with `-firstReview YES` in a debug build (`apple/README.md`).
 

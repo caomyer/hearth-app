@@ -22,6 +22,8 @@ from hearth.categories import Kind
 from hearth.figures import ownership
 from hearth.ledger_import import ImportRefused, import_ledger
 from hearth.months import Month
+from hearth.native.common import Acted, Decided
+from hearth.native.doorway import Doorway
 from hearth.plaid.fake import FakeAccount, FakeInstitution, FakeTransaction
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
@@ -30,6 +32,7 @@ from hearth.review.ids import plaid_review_id, says
 from hearth.review.pile import PileItem
 from hearth.review.rulings import Action, RulingStore, Scope
 from tests.conftest import FakeClock, password_of
+from tests.native.test_review import ready
 from tests.test_learning import (
     COFFEE,
     LEDGER_CHECKING,
@@ -129,17 +132,34 @@ def september(household: Household) -> Decimal:
     return found.spent(owners)
 
 
-@pytest.fixture
-def accepted(tmp_path: Path, clock: FakeClock) -> Accepted:
+def door(household: Household, viewer: str = "avery") -> Doorway:
+    """The Mac app's way in, as `viewer`, at the household's clock."""
+    fresh = household.fresh
+    return Doorway(fresh.settings, fresh.bookkeeper, viewer, clock=household.clock)
+
+
+@pytest.fixture(params=["page", "app"])
+def accepted(request: pytest.FixtureRequest, tmp_path: Path, clock: FakeClock) -> Accepted:
+    """The bean counter's row, accepted at what it suggests: on the Review page, or in the Mac
+    app through the native doorway, which must make it exactly as immune."""
     household = based(tmp_path, clock, others=(OTHER_BANK, BLAKE_BANK), extra=EXTRA)
     item = household.row("ZQ BEAN COUNTER #0042", "3.75")
     assert (item.proposed, item.reason and item.reason.words) == (
         LEDGER_COFFEE,
         "As your ledger books it",
     )
-    household.decide(
-        "/review/rows/book", review_id=item.review_id, account=LEDGER_COFFEE, shown=LEDGER_COFFEE
-    )
+    if request.param == "page":
+        household.decide(
+            "/review/rows/book",
+            review_id=item.review_id,
+            account=LEDGER_COFFEE,
+            shown=LEDGER_COFFEE,
+        )
+    else:
+        clock.advance(timedelta(hours=1))
+        done = door(household).act("accept", {"row": item.review_id, "shown": LEDGER_COFFEE})
+        assert isinstance(done, Decided)
+        assert done.outcome is Acted.ACCEPTED
     found = Accepted(household, item, LEDGER_COFFEE, september(household))
     found.holds("the accept")
     return found
@@ -296,6 +316,10 @@ def test_the_bank_changing_the_row_brings_it_back(
     }
     assert said[reason] in page
     assert "Suggestion changed since you accepted it" not in page
+    # The app says it in the very same words, through the native doorway.
+    rows = ready(door(household).answer("review"))["rows"]
+    (row,) = [r for r in rows if r["id"] == accepted.item.review_id]
+    assert row["reason"] == said[reason]
 
 
 # Upgrading from rulings made before suggestions were learned.
@@ -428,3 +452,99 @@ def test_booking_a_row_to_a_category_the_ledger_closed_before_its_day_is_refused
     assert "close that category before the day of this transaction" in page
     assert household.state(item) is State.UNREVIEWED
     assert household.fresh.bookkeeper.status.failure is None
+
+
+# The Mac app decides through the same desk as the pages, under the same rules.
+
+SWEEP = FakeTransaction(
+    "Zq Savings Sweep", Decimal("50.00"), date(2026, 9, 21), "TRANSFER_OUT_ACCOUNT_TRANSFER"
+)
+SWEEP_AGAIN = FakeTransaction(
+    "Zq Savings Sweep", Decimal("60.00"), date(2026, 9, 22), "TRANSFER_OUT_ACCOUNT_TRANSFER"
+)
+
+
+def test_the_app_refuses_a_category_the_ledger_closed_before_the_rows_day(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    """Every decision of the app's that books a row is refused up front, as the page's is,
+    and decides nothing: booking a row, answering one alone, and answering a group."""
+    closed = "2026-08-01 open Expenses:Zq:Old USD\n2026-08-31 close Expenses:Zq:Old\n"
+    household = based(tmp_path, clock, extra=closed)
+    household.arrive(SWEEP)
+    item = household.row("ZQ BEAN COUNTER #0042", "3.75")
+    sweep = household.row("Zq Savings Sweep", "50.00")
+    app = door(household)
+    rows = {r["id"]: r for g in ready(app.answer("where"))["groups"] for r in g["rows"]}
+    assert sweep.review_id in rows
+    before = _newest(household)
+
+    old = {"category": "Expenses:Zq:Old"}
+    told = [
+        app.act("book", {"row": item.review_id, "says": item.says, **old}),
+        app.act("move_row", {"row": sweep.review_id, "says": sweep.says, **old}),
+        app.act(
+            "move_group",
+            {"title": "Where did it go?", "rows": {sweep.review_id: sweep.says}, **old},
+        ),
+    ]
+
+    assert told == [Decided(Acted.NOT_OPEN)] * 3
+    assert _newest(household) == before
+    assert household.state(item) is State.UNREVIEWED
+    assert household.state(sweep) is State.UNREVIEWED
+    assert household.fresh.bookkeeper.status.failure is None
+
+
+def _newest(household: Household) -> int | None:
+    conn = household.fresh.connect()
+    try:
+        return RulingStore(conn).newest()
+    finally:
+        conn.close()
+
+
+def test_every_decision_the_app_makes_keeps_the_banks_category_with_its_rows(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    """What makes an accept immune to what hearth learns is the bank's category, kept with
+    each row a ruling covers: every one of the app's decisions that books a row keeps it, as
+    the pages do. (Its bank counts every row here, so none may be excluded.)"""
+    household = based(tmp_path, clock)
+    household.arrive(SWEEP)
+    household.arrive(SWEEP_AGAIN)
+    app = door(household)
+    queue = ready(app.answer("review"))
+    rows = {r["id"]: r for r in queue["rows"]}
+    group = next(g for g in queue["groups"] if g["one_decision"])
+    grouped = set(group["rows"])
+    shown = {i: rows[i]["suggested"]["name"] for i in group["rows"]}
+    rest = [r for r in queue["rows"] if r["id"] not in grouped and r["kind"] == "transaction"]
+    suggested = [r for r in rest if r["suggested"] is not None]
+    sweep = household.row("Zq Savings Sweep", "50.00")
+    again = household.row("Zq Savings Sweep", "60.00")
+
+    made = [
+        app.act("accept_group", {"group": group["name"], "rows": shown}),
+        app.act("accept", {"row": suggested[0]["id"], "shown": suggested[0]["suggested"]["name"]}),
+        app.act(
+            "book", {"row": suggested[1]["id"], "says": suggested[1]["says"], "category": TREATS}
+        ),
+        app.act("move_row", {"row": sweep.review_id, "says": sweep.says, "category": TREATS}),
+        app.act(
+            "move_group",
+            {"title": "Savings", "rows": {again.review_id: again.says}, "category": TREATS},
+        ),
+    ]
+    assert all(isinstance(d, Decided) and d.rows > 0 for d in made), made
+
+    pile = {i.review_id: i for i in household.books().pile}
+    conn = household.fresh.connect()
+    try:
+        kept = conn.execute("SELECT review_id, bank FROM review_ruling_rows").fetchall()
+    finally:
+        conn.close()
+    assert len(kept) == len(grouped) + 4
+    for review_id, bank in kept:
+        assert pile[review_id].bank is not None
+        assert bank == pile[review_id].bank, review_id

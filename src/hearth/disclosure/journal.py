@@ -34,7 +34,6 @@ from hearth.disclosure.common import Household
 from hearth.figures import MOVED_IN, MOVED_OUT
 from hearth.plaid.opening import anchors, held
 from hearth.reports.common import is_balance_sheet, root, units
-from hearth.review import reasons
 from hearth.review.pile import TRANSFER_PENDING
 from hearth.sharing import Facet
 
@@ -117,10 +116,6 @@ class Entry:
     """A check of its bank's balance that the books meet only by an entry reconciling the
     imported ledger with the bank, which nobody has confirmed yet (``books.reconciling``): it
     is not shown as matching its bank."""
-    reason: str | None = None
-    """Why an unreviewed entry is suggested as it is, or why nothing is, in words
-    (``hearth.proposals``): only for a viewer who reviews it, as it says what its owners
-    decided before, which sharing its transactions does not share."""
 
     @property
     def suggested(self) -> bool:
@@ -324,7 +319,6 @@ class _Reader:
             sides=tuple(sides),
             waiting=waiting,
             review=self._review(entry),
-            reason=self._reason(entry),
         )
 
     def _review(self, entry: Transaction) -> str | None:
@@ -334,17 +328,6 @@ class _Reader:
         if entry.flag != "!" or not isinstance(review_id, str) or not entry.postings:
             return None
         return review_id if entry.postings[0].account in self._reviews else None
-
-    def _reason(self, entry: Transaction) -> str | None:
-        """Why an unreviewed review row is suggested as it is, for a viewer who reviews it."""
-        if (
-            entry.flag != "!"
-            or not entry.postings
-            or entry.postings[0].account not in self._reviews
-        ):
-            return None
-        found = reasons.read(entry.meta)
-        return found.words if found is not None else None
 
     def _moved(self, entry: Transaction, posting: Posting) -> Entry:
         """A side on an account hearth does not see, on its own: which way money moved."""

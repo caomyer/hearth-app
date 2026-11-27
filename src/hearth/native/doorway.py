@@ -289,10 +289,15 @@ def _day_in(given: Given, key: str) -> date | None:
         raise Malformed from None
 
 
-def transactions(view: Disclosure, asked: object, _around: Around) -> Answer:
-    """A window onto the viewer's journal, newest first, as `window` read it."""
+def transactions(view: Disclosure, asked: object, around: Around) -> Answer:
+    """A window onto the viewer's journal, newest first, as `window` read it.
+
+    An entry waiting on the viewer's own review says why it is suggested as it is, in the
+    words Review gives it (``review.reasons``): only those, which the journal marks with their
+    review id, as a reason says what their owners decided before."""
     assert isinstance(asked, Window)  # noqa: S101 - read by `window`
     found = view.journal(asked.narrowed, offset=asked.offset, limit=asked.limit)
+    why = review.reasons(view, around, {e.review for e in found.window if e.review is not None})
     counts = found.counts
     return {
         "from": _day(found.start),
@@ -305,7 +310,10 @@ def transactions(view: Disclosure, asked: object, _around: Around) -> Answer:
             "transfers": counts.transfers,
             "balance_checks": counts.balance_checks,
         },
-        "entries": [_entry(found.offset + i, e) for i, e in enumerate(found.window)],
+        "entries": [
+            _entry(found.offset + i, e, why.get(e.review) if e.review is not None else None)
+            for i, e in enumerate(found.window)
+        ],
     }
 
 
@@ -399,7 +407,7 @@ def _bank(bank: Bank) -> Answer:
     }
 
 
-def _entry(position: int, entry: Entry) -> Answer:
+def _entry(position: int, entry: Entry, reason: str | None) -> Answer:
     return {
         "position": position,
         "kind": entry.kind.value,
@@ -412,7 +420,7 @@ def _entry(position: int, entry: Entry) -> Answer:
         "suggested": entry.suggested,
         "waiting": entry.waiting.value if entry.waiting else None,
         "checked": entry.checked.value if entry.checked else None,
-        "reason": entry.reason,
+        "reason": reason,
         "amount": _money(entry.amount),
         "sides": [_side(side) for side in entry.sides],
         "review": entry.review,

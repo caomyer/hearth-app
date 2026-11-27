@@ -411,9 +411,11 @@ private struct CategoryCell: View {
             if let category = entry.category {
                 CategoryLink(category: category)
                 if entry.suggested {
+                    // Why it is suggested so, as Review says it, for the member who reviews it.
                     Text("suggested")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.warning)
+                        .help(entry.reason ?? "Suggested by Hearth, not reviewed yet")
                 }
             } else {
                 Text(words)

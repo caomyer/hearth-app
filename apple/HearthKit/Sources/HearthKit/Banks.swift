@@ -68,7 +68,7 @@ public enum Trouble: String, Decodable, Sendable, CaseIterable {
 }
 
 /// What the engine says when asked to do something (`hearth.native.bridge.Acted`).
-public enum ActOutcome: String, Decodable, Sendable, CaseIterable {
+public enum ActOutcome: String, Sendable, CaseIterable {
     case started
     /// It was already being done: a sync was running.
     case running
@@ -100,4 +100,21 @@ public enum ActOutcome: String, Decodable, Sendable, CaseIterable {
     case banksAccount = "banks_account"
     /// Its bank counts the row in the balance it reports, so it cannot be left out.
     case banksRow = "banks_row"
+    /// The books hold that category, but close it before a row's day or keep it for another
+    /// currency, so no row may be booked there.
+    case notOpen = "not_open"
+    /// An outcome this app does not know yet, from a newer engine: nothing is assumed of it.
+    case unknown
+}
+
+extension ActOutcome: Decodable {
+    /// An outcome this app does not know is read as `unknown`, rather than failing the reply:
+    /// the app then says it cannot tell what became of the decision, and shows Review afresh.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: raw).flatMap { $0 == .unknown ? nil : $0 } ?? .unknown
+    }
+
+    /// Every outcome the engine may send; `unknown` is the app's own.
+    public static var told: [ActOutcome] { allCases.filter { $0 != .unknown } }
 }

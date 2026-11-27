@@ -29,6 +29,28 @@ struct AnswerTests {
         #expect(overview.netWorth.stalePrices == 1)
         #expect(overview.history.count == 3)
         #expect(overview.history.last?.value == overview.netWorth.value)
+        #expect(overview.review.waiting == 14)
+        #expect(overview.review.spending == money("1120.37"))
+        #expect(overview.review.unplacedSpending == Overview.Unplaced(rows: 3, moved: money("41.20")))
+        #expect(overview.review.unplacedIncome == nil)
+        #expect(overview.review.notSpending == money("500.00"))
+    }
+
+    @Test("an engine older than the money nobody has placed yet is read as saying none")
+    func olderWaiting() throws {
+        let waiting = try replyDecoder().decode(
+            Overview.Waiting.self, from: Data(#"{"waiting":2,"spending":null}"#.utf8))
+        #expect(waiting == Overview.Waiting(waiting: 2))
+    }
+
+    @Test("an outcome this app does not know is read as unknown, never as a failed reply")
+    func unknownOutcome() throws {
+        let result = try replyDecoder().decode(
+            ActResult.self, from: Data(#"{"outcome":"something_new","rows":0}"#.utf8))
+        #expect(result.outcome == .unknown)
+        let pretended = try replyDecoder().decode(ActResult.self, from: Data(#"{"outcome":"unknown"}"#.utf8))
+        #expect(pretended.outcome == .unknown)
+        #expect(!ActOutcome.told.contains(.unknown))
     }
 
     @Test("books not computed yet")

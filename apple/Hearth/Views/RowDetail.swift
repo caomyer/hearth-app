@@ -155,11 +155,13 @@ struct RowDetail: View {
         }
     }
 
+    /// What it is suggested as, and why, in the engine's words for it, which the review page
+    /// gives it too: "Dining twice before", "New merchant".
     private func reason(_ row: ReviewRow) -> String {
         guard let suggested = row.suggested else {
-            return "Nothing could be suggested for it. Choose where it belongs."
+            return "\(row.reason). Choose where it belongs."
         }
-        return "Suggested as \(suggested.label): \(row.reason.prefix(1).lowercased() + row.reason.dropFirst())."
+        return "Suggested as \(suggested.label). \(row.reason)."
     }
 
     private func earlier(_ row: ReviewRow, _ detail: ReviewDetail) -> some View {
