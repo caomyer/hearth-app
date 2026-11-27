@@ -84,8 +84,12 @@ def test_no_failure_reveals_a_token_or_a_key(
     # A row moved to another member, and a ciphertext altered.
     connection.execute("UPDATE vault_token SET member_id = 3 WHERE rowid = 2")
     attempt(seen, lambda: vault.get(MEMBER_C, "item-1"))
+    # Its first byte is changed to another, whatever it was: overwriting it with a fixed byte
+    # left one ciphertext in 256 as it was, and the vault rightly opened it.
     connection.execute(
-        "UPDATE vault_token SET ciphertext = CAST(x'00' || substr(ciphertext, 2) AS BLOB)"
+        "UPDATE vault_token SET ciphertext = CAST("
+        " (CASE WHEN substr(ciphertext, 1, 1) = x'00' THEN x'01' ELSE x'00' END)"
+        " || substr(ciphertext, 2) AS BLOB)"
     )
     attempt(seen, lambda: vault.get(MEMBER_A, "item-1"))
 
