@@ -58,6 +58,7 @@ struct BooksView: View {
     @State private var navigator: Navigator
     @State private var openedStart = false
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.openSettings) private var openSettings
 
     init(desk: Desk, isSample: Bool) {
         self.isSample = isSample
@@ -84,7 +85,7 @@ struct BooksView: View {
             .toolbar {
                 // On every screen of the books: how fresh they are, and asking the banks again.
                 ToolbarItem(placement: .primaryAction) {
-                    SyncControl(model: navigator.desk.sync)
+                    SyncControl(model: navigator.desk.sync, isSample: isSample)
                 }
             }
         }
@@ -92,6 +93,10 @@ struct BooksView: View {
         .task { await navigator.desk.overview.watch() }
         .task { await navigator.desk.accounts.watch() }
         .task { await navigator.desk.sync.watch() }
+        .task {
+            // A debug build asked to open on Settings opens it over the books.
+            if StartScreen.settings { openSettings() }
+        }
         .onChange(of: navigator.desk.decisions.notice) { _, notice in
             offerUndo(notice, decisions: navigator.desk.decisions)
         }

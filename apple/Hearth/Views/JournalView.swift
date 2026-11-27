@@ -18,13 +18,15 @@ struct JournalView: View {
     @State private var review: String?
     @State private var text = ""
     @State private var choosingRange = false
+    @State private var openedStart = false
 
     var body: some View {
         VStack(spacing: 0) {
             JournalHead(model: model)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 28)
-                .padding(.top, 18)
-                .padding(.bottom, 10)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
             Divider().overlay(Palette.line)
             content
         }
@@ -59,11 +61,27 @@ struct JournalView: View {
             if let id = review {
                 ReviewInspector(desk: navigator.desk, id: id)
                     .id(id)
-                    .inspectorColumnWidth(min: 300, ideal: 340, max: 420)
+                    .inspectorColumnWidth(min: 280, ideal: 300, max: 420)
             }
+        }
+        .onChange(of: model.entries) { _, entries in
+            openStart(entries)
         }
         .onChange(of: selected) { _, selected in
             review = selected.flatMap { id in model.entries.first { $0.id == id }?.review }
+        }
+    }
+
+    /// What a debug build was asked to open Transactions on: an entry by its payee, or the
+    /// journal narrowed to words (`StartScreen`).
+    private func openStart(_ entries: [Entry]) {
+        guard identifier == "transactions", !openedStart, !entries.isEmpty else { return }
+        openedStart = true
+        if let words = StartScreen.transactionWords {
+            text = words
+        }
+        if let payee = StartScreen.transaction {
+            selected = entries.first { $0.payee == payee }?.id
         }
     }
 
@@ -116,6 +134,8 @@ private struct EntryList: View {
     @Binding var selected: Int?
     let identifier: String
     @State private var filled = false
+    /// Nothing until the window says: a list first drawn narrow never asks the window for more.
+    @State private var width: CGFloat = 0
 
     var body: some View {
         List(selection: $selected) {
@@ -155,7 +175,52 @@ private struct EntryList: View {
         .background(Palette.surface)
         .accessibilityIdentifier("\(identifier).list")
         .task { filled = true }
+        .environment(\.journalFit, JournalFit(width: width, pinned: model.pinned != nil))
+        // The width the window gives the list, never what the list would like to be.
+        .frame(minWidth: JournalFit.narrowest, maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
+}
+
+/// How many of the journal's columns its list is wide enough for. Narrower, the accounts go
+/// under each entry's payee first, then its category too; the amount always keeps its column,
+/// as the figures down the right edge are what the eye runs down. Nothing is ever dropped.
+enum JournalFit {
+    case narrow, medium, wide
+
+    static let marker: CGFloat = 8
+    static let spacing: CGFloat = 12
+    /// The narrowest a payee is given before the columns beside it give way.
+    static let payee: CGFloat = 160
+    static let category: CGFloat = 160
+    static let amount: CGFloat = 110
+    /// A list row's own insets, both sides together.
+    static let insets: CGFloat = 40
+
+    /// The accounts column: on an account's own page it names only a transfer's other side.
+    static func accounts(pinned: Bool) -> CGFloat { pinned ? 180 : 250 }
+
+    /// The narrowest the list is drawn: a payee beside its amount.
+    static let narrowest = marker + spacing + payee + spacing + amount + insets
+
+    init(width: CGFloat, pinned: Bool) {
+        let category = Self.narrowest + Self.spacing + Self.category
+        if width >= category + Self.spacing + Self.accounts(pinned: pinned) {
+            self = .wide
+        } else if width >= category {
+            self = .medium
+        } else {
+            self = .narrow
+        }
+    }
+
+    var accountsColumn: Bool { self == .wide }
+    var categoryColumn: Bool { self != .narrow }
+}
+
+extension EnvironmentValues {
+    /// How many columns the journal's list is wide enough for.
+    @Entry var journalFit = JournalFit.wide
 }
 
 /// What the journal is narrowed to: the chips, the filters as tokens, and how many entries
@@ -165,7 +230,8 @@ private struct JournalHead: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+            // As many to a line as fit, never one cut short.
+            FlowChips(spacing: 6) {
                 ForEach(Show.allCases, id: \.self) { show in
                     Chip(
                         label: show.label, count: show == .everything ? nil : model.counts.count(show),
@@ -177,16 +243,14 @@ private struct JournalHead: View {
                     }
                     .accessibilityIdentifier("journal.show.\(show.rawValue)")
                 }
-                Spacer(minLength: 0)
             }
             if !model.tokens.isEmpty {
-                HStack(spacing: 6) {
+                FlowChips(spacing: 6) {
                     ForEach(model.tokens) { token in
                         TokenView(label: label(token)) {
                             Task { await model.remove(token) }
                         }
                     }
-                    Spacer(minLength: 0)
                 }
             }
             if let summary {
@@ -283,6 +347,7 @@ private struct EntryRow: View {
     let open: Bool
     let currency: String
     let pinned: AccountRef?
+    @Environment(\.journalFit) private var fit
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -304,33 +369,53 @@ private struct EntryRow: View {
     }
 
     private var line: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: JournalFit.spacing) {
             marker
-                .frame(width: 8)
-            VStack(alignment: .leading, spacing: 1) {
+                .frame(width: JournalFit.marker)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .foregroundStyle(entry.kind == .balance ? Palette.favourable : Palette.ink)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("journal.payee")
                 if !entry.narration.isEmpty {
                     Text(entry.narration)
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.ink3)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                }
+                // What the columns would say, under the payee where the list is too narrow.
+                if !fit.accountsColumn, showsAccounts {
+                    AccountsCell(accounts: entry.accounts, pinned: pinned)
+                        .font(.system(size: 12))
+                }
+                if !fit.categoryColumn {
+                    CategoryCell(entry: entry)
+                        .font(.system(size: 12))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            AccountsCell(accounts: entry.accounts, pinned: pinned)
-                .frame(width: 250, alignment: .leading)
-            CategoryCell(entry: entry)
-                .frame(width: 160, alignment: .leading)
+            if fit.accountsColumn {
+                AccountsCell(accounts: entry.accounts, pinned: pinned)
+                    .frame(width: JournalFit.accounts(pinned: pinned != nil), alignment: .leading)
+            }
+            if fit.categoryColumn {
+                CategoryCell(entry: entry)
+                    .frame(width: JournalFit.category, alignment: .leading)
+            }
             Text(amount)
                 .monospacedDigit()
                 .foregroundStyle(amountColour)
-                .frame(width: 110, alignment: .trailing)
+                .frame(width: JournalFit.amount, alignment: .trailing)
                 .accessibilityIdentifier("journal.amount")
         }
         .font(.system(size: 13))
+    }
+
+    /// Whether the accounts cell says anything: on an account's own page, only a transfer's
+    /// other side.
+    private var showsAccounts: Bool {
+        guard let pinned else { return !entry.accounts.isEmpty }
+        return entry.accounts.count > 1 && entry.accounts.contains { $0.id != pinned.id }
     }
 
     @ViewBuilder

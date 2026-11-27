@@ -25,7 +25,10 @@ struct HoldingsView: View {
                         currency: holdings.currency
                     )
                     .id(selected)
-                    .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
+                    // Opened at its narrowest, so that beside the list's narrowest fit and the
+                    // sidebar it fits the smallest window: an inspector given more takes it from
+                    // the sidebar, which is then cut. It can be drawn wider.
+                    .inspectorColumnWidth(min: 240, ideal: 240, max: 420)
                 }
             }
             .onChange(of: model.content) { _, holdings in
@@ -86,7 +89,7 @@ private enum Column {
     static let gain: CGFloat = 136
     static let spacing: CGFloat = 14
     /// The narrowest a holding's name is given before the figures beside it give way.
-    static let name: CGFloat = 130
+    static let name: CGFloat = 120
 }
 
 /// How many columns the list is wide enough for. Narrower, the units go under each holding's
@@ -130,7 +133,7 @@ private struct HoldingsList: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 HoldingsHead(holdings: holdings, atCost: $atCost)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 16)
                 Flags(holdings: holdings)
                 if holdings.accounts.isEmpty {
                     Text("No investment positions in the accounts you can see.")
@@ -146,13 +149,13 @@ private struct HoldingsList: View {
                 }
                 ForEach(holdings.withheld) { withheld in
                     WithheldLine(withheld: withheld)
-                        .padding(.top, 14)
+                        .padding(.top, 16)
                 }
                 if let provenance {
                     Text(provenance)
                         .font(.footnote)
                         .foregroundStyle(Palette.ink3)
-                        .padding(.top, 22)
+                        .padding(.top, 24)
                         .accessibilityIdentifier("holdings.provenance")
                 }
             }
@@ -160,7 +163,7 @@ private struct HoldingsList: View {
             .frame(maxWidth: 980, alignment: .leading)
             .environment(\.fit, Fit(width: min(width - 56, 980)))
             .padding(.horizontal, 28)
-            .padding(.vertical, 22)
+            .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         // The width the window gives the list, never what the list would like to be: the list
@@ -210,7 +213,7 @@ private struct HoldingsHead: View {
                 Text(atCost ? "Positions you can see, at cost" : "Positions you can see")
                     .font(.callout)
                     .foregroundStyle(Palette.ink3)
-                    .padding(.top, 18)
+                    .padding(.top, 16)
                     .accessibilityIdentifier("holdings.basisLabel")
                 HStack(alignment: .firstTextBaseline, spacing: 14) {
                     // Not made selectable, as the Overview's figure is: this one changes with the
@@ -269,7 +272,7 @@ private struct Flags: View {
                     Flag(account: found.account, held: found.held, currency: holdings.currency)
                 }
             }
-            .padding(.bottom, 18)
+            .padding(.bottom, 16)
         }
     }
 
@@ -298,9 +301,9 @@ private struct Flag: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.warningBackground))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Palette.warningBackground))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("holdings.flag.\(held.symbol)")
     }
@@ -393,7 +396,7 @@ private struct AccountHoldings: View {
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.top, 18)
+            .padding(.top, 16)
             .padding(.bottom, 6)
             if let absence = account.absence {
                 NotKnown(account: account, absence: absence)
@@ -440,7 +443,7 @@ private struct NotKnown: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("holdings.notKnown.\(account.name)")
     }
@@ -617,10 +620,10 @@ private struct WithheldLine: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.line, lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Palette.background))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.line, lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("holdings.withheld")
     }
@@ -651,7 +654,7 @@ private struct PriceDetail: View {
                 Text([held.ticker ?? "No ticker", account.name].joined(separator: " · "))
                     .foregroundStyle(Palette.ink3)
                     .padding(.top, 2)
-                used.padding(.top, 18)
+                used.padding(.top, 16)
                 history.padding(.top, 24)
             }
             .font(.system(size: 13))

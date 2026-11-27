@@ -27,8 +27,10 @@ It shows the Overview, the journal (Transactions), Holdings, the accounts and ea
   Connecting a bank, signing in to one again and removing a connection stay in Hearth in the browser.
 - The switches are kept per set of books and per data directory (`HearthKit.Consent`), so the sample's never turn anything on for a household's own banks.
 - The engine is started with `--approve-plaid` for exactly the switches that are on, and started again, signed in again, when one changes; it enforces the approval itself (`docs/native.md`).
-- The toolbar's sync control, on every screen, says when the viewer's own banks were last updated, shows a sync running, and asks again now; with asking off it says so and leads to Settings.
+- The toolbar's sync control, on every screen, says when the viewer's own banks were last updated, shows a sync running, and asks again now; with asking off it says so, plainly, as the person's own choice, and leads to Settings.
   When the person asked, it then says what arrived from each of their banks, or what went wrong (`HearthKit.SyncModel`).
+  Only what needs the person is a warning, and the control then says it in place of the time: a bank to sign in to again, or an update that went wrong.
+- The sample's control says its banks are invented; its bank that wants a sign-in shows what that looks like, and asks nothing of anyone.
 - While the app is open with asking allowed, the engine syncs at start-up and every morning, as `hearth serve` does.
 
 ## Review
@@ -105,18 +107,32 @@ TEST_RUNNER_HEARTH_FIXTURE_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR TEST_RUNNER_HEARTH_
 
 Without the fixture variables the household's test is skipped.
 
-A debug build opens straight onto a screen, so each can be looked at without a click; a Release build reads none of these:
+A debug build opens straight onto a screen and a state, so each can be looked at without a click, as when the Mac's screen is locked but can still be captured; a Release build reads none of these:
 
 ```sh
 APP=~/Library/Developer/Xcode/DerivedData/<yours>/Build/Products/Debug/Hearth.app/Contents/MacOS/Hearth
 "$APP" -openBooks sample -startScreen transactions
-"$APP" -openBooks sample -firstReview YES -startScreen review
+"$APP" -openBooks sample -firstReview YES -startScreen review -windowSize 1000x560
+"$APP" -openBooks sample -startScreen "transaction:Greenleaf Market" -appearance dark
+"$APP" -openBooks sample -startScreen settings
 HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE_PASSWORD \
   "$APP" -openBooks own -signInAs avery -startScreen "account:Everyday checking"
+HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR "$APP" -openBooks own -signInProblem throttled
 ```
 
 - `-openBooks sample|own` opens those books at once.
-- `-startScreen overview|review|transactions|holdings|accounts|account:<name>|holding:<symbol>` opens that screen; an account is found by its name once the accounts are in, and a holding by its symbol, with its price beside Holdings, once Holdings is in.
+- `-startScreen <screen>` opens the books on a screen, and on a state of it; whatever is named is found by its name once its screen is in:
+  - `overview`, `review`, `transactions`, `holdings` or `accounts`;
+  - `review:where`, Review's "Where did it go?";
+  - `review:row:<payee>`, Review on that row, and `review:choose:<payee>` with its category chooser open;
+  - `transaction:<payee>`, Transactions with that entry open, beside its review when it waits for one;
+  - `transactions:find:<words>`, Transactions narrowed to those words;
+  - `holding:<symbol>`, Holdings with that holding's price beside the list;
+  - `account:<name>`, that account's own page;
+  - `settings`, the Overview with the Settings window open over it.
+- `-showSync YES` opens the sync control's account of how the banks stand, as a click on it does.
+- `-signInProblem rejected|throttled|mustChangePassword|savedSignInFailed` has the sign-in screen say that refusal, whatever the engine said.
+- `-windowSize <width>x<height>` draws the window at that size, such as `1000x560` for the smallest the window allows.
 - `-firstReview YES` opens the sample as a first import leaves it: two years, over a thousand rows, none reviewed (`hearth demo --first-review`).
 - `-sampleAsOf YYYY-MM-DD` opens the sample as it stood on that day (`hearth demo --as-of`).
   The sample is drawn back from the day it is opened, so what waits in its Review changes from day to day; the UI tests that work Review pin it this way.
@@ -141,6 +157,10 @@ If `xcodebuild` says it needs Xcode, point it at one: `export DEVELOPER_DIR=/App
 - A new screen is a new entry in `hearth.native.doorway.SCREENS`, a type in `HearthKit` that decodes it, and an example in `tests/native/fixtures` that both sides' tests read.
 - What a screen is asked with, or a decision made on, travels as `Given`: text, whole numbers, and the rows a decision showed; the engine reads it strictly and answers anything it does not take as missing (`docs/native.md`).
 - The start screen is the window's content, not a sheet: a modal sheet would keep the app from quitting until it was answered.
+- Every screen, with whatever it opens beside it, fits the smallest window, 1000 by 560 points of content: the sidebar's narrowest, a list's narrowest fit (`Fit.narrowest` in Holdings, `JournalFit.narrowest` in the journal) and an inspector's ideal width together must stay under it.
+  An inspector opened wider than what is left takes the difference from the sidebar, which is then cut at its leading edge.
+  Narrower than its widest, each list moves a column under its rows' names rather than cut anything.
+- A background reaches into the safe area unless told not to, and on the Mac that runs under the sidebar's glass, which then takes its colour; the sample's banner keeps to its own bounds.
 - A list is first drawn with at most a page of rows, and the rest follow on the next update (`FirstFill`).
   AppKit measures a table's rows 200 at a time, and a table filled with more than that on its first update re-enters its own measuring, which it logs as "a reentrant operation in its NSTableView delegate" and means to make an assert.
 - Beancount is GPL-2.0-only, so the app is for private use and is shared together with its source.

@@ -90,7 +90,10 @@ final class FirstLaunchTests: XCTestCase {
 
         let status = app.buttons["sync.status"]
         XCTAssertTrue(status.waitForExistence(timeout: 60), "the toolbar has no sync control")
-        XCTAssertEqual(status.label, "Not asking your banks")
+        // Asking off is the person's choice, not a warning, and the sample's banks say they are
+        // invented, its bank that wants a sign-in among them.
+        XCTAssertEqual(status.label, "Invented banks")
+        XCTAssertNotEqual(status.value as? String, "Needs you", "a choice the person made was drawn as needing them")
         XCTAssertFalse(app.buttons["sync.now"].exists, "a sync was offered that may not run")
 
         // Its button leads to Settings, where asking is switched on.
@@ -448,6 +451,26 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertEqual(text(of: name), "Joint brokerage")
     }
 
+    /// At the smallest window, the queue's rows keep their day and why each is suggested so,
+    /// whatever else gives way; and a holding's price opened beside Holdings leaves the sidebar
+    /// whole, rather than taking its leading edge.
+    @MainActor
+    func testTheSmallestWindowCutsNothing() {
+        let app = sample(startingOn: "review", size: "1000x560")
+        let caption = app.staticTexts.matching(identifier: "review.caption").firstMatch
+        XCTAssertTrue(caption.waitForExistence(timeout: 60), "the queue shows no row")
+        let said = text(of: caption)
+        XCTAssertTrue(said.hasPrefix("Nov\u{00A0}21 · Confident"), "\(said) does not keep its day and reason")
+        app.terminate()
+
+        let holdings = sample(startingOn: "holding:BIDX", size: "1000x560")
+        let source = holdings.descendants(matching: .any)["price.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 60), "the holding's price was not shown beside the list")
+        let window = holdings.windows.firstMatch.frame
+        let overview = holdings.descendants(matching: .any)["sidebar.overview"].firstMatch.frame
+        XCTAssertGreaterThan(overview.minX, window.minX, "the sidebar was cut at its leading edge")
+    }
+
     /// The day the sample stands on for the tests that work its Review. The sample is drawn
     /// back from the day it is opened, so what waits in it changes from day to day; on this day
     /// Avery's queue is Kibble Co, a group of one, and Greenleaf Market, a guess.
@@ -456,10 +479,11 @@ final class FirstLaunchTests: XCTestCase {
     /// The sample as it stood on `sampleDay`, opened straight onto a screen, in a data
     /// directory of no household's.
     @MainActor
-    private func sample(startingOn screen: String) -> XCUIApplication {
+    private func sample(startingOn screen: String, size: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["HEARTH_DATA_DIR"] = "/var/empty/no-hearth-\(UUID().uuidString)"
         app.launchArguments += ["-openBooks", "sample", "-sampleAsOf", sampleDay, "-startScreen", screen]
+        if let size { app.launchArguments += ["-windowSize", size] }
         app.launch()
         return app
     }

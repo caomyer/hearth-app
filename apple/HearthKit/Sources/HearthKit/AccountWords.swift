@@ -99,6 +99,6 @@ extension Account {
 
     /// What the viewer has to do for it, if anything: their own connection needs them.
     public var attentionText: String? {
-        attention ? "Sign in to its bank again in Hearth in your browser" : nil
+        attention ? "Sign in to its bank again in Hearth in the browser" : nil
     }
 }

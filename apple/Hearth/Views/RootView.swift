@@ -15,7 +15,7 @@ struct RootView: View {
             case .opening:
                 Waiting(text: "Opening your books", identifier: "session.opening")
             case .signIn(let problem):
-                SignInView(session: session, problem: problem)
+                SignInView(session: session, problem: DebugLaunch.signInProblem ?? problem)
             case .open(let books):
                 if let desk = session.desk {
                     BooksView(desk: desk, isSample: books == .sample)
@@ -38,6 +38,13 @@ struct RootView: View {
         .toolbarBackground(Palette.background, for: .windowToolbar)
         .navigationTitle("Hearth")
         .task {
+            // A debug build asked for a size draws the window at it once the window is up.
+            if DebugLaunch.windowSize != nil {
+                try? await Task.sleep(for: .milliseconds(300))
+                DebugLaunch.applyWindowSize()
+            }
+        }
+        .task {
             if let books = DebugLaunch.books {
                 await session.choose(books)
             } else {
@@ -59,7 +66,9 @@ struct SampleBanner: View {
         .foregroundStyle(Palette.warning)
         .padding(.horizontal, 28)
         .padding(.vertical, 8)
-        .background(Palette.warningBackground)
+        // Kept to its own bounds: a background reaches into the safe area by default, which on
+        // the Mac runs under the sidebar's glass and tinted its first row.
+        .background(Palette.warningBackground, ignoresSafeAreaEdges: [])
         .accessibilityIdentifier("sample.banner")
     }
 }

@@ -51,7 +51,7 @@ struct RowDetail: View {
                             InlineNotice(notice: notice, decisions: desk.decisions)
                         }
                     }
-                    .padding(22)
+                    .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else if model?.state == .missing {
@@ -301,7 +301,7 @@ private struct InlineNotice: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(notice.tone == .done ? Palette.background : Palette.warningBackground))
+        .background(RoundedRectangle(cornerRadius: 6).fill(notice.tone == .done ? Palette.background : Palette.warningBackground))
     }
 }
 
@@ -349,7 +349,7 @@ private struct CategoryChooser: View {
             .frame(height: 240)
         }
         .padding(12)
-        .frame(width: 300)
+        .frame(width: 340)
         .onAppear { focused = true }
     }
 
@@ -428,47 +428,5 @@ private struct ChoiceChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
-    }
-}
-
-/// Chips laid out in rows, as many to a row as fit.
-private struct FlowChips: Layout {
-    let spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var line: CGFloat = 0
-        var widest: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                x = 0
-                y += line + spacing
-                line = 0
-            }
-            x += size.width + spacing
-            widest = max(widest, x - spacing)
-            line = max(line, size.height)
-        }
-        return CGSize(width: min(widest, width), height: y + line)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        var y = bounds.minY
-        var line: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += line + spacing
-                line = 0
-            }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            line = max(line, size.height)
-        }
     }
 }
