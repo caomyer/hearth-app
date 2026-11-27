@@ -33,6 +33,7 @@ from hearth.config import Settings
 from hearth.native.doorway import LEDGER_ACTIONS, Acted, Answer, Done, Doorway, Given
 from hearth.native.importer import Importer
 from hearth.native.review import DECISIONS
+from hearth.native.worker import Worker
 from hearth.refresh import NOT_SYNCING, Begun, Refresher, Syncing
 
 __all__ = ["ACTIONS", "CLIENT", "SIGNED_OUT", "Acted", "Bridge", "Done", "Outcome"]
@@ -80,6 +81,9 @@ class Bridge:
     """How this bridge syncs, or None for a bridge that never asks a bank for anything."""
     importer: Importer | None = None
     """How this bridge brings a ledger in, or None for one that never does."""
+    worker: Worker | None = field(default_factory=Worker)
+    """Where this bridge works out a slow answer, so other asks keep being answered; None to
+    work every answer out at once, as a test that asks a great many does."""
     _session: _Session | None = field(default=None, init=False)
 
     def sign_in(self, username: str, password: str) -> Outcome:
@@ -148,7 +152,13 @@ class Bridge:
 
     def _doorway(self, viewer: str) -> Doorway:
         return Doorway(
-            self.settings, self.bookkeeper, viewer, self._syncing, self.clock, self.importer
+            self.settings,
+            self.bookkeeper,
+            viewer,
+            self._syncing,
+            self.clock,
+            self.importer,
+            self.worker,
         )
 
     def _syncing(self) -> Syncing:

@@ -145,23 +145,25 @@ Both are written from the viewer's own view of the ledger (`Disclosure.ledger_de
 | Action | Takes | Does |
 |---|---|---|
 | `bring_in_ledger` | `path` | Brings the ledger opened from the file at `path` in as the household's base, in the background, then recomputes the books (`hearth.native.importer`); the `ledger` screen follows it. |
-| `match_account` | `account`, `to` | Matches one of the viewer's connected accounts, by its Plaid id, to `to`, one of the ledger's accounts the `matching` screen offered it (`matching.confirm`), then recomputes the books in the background. |
+| `match_accounts` | `matches` | Matches the viewer's connected accounts, each by its Plaid id to one of the ledger's accounts the `matching` screen offered it, all at once: every one is checked before any is written (`matching.confirm`); then recomputes the books in the background. |
 
 | Outcome | Meaning |
 |---|---|
 | `started` | The import started, in the background. |
 | `running` | An import was already running; none was started. |
 | `matched` | The account is matched as asked. |
-| `refused` | The match was refused by the same check that offered it, as something changed since it was shown; ask `matching` again. |
+| `refused` | The matches were refused by the same check that offered them, as something changed since they were shown, and none was written; ask `matching` again. |
 
 - `path` is an absolute path, text of 1 to 1,024 characters with no NUL, as the Mac's open panel gives one; a relative one, which would be read against wherever the engine started, is `missing`.
 - Bringing a ledger in, and asking what a file holds, are an admin's (`access.may_bring_in_ledger`): the base becomes every member's books, so it is a household act, as entering the household's Plaid account is.
   Anyone else is told `missing`, for the screen and the action alike.
 - The app brings a ledger in once: a household that holds a base already is refused, in a sentence saying so, as is one whose bridge inherits a ledger at `HEARTH_LEDGER`.
+  Every import, the app's and the command line's alike, holds the base's lock (`base.locked`, `flock`) from asking whether the household may import through naming the new base, so two at once take turns and the second is refused as it would have been later.
+  `running` is told when this bridge is already bringing one in, for this member or another; whose is never said.
   Only the command line replaces a base, and only until a member rules on anything since.
 - A member matches their own connections alone (`access.may_use_connection`), onto accounts they own (`access.may_feed`), with every guard the command line has.
-  `to` must be one `matching` offered that account, or the match is `missing`, as a page refuses a target it did not offer.
-  The one account nobody has claimed that a member may take is the one the ledger's own entries record the connection's Plaid ids on, for an account hearth keeps for them; its claim moves onto it (`access.may_carry_on`, `matching.Moving`).
+  Each account must be one `matching` offered, or the whole act is `missing`, as a page refuses a target it did not offer.
+  The one account nobody has claimed that a member may take is one the ledger itself records is that bank account (`matching.recorded`: at least as many of the connection's Plaid ids as content alone needs, five, agreeing on it, reaching the base's last month there), for an account hearth keeps for them; its claim moves onto it, a joint account's to all its owners (`access.may_carry_on`, `matching.Moving`).
 
 ## What an answer is
 
@@ -170,7 +172,7 @@ Every answer has a `state` (`hearth.native.doorway`):
 | State | Meaning |
 |---|---|
 | `ready` | The screen's figures follow. |
-| `loading` | The books have not been computed yet. |
+| `loading` | The books have not been computed yet, or a slow screen is being worked out: ask again. |
 | `failed` | The last recompute failed and there are no earlier books; `summary` is the one sentence anyone may read. |
 | `missing` | There is no such screen, or none this viewer may see. The two are one answer. |
 | `signed_out` | Nobody is signed in to the bridge (`hearth.native.bridge`). |
@@ -283,13 +285,16 @@ A `transactions` entry names the review it waits on (`review`) only to whoever m
 ### The ledger
 
 `ledger`, `ledger_check` and `matching` are not of the books, so each is answered before the first recompute ends.
+`ledger_check` and `matching` can take seconds on a real household's books, so they are worked out off the wire (`hearth.native.worker`): the first ask starts the work and is answered `loading`, other asks keep being answered meanwhile, and the answer, once there, is handed out once, so the next ask works it out afresh.
+What `matching` weighs is kept while everything a recompute reads stands where it stood (`books.standing`), so asking again is cheap and never stale.
 
 `ledger` says `imported`: the day the household's ledger was brought in (`on`), how many files its base holds, and, to whoever may bring a ledger in, how many of the books' Assets and Liabilities accounts nobody has claimed yet, so nobody sees (`unclaimed`).
-It says `inherited`, whether `HEARTH_LEDGER` names a ledger, which the app's engine is never given; `may_bring_in`, whether the viewer may bring one in now; and `why_not`, the sentence saying why not, to someone who may ask but for where the household stands.
-And `bringing_in`, the import this bridge last ran, to the member who started it alone: `running`, `outcome` (`imported`, `unchanged`, `refused` or `failed`), `refused` (the sentence), `finished_at`, and `books_failed`, whether the recompute after it failed, so the books do not hold it.
+It says `inherited`, whether `HEARTH_LEDGER` names a ledger, which the app's engine is never given; `importing`, whether this engine is bringing a ledger in now, whoever started it, told only to someone who may bring one in, so they wait on it without learning whose it is; `may_bring_in`, whether the viewer may bring one in now; and `why_not`, why not, to someone who may ask but for where the household stands.
+And `bringing_in`, the import this bridge last ran, to the member who started it alone: `running`, `outcome` (`imported`, `unchanged`, `refused` or `failed`), `refused`, `finished_at`, and `books_failed`, whether the recompute after it failed, so the books do not hold it.
+A refusal, here and in `ledger_check`, is the engine's word for it, `why`, and `said`, a sentence in the app's words that names no path, no command and no setting (`ledger_import.Refusal`); the command line says the same in its own words.
 
 `ledger_check` reads the file it is asked for as `hearth import-ledger` reads one (`ledger_import.check_ledger`), and writes nothing anywhere, so asking again reads it again.
-It says `refused`, the sentence the app's import would refuse with, or null, and `found`, what the file holds, or null where it does not load or the household may not bring a ledger in at all:
+It says `refused`, why the app's import would refuse it, or null, and `found`, what the file holds, or null where it does not load or the household may not bring a ledger in at all:
 
 - `files`, `entries` (as hearth uses them), `first` and `last`;
 - `accounts`, each with its `name`, `kind` (its root), `opened` and `closed`, and `kinds`, how many of each, as a balance sheet orders them;
@@ -298,22 +303,23 @@ It says `refused`, the sentence the app's import would refuse with, or null, and
 - `worth`, net worth today at the ledger's own prices, a floor (`is_floor`) without what it has no price for (`unpriced`);
 - `runs`, beancount's own plugins it runs, and `unused`, every line kept but not used, each `file`, `line` and `what`, with `unused_kinds` counting `plugins`, `custom` and `documents`.
 
-What is read is held to what a base may hold, before beancount follows any include (`ledger_import._scan`): regular files of at most 64 MB, never a folder or a pipe; no include by an absolute path; and nothing in hearth's own data directory, its books and the base it froze among it.
+Each file is read once, opened without waiting and judged by what was opened (`ledger_import._gathered`), and beancount loads a private copy of those bytes, gone when the check ends, never the files where they are: so a file swapped for a pipe after it was read is never opened again.
+What is read is held to what a base may hold, before any include is followed: regular files, never a folder, a pipe or a device; one iCloud has downloaded; at most 1,000 files and 64 MB in all; no include by an absolute path, nor one starting with `~`, which beancount reads as a folder named `~` beside the file; and nothing hearth keeps in its data directory, its books and the base it froze among it, whatever path, link or hard link leads to it.
 A household that holds a base or inherits a ledger is told why and nothing of the file, as its ledger read again would tell whoever asked every member's accounts.
-Beancount's messages are never passed on, only where the first error is, so a file that is not a ledger is never echoed; no answer repeats the path it was asked with; and nothing about the path or the file is logged.
+Beancount's messages are never passed on, only where the first error is, so a file that is not a ledger is never echoed; no answer repeats the path it was asked with, a file being named only by its path within the ledger's own folder, or its name alone; and nothing about the path or the file is logged.
 
 `matching` says `imported`, whether there is a base to match to; `unsure`, the sentence saying hearth cannot tell whether carrying has begun anywhere, while it cannot; `accounts`; and `totals`: how many are `matched` `of` them, how many of their banks' rows the ledger holds already (`in_ledger`), and how many hearth books from their cut-overs on (`booked`), each summed by the engine.
 Each of `accounts` is one of the viewer's own connected accounts, never another member's:
 
 - `id` (its Plaid id), `institution`, `name`, `mask`, `kind`, and `state`: `matched`, `kept` (filed as an account hearth keeps itself) or `unmatched`;
 - `matched`, the ledger's account it is matched to and the day it was confirmed (`on`), and `fixed`, whether carrying it on has begun, so the match can no longer change (`books.begun`); `kept`, the account hearth keeps it as;
-- `proposed`, what the ledger's evidence says it is: `account`, `how` (`id` or `content`), `agreeing`, `elsewhere` and `of`; and `why_not`, why nothing is proposed, or why what is proposed cannot be had: `nothing_sent`, `ids_disagree`, `unplaced`, `no_side`, `unclear`, `wrong_side`, `not_yours`, `taken` or `unclaimed`;
-- `choices`, each of the ledger's accounts the viewer may match it to, the proposed one first: its `account`, whether it is `proposed`, what carrying it on there would meet (`facing`), and why matching it there would be refused (`refused`, with its `why` and the `count` and `day` it needs), worked out by the very check `match_account` makes (`matching.refusal`);
+- `proposed`, what the ledger's evidence says it is: `account`, `how` (`id` or `content`), `agreeing`, `elsewhere` and `of`; and `why_not`, why nothing is proposed, or why what is proposed cannot be had: `nothing_sent`, `ids_disagree`, `unplaced`, `no_side`, `unclear`, `wrong_side` or `taken`;
+- `choices`, each of the ledger's accounts the viewer may match it to, the proposed one first: its `account`, whether it is `proposed`, what carrying it on there would meet (`facing`), and why matching it there would be refused (`refused`, with its `why` and the `count` and `day` it needs), worked out by the very check `match_accounts` makes (`matching.refusal`);
 - `facing`, what carrying it on meets where it is matched now: `cut_over`, `carried`, `postponed`, the bank's `rows`, those the ledger holds already (`in_ledger`: its `count`, `by_id` and `by_content`), those before the cut-over it does not, never brought in (`before`), and those hearth books (`booked`), each a `count` with its first and last day, and the ledger's last entry, balance assertion and pad on the account;
 - `reconciling`, whether its bank's balance meets the books only by a difference that waits in Review.
 
-An account the evidence points at that someone else owns is never named: it is `not_yours`, and offered as no choice.
-Nor is one nobody has claimed, unless the ledger records the connection's own Plaid ids on it; and only then, for an account hearth keeps for the viewer, is it offered, as matching moves the claim onto it.
+What is said comes from accounts the viewer may name alone: their own, and one nobody has claimed only where it is offered them to move onto.
+Evidence that points at any other account, someone else's or one nobody has claimed, reads exactly as no evidence at all, `unclear`, with nothing proposed and no ids counted `elsewhere`; so does a disagreement or a wrong side that involves one; so a member learns neither such an account's name nor, when somebody claims it, that they did.
 
 ### Banks
 

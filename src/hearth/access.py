@@ -204,7 +204,9 @@ def may_carry_on(viewer: Member, owners: Collection[MemberId], *, recorded: bool
 
 
 def may_administer(viewer: Member) -> bool:
-    """Admins manage members and passwords. That is all being an admin means."""
+    """Admins manage members and passwords. Besides that, an admin enters the household's
+    Plaid account (``may_manage_household_credentials``) and brings the household's ledger in
+    (``may_bring_in_ledger``), both household acts; neither shows them anybody's money."""
     return viewer.is_admin
 
 

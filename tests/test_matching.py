@@ -528,7 +528,16 @@ def test_an_account_filed_as_one_hearth_keeps_is_moved_onto_the_base_only_as_ask
         "  Feeds Assets:Avery:Zq:Savings, an account the base does not open"
         in capsys.readouterr().out
     )
-    main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
+    # The ledger records nothing that says Elsewhere is the savings account: refused, unless
+    # whoever runs hearth says so with --claim, the one rule the app's matching follows too.
+    with pytest.raises(SystemExit) as refused:
+        main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
+    assert "Nobody has claimed Assets:Zq:Elsewhere, and the imported ledger does not record" in (
+        str(refused.value.code)
+    )
+    assert str(refused.value.code).endswith("move it anyway with --claim. Nothing was matched.")
+    assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Avery:Zq:Savings"
+    main(["match-accounts", "--claim", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
 
     assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Zq:Elsewhere"
     assert ("Assets:Zq:Elsewhere", frozenset({avery})) in _ownership(shell)
@@ -564,9 +573,40 @@ def test_an_accept_naming_an_account_does_not_hold_it_back_from_being_moved(
     finally:
         conn.close()
 
-    main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
+    main(["match-accounts", "--claim", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
 
     assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Zq:Elsewhere"
+    capsys.readouterr()
+
+
+def test_the_ledgers_own_ids_move_a_kept_account_onto_one_nobody_claimed_without_claim(
+    tmp_path: Path,
+    clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The card, kept by hearth, whose six charges the ledger records by their Plaid ids on its
+    card account nobody claimed, up to its last month there: the command line moves it as the
+    app does, without --claim."""
+    household = build(tmp_path, clock, claims={})
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(household.settings.data_dir))
+    monkeypatch.delenv(LEDGER_VARIABLE, raising=False)
+    monkeypatch.setattr(cli, "system_clock", lambda: NOW)
+    card = household.ids["ins_zq_bank/card"]
+    conn = household.fresh.connect()
+    try:
+        avery = household.fresh.member_ids["avery"]
+        kept = accounts.register(
+            conn, ledger_account="Liabilities:Avery:Zq:Card", name="Card", owners=[avery]
+        )
+        Registry(conn).confirm(card, kept.id, by=avery, now=NOW)
+    finally:
+        conn.close()
+
+    main(["match-accounts", "--confirm", f"{card}=Liabilities:Zq:Card"])
+
+    assert _mapping(household)["ins_zq_bank/card"] == "Liabilities:Zq:Card"
+    assert ("Liabilities:Zq:Card", frozenset({avery})) in _ownership(household)
     capsys.readouterr()
 
 

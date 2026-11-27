@@ -47,6 +47,12 @@ class Importer:
         with self._lock:
             return self._last
 
+    @property
+    def running(self) -> bool:
+        """Whether an import is running now, whoever started it."""
+        with self._lock:
+            return self._thread is not None
+
     def start(self, by: str, work: Callable[[], BroughtIn]) -> bool:
         """Run `work` in the background for `by`, unless an import is running already; False
         when one is."""
