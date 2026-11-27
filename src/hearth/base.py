@@ -39,7 +39,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -168,8 +168,75 @@ IMPORTING = ".importing-"
 own."""
 CHECKING = ".checking-"
 """How a folder a check of a ledger stages its copy in is named, inside the data directory."""
+MAKING = ".making-"
+"""How a check's folder is named while it is made, before it is held (`checking`)."""
 STALE = 600
-"""How many seconds old a check's folder is before a sweep takes it for one left behind."""
+"""How many seconds old a check's folder is before a sweep takes it for one left behind, where
+the file system cannot lock it, or it was never held."""
+
+
+@contextmanager
+def checking(directory: Path) -> Iterator[tuple[Path, int]]:
+    """A folder of its own inside `directory`, the data directory, for a check of a ledger to
+    stage its copy in, and the descriptor that holds it: gone when the block ends.
+
+    The folder is held, by the system's lock on it (`flock`), for as long as any process has
+    the descriptor open, as a check's child process does (``hearth.ledger_child``), and let go
+    when the last of them ends however it ends. So a sweep (`sweep_checks`) takes away exactly
+    the folders nobody holds: never one in use by another process, and every one left behind,
+    at once. It is made under another name and held before it is given its own, so no sweep
+    ever sees it unheld. Old ones are swept first."""
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    sweep_checks(directory)
+    making = Path(tempfile.mkdtemp(prefix=MAKING, dir=directory))
+    descriptor = os.open(making, os.O_RDONLY)
+    try:
+        with suppress(OSError):  # a file system that cannot lock: swept by age alone
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        folder = making.with_name(CHECKING + making.name.removeprefix(MAKING))
+        making.rename(folder)
+        try:
+            yield folder, descriptor
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+    finally:
+        os.close(descriptor)
+
+
+def sweep_checks(directory: Path) -> None:
+    """Take away every check's folder in `directory` that no process holds (`checking`): what a
+    check that died, or whose process died, left behind. One on a file system that cannot lock
+    is taken away once it is older than any check takes (`STALE`), as is a folder a check died
+    making."""
+    if not directory.is_dir():
+        return
+    now = time.time()
+    for left in directory.glob(f"{CHECKING}*"):
+        try:
+            descriptor = os.open(left, os.O_RDONLY)
+        except OSError:
+            continue
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            continue  # held: a check is using it
+        except OSError:
+            if _older(left, now):
+                shutil.rmtree(left, ignore_errors=True)
+        else:
+            shutil.rmtree(left, ignore_errors=True)
+        finally:
+            os.close(descriptor)
+    for left in directory.glob(f"{MAKING}*"):
+        if _older(left, now):
+            shutil.rmtree(left, ignore_errors=True)
+
+
+def _older(path: Path, now: float) -> bool:
+    try:
+        return now - path.stat().st_mtime > STALE
+    except OSError:
+        return False
 
 
 @contextmanager
@@ -196,9 +263,10 @@ def staged(
         shutil.rmtree(staging, ignore_errors=True)
 
 
-WAIT = 120.0
+WAIT = 60.0
 """How many seconds an import waits for another to let the base's lock go before it gives up:
-longer than any import of a household's ledger takes."""
+longer than any import of a household's ledger takes, and shorter than the time an import may
+read (``ledger_child.LIMIT``), which never counts it."""
 
 
 class LockTimedOut(Exception):  # noqa: N818 - it names an outcome
@@ -210,10 +278,11 @@ class LockUnavailable(Exception):  # noqa: N818 - it names an outcome
 
 
 @contextmanager
-def locked(directory: Path, wait: float | None = None) -> Iterator[None]:
+def locked(directory: Path, wait: float | None = None) -> Iterator[int]:
     """Hold the base's lock: every import holds it from asking whether the household may import
     through naming the new base, in this process or another, so imports take turns. The lock is
-    the system's (`flock`), let go when the block ends or the process dies. Raises
+    the system's (`flock`), on the descriptor yielded, let go when the block ends and every
+    process the descriptor was handed to (``hearth.ledger_child``) has ended. Raises
     `LockTimedOut` when another holds it longer than `wait` seconds (`WAIT`), and
     `LockUnavailable` when the file system cannot lock at all."""
     directory.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -230,7 +299,7 @@ def locked(directory: Path, wait: float | None = None) -> Iterator[None]:
                 time.sleep(0.05)
             except OSError as error:
                 raise LockUnavailable(error.strerror) from error
-        yield
+        yield descriptor
     finally:
         os.close(descriptor)
 
@@ -251,26 +320,20 @@ def sweep(directory: Path) -> None:
         shutil.rmtree(left, ignore_errors=True)
 
 
-def sweep_at_start(data_dir: Path, ledger_base: Path, now: float) -> None:
-    """At start-up: sweep the base's directory if no import holds its lock, and take away a
-    check's folder left in the data directory once it is older than any check takes."""
-    if data_dir.is_dir():
-        descriptor = os.open(_lock(ledger_base), os.O_RDWR | os.O_CREAT, 0o600)
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            sweep(data_dir)
-        except BlockingIOError:
-            pass
-        finally:
-            os.close(descriptor)
-    if data_dir.is_dir():
-        for left in data_dir.glob(f"{CHECKING}*"):
-            try:
-                old = now - left.stat().st_mtime > STALE
-            except OSError:
-                continue
-            if old:
-                shutil.rmtree(left, ignore_errors=True)
+def sweep_at_start(data_dir: Path, ledger_base: Path) -> None:
+    """At start-up: sweep the base's directory if no import holds its lock, and take away every
+    check's folder no process holds (`sweep_checks`)."""
+    if not data_dir.is_dir():
+        return
+    descriptor = os.open(_lock(ledger_base), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        sweep(data_dir)
+    except OSError:
+        pass  # held by an import, or a file system that cannot lock: the import sweeps
+    finally:
+        os.close(descriptor)
+    sweep_checks(data_dir)
 
 
 def commit(

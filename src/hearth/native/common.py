@@ -6,7 +6,7 @@ or one out of range is `Malformed`, never guessed at, and answered as missing.
 """
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -69,6 +69,10 @@ class Screen:
     slow: bool = False
     """Whether it may take seconds, so it is worked out off the wire (``hearth.native.worker``)
     and asked again until it is there."""
+    stands: Callable[[Settings], Hashable] | None = None
+    """For a slow screen, where what its answer is worked out from stands, when that is less
+    than everything a recompute reads (``books.standing``, the default): an answer worked out
+    under anything else is never handed out."""
 
 
 class Acted(StrEnum):

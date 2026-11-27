@@ -222,9 +222,12 @@ public enum LedgerWords {
     /// matching offers only the ledger's accounts that are the member's own, and an account
     /// becomes someone's only on the command line for now.
     public static func cannotMatch(_ matching: Matching) -> String? {
-        let stuck = matching.accounts.contains { $0.state != .matched && LedgerFlow.open($0).isEmpty }
-        guard stuck else { return nil }
-        return "An account here can be matched only to one of your ledger's accounts that is yours. Until someone says whose your ledger's accounts are, with hearth add-account on this Mac, those with nothing to choose stay as they are. Match them later in Settings, Ledger."
+        let stuck = matching.accounts.filter { $0.state != .matched && LedgerFlow.open($0).isEmpty }.count
+        guard stuck > 0 else { return nil }
+        let staying = stuck == 1
+            ? "the one with nothing to choose stays as it is. Match it later in Settings, Ledger."
+            : "those with nothing to choose stay as they are. Match them later in Settings, Ledger."
+        return "An account here can be matched only to one of your ledger's accounts that is yours. Until someone says whose your ledger's accounts are, with hearth add-account on this Mac, \(staying)"
     }
 
     public static let waitingForAnother = "A ledger is being brought in"
@@ -284,11 +287,14 @@ public enum LedgerWords {
             : "\(number(booked, locale: locale)) from then on are added by Hearth."
     }
 
-    /// What nobody sees yet: "12 of your ledger's accounts are nobody's yet, so nobody sees them."
+    /// What nobody sees yet: "12 of your books' accounts are nobody's yet, so nobody sees them.
+    /// Say whose each is with hearth add-account on this Mac."
     public static func unclaimed(_ standing: LedgerStanding?, locale: Locale = .current) -> String? {
         guard let count = standing?.imported?.unclaimed, count > 0 else { return nil }
-        let accounts = count == 1 ? "1 of your books' accounts is" : "\(number(count, locale: locale)) of your books' accounts are"
-        return "\(accounts) nobody's yet, so nobody sees \(count == 1 ? "it" : "them"). Say whose each is with hearth add-account on this Mac."
+        if count == 1 {
+            return "1 of your books' accounts is nobody's yet, so nobody sees it. Say whose it is with hearth add-account on this Mac."
+        }
+        return "\(number(count, locale: locale)) of your books' accounts are nobody's yet, so nobody sees them. Say whose each is with hearth add-account on this Mac."
     }
 
     public static let change = "Change"

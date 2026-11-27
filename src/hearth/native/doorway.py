@@ -111,16 +111,18 @@ class Doorway:
             return dict(MISSING)
         if screen.slow and self.worker is not None:
             found = self.worker.answer(
-                self._key(ask, given), lambda: self._answer_now(screen, asked)
+                self._key(screen, ask, given),
+                lambda: self._answer_now(screen, asked),
+                (self.viewer, ask),
             )
             return dict(LOADING) if found is None else found
         return self._answer_now(screen, asked)
 
-    def _key(self, ask: str, given: Given | None) -> Hashable:
+    def _key(self, screen: Screen, ask: str, given: Given | None) -> Hashable:
         """What makes a slow answer the same one: the viewer and whether they are an admin, as
-        things stand (``books.standing``, which changes whenever anything a recompute reads
-        does) on their own day, and the ask itself. An answer worked out under anything else is
-        never handed out."""
+        things stand on their own day, and the ask itself. Where things stand is what the
+        screen is worked out from (`Screen.stands`), by default everything a recompute reads
+        (``books.standing``). An answer worked out under anything else is never handed out."""
         conn = db.connect(self.settings.database)
         try:
             member = members.find(conn, self.viewer)
@@ -128,7 +130,7 @@ class Doorway:
             conn.close()
         admin = member.is_admin if member is not None else None
         today = self.clock().astimezone().date()
-        standing = standing_of(self.settings)
+        standing = (screen.stands or standing_of)(self.settings)
         return (self.viewer, admin, standing, today, ask, json.dumps(given or {}, sort_keys=True))
 
     def _answer_now(self, screen: Screen, asked: object) -> Answer:
@@ -512,7 +514,13 @@ SCREENS: Mapping[str, Screen] = {
     "holdings": Screen(_nothing, holdings),
     "price_history": Screen(_symbol, price_history),
     "ledger": Screen(_nothing, ledger.ledger_screen, of_books=False),
-    "ledger_check": Screen(ledger.read_path, ledger.check_screen, of_books=False, slow=True),
+    "ledger_check": Screen(
+        ledger.read_path,
+        ledger.check_screen,
+        of_books=False,
+        slow=True,
+        stands=ledger.check_stands,
+    ),
     "matching": Screen(_nothing, ledger.matching_screen, of_books=False, slow=True),
 }
 """Every screen the app may ask for, by the name it asks with."""

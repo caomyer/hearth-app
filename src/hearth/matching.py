@@ -163,6 +163,8 @@ class ById:
 
     on: Mapping[str, Stretch]
     unplaced: int = 0
+    entries: Mapping[str, frozenset[int]] = field(default_factory=dict)
+    """Each base account's entries the ids are carried on (``carrying.Held.by_entry``)."""
 
     @property
     def found(self) -> int:
@@ -190,16 +192,24 @@ class ById:
 
 def by_id(held: Held, rows: Sequence[Row]) -> ById:
     days: dict[str, list[date]] = defaultdict(list)
+    entries: dict[str, set[int]] = defaultdict(set)
     unplaced = 0
     for row in _posted(rows):
         if row.transaction_id not in held.ids:
             continue
-        accounts = {p.account for p in placed(held, row)}
+        postings = placed(held, row)
+        accounts = {p.account for p in postings}
         if len(accounts) == 1:
-            days[accounts.pop()].append(row.day)
+            account = accounts.pop()
+            days[account].append(row.day)
+            entries[account] |= {p.entry for p in postings}
         else:
             unplaced += 1
-    return ById({account: Stretch.of(found) for account, found in days.items()}, unplaced)
+    return ById(
+        {account: Stretch.of(found) for account, found in days.items()},
+        unplaced,
+        {account: frozenset(found) for account, found in entries.items()},
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -707,6 +717,10 @@ RECENT = timedelta(days=31)
 """How near the end of the base's history on an account its Plaid ids must reach for the
 ledger to vouch that it is still that connection's account."""
 
+WINDOW = timedelta(days=730)
+"""How far back a bank sends an account's history when it is connected, at most: Plaid's two
+years, over which the bank's own rows must be most of what the base holds on it."""
+
 
 def recorded(held: Held, proposal: Proposal) -> bool:
     """Whether the ledger itself records that `proposal`'s connected account is the base
@@ -717,25 +731,29 @@ def recorded(held: Held, proposal: Proposal) -> bool:
     them agreeing on the account, as many as content alone needs to propose anything; and
     reaching the base's latest month on it (`RECENT`), so an account that was this bank's
     once, years ago, and is something else since, does not pass on everything after; and on a
-    strict majority of the base's entries on the account from the first of them to its last
-    entry there, so a few rows of this bank's at the end of an account that holds years of
-    something else's do not hand all of it over."""
+    strict majority of the base's entries on the account over the stretch a bank sends of an
+    account's history (`WINDOW`), up to its last entry there, or since its first if that is
+    later: so a few rows of this bank's at the end of an account that holds years of something
+    else's do not hand all of it over, while an account older than anything the bank still
+    sends, every recent entry of which is the bank's, does."""
     account = proposal.proposed
     if proposal.how is not How.ID or account is None:
         return False
     on = proposal.ids.on.get(account)
-    if on is None or on.count < MINIMUM or on.first is None or on.last is None:
-        return False
     last = held.last_entry.get(account)
-    if last is not None and on.last < last - RECENT:
+    if on is None or on.count < MINIMUM or on.last is None or last is None:
         return False
-    end = max(on.last, last) if last is not None else on.last
+    if on.last < last - RECENT:
+        return False
+    days = [posting.day for posting in held.postings if posting.account == account]
+    start = max(min(days, default=last), last - WINDOW)
     spanned = {
         posting.entry
         for posting in held.postings
-        if posting.account == account and on.first <= posting.day <= end
+        if posting.account == account and start <= posting.day <= last
     }
-    return 2 * on.count > len(spanned)
+    ours = proposal.ids.entries.get(account, frozenset()) & spanned
+    return 2 * len(ours) > len(spanned)
 
 
 def confirm(

@@ -801,3 +801,41 @@ def test_a_copy_whose_include_would_find_a_file_beside_it_is_refused_before_it_l
             ledger_import._staged_holds(staged, replace(gathered, contents=contents))
 
     assert refused.value.why is ledger_import.Refusal.INCLUDE_OUTSIDE
+
+
+# A check's folder in the data directory, held while any process of the check lives.
+
+
+def test_a_checks_folder_is_swept_once_nobody_holds_it_and_never_while_one_does(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "data"
+    with base.checking(data) as (held, _):
+        (held / "copy.beancount").write_text("; zq\n")
+        left = data / f"{base.CHECKING}zq-left"
+        left.mkdir()
+
+        base.sweep_checks(data)
+
+        assert held.is_dir(), "a folder a check holds is never swept"
+        assert not left.exists(), "one nobody holds is swept at once, however young"
+        with base.checking(data) as (another, _):
+            assert held.is_dir()
+            assert another.is_dir()
+    assert not list(data.glob(f"{base.CHECKING}*"))
+
+
+def test_a_check_and_a_start_sweep_what_a_check_that_died_left(tmp_path: Path) -> None:
+    """A check's process killed before it took its folder away leaves it held by nobody: the
+    next check takes it away, as does the next start of a bridge."""
+    data = tmp_path / "data"
+    data.mkdir()
+    for n in range(2):
+        (data / f"{base.CHECKING}zq-{n}" / "x").mkdir(parents=True)
+    with base.checking(data):
+        assert [p.name for p in data.glob(f"{base.CHECKING}zq-*")] == []
+    (data / f"{base.CHECKING}zq-again").mkdir()
+
+    base.sweep_at_start(data, data / "ledger-base")
+
+    assert not list(data.glob(f"{base.CHECKING}*"))
