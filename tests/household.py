@@ -11,7 +11,7 @@ of against itself.
 """
 
 import re
-from collections.abc import Callable, Collection, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
@@ -307,26 +307,34 @@ def secret(text: str, what: str, visible: Rule) -> Secret:
     return Secret(tuple(forms), what, visible)
 
 
-class Seen:
-    """Everything a member was shown, or hearth wrote, to be searched for secrets with ``in``.
+def appears(text: str, seen: str) -> bool:
+    """Whether `text` is in `seen` as itself, not as part of another word, figure or id.
 
-    hearth and the stand-in Plaid make up random identifiers: account ids, Plaid's request ids
-    and Item ids. A short secret, a card's four mask digits or a four-letter ticker, turns up
-    inside one of them now and then by chance, which is nobody's datum. So each of `made_up` is
-    passed over when looking for anything else, and the same text anywhere else, even run
-    straight into one, is still found. An identifier that is itself a secret is looked for in
-    the whole text.
+    hearth and the stand-in Plaid make up random ids: Plaid's request, Item and transaction
+    ids, the review ids drawn from them, account ids. A short secret, a card's four mask digits,
+    a ticker or a whole-dollar figure, turns up inside one of them now and then by chance, which
+    is nobody's datum. So an end of `text` that is a letter or a digit counts only where no
+    letter or digit runs into it, nor a point into the start of a figure: "5528" is not found
+    in "demo3e5528fa", "15528" or "0.5528", and is in "mask=5528", "(5528)" and "-5528.00". An
+    end that is neither, as in "&nbsp;5528" or '"10"', is found as it stands.
     """
+    pattern = re.escape(text)
+    if text[:1].isalnum():
+        pattern = ("(?<![0-9A-Za-z.])" if text[0].isdigit() else "(?<![0-9A-Za-z])") + pattern
+    if text[-1:].isalnum():
+        pattern += "(?![0-9A-Za-z])"
+    return re.search(pattern, seen) is not None
 
-    def __init__(self, text: str, made_up: Collection[str]) -> None:
+
+class Seen:
+    """Everything a member was shown, or hearth wrote, searched for secrets with ``in`` as
+    ``appears`` finds them."""
+
+    def __init__(self, text: str) -> None:
         self.text = text
-        self.made_up = frozenset(made_up)
-        longest_first = sorted(self.made_up, key=len, reverse=True)
-        pattern = "|".join(map(re.escape, longest_first))
-        self._apart = re.sub(pattern, "\n", text) if pattern else text
 
     def __contains__(self, text: str) -> bool:
-        return text in (self.text if text in self.made_up else self._apart)
+        return appears(text, self.text)
 
 
 def owners_of(key: str) -> frozenset[str]:

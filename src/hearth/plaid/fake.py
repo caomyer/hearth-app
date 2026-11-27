@@ -168,9 +168,6 @@ class FakePlaid:
         """For the demo, where a member may type any keys at all and still try the flow."""
         self.calls: list[str] = []
         """Every path asked for, in order, so a test can see what was (and was not) sent."""
-        self.issued: set[str] = set()
-        """Every request id and Item id made up, the random identifiers hearth may log, so a
-        test can tell one that happens to hold a short figure's digits from that figure."""
         self.unreachable = False
         self.page_size: int | None = None
         self.slow_history = False
@@ -262,7 +259,7 @@ class FakePlaid:
         for on `linked`, all of it sent long ago: its (item id, access token), which hearth has
         never been given."""
         item = _Item(
-            item_id=self._issue("item-demo-", 6),
+            item_id=f"item-demo-{secrets.token_hex(6)}",
             client_id=client_id,
             institution=self.institutions[institution_id],
             access_token=f"access-demo-{secrets.token_hex(12)}",
@@ -346,9 +343,7 @@ class FakePlaid:
         self._link_tokens[token] = (request["client_id"], days, update)
         # Four hours from when it is made, as Plaid's are.
         expires = datetime.now(UTC) + timedelta(hours=LINK_TOKEN_HOURS)
-        return self._ok(
-            {"link_token": token, "expiration": expires.isoformat().replace("+00:00", "Z")}
-        )
+        return _ok({"link_token": token, "expiration": expires.isoformat().replace("+00:00", "Z")})
 
     def _exchange(self, request: dict[str, Any]) -> tuple[int, bytes]:
         found = self._public_tokens.pop(request.get("public_token", ""), None)
@@ -359,7 +354,7 @@ class FakePlaid:
         if client_id != request["client_id"]:
             return _error(400, "INVALID_INPUT", "INVALID_PUBLIC_TOKEN")
         item = _Item(
-            item_id=self._issue("item-demo-", 6),
+            item_id=f"item-demo-{secrets.token_hex(6)}",
             client_id=client_id,
             institution=self.institutions[institution_id],
             access_token=f"access-demo-{secrets.token_hex(12)}",
@@ -373,7 +368,7 @@ class FakePlaid:
             [(k, raw) for k, raw in history if raw["date"] < recent],
         ]
         self._items[item.item_id] = item
-        return self._ok({"item_id": item.item_id, "access_token": item.access_token})
+        return _ok({"item_id": item.item_id, "access_token": item.access_token})
 
     def _usable(self, request: dict[str, Any]) -> _Item | tuple[int, bytes]:
         item = self._by_token(request.get("access_token", ""))
@@ -387,7 +382,7 @@ class FakePlaid:
         item = self._usable(request)
         if not isinstance(item, _Item):
             return item
-        return self._ok(
+        return _ok(
             {
                 "item": {
                     "item_id": item.item_id,
@@ -407,7 +402,7 @@ class FakePlaid:
         item = self._usable(request)
         if not isinstance(item, _Item):
             return item
-        return self._ok({"accounts": [self._account(item, a) for a in item.institution.accounts]})
+        return _ok({"accounts": [self._account(item, a) for a in item.institution.accounts]})
 
     def _sync(self, request: dict[str, Any]) -> tuple[int, bytes]:
         item = self._usable(request)
@@ -423,7 +418,7 @@ class FakePlaid:
         has_more = end < len(visible)
         if start >= len(visible) and item.arriving and not self.slow_history:
             item.log.extend(item.arriving.pop(0))
-        return self._ok(
+        return _ok(
             {
                 "added": [raw for kind, raw in page if kind == "added"],
                 "modified": [raw for kind, raw in page if kind == "modified"],
@@ -509,7 +504,7 @@ class FakePlaid:
                         "iso_currency_code": "USD",
                     }
                 )
-        return self._ok(
+        return _ok(
             {
                 "accounts": [self._account(item, a) for a in accounts],
                 "holdings": holdings,
@@ -593,7 +588,7 @@ class FakePlaid:
                 )
         within = [r for r in rows if start.isoformat() <= r["date"] <= end.isoformat()]
         within.sort(key=lambda r: (r["date"], r["investment_transaction_id"]), reverse=True)
-        return self._ok(
+        return _ok(
             {
                 "accounts": [self._account(item, a) for a in item.institution.accounts],
                 "investment_transactions": within[offset : offset + count],
@@ -608,17 +603,7 @@ class FakePlaid:
             return _error(400, "INVALID_INPUT", "INVALID_ACCESS_TOKEN")
         item.removed = True
         item.access_token = ""
-        return self._ok({})
-
-    def _ok(self, value: dict[str, Any]) -> tuple[int, bytes]:
-        # Plaid names every request it answers, as its support asks for that name.
-        return 200, _encode({**value, "request_id": self._issue("demo", 6)})
-
-    def _issue(self, prefix: str, nbytes: int) -> str:
-        """A random identifier of the kind hearth may log, kept in `issued`."""
-        made = f"{prefix}{secrets.token_hex(nbytes)}"
-        self.issued.add(made)
-        return made
+        return _ok({})
 
     def _by_token(self, token: str) -> _Item | None:
         if not token:
@@ -806,6 +791,11 @@ def _encode(value: object) -> bytes:
         raise TypeError(type(obj).__name__)
 
     return json.dumps(value, default=default).encode()
+
+
+def _ok(value: dict[str, Any]) -> tuple[int, bytes]:
+    # Plaid names every request it answers, as its support asks for that name.
+    return 200, _encode({**value, "request_id": f"demo{secrets.token_hex(6)}"})
 
 
 def _error(status: int, error_type: str, code: str) -> tuple[int, bytes]:

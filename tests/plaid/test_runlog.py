@@ -7,9 +7,8 @@ posing as Plaid's production, and the log hearth wrote is read back whole.
 import logging
 import logging.handlers
 import os
-import re
 import stat
-from collections.abc import Collection, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import pytest
@@ -104,13 +103,11 @@ def connect_refused_and_abandoned(world: World) -> list[str]:
     return [*never, "42.00", "Dana"]
 
 
-def leaked(written: str, never: Iterable[str], issued: Collection[str]) -> list[str]:
-    """Each of `never` that the log holds outside the identifiers the stand-in made up.
-
-    Its request ids and Item ids are random hex, and a card's mask is four digits: about one
-    log in a hundred has a mask somewhere inside one of them, which is the stand-in's dice and
-    not anybody's figure (``household.Seen``)."""
-    seen = household.Seen(written, issued)
+def leaked(written: str, never: Iterable[str]) -> list[str]:
+    """Each of `never` the log holds as itself (``household.appears``). Its request ids and
+    Item ids are random hex, and about one log in a hundred holds a card's four mask digits
+    inside one of them, which is the stand-in's dice and nobody's figure."""
+    seen = household.Seen(written)
     return [value for value in never if value in seen]
 
 
@@ -136,37 +133,31 @@ def test_the_log_holds_every_plaid_operation_and_its_outcome_and_nothing_of_anyo
     assert relay.sent
 
     # Never a key, a token, a balance, an account or a payee.
-    assert not (found := leaked(written, never, world.plaid.issued)), found
+    assert not (found := leaked(written, never)), found
 
 
-@pytest.mark.parametrize("shape", ["mask={value}", "{made_up}{value}", "{value}{made_up}"])
-def test_anything_of_anyones_in_the_log_is_found_even_run_into_an_identifier(
+@pytest.mark.parametrize(
+    "shape",
+    ["mask={value}", "as item {item_id}: {value}", "{{'mask': '{value}'}}", "({value})", "{value}"],
+)
+def test_anything_of_anyones_the_log_could_hold_is_found(
     world: World, log: Path, shape: str
 ) -> None:
     as_production(world)
     never = connect_refused_and_abandoned(world)
-    issued = world.plaid.issued
-    assert any(re.fullmatch(r"demo[0-9a-f]{12}", i) for i in issued)
-    assert any(re.fullmatch(r"item-demo-[0-9a-f]{12}", i) for i in issued)
+    item_id = world.plaid.items()[-1]
 
     plaid = logging.getLogger("hearth.plaid.client")
     for value in never:
-        for made_up in issued:
-            plaid.info("planted %s", shape.format(value=value, made_up=made_up))
+        plaid.info("planted %s", shape.format(value=value, item_id=item_id))
 
-    assert leaked(log.read_text(), never, issued) == never
+    assert leaked(log.read_text(), never) == never
 
 
-def test_an_identifier_holding_a_secrets_text_is_not_taken_for_it() -> None:
-    blake = next(p for p in household.PLAID if p.username == "blake")
-    lucky = f"demo00{blake.checking_mask}aa11"
-    line = f"production /item/get: ok request_id={lucky}\n"
-
-    assert leaked(line, [blake.checking_mask], issued=[lucky]) == []
-    assert leaked(line, [blake.checking_mask], issued=[]) == [blake.checking_mask]
-    # The same for a ticker inside an account id on a page; the id itself is still found.
-    account_id = "q2_ZQAA-x7Lm0pRt"
-    page = household.Seen(f'<a href="/accounts/{account_id}">Badger Basic</a>', [account_id])
-    assert "ZQAA" not in page
-    assert account_id in page
-    assert "ZQAA" in household.Seen(f"{account_id}ZQAA", [account_id])
+def test_a_masks_digits_inside_a_random_id_are_not_the_mask() -> None:
+    for p in household.PLAID:
+        for mask in (p.checking_mask, p.card_mask):
+            for at in range(13 - len(mask)):
+                hexes = ("f" * at + mask).ljust(12, "0")
+                line = f"ok request_id=demo{hexes} as item item-demo-{hexes}\n"
+                assert leaked(line, [mask]) == [], line

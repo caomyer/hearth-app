@@ -151,18 +151,9 @@ TAMPERED_QUERIES: tuple[dict[str, str], ...] = (
 )
 
 
-def altered_ids(world: World) -> dict[str, list[str]]:
-    """Identifiers hearth made up, as a curious member might alter them; a page may echo one."""
-    account_id = next(iter(world.account_ids.values()))
-    return {
-        "item_id": [next(iter(world.item_ids.values())).upper()],
-        "account_id": [account_id.upper(), account_id[:-1]],
-    }
-
-
 def path_values(world: World) -> dict[str, list[str]]:
     """Everything a curious member might put into each path parameter."""
-    altered = altered_ids(world)
+    ids = list(world.account_ids.values())
     return {
         "username": [
             *household.USERNAMES,
@@ -177,14 +168,15 @@ def path_values(world: World) -> dict[str, list[str]]:
             *world.item_ids.values(),
             "nonexistent",
             "item-demo-000000000000",
-            *altered["item_id"],
+            next(iter(world.item_ids.values())).upper(),
         ],
         "account_id": [
-            *world.account_ids.values(),
+            *ids,
             "nonexistent",
             "1",
             quote(household.ACCOUNTS[0].ledger_account, safe=""),
-            *altered["account_id"],
+            ids[0].upper(),
+            ids[0][:-1],
             "%2E%2E",
         ],
     }
@@ -237,18 +229,17 @@ def probes_of(values: dict[str, list[str]]) -> Iterator[Probe]:
 
 def everything_seen(world: World, client: TestClient) -> household.Seen:
     """Every byte the client can make the application send back, joined up."""
-    altered = {value for values in altered_ids(world).values() for value in values}
-    return household.Seen(seen_through(probes(world), client), world.made_up() | altered)
+    return seen_through(probes(world), client)
 
 
-def seen_through(found: Iterator[Probe], client: TestClient) -> str:
+def seen_through(found: Iterator[Probe], client: TestClient) -> household.Seen:
     """Every byte the client is sent back for each of `found`, joined up."""
     seen: list[str] = []
     for probe in found:
         response = client.get(probe.url, headers=probe.headers)
         seen.extend(f"{name}: {value}" for name, value in response.headers.items())
         seen.append(response.text)
-    return "\n".join(seen)
+    return household.Seen("\n".join(seen))
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS)
