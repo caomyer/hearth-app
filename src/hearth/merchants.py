@@ -17,13 +17,17 @@ or, without one, its narration.
    is ignored: "CAFÉ" is "café", "寿司 BAR" is "寿司 bar".
 3. A payment processor's prefix, one of `PROCESSORS` before an asterisk, is dropped: it took
    the payment and sold nothing.
-4. After the first remaining asterisk, a first word of letters alone is the same company's
-   service and is kept ("UBER *EATS" is "uber eats", apart from "uber trip"); anything else
-   there is the network's reference for one payment, and is dropped.
-5. In a description only, a phrase the bank starts with to say how the money moved is
-   dropped from the front (`LEAD_INS`), only as the whole phrase followed by its date or
-   number, with that date or number: "PURCHASE AUTHORIZED ON 09/12 STARBUCKS" is "starbucks",
-   "ACH DEBIT 0012 GEICO" is "geico", while "ELECTRONIC ARTS" and "ON THE BORDER" stay whole.
+4. After the first remaining asterisk, a first word that reads as a word (`reads_as_word`)
+   is the same company's service and is kept ("UBER *EATS" is "uber eats", apart from "uber
+   trip"); anything else there, digits or letters no word is spelt with ("US*2K4AB1",
+   "US*RTQPL"), is the network's reference for one payment, and is dropped.
+5. In a description only, the words the bank starts with to say how the money moved are
+   dropped from the front, with the date or number after them: a run of `LEAD_IN_WORDS`
+   alone, in any order, followed by a date or number. "PURCHASE AUTHORIZED ON 09/12
+   STARBUCKS" is "starbucks", "CARD PURCHASE WITH PIN 09/12 SAFEWAY" is "safeway", "BILL
+   PAYMENT 0912 COMCAST" is "comcast". A run with a word of a name in it is no lead-in, so
+   "ELECTRONIC ARTS 123", "CREDIT ONE BANK" and "ON THE BORDER" stay whole; and a lead-in with
+   nothing after its date or number is no merchant at all.
 6. Everything from the first word that holds a digit or starts with "#" is dropped, with
    "store", "str", "no" or "location" just before it: a store number, and the town and state
    that follow it. Never while the words kept so far are only `GENERIC` words and `NOUNS`, so
@@ -66,27 +70,55 @@ merchant's own name: Square (``SQ *``), Toast (``TST*``), PayPal, Shopify (``SP 
 (``IN *``), DoorDash's marketplace (``DD *``), SumUp, Zettle, WePay and the like. Generic
 payment services, never a merchant, bank or person."""
 
-LEAD_INS: tuple[tuple[str, ...], ...] = (
-    ("recurring", "payment", "authorized", "on"),
-    ("purchase", "authorized", "on"),
-    ("payment", "authorized", "on"),
-    ("debit", "card", "purchase"),
-    ("visa", "dda", "pur"),
-    ("pos", "purchase"),
-    ("pos", "debit"),
-    ("pos", "withdrawal"),
-    ("ach", "debit"),
-    ("ach", "credit"),
-    ("ach", "pmt"),
-    ("dbt", "crd"),
-    ("checkcard",),
-    ("pos",),
+LEAD_IN_WORDS = frozenset(
+    {
+        "ach",
+        "auth",
+        "authorized",
+        "bill",
+        "card",
+        "ccd",
+        "check",
+        "checkcard",
+        "contactless",
+        "crd",
+        "credit",
+        "dbt",
+        "dda",
+        "debit",
+        "electronic",
+        "international",
+        "intl",
+        "on",
+        "online",
+        "payment",
+        "pin",
+        "pmt",
+        "pos",
+        "ppd",
+        "preauth",
+        "preauthorized",
+        "pur",
+        "purchase",
+        "pymt",
+        "recurring",
+        "visa",
+        "web",
+        "with",
+        "withdrawal",
+    }
 )
-"""The phrases a bank's description starts with to say how money moved, which name no
-merchant: "PURCHASE AUTHORIZED ON 09/12", "ACH DEBIT 0012", "POS DEBIT 1234", "VISA DDA PUR
-12345". Each is a lead-in only as the whole phrase, followed by its date or number, so a
-merchant whose name merely starts with one of its words ("Electronic Arts", "Credit One
-Bank", "On the Border", "Card Services") is never cut."""
+"""The words a bank's description starts with to say how money moved, which name no merchant:
+"PURCHASE AUTHORIZED ON 09/12", "ACH DEBIT 0012", "CARD PURCHASE WITH PIN 09/12", "VISA DDA
+PUR 12345". Any run of them alone, in any order, followed by a date or number, is a lead-in,
+so a phrase no bank was seen to use yet is one too; a run with any other word in it is not,
+so a merchant whose name merely starts with one ("Electronic Arts", "Credit One Bank", "On
+the Border", "Card Services") is never cut. A new word needs adding here; a new phrase of
+these does not. Words after which what follows is not a merchant are not among them: cash
+from any machine is one merchant, "ATM WITHDRAWAL 0912 MAIN ST" is "atm withdrawal"."""
+
+_JOINING = frozenset({"on", "with"})
+"""Lead-in words that join others and never start one alone: "ON 9 ..." is no lead-in."""
 
 GENERIC = frozenset(
     {
@@ -149,6 +181,8 @@ one of these, nor to these and `GENERIC` words, so "BAR 22 NYC" stays "bar 22 ny
 than becoming every bar's "bar"."""
 
 _PREFIX = re.compile(r"^\s*([^\W\d_]+)\s*\*\s*")
+_VOWEL = re.compile(r"[aeiouy]")
+_UNSPOKEN = re.compile(r"[^aeiouy]{4}|q(?!u)|[jkqvwxz]{2}")
 _STORE = frozenset({"store", "str", "no", "location", "loc"})
 _WORD = re.compile(r"[^\W_]+(?:['&][^\W_]+)*|&")
 _NUMBERISH = re.compile(r"[#\d][\d/.\-#]*")
@@ -186,36 +220,49 @@ def _key(text: str, *, described: bool) -> str | None:
     return " ".join(words)
 
 
+def reads_as_word(word: str) -> bool:
+    """Whether `word`, the first after an asterisk, is spelt as a word is, so a company's
+    service ("TRIP", "EATS", "PRIME", "STREAMING") rather than a network's reference for one
+    payment, which is random letters and digits ("2K4AB1", "RTQPL", "TQXWZ").
+
+    A word of letters alone reads as one when it has a vowel (a, e, i, o, u or y), never four
+    consonants running, no "q" but before "u", and no two of "j", "k", "q", "v", "w", "x" and
+    "z" side by side. About 97 English words in 100 read so, and only about 4 references of
+    letters alone in 10 at five letters, 2 in 10 at eight: one that does is its own merchant
+    and learns nothing, which is the safe side to err on. A word in a script other than Latin
+    reads as one: a network writes its references in Latin."""
+    if not _WORD.fullmatch(word) or any(c.isdigit() for c in word):
+        return False
+    if not word.isascii():
+        return True
+    return _VOWEL.search(word) is not None and _UNSPOKEN.search(word) is None
+
+
 def _before_reference(text: str) -> list[str]:
     """`text`'s words up to the network's reference after an asterisk. What follows the
-    asterisk is the same company's service when its first word is letters alone, as in "UBER
-    *EATS" and "UBER *TRIP", two services a member books apart, and is kept; a word with a
-    digit in it is a reference for one payment ("AMZN Mktp US*2K4AB1"), and is not."""
+    asterisk is the same company's service when its first word reads as a word, as in "UBER
+    *EATS" and "UBER *TRIP", two services a member books apart, and is kept; otherwise it is
+    a reference for one payment ("AMZN Mktp US*2K4AB1", "AMAZON PRIME*TQXWZ"), and is not."""
     before, star, after = text.partition("*")
     words = before.split()
     service = after.split()[:1] if star else []
-    if service and not any(c.isdigit() for c in service[0]) and _WORD.fullmatch(service[0]):
+    if service and reads_as_word(service[0]):
         words += service
     return words
 
 
 def _without_lead_in(tokens: list[str]) -> list[str]:
-    """`tokens` without a lead-in phrase at their front (`LEAD_INS`), where the whole phrase
-    is followed by its date or number, nor that date or number and any after it."""
+    """`tokens` without the lead-in at their front: a run of `LEAD_IN_WORDS` alone, not one
+    of `_JOINING` alone, followed by a date or number, with every date or number after it.
+    Each lead-in after that one goes too, as in "PURCHASE 09/12 CARD 1234 SAFEWAY"."""
     start = 0
     while True:
-        phrase = next(
-            (
-                p
-                for p in LEAD_INS
-                if tuple(t.strip(".:-") for t in tokens[start : start + len(p)]) == p
-                and start + len(p) < len(tokens)
-                and _NUMBERISH.fullmatch(tokens[start + len(p)])
-            ),
-            None,
-        )
-        if phrase is None:
+        end = start
+        while end < len(tokens) and tokens[end].strip(".:-") in LEAD_IN_WORDS:
+            end += 1
+        run = {t.strip(".:-") for t in tokens[start:end]}
+        if not run - _JOINING or end == len(tokens) or not _NUMBERISH.fullmatch(tokens[end]):
             return tokens[start:]
-        start += len(phrase)
+        start = end
         while start < len(tokens) and _NUMBERISH.fullmatch(tokens[start]):
             start += 1

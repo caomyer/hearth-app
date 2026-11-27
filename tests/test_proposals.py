@@ -6,6 +6,8 @@ meets them, through Link, Review and an imported ledger, is in ``tests/test_lear
 Every merchant, category and figure is invented.
 """
 
+import random
+import string
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
@@ -15,7 +17,7 @@ import pytest
 from hearth.carrying import BaseEntry
 from hearth.disclosure import may_learn
 from hearth.members import MemberId
-from hearth.merchants import merchant
+from hearth.merchants import merchant, reads_as_word
 from hearth.plaid.booking import bank_says
 from hearth.proposals import (
     LATEST,
@@ -70,6 +72,18 @@ MERCHANTS = [
     ((None, "ACH DEBIT 0012 GEICO"), "geico"),
     ((None, "ACH DEBIT 0013 PG&E"), "pg&e"),
     ((None, "POS DEBIT 1234 TARGET T-1234"), "target"),
+    # Any run of the bank's own words, in any order, whether or not a bank was seen to use it.
+    ((None, "CARD PURCHASE 09/12 SAFEWAY"), "safeway"),
+    ((None, "CARD PURCHASE WITH PIN 09/12 SAFEWAY"), "safeway"),
+    ((None, "PREAUTHORIZED DEBIT 0912 COMCAST"), "comcast"),
+    ((None, "BILL PAYMENT 0912 COMCAST"), "comcast"),
+    ((None, "DEBIT CARD PURCHASE 0912 PIN CARD 1234 SAFEWAY 0042 PORTLAND OR"), "safeway"),
+    ((None, "INTL POS PURCHASE 09/12 CAFE ROMA"), "cafe roma"),
+    ((None, "PURCHASE 09/12 CARD 1234 SAFEWAY"), "safeway"),
+    ((None, "CARD PURCHASE 09/12 CARD CASTLE 0042"), "card castle"),
+    ((None, "BILL PAYMENT 0912 ON THE BORDER 123"), "on the border"),
+    # Cash from any machine is one merchant, whichever machine.
+    ((None, "ATM WITHDRAWAL 0912 MAIN ST"), "atm withdrawal"),
     # Only as the whole phrase followed by its date or number: a merchant's name may start
     # with one of its words.
     (("Card Factory",), "card factory"),
@@ -78,6 +92,8 @@ MERCHANTS = [
     ((None, "ON THE BORDER 123"), "on the border"),
     ((None, "CARD SERVICES 123"), "card services"),
     ((None, "SALE AT TARGET"), "sale at target"),
+    ((None, "BAR 22 NYC"), "bar 22 nyc"),
+    ((None, "ON 9 MUSES"), "on 9 muses"),
     # Never a name cut down to a kind of place.
     ((None, "VISA DDA PUR 12345 BAR 22 NYC"), "bar 22 nyc"),
     ((None, "VISA DDA PUR 12345 BAR 7 BROOKLYN"), "bar 7 brooklyn"),
@@ -85,6 +101,10 @@ MERCHANTS = [
     ((None, "UBER *TRIP"), "uber trip"),
     ((None, "UBER *EATS"), "uber eats"),
     ((None, "UBER *TRIP HELP.UBER.COM"), "uber trip"),
+    ((None, "NETFLIX *STREAMING"), "netflix streaming"),
+    ((None, "AMZN Mktp US*RTQPL"), "amzn mktp us"),
+    ((None, "AMAZON PRIME*TQXWZ"), "amazon prime"),
+    ((None, "AMAZON PRIME*2K4AB1Z30"), "amazon prime"),
     # A cheque says no merchant at all, whatever its number.
     ((None, "CHECK 1001"), None),
     ((None, "CHECK 1002"), None),
@@ -110,6 +130,8 @@ MERCHANTS = [
     (("***",), None),
     (("SQ *",), None),
     ((None, "PURCHASE AUTHORIZED ON 09/12"), None),
+    ((None, "CARD PURCHASE 09/12"), None),
+    ((None, "BILL PAYMENT 0912"), None),
     (("The",), None),
     ((None, "ONLINE PAYMENT"), None),
 ]
@@ -140,6 +162,15 @@ def test_different_merchants_written_alike_are_never_one_merchant() -> None:
         ((None, "ON THE BORDER 123"), (None, "ACROSS THE BORDER 5")),
         ((None, "VISA DDA PUR 12345 BAR 22 NYC"), (None, "VISA DDA PUR 12346 BAR 7 BROOKLYN")),
         ((None, "UBER *TRIP"), (None, "UBER *EATS")),
+        ((None, "CARD PURCHASE 09/12 SAFEWAY"), (None, "CARD PURCHASE 09/13 SHELL OIL")),
+        (
+            (None, "CARD PURCHASE WITH PIN 09/12 SAFEWAY"),
+            (None, "CARD PURCHASE WITH PIN 09/12 TARGET"),
+        ),
+        ((None, "PREAUTHORIZED DEBIT 0912 COMCAST"), (None, "PREAUTHORIZED DEBIT 0912 GEICO")),
+        ((None, "BILL PAYMENT 0912 COMCAST"), (None, "BILL PAYMENT 0912 PG&E")),
+        ((None, "CARD PURCHASE 09/12 CARD CASTLE"), (None, "CARD PURCHASE 09/12 SAFEWAY")),
+        ((None, "NETFLIX *STREAMING"), (None, "NETFLIX *DVD")),
     ]
     for one, other in pairs:
         assert merchant(*one) != merchant(*other), (one, other)
@@ -153,6 +184,115 @@ def test_rows_of_one_merchant_written_differently_are_one_merchant() -> None:
         == merchant(None, "ZQ BEAN COUNTER STORE 0042")
     )
     assert merchant("Zq Bean Counter") != merchant("Zq Bean Roaster")
+    ones: list[list[tuple[str | None, ...]]] = [
+        [
+            (None, "CARD PURCHASE 09/12 SAFEWAY"),
+            (None, "CARD PURCHASE WITH PIN 09/14 SAFEWAY #0042"),
+            (None, "POS DEBIT 1234 SAFEWAY STORE 0042"),
+            ("Safeway",),
+        ],
+        [
+            (None, "PREAUTHORIZED DEBIT 0912 COMCAST"),
+            (None, "BILL PAYMENT 1012 COMCAST"),
+            (None, "ACH DEBIT 0012 COMCAST"),
+        ],
+        [
+            (None, "AMZN Mktp US*RTQPL"),
+            (None, "AMZN Mktp US*TQXWZ"),
+            (None, "AMZN Mktp US*2K4AB1"),
+        ],
+        [(None, "AMAZON PRIME*TQXWZ"), (None, "AMAZON PRIME*RT1PL2D30")],
+    ]
+    for one in ones:
+        assert len({merchant(*texts) for texts in one}) == 1, one
+        assert merchant(*one[0]) is not None
+
+
+@pytest.mark.parametrize(
+    "service", ["trip", "eats", "prime", "music", "streaming", "kindle", "pass", "rides", "寿司"]
+)
+def test_a_word_after_an_asterisk_that_reads_as_a_word_is_a_service(service: str) -> None:
+    assert reads_as_word(service)
+
+
+@pytest.mark.parametrize(
+    "reference", ["rtqpl", "tqxwz", "2k4ab1", "rt1pl2d30", "qzkvt", "bcdfg", "xjwpq", "k"]
+)
+def test_a_reference_after_an_asterisk_is_no_service(reference: str) -> None:
+    assert not reads_as_word(reference)
+
+
+def test_references_of_letters_alone_are_mostly_told_from_words() -> None:
+    """How often a reference of random letters is still taken for a service, which is what
+    ``docs/review.md`` says of the rule: about 4 in 10 at five letters, 2 in 10 at eight."""
+    chooser = random.Random(20261127)  # noqa: S311 - invented references; nothing secret
+    for length, most in ((5, 0.45), (8, 0.25), (10, 0.15)):
+        drawn = ["".join(chooser.choices(string.ascii_lowercase, k=length)) for _ in range(4000)]
+        assert sum(map(reads_as_word, drawn)) / len(drawn) < most, length
+
+
+CORPUS = [
+    "Zq Copper Kettle",
+    "Zq Copper Kettle Bakery",
+    "Zq Kettle Copper",
+    "Zq Lantern Works",
+    "Card Castle",
+    "Credit One Bank",
+    "Electronic Arts",
+    "On the Border",
+    "Bill's Diner",
+    "Pin Oak Nursery",
+    "Bar 22",
+    "The 1849 Club",
+    "Zq Pots & Pans",
+    "Joe's Pizza",
+    "Zq Debit Doctor",
+    "Visa Vista Travel",
+    "Zq Ridgeline Outfitters",
+    "Zq Ridgeline Outfitter",
+    "Café Zq",
+    "Zq Payment Pals",
+]
+"""Invented merchants, some written alike on purpose and some starting with a bank's words."""
+
+STYLES = [
+    "{title}",
+    "{upper}",
+    "SQ *{upper}",
+    "TST* {title}",
+    "{upper} #0418 SPRINGFIELD IL",
+    "{upper} STORE 00042",
+    "{upper}*2K4AB1Z30",
+    "{upper}*RTQPL",
+    "PURCHASE AUTHORIZED ON 09/12 {upper} #0418 SPRINGFIELD IL S386255489574911 CARD 0707",
+    "RECURRING PAYMENT AUTHORIZED ON 10/01 {upper}",
+    "CARD PURCHASE 09/12 {upper}",
+    "CARD PURCHASE WITH PIN 09/12 {upper} #12",
+    "DEBIT CARD PURCHASE 0912 {upper}",
+    "POS DEBIT 1234 {upper}",
+    "POS PURCHASE 0912 {upper} 00042 SPRINGFIELD",
+    "PREAUTHORIZED DEBIT 0912 {upper}",
+    "BILL PAYMENT 0912 {upper}",
+    "ACH DEBIT 0012 {upper}",
+    "VISA DDA PUR 444500 {upper} STORE 05 SPRINGFIELD * IL",
+    "CHECKCARD 0912 {upper} 24431056",
+    "ELECTRONIC PAYMENT 0912 {upper}",
+]
+"""The ways several banks write a row of one merchant, as a name or as a description."""
+
+
+def test_no_two_invented_merchants_share_a_key_and_none_takes_two() -> None:
+    keys: dict[str, set[str | None]] = {}
+    for name in CORPUS:
+        for style in STYLES:
+            text = style.format(title=name, upper=name.upper())
+            key = merchant(text) if style == "{title}" else merchant(None, text)
+            keys.setdefault(name, set()).add(key)
+    for name, found in keys.items():
+        assert len(found) == 1, (name, found)
+        assert None not in found, name
+    owners = [next(iter(found)) for found in keys.values()]
+    assert len(set(owners)) == len(owners), owners
 
 
 # The order a suggestion is taken in, and why.
