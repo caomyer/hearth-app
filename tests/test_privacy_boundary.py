@@ -16,12 +16,14 @@ until it is taught to, so no route can sit outside this suite.
 """
 
 import hashlib
+import importlib
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote, urlencode
 
 import pytest
@@ -280,33 +282,138 @@ TAX_SCENARIOS = [
 alone and together, for the crawl of Blake's tax."""
 
 
+def book_blakes_tax(world: World) -> None:
+    with world.ledger.open("a") as ledger:
+        ledger.write("\n" + household.tax_text())
+    world.recompute()
+    assert world.bookkeeper.status.failure is None, world.bookkeeper.status.failure
+
+
+def share(world: World, scenario: str) -> dict[str, frozenset[Facet]]:
+    choices = dict.fromkeys(household.USERNAMES, DEFAULT_SHARED)
+    choices.update(SCENARIOS[scenario])
+    for username, shared in choices.items():
+        world.choose(username, shared)
+    return choices
+
+
+def tax_told(
+    world: World, viewer: str, choices: dict[str, frozenset[Facet]]
+) -> tuple[list[str], list[str]]:
+    """What of Blake's tax every page `viewer` can reach holds though they may not see it, and
+    what they may see that no page holds, in every form a page renders it."""
+    seen = everything_seen(world, world.signed_in(viewer))
+    leaked, missing = [], []
+    for secret in household.tax_secrets():
+        present = [text for text in secret.texts if text in seen]
+        if not secret.visible(viewer, choices) and present:
+            leaked.append(f"{secret.what}: {present!r}")
+        if secret.visible(viewer, choices) and not present:
+            missing.append(f"{secret.what}: {secret.texts!r}")
+    return leaked, missing
+
+
 @pytest.mark.parametrize("scenario", TAX_SCENARIOS)
 @pytest.mark.parametrize("viewer", household.USERNAMES)
 def test_a_members_tax_is_its_own_figure_only_to_whoever_may_see_their_categories(
     world: World, scenario: str, viewer: str
 ) -> None:
-    """Blake pays tax in a month that is over and in this one. Tax is never spending, so
-    Blake's spending total says nothing of it; it is its own figure, beside spending and in what
-    was left over, only to Blake and whoever may see Blake's categories or transactions, and
-    no page anyone else is sent holds it, whatever else Blake shares."""
-    with world.ledger.open("a") as ledger:
-        ledger.write("\n" + household.tax_text())
-    world.recompute()
-    assert world.bookkeeper.status.failure is None, world.bookkeeper.status.failure
-    choices = dict.fromkeys(household.USERNAMES, DEFAULT_SHARED)
-    choices.update(SCENARIOS[scenario])
-    for username, shared in choices.items():
-        world.choose(username, shared)
+    """Blake pays tax in a month that is over and in this one. It is its own figure, beside
+    spending and in what was left over, only to Blake and whoever may see Blake's categories or
+    transactions; to anyone else it stays inside Blake's money out, and no page holds it, in
+    cents or in whole dollars, whatever else Blake shares."""
+    book_blakes_tax(world)
+    choices = share(world, scenario)
 
-    seen = everything_seen(world, world.signed_in(viewer))
+    leaked, missing = tax_told(world, viewer, choices)
 
-    for secret in household.tax_secrets():
-        present = [text for text in secret.texts if text in seen]
-        if secret.visible(viewer, choices):
-            # Blake is told it on their own pages: the crawl reached it.
-            assert present or viewer != "blake", f"{viewer} was not told {secret.what}"
-        else:
-            assert not present, f"{viewer} could see {secret.what}: {present!r}"
+    assert not leaked, f"{viewer} could see Blake's tax: {leaked}"
+    if viewer == "blake":
+        # Blake is told it on their own pages: the crawl reaches it.
+        assert not missing, missing
+
+
+class SaysYes:
+    """A gate that lets anyone see every part's categories, and is the viewer's own otherwise:
+    what a slip in asking it would amount to."""
+
+    def __init__(self, gate: object) -> None:
+        self._gate = gate
+
+    def may(self, facet: Facet, owners: object) -> bool:
+        return facet is Facet.CATEGORY_BREAKDOWN or self._gate.may(facet, owners)  # type: ignore[attr-defined]
+
+    def disclose(self, facet: Facet, owners: object, compute: Any) -> Any:
+        if facet is Facet.CATEGORY_BREAKDOWN:
+            return compute()
+        return self._gate.disclose(facet, owners, compute)  # type: ignore[attr-defined]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._gate, name)
+
+
+@pytest.mark.parametrize("slip", ["left over", "every spending total"])
+def test_the_tax_crawl_finds_tax_told_without_asking(
+    world: World, slip: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The crawl has teeth: tax added up for the left-over panel without asking the gate, or
+    told beside every spending total whoever may see its categories, is found on Avery's
+    pages, in whole dollars where that is how a page shows it."""
+    from hearth.disclosure import common, people
+
+    panels = importlib.import_module("hearth.disclosure.household")
+
+    book_blakes_tax(world)
+    choices = share(world, "everyone also shares income")
+    assert not any(tax_told(world, "avery", choices)[0])
+    if slip == "left over":
+        told = panels._told_tax
+        monkeypatch.setattr(
+            panels,
+            "_told_tax",
+            lambda h, parts, flows: told(replace(h, gate=SaysYes(h.gate)), parts, flows),
+        )
+    else:
+        unreviewed = common.unreviewed
+        for module in (panels, people):
+            monkeypatch.setattr(
+                module,
+                "unreviewed",
+                lambda gate, *rest: unreviewed(SaysYes(gate), *rest),  # type: ignore[arg-type]
+            )
+
+    leaked, _ = tax_told(world, "avery", choices)
+
+    assert leaked, slip
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS)
+def test_what_was_left_over_is_the_same_whoever_looks(world: World, scenario: str) -> None:
+    """With Blake's tax in the books: for every part, every month's money in, money out and
+    what was left over, as the left-over panel adds them up, are the same for every viewer who
+    is shown that part there, whether they are told its tax apart or not."""
+    from hearth.figures import month_flows, past_months
+    from tests.test_disclosure import disclosure_for
+
+    panels = importlib.import_module("hearth.disclosure.household")
+    book_blakes_tax(world)
+    share(world, scenario)
+    told: dict[frozenset[str], set[tuple[object, ...]]] = {}
+    for viewer in household.USERNAMES:
+        h = disclosure_for(world, viewer)._household()
+        full = {m: month_flows(h.books, h.ownership, m) for m in past_months(h.books.month, 12)}
+        shown = panels._left_over(h, [p for p in h.parts if p.accounts], full)
+        whole = tuple((m.month, m.money_in - m.money_out - m.tax, m.covered) for m in shown.months)
+        assert whole == tuple((m.month, m.left_over, m.covered) for m in shown.months)
+        for part in h.parts:
+            if h.part_ref(part) not in shown.parts:
+                continue
+            alone = panels._left_over(h, [part], full)
+            owners = frozenset(m.username for m in h.members if m.id in part.owners)
+            told.setdefault(owners, set()).add(
+                tuple((m.month, m.money_in, m.money_out + m.tax, m.left_over) for m in alone.months)
+            )
+    assert all(len(ways) == 1 for ways in told.values()), told
 
 
 def test_an_anonymous_visitor_sees_nothing_at_all(world: World) -> None:

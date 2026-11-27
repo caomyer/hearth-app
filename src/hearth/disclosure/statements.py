@@ -94,6 +94,12 @@ SPENDING_WITH_TAX = "Spending and tax"
 """Spending as the summary, Year by year and the income statement name it: without tax, and
 with tax counted in it, which the app may show instead (`WithTax`)."""
 
+PAY = "Take-home pay"
+PAY_BEFORE_TAX = "Pay before tax"
+"""Pay as the books hold it is called what it is: where the scope holds tax, pay is booked
+before it, so "take-home" would not be true; where it holds none, pay is what reached the
+bank."""
+
 SAVINGS_RATE = "Savings rate"
 SAVINGS_RATE_AFTER_TAX = "Savings rate, after tax"
 SAVINGS_RATE_WITH_TAX = "Savings rate, with tax"
@@ -281,13 +287,9 @@ def covered(h: Household, s: Scope, period: Period) -> bool:
 def taxed(h: Household, s: Scope) -> bool:
     """Whether the scope's books hold any tax, over all their history: whether a figure with
     tax counted in it would ever differ from one without. Judged on the scope's own accounts
-    alone, by what moved them, so it says nothing of any account or category outside it."""
-    found = ledger(h)
-    first = found.first_day(s.ledger)
-    if first is None:
-        return False
-    moved = found.flows(Period(first, max(first, h.books.as_of)), s.ledger, h.books.kind)
-    return any(moved.kinds[a] is Kind.TAX for a in moved.by_account)
+    alone, by what moved them, so it says nothing of any account or category outside it. A
+    posting is enough: tax refunded to nothing over the years was still tax."""
+    return any(h.books.kind(a) is Kind.TAX for a in ledger(h).books_to(s.ledger))
 
 
 def _months(period: Period) -> list[Month]:
@@ -434,7 +436,7 @@ def summary(h: Household, period: Period, *, market: bool) -> Summary:
             "spending", SPENDING, n.spending, t.spending, Better.LESS, both.of_kind(Kind.SPENDING)
         ),
         market=movement(start, end, n) if s.known else None,
-        lines=_lines(both, with_tax=False, rate=rate),
+        lines=_lines(both, with_tax=False, rate=rate, pay=PAY_BEFORE_TAX if has_tax else PAY),
         bridge=bridge(start, end, n, market=market) if s.known else None,
         valuing=replace(_valuing([start, whole], market, whole), later=n.later),
         unreviewed=n.unreviewed,
@@ -463,7 +465,7 @@ def _with_tax(both: _Compared) -> WithTax:
             t.savings_rate_with_tax,
             Better.NEITHER,
         ),
-        lines=_lines(both, with_tax=True, rate=SAVINGS_RATE_WITH_TAX),
+        lines=_lines(both, with_tax=True, rate=SAVINGS_RATE_WITH_TAX, pay=PAY_BEFORE_TAX),
     )
 
 
@@ -479,7 +481,7 @@ def _since_start(end: Decimal | None, start: Decimal | None) -> Line:
     return Line("net_worth", "Net worth", end, start, tone(end, start, Better.MORE))
 
 
-def _lines(both: _Compared, *, with_tax: bool, rate: str) -> tuple[Line, ...]:
+def _lines(both: _Compared, *, with_tax: bool, rate: str, pay: str) -> tuple[Line, ...]:
     """The compact income statement: take-home pay, tax, spending by its largest branches,
     saved from work, its rate, what was not counted as spending, investment income and other
     income, each set against the same days a year before.
@@ -488,8 +490,16 @@ def _lines(both: _Compared, *, with_tax: bool, rate: str) -> tuple[Line, ...]:
     it, so tax is still its own line and saved from work is the same either way."""
     n, t = both.now.flows, both.then.flows
     line = both.line
-    found = [line("pay", "Take-home pay", n.pay, t.pay, Better.MORE, both.of_kind(Kind.PAY))]
-    tax = line("tax", "Tax", n.tax, t.tax, Better.LESS, both.of_kind(Kind.TAX), depth=int(with_tax))
+    found = [line("pay", pay, n.pay, t.pay, Better.MORE, both.of_kind(Kind.PAY))]
+    tax = line(
+        "tax",
+        _tax_label(n.tax, t.tax),
+        n.tax,
+        t.tax,
+        Better.LESS,
+        both.of_kind(Kind.TAX),
+        depth=int(with_tax),
+    )
     if (n.tax or t.tax) and not with_tax:
         found.append(tax)
     found.append(
@@ -552,6 +562,12 @@ def _lines(both: _Compared, *, with_tax: bool, rate: str) -> tuple[Line, ...]:
             )
         )
     return tuple(found)
+
+
+def _tax_label(*amounts: Decimal) -> str:
+    """Tax, called what it is where any of `amounts` refunded more than was paid: a negative
+    figure under "Tax, less refunds" is tax that came back."""
+    return "Tax, less refunds" if any(a < 0 for a in amounts) else "Tax"
 
 
 def _branches(
@@ -693,7 +709,13 @@ def _totals(per: Sequence[Flows], whole: Flows) -> tuple[Total, ...]:
             whole.spending,
             categories(Kind.SPENDING),
         ),
-        Total("tax", "Tax", tuple(f.tax for f in per), whole.tax, categories(Kind.TAX)),
+        Total(
+            "tax",
+            _tax_label(whole.tax, *(f.tax for f in per)),
+            tuple(f.tax for f in per),
+            whole.tax,
+            categories(Kind.TAX),
+        ),
         Total(
             "spending_with_tax",
             SPENDING_WITH_TAX,

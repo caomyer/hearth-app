@@ -883,3 +883,59 @@ def test_whether_a_statement_holds_tax_says_nothing_of_tax_outside_it(world: Wor
     assert ask(world, "avery", "overview")["taxed"] is True
     assert every_statement(world, "casey") == before
     assert ask(world, "casey", "overview")["taxed"] is overview is False
+
+
+NETTED = """
+2026-10-10 open Expenses:Taxes
+2026-10-10 * "Payee Tax Office" ""
+  Assets:Zq:AverySolo  -300.00 USD
+  Expenses:Taxes
+2026-10-11 * "Payee Tax Office" ""
+  Assets:Zq:AverySolo  300.00 USD
+  Expenses:Taxes
+"""
+
+
+def test_tax_refunded_to_nothing_is_still_tax_the_books_hold(world: World) -> None:
+    """Tax paid and refunded in full: the books hold tax, so the switch is offered, though it
+    comes to nothing."""
+    book(world, NETTED)
+
+    assert ask(world, "avery", "statement_summary")["scope"]["taxed"] is True
+    assert ask(world, "avery", "overview")["taxed"] is True
+
+
+REFUND = """
+2026-10-10 open Expenses:Taxes
+2026-10-10 * "Payee Tax Office" ""
+  Assets:Zq:AverySolo  -100.00 USD
+  Expenses:Taxes
+2026-10-11 * "Payee Tax Office" ""
+  Assets:Zq:AverySolo  400.00 USD
+  Expenses:Taxes
+"""
+
+
+def test_a_refund_larger_than_the_tax_is_tax_less_refunds(world: World) -> None:
+    """More refunded than paid: the tax line is "Tax, less refunds" at a negative figure, in
+    the summary either way tax is counted and by kind in the income statement."""
+    book(world, REFUND)
+    summary = ask(world, "avery", "statement_summary")
+    for lines in (summary["lines"], summary["with_tax"]["lines"]):
+        tax = line({"lines": lines}, "tax")
+        assert (tax["label"], D(tax["now"])) == ("Tax, less refunds", D("-300.00"))
+    totals = {t["key"]: t for t in ask(world, "avery", "income_statement")["totals"]}
+    assert (totals["tax"]["label"], D(totals["tax"]["total"])) == (
+        "Tax, less refunds",
+        D("-300.00"),
+    )
+
+
+def test_pay_is_called_what_it_is(world: World) -> None:
+    """Pay as booked is before tax where the books hold tax, and take-home where they hold
+    none."""
+    assert line(ask(world, "avery", "statement_summary"), "pay")["label"] == "Take-home pay"
+    book(world, PAYSLIP)
+    summary = ask(world, "avery", "statement_summary")
+    assert line(summary, "pay")["label"] == "Pay before tax"
+    assert line(summary["with_tax"], "pay")["label"] == "Pay before tax"

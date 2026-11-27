@@ -90,9 +90,10 @@ def waiting(view: Disclosure, around: Around) -> Answer:
         "waiting": sum(1 for item in desk.items() if item.unreviewed),
         "spending": money(abs(out.amount)) if out is not None and out.leans else None,
         "spending_with_tax": money(with_tax) if with_tax else None,
-        "tax": money(abs(out.tax)) if out is not None and out.tax else None,
+        # Signed: negative when more tax was refunded than paid this month.
+        "tax": money(out.tax) if out is not None and out.tax else None,
         "tax_unreviewed": (
-            money(abs(out.tax_unreviewed)) if out is not None and out.tax_unreviewed else None
+            money(out.tax_unreviewed) if out is not None and out.tax_unreviewed else None
         ),
         "unplaced_spending": _unplaced(spent),
         "unplaced_income": _unplaced(earned),

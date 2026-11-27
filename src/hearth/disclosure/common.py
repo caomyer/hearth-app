@@ -14,7 +14,7 @@ from hearth.disclosure.gate import Disclosed, Gate, Withheld
 from hearth.figures import Part, Unplaced
 from hearth.members import Member, MemberId
 from hearth.months import Month
-from hearth.reports.flows import OwnersOf
+from hearth.reports.flows import Owners, OwnersOf
 from hearth.sharing import Facet
 from hearth.valuation.networth import Freshness, NetWorth
 
@@ -335,6 +335,22 @@ class Household:
     def seen(self, part: Part) -> tuple[Account, ...]:
         """The part's accounts hearth sees: every one but those it holds by name alone."""
         return tuple(a for a in part.accounts if a.ledger_account not in self.books.unseen)
+
+    def tells_tax(self, owners: Owners) -> bool:
+        """Whether the viewer may be told a part's tax apart from its spending: only with its
+        categories or its transactions, as which categories a part books to is its detail."""
+        return self.gate.may(Facet.CATEGORY_BREAKDOWN, owners) or self.gate.may(
+            Facet.TRANSACTIONS, owners
+        )
+
+    def spent(self, flows: figures.MonthFlows, owners: Owners) -> Decimal:
+        """A part's spending as the viewer is told it: without its tax where they may be told
+        its tax apart (`tells_tax`), and with it, as one number, where they may not, as every
+        spending total was before tax was its own figure. So money out less tax told apart is
+        the same whoever looks, and nothing about the part's categories is told."""
+        if self.tells_tax(owners):
+            return flows.spent(owners)
+        return flows.spent(owners) + flows.taxed_out(owners)
 
     def spends(self, part: Part) -> tuple[Account, ...]:
         """The part's accounts that could show what it spent or earned: every one hearth sees

@@ -59,8 +59,8 @@ SET_ASIDE_DAYS = 7
 FIRST_REVIEW_DAYS = 730
 """A first import's backfill: two years, none of it reviewed yet."""
 
-AVERY_TAKE_HOME = Decimal("3380.00")
-AVERY_WITHHELD = Decimal("1020.00")
+AVERY_TAKE_HOME = Decimal("5500.00")
+AVERY_WITHHELD = Decimal("1700.00")
 """Avery's pay each month as the payslip books it: what reached the bank, and what was withheld
 as tax, so the demo shows tax as its own figure beside spending."""
 
@@ -133,8 +133,8 @@ SPENDING = (
     ("Assets:Blake:Checking", "Dining", ("Greenleaf Bistro",), 44, 4),
     ("Assets:Blake:Checking", "Health", ("Riverside Clinic",), 95, 1),
     ("Assets:Blake:Checking", "Shopping", ("Paper Lantern Goods",), 60, 2),
-    ("Assets:Casey:Checking", "Education", ("Campus Bookstore",), 48, 1),
-    ("Liabilities:Casey:Card", "Dining", ("Hilltop Cafe",), 14, 4),
+    ("Assets:Casey:Checking", "Education", ("Campus Bookstore",), 260, 1),
+    ("Liabilities:Casey:Card", "Dining", ("Hilltop Cafe",), 32, 4),
     ("Assets:Joint:Checking", "Groceries", ("Greenleaf Market",), 118, 4),
     ("Assets:Joint:Checking", "Utilities", ("City Power & Light",), 160, 1),
 )

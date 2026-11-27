@@ -52,7 +52,7 @@
             {% else %}
             <p class="fig-value">{{ value | hero }}</p>
             {% set total_only = (label == "Spent" and m.categories is withheld) or (label == "Income" and m.days is withheld) %}
-            <p class="fig-sub">{% if total_only %}Total only{% endif %}{% if u.unknown %}{{ "; it" if total_only else "It" }} may include some {{ u.unknown[0].name }} has not checked yet{% endif %}</p>
+            <p class="fig-sub">{% if total_only %}Total only{% if label == "Spent" and m.totals.untold %}, with any tax in it{% endif %}{% endif %}{% if u.unknown %}{{ "; it" if total_only else "It" }} may include some {{ u.unknown[0].name }} has not checked yet{% endif %}</p>
             {{ unreviewed_sub(u) }}
             {% endif %}
           </div>

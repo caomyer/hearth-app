@@ -851,6 +851,7 @@ private struct YearsTab: View {
     private var taxed: Bool { years.scope.taxed }
     private var counted: Bool { taxed && withTax }
     private var spendingTitle: String { StatementWords.spending(withTax: counted) }
+    private var payTitle: String { StatementWords.pay(taxed: taxed) }
     private var rateTitle: String { StatementWords.savingsRate(taxed: taxed, withTax: withTax) }
 
     var body: some View {
@@ -878,8 +879,8 @@ private struct YearsTab: View {
                     TableColumn("Net worth") { year in money(year.netWorth) }
                         .width(width(\.netWorth, "Net worth"))
                         .alignment(.trailing)
-                    TableColumn("Take-home pay") { year in money(year.pay) }
-                        .width(width(\.pay, "Take-home pay"))
+                    TableColumn(payTitle) { year in money(year.pay) }
+                        .width(width(\.pay, payTitle))
                         .alignment(.trailing)
                     if taxed {
                         TableColumn("Tax") { year in money(year.tax) }

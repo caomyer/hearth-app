@@ -109,6 +109,9 @@ class Totals:
     applies, said to the part's owners alone, as `spends` is."""
     unseen: bool = False
     """Whether any of the accounts behind it is one hearth does not see (`books.unseen`)."""
+    untold: bool = False
+    """Whether the part's tax may not be told apart to the viewer, so any of it is in `spent`
+    (`Household.spent`)."""
 
     @property
     def compares(self) -> bool:
@@ -247,7 +250,7 @@ def _joint(h: Household, part: Part) -> Joint:
 def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
     gate = h.gate
     spent = gate.disclose(
-        Facet.MONTHLY_SPENDING_TOTAL, part.owners, lambda: this_month.spent(part.owners)
+        Facet.MONTHLY_SPENDING_TOTAL, part.owners, lambda: h.spent(this_month, part.owners)
     )
     typical: Decimal | None = None
     # Typical "by the 18th" is built from earlier months cut at a day, which is day-level
@@ -257,7 +260,7 @@ def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
             figures.month_flows(h.books, h.ownership, m, to_day=h.books.as_of.day)
             for m in _covered_months(h, part, figures.TYPICAL_MONTHS)
         ]
-        typical = figures.typical([flows.spent(part.owners) for flows in history])
+        typical = figures.typical([h.spent(flows, part.owners) for flows in history])
     return Totals(
         month=h.books.month,
         to_day=h.books.as_of.day,
@@ -265,6 +268,7 @@ def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
         spends=bool(h.spends(part)),
         brokerages=any(a.ledger_account in h.books.invested for a in h.seen(part)),
         unseen=h.unseen(part) > 0,
+        untold=not h.tells_tax(part.owners),
         spent=spent,
         earned=gate.disclose(
             Facet.MONTHLY_INCOME_TOTAL, part.owners, lambda: this_month.earned(part.owners)

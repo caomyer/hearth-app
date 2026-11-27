@@ -118,6 +118,8 @@ def _out(spent: Decimal, tax: Decimal) -> str:
     """What went out in a month, tax said apart from spending where there was any."""
     if not tax:
         return f"out {dollars(spent)}"
+    if tax < 0:
+        return f"tax refunded {dollars(-tax)}, spending {dollars(spent)}"
     return f"tax {dollars(tax)}, spending {dollars(spent)}"
 
 

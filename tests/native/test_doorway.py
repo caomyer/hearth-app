@@ -459,7 +459,7 @@ def test_a_members_tax_reaches_no_answer_its_viewer_may_not_see(
     seen = household.Seen("\n".join(json.dumps(answer) for answer in answers))
 
     for secret in household.tax_secrets():
-        present = [text for text in secret.texts if text in seen]
+        present = [text for text in secret.texts if text.replace(",", "") in seen]
         if not secret.visible(viewer, choices):
             assert not present, f"{viewer} could see {secret.what}: {present!r}"
     in_statements = viewer == "blake" or choices["blake"] == frozenset(Facet)

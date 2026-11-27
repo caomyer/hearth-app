@@ -77,7 +77,7 @@
     "lines": [
       {
         "key": "pay",
-        "label": "Take-home pay",
+        "label": "Pay before tax",
         "now": "1000.00",
         "before": null,
         "change": null,
@@ -294,7 +294,7 @@
       "lines": [
         {
           "key": "pay",
-          "label": "Take-home pay",
+          "label": "Pay before tax",
           "now": "1000.00",
           "before": null,
           "change": null,

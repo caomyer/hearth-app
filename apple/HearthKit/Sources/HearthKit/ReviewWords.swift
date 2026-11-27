@@ -159,15 +159,20 @@ public enum ReviewWords {
     }
 
     /// This month's own tax, which no spending figure counts, as the person's own page says it:
-    /// "$910 of tax is not counted as spending, $300 of it not yet reviewed." Nothing when tax
-    /// is counted as spending, as the figure above it then holds it.
+    /// "$910 of tax is not counted as spending, $300 of it not yet reviewed.", or of a month
+    /// with more refunded than paid, "A tax refund of $300 is not counted as spending."
+    /// Nothing when tax is counted as spending, as the figure above it then holds it.
     public static func tax(
         _ waiting: Overview.Waiting, withTax: Bool, currency: String, locale: Locale = .current
     ) -> String? {
         guard !withTax, let tax = waiting.tax else { return nil }
-        var text = "\(Figures.total(tax, currency: currency, locale: locale)) of tax is not counted as spending"
+        let amount = Figures.total(Money(abs(tax.amount)), currency: currency, locale: locale)
+        var text = tax.amount < 0
+            ? "A tax refund of \(amount) is not counted as spending"
+            : "\(amount) of tax is not counted as spending"
         if let waits = waiting.taxUnreviewed {
-            text += ", \(Figures.total(waits, currency: currency, locale: locale)) of it not yet reviewed"
+            let unchecked = Figures.total(Money(abs(waits.amount)), currency: currency, locale: locale)
+            text += ", \(unchecked) of it not yet reviewed"
         }
         return text + "."
     }

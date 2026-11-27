@@ -754,6 +754,18 @@ class Ledger:
 
     # Asking it.
 
+    def books_to(self, scope: Collection[str]) -> frozenset[str]:
+        """Every income and expense account that an entry read in full over `scope` posts to,
+        at any time and whatever it comes to: one refunded to nothing is still booked to."""
+        inside = frozenset(scope)
+        return frozenset(
+            other
+            for accounts, signature in self._signatures.items()
+            if accounts and accounts <= inside
+            for other in signature.others
+            if root(other) in ("Income", "Expenses")
+        )
+
     def first_day(self, scope: Collection[str] | None) -> date | None:
         """The first day any account in `scope` moved, or any account at all."""
         days = [

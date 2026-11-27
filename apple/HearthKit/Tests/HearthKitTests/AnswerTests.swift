@@ -57,6 +57,12 @@ struct AnswerTests {
             ReviewWords.unreviewedSpending(waiting, withTax: true, month: "October", currency: "USD", locale: unitedStates)
                 == "$1,420 of October's spending and tax is not reviewed yet.")
         #expect(ReviewWords.tax(waiting, withTax: true, currency: "USD", locale: unitedStates) == nil)
+        let refunded = Overview.Waiting(waiting: 1, tax: money("-300.00"))
+        #expect(
+            ReviewWords.tax(refunded, withTax: false, currency: "USD", locale: unitedStates)
+                == "A tax refund of $300 is not counted as spending.")
+        #expect(StatementWords.pay(taxed: true) == "Pay before tax")
+        #expect(StatementWords.pay(taxed: false) == "Take-home pay")
     }
 
     @Test("an engine older than the money nobody has placed yet is read as saying none")

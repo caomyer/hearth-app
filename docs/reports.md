@@ -33,10 +33,12 @@ Wherever a spending figure leaves some out, one plain line beside it says how mu
 ### Tax is its own figure
 
 Tax is money out, but no choice anyone made at a till, so it is never spending: wherever spending is broken out, tax is its own line beside it, so income, tax, spending and what was left over still add up.
-On the household page that is the left-over panel: money in, less tax, less money out, is what was left over, and what was left is a share of money in after tax.
-Its tax is of the parts whose categories or transactions the viewer may see (`Books.taxes`, `Unreviewed.tax`), as what was booked as not spending is, so another part's tax is in what that part had left over and is never said; how much of the tax rests on unreviewed rows is said beside it, as of spending.
+On the household page that is the left-over panel: money in, less tax, less money out, is what was left over, as a share of money in.
+Its tax is of the parts whose categories or transactions the viewer may see (`Books.taxes`, `Unreviewed.tax`), as what was booked as not spending is; how much of the tax rests on unreviewed rows is said beside it, as of spending.
 The Mac app may count tax as spending instead, by one switch the person turns on, which the engine never hears: every figure that changes with it is sent both ways by the engine (`docs/native.md`), and the app shows one or the other whole.
-The switch is offered only where the viewer's statements hold any tax at all (`statements.taxed`), judged on what their statements read and nothing else, so it says nothing of any account outside them.
+The switch is offered only where the viewer's statements hold any tax at all (`statements.taxed`: any posting to a tax category, even one a refund netted to nothing), judged on what their statements read and nothing else, so it says nothing of any account outside them.
+A part whose categories or transactions the viewer may not see has its tax inside its spending total, as one number, as every spending total was before tax was its own figure (`Household.spent`): so money out, what was left over and its share of money in are the same figures whoever looks, and nothing about the part's categories is told; the panel says, naming nobody, that any tax of those whose categories are not shared is in money out.
+A refund larger than the tax paid in a period is tax refunded, said as such, never "less tax" of a negative amount.
 Income totals count every income kind: pay, investment income and other income alike.
 The income statement (`statement.income_statement`) is not yet told kinds, and adds up every expense.
 
@@ -104,11 +106,11 @@ The journal of a statement's rows (`within: "statements"`) reads every entry by 
 
 | Figure | What it is |
 |---|---|
-| Take-home pay | Income of kind pay, as the books hold it. Pay is counted as it reached the bank, so the statement starts from take-home pay; a ledger that books gross pay with what was withheld beside it in the same entry shows the gross here and what was withheld under tax, and saved from work is the same either way. |
+| Take-home pay, or Pay before tax | Income of kind pay, as the books hold it. Pay is counted as it reached the bank, so the statement starts from take-home pay; a ledger that books gross pay with what was withheld beside it in the same entry shows the gross here and what was withheld under tax, and saved from work is the same either way. So where the statement's books hold any tax (`statements.taxed`) the line, and Year by year's column, is called "Pay before tax", and "Take-home pay" only where they hold none. |
 | Tax | Expenses of kind tax. |
 | Spending | Expenses of kind spending, by the branch of `Expenses` each is under: the six largest by name, the rest as "Other spending", so every category is in one line. With tax counted as spending it is "Spending and tax", and tax is the first line under it, still its own. |
-| Saved from work | Take-home pay less tax and spending; the same whether tax is counted as spending or not. |
-| Savings rate | Saved from work over take-home pay less tax; none when that is not more than nothing. Where the statement holds any tax it says "after tax"; with tax counted as spending it is saved from work over take-home pay, "with tax". |
+| Saved from work | Pay less tax and spending; the same whether tax is counted as spending or not. |
+| Savings rate | Saved from work over pay less tax; none when that is not more than nothing. Where the statement holds any tax it says "after tax"; with tax counted as spending it is saved from work over pay, "with tax". |
 | Not counted as spending | Expenses of kind not spending, such as a retirement contribution: they left the accounts, but were kept, not spent. |
 | Investment income | Income of kind investment income, realised gains among it. |
 | Other income | Income of kind other income, which is every income account no rule recognises. |
@@ -173,7 +175,7 @@ The floor is of what the viewer reads, so whether a statement is there says noth
 - The income statement is the income and expense account tree for the period, with a cell for each calendar month, quarter or year the period touches, cut to it, and a total, and beneath it spending and tax by kind, column by column (`IncomeStatement.totals`); a category that comes to nothing over a span is left out of it; each column says what of it rests on rows nobody has reviewed yet, at their suggested category, and how many nothing has placed.
 - The balance sheet is every account at the start of the period beside its end, grouped Cash, Investments and Other assets, then Credit and Other liabilities, with cost and gain not yet realised as Holdings gives them, from the same lots (`valuation.holdings.Holding.cost`): none where a security is held with no lot, and no gain where it has no price; an account whose history begins inside the period says from when.
   Its net worth at market value is Overview's, for the same parts and day.
-- Year by year is net worth, take-home pay, tax, spending, saved from work and the savings rate for every year the books hold.
+- Year by year is net worth, pay, tax, spending, saved from work and the savings rate for every year the books hold.
   A year is sparse when the books hold fewer than half its months in full, of those it has had so far for the year in progress (`SPARSE_SHARE`).
 
 ### What it costs

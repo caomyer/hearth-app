@@ -44,6 +44,12 @@ public enum StatementWords {
         withTax ? "Spending and tax" : "Spending"
     }
 
+    /// Pay's name, as the engine names its line: "Pay before tax" where the books hold tax,
+    /// as pay is then booked before it, and "Take-home pay" where they hold none.
+    public static func pay(taxed: Bool) -> String {
+        taxed ? "Pay before tax" : "Take-home pay"
+    }
+
     /// The savings rate's name, saying how tax is counted wherever the books hold any:
     /// "Savings rate, after tax" or "Savings rate, with tax"; plain without tax.
     public static func savingsRate(taxed: Bool, withTax: Bool) -> String {

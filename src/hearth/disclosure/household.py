@@ -107,17 +107,13 @@ class InOut:
     """Whether the books hold the whole month for every part behind the figures; if not,
     they are only what the books hold of it so far, never the month's."""
     tax: Decimal = Decimal(0)
-    """Tax, of the parts whose categories or transactions the viewer may see; of any other
-    part it is not said (`Unreviewed.tax`), so it is in what that part had left over."""
+    """Tax, of the parts whose categories or transactions the viewer may see; any other part's
+    is not said apart, so it stays in that part's money out (`Household.spent`), and what was
+    left over is the same whoever looks. Negative when more was refunded than paid."""
 
     @property
     def left_over(self) -> Decimal:
         return self.money_in - self.tax - self.money_out
-
-    @property
-    def after_tax(self) -> Decimal:
-        """Money in less tax: what was left over is a share of it."""
-        return self.money_in - self.tax
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +140,9 @@ class LeftOver:
     leaves_out_unassigned: bool = False
     """Some money went through accounts nobody owns, or several owners at once
     (`SpendingPanel.leaves_out_unassigned`)."""
+    untold: bool = False
+    """Whether any part behind money out is one whose tax the viewer may not be told apart,
+    so any tax of it is in money out (`Household.spent`): said in words that name nobody."""
 
     @property
     def last(self) -> InOut:
@@ -162,14 +161,16 @@ class LeftOver:
 
     @property
     def share(self) -> Decimal | None:
-        """What was left over as a share of money in after tax; None without any to share."""
-        if not self.covered or self.last.after_tax <= 0:
+        """What was left over as a share of money in; None without money in to share. Of money
+        in, not of money in after tax: tax said apart is only what the viewer may be told, so
+        any other share would differ by who looks."""
+        if not self.covered or self.last.money_in <= 0:
             return None
-        return self.last.left_over / self.last.after_tax
+        return self.last.left_over / self.last.money_in
 
     @property
     def taxed(self) -> bool:
-        """Whether any month on the panel holds tax, so tax is a figure of its own on it."""
+        """Whether any month on the panel holds tax said apart, so it is a figure of its own."""
         return any(m.tax for m in self.months if m.covered)
 
     @property
@@ -207,6 +208,8 @@ class SpendingPanel:
     (`covered`), as though those accounts had not sent their history yet."""
     earned_counted: bool = True
     """`spent_counted`, for `earned`."""
+    untold: bool = False
+    """`LeftOver.untold`, for `spent`."""
 
     @property
     def compares(self) -> bool:
@@ -299,6 +302,8 @@ class MonthCategories:
     unreviewed: Unreviewed
     counted: bool = True
     """`SpendingPanel.spent_counted`, for the parts on the panel."""
+    untold: bool = False
+    """`LeftOver.untold`, for the totals shown alone."""
 
     @property
     def on_panel(self) -> bool:
@@ -489,9 +494,7 @@ def _left_over(h: Household, parts: Sequence[Part], full: Mapping[Month, MonthFl
             money_in=_disclosed_sum(
                 h, savers, Facet.MONTHLY_INCOME_TOTAL, flows, MonthFlows.earned
             ),
-            money_out=_disclosed_sum(
-                h, savers, Facet.MONTHLY_SPENDING_TOTAL, flows, MonthFlows.spent
-            ),
+            money_out=_disclosed_sum(h, savers, Facet.MONTHLY_SPENDING_TOTAL, flows, h.spent),
             covered=_covers(h, savers, m),
             tax=_told_tax(h, savers, flows),
         )
@@ -509,6 +512,7 @@ def _left_over(h: Household, parts: Sequence[Part], full: Mapping[Month, MonthFl
         out_unreviewed=_unreviewed(h, savers, last, MonthFlows.spent_unreviewed),
         counted=any(h.spends(part) for part in savers) or not _explained(h, savers),
         leaves_out_unassigned=bool(last.spending.unattributed or last.income.unattributed),
+        untold=not all(h.tells_tax(part.owners) for part in savers),
     )
 
 
@@ -523,7 +527,7 @@ def _so_far(
     month = h.books.month
     typical = figures.typical(
         [
-            _sum(full[m], spenders, MonthFlows.spent)
+            _sum(full[m], spenders, h.spent)
             for m in figures.past_months(month, figures.TYPICAL_MONTHS)
             if _covers(h, spenders, m)
         ]
@@ -532,7 +536,7 @@ def _so_far(
         month=month,
         to_day=h.books.as_of.day,
         covered=_covers(h, [*spenders, *earners], month),
-        spent=_sum(this_month, spenders, MonthFlows.spent),
+        spent=_sum(this_month, spenders, h.spent),
         spent_without=spent_without,
         spent_unreviewed=_unreviewed(h, spenders, this_month, MonthFlows.spent_unreviewed),
         earned=_sum(this_month, earners, MonthFlows.earned),
@@ -542,6 +546,7 @@ def _so_far(
         leaves_out_unassigned=bool(this_month.spending.unattributed),
         spent_counted=any(h.spends(part) for part in spenders) or not _explained(h, spenders),
         earned_counted=any(h.spends(part) for part in earners) or not _explained(h, earners),
+        untold=not all(h.tells_tax(part.owners) for part in spenders),
     )
 
 
@@ -568,16 +573,13 @@ def _told_tax(h: Household, parts: Sequence[Part], flows: MonthFlows) -> Decimal
     any other part's tax is not said, as what it booked as not spending is not."""
     total = Decimal(0)
     for part in parts:
-        facet = next(
-            (
-                f
-                for f in (Facet.CATEGORY_BREAKDOWN, Facet.TRANSACTIONS)
-                if h.gate.may(f, part.owners)
-            ),
-            None,
-        )
-        if facet is None:
+        if not h.tells_tax(part.owners):
             continue
+        facet = (
+            Facet.CATEGORY_BREAKDOWN
+            if h.gate.may(Facet.CATEGORY_BREAKDOWN, part.owners)
+            else Facet.TRANSACTIONS
+        )
         figure = h.gate.disclose(facet, part.owners, partial(flows.taxed_out, part.owners))
         if isinstance(figure, Withheld):
             raise ValueError("a part the viewer may not see was added up")
@@ -650,7 +652,7 @@ def _went(h: Household, parts: Sequence[Part], full: Mapping[Month, MonthFlows])
         totals_only=tuple(
             Slice(
                 h.part_ref(p),
-                _disclosed_sum(h, [p], Facet.MONTHLY_SPENDING_TOTAL, flows, MonthFlows.spent)
+                _disclosed_sum(h, [p], Facet.MONTHLY_SPENDING_TOTAL, flows, h.spent)
                 if h.spends(p)
                 else None,
             )
@@ -660,6 +662,7 @@ def _went(h: Household, parts: Sequence[Part], full: Mapping[Month, MonthFlows])
         unreviewed=_unreviewed(h, [*detailed, *totals], flows, MonthFlows.spent_unreviewed),
         counted=any(h.spends(p) for p in [*detailed, *totals])
         or not _explained(h, [*detailed, *totals]),
+        untold=not all(h.tells_tax(p.owners) for p in totals),
     )
 
 
@@ -733,7 +736,7 @@ def category_panel(
         rows=tuple(rows[:CATEGORY_ROWS]) + _other(rows[CATEGORY_ROWS:]),
         # A part that cannot have spent anything hearth sees has no total to show, not $0.
         totals_only=tuple(
-            Slice(h.part_ref(p), this_month.spent(p.owners) if h.spends(p) else None)
+            Slice(h.part_ref(p), h.spent(this_month, p.owners) if h.spends(p) else None)
             for p in totals
         ),
         unreviewed=_unreviewed(h, [*detailed, *totals], this_month, MonthFlows.spent_unreviewed),
