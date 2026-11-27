@@ -266,6 +266,49 @@ def test_a_member_sees_exactly_what_the_contract_allows(
     assert not missing, f"{viewer} could not see data shared with them: {missing}"
 
 
+TAX_SCENARIOS = [
+    "defaults",
+    "blake shares everything",
+    "blake shares detail but no totals",
+    "everyone also shares income",
+    "everyone shares categories only",
+    "casey shares nothing, avery only a spending total, blake categories too",
+    "both joint owners share categories and income, casey shares nothing",
+    "blake shares income but no spending total, casey only categories",
+]
+"""Every way Blake's spending and income totals, categories and transactions can be shared,
+alone and together, for the crawl of Blake's tax."""
+
+
+@pytest.mark.parametrize("scenario", TAX_SCENARIOS)
+@pytest.mark.parametrize("viewer", household.USERNAMES)
+def test_a_members_tax_is_its_own_figure_only_to_whoever_may_see_their_categories(
+    world: World, scenario: str, viewer: str
+) -> None:
+    """Blake pays tax in a month that is over and in this one. Tax is never spending, so
+    Blake's spending total says nothing of it; it is its own figure, beside spending and in what
+    was left over, only to Blake and whoever may see Blake's categories or transactions, and
+    no page anyone else is sent holds it, whatever else Blake shares."""
+    with world.ledger.open("a") as ledger:
+        ledger.write("\n" + household.tax_text())
+    world.recompute()
+    assert world.bookkeeper.status.failure is None, world.bookkeeper.status.failure
+    choices = dict.fromkeys(household.USERNAMES, DEFAULT_SHARED)
+    choices.update(SCENARIOS[scenario])
+    for username, shared in choices.items():
+        world.choose(username, shared)
+
+    seen = everything_seen(world, world.signed_in(viewer))
+
+    for secret in household.tax_secrets():
+        present = [text for text in secret.texts if text in seen]
+        if secret.visible(viewer, choices):
+            # Blake is told it on their own pages: the crawl reached it.
+            assert present or viewer != "blake", f"{viewer} was not told {secret.what}"
+        else:
+            assert not present, f"{viewer} could see {secret.what}: {present!r}"
+
+
 def test_an_anonymous_visitor_sees_nothing_at_all(world: World) -> None:
     seen = everything_seen(world, world.anonymous())
 

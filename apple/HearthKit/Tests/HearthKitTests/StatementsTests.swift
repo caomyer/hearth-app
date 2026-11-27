@@ -21,7 +21,7 @@ struct StatementsTests {
         #expect(summary.scope.parts == ["Avery", "Blake", "Joint accounts"])
         #expect(summary.scope.without == ["Casey"])
         #expect(summary.period == StatementPeriod(from: Day(year: 2026, month: 8, day: 1), to: Day(year: 2026, month: 10, day: 15)))
-        #expect(summary.netWorth.now == money("158206.46"))
+        #expect(summary.netWorth.now == money("158906.46"))
         // The accounts' history begins on Aug 1, the period's first day: nothing was held before.
         #expect(summary.netWorth.before == money("0"))
         #expect(!summary.isFloor)
@@ -30,7 +30,7 @@ struct StatementsTests {
         #expect(summary.spending.categories.contains("Expenses:Bonsai"))
         #expect(summary.lines.first?.key == "pay")
         let why = try #require(summary.why)
-        #expect(why.end == money("158206.46"))
+        #expect(why.end == money("158906.46"))
         #expect(why.difference == money("0"))
         #expect(why.others.map(\.key).contains("opening"))
         #expect(summary.savingsRate.isRate)
@@ -41,10 +41,10 @@ struct StatementsTests {
         let statement = try ready("income_statement", as: IncomeStatement.self)
         #expect(statement.columns.count == 3)
         #expect(statement.columns.last?.partial == true)
-        #expect(statement.expenses.total == money("5701.81"))
+        #expect(statement.expenses.total == money("6001.81"))
         #expect(statement.expenses.children.first?.name == "Expenses:Bonsai")
         #expect(statement.expenses.cells.count == statement.columns.count)
-        #expect(statement.net.total == money("2238.67"))
+        #expect(statement.net.total == money("2938.67"))
         // A branch adds up the rows of every category beneath it, and no others.
         #expect(statement.expenses.categories.count == statement.expenses.children.count)
         #expect(statement.expenses.outline != nil)
@@ -54,12 +54,60 @@ struct StatementsTests {
     func balanceSheet() throws {
         let sheet = try ready("balance_sheet", as: BalanceSheet.self)
         #expect(sheet.assets.children.map(\.label) == ["Cash", "Investments"])
-        #expect(sheet.netWorth.end?.value == money("158206.46"))
-        #expect(sheet.netWorth.change == money("158206.46"))
+        #expect(sheet.netWorth.end?.value == money("158906.46"))
+        #expect(sheet.netWorth.change == money("158906.46"))
         let shares = try #require(sheet.assets.children.last?.children.first)
         #expect(shares.account != nil)
         #expect(shares.invested)
         #expect(shares.since == Day(year: 2026, month: 8, day: 1))
+    }
+
+    @Test("the summary shows spending without tax, or with it, each as the engine worked it out")
+    func taxCounted() throws {
+        let summary = try ready("statement_summary", as: StatementSummary.self)
+        #expect(summary.scope.taxed)
+        let without = summary.counted(withTax: false)
+        #expect(without.spending.now == money("5701.81"))
+        #expect(without.savingsRate.label == "Savings rate, after tax")
+        #expect(without.lines.map(\.key).prefix(3) == ["pay", "tax", "spending"])
+        let with = summary.counted(withTax: true)
+        #expect(with.spending.now == money("6001.81"))
+        #expect(with.spending.label == "Spending and tax")
+        #expect(with.spending.categories.contains("Expenses:Taxes"))
+        #expect(with.savingsRate.label == "Savings rate, with tax")
+        // Tax is still its own line, under spending.
+        let tax = try #require(with.lines.first { $0.key == "tax" })
+        #expect(tax.depth == 1)
+        #expect(with.lines.map(\.key).prefix(3) == ["pay", "spending", "tax"])
+        // Saved from work is the same either way.
+        #expect(without.lines.first { $0.key == "saved" }?.now == with.lines.first { $0.key == "saved" }?.now)
+    }
+
+    @Test("a scope with no tax shows one way, whatever the switch says")
+    func noTax() throws {
+        let summary = try ready("statement_summary", as: StatementSummary.self)
+        let data = try JSONSerialization.jsonObject(with: fixture("statement_summary")) as! [String: Any]
+        var answer = data["answer"] as! [String: Any]
+        var scope = answer["scope"] as! [String: Any]
+        scope["taxed"] = false
+        answer["scope"] = scope
+        answer["with_tax"] = NSNull()
+        let plain = try replyDecoder().decode(
+            Reply<StatementSummary>.self,
+            from: JSONSerialization.data(withJSONObject: ["id": 1, "answer": answer]))
+        guard case .ready(let untaxed) = plain.answer else { throw Failure.notReady }
+        #expect(untaxed.counted(withTax: true) == untaxed.counted(withTax: false))
+        #expect(untaxed.counted(withTax: true).spending == summary.spending)
+    }
+
+    @Test("the income statement shows spending and tax by kind under net income, as tax is counted")
+    func totalsByKind() throws {
+        let statement = try ready("income_statement", as: IncomeStatement.self)
+        #expect(statement.totalsShown(withTax: false).map(\.key) == ["spending", "tax"])
+        #expect(statement.totalsShown(withTax: true).map(\.key) == ["spending_with_tax", "tax"])
+        let tax = try #require(statement.totals.first { $0.key == "tax" })
+        #expect(tax.cells == [money("0"), money("0"), money("300.00")])
+        #expect(tax.categories == ["Expenses:Taxes"])
     }
 
     @Test("year by year decodes, a year with too little history marked sparse")
@@ -68,7 +116,12 @@ struct StatementsTests {
         let year = try #require(years.years.first)
         #expect(year.year == 2026)
         #expect(year.partial && year.sparse)
-        #expect(year.savingsRate == nil)
+        #expect(year.spending(withTax: false) == money("5701.81"))
+        #expect(year.spending(withTax: true) == money("6001.81"))
+        #expect(year.tax == money("300.00"))
+        #expect(year.savingsRate(withTax: true) == money("-5.00181"))
+        #expect(StatementWords.savingsRate(taxed: true, withTax: false) == "Savings rate, after tax")
+        #expect(StatementWords.savingsRate(taxed: false, withTax: true) == "Savings rate")
     }
 
     @Test("an amount converted at a later first price is said, as a stale price is")
@@ -84,8 +137,8 @@ struct StatementsTests {
         let ends = sheet.texts(.end, locale: unitedStates)
         // Every row, the groups and net worth among them, is in what the column must hold.
         #expect(ends.count == sheet.everyRow.count)
-        #expect(ends.contains("158,206.46"))
-        #expect(BalanceSheet.text(sheet.netWorth, .end, locale: unitedStates) == "158,206.46")
+        #expect(ends.contains("158,906.46"))
+        #expect(BalanceSheet.text(sheet.netWorth, .end, locale: unitedStates) == "158,906.46")
         // A start nothing was held at is a figure; one not known says so.
         #expect(BalanceSheet.text(sheet.netWorth, .start, locale: unitedStates) == "0.00")
         // Cost and gain only where something is invested.
@@ -98,9 +151,11 @@ struct StatementsTests {
     func incomeColumns() throws {
         let statement = try ready("income_statement", as: IncomeStatement.self)
         let total = statement.texts(at: nil, locale: unitedStates)
-        #expect(total.count == statement.everyNode.count + 1)
-        #expect(total.contains("5,701.81"))
-        #expect(total.last == "2,238.67")
+        // Every node, net income, and each figure by kind, whichever way tax is counted.
+        #expect(total.count == statement.everyNode.count + 1 + statement.totals.count)
+        #expect(total.contains("6,001.81"))
+        #expect(total.contains("2,938.67"))
+        #expect(total.last == "6,001.81")
         #expect(statement.texts(at: 0, locale: unitedStates).count == total.count)
     }
 
@@ -152,9 +207,9 @@ struct StatementsTests {
 
     @Test("whose accounts a statement reads, and what it is without, in a sentence")
     func scope() {
-        let scope = StatementScope(parts: ["Avery", "Joint accounts"], without: ["Casey"], leavesOut: "1 of the joint accounts hearth does not see", awaiting: 0)
+        let scope = StatementScope(parts: ["Avery", "Joint accounts"], without: ["Casey"], leavesOut: "1 of the joint accounts hearth does not see", awaiting: 0, taxed: false)
         #expect(StatementWords.scope(scope) == "Avery and the joint accounts, without Casey and 1 of the joint accounts hearth does not see")
-        let alone = StatementScope(parts: ["Casey"], without: [], leavesOut: "1 account hearth does not see", awaiting: 0)
+        let alone = StatementScope(parts: ["Casey"], without: [], leavesOut: "1 account hearth does not see", awaiting: 0, taxed: false)
         #expect(StatementWords.scope(alone) == "Casey, without 1 account hearth does not see")
     }
 
@@ -163,7 +218,7 @@ struct StatementsTests {
         let found = StatementUnreviewed(
             rows: 2, income: money("0"), expenses: money("1120"), unplaced: 2, unplacedOut: money("79"), unplacedIn: money("0"))
         #expect(StatementWords.unreviewed(found, currency: "USD", locale: unitedStates) == [
-            "2 transactions not reviewed yet, $1,120 of spending.",
+            "2 transactions not reviewed yet, $1,120 of expenses.",
             "2 not placed in any category yet, $79 out, counted in no total.",
         ])
     }

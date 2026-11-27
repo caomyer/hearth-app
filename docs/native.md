@@ -237,6 +237,8 @@ It says where today's price came from (`price`), and `closes`, oldest first, one
 The review screens are written from the viewer's own desk (`Disclosure.review_desk`) and nothing else: a member is shown only rows they may rule on, and never another member's queue, not even a count, whatever is shared.
 The `overview` says how many of the viewer's rows wait (`review.waiting`, those waiting to be told where their money went among them, as the pages count them) and how much of their own spending this month rests on such rows, at their suggested category (`review.spending`).
 It also says, as the viewer's own page does, the rows this month nobody has said what they were yet, such as a new merchant's, which are in no total until placed (`review.unplaced_spending` and `review.unplaced_income`, each `rows` and the money they `moved` that way), and what was booked to expense categories that are not spending, such as a retirement contribution, which no spending figure counts (`review.not_spending`).
+Tax is never spending: `review.spending` is without it and `review.spending_with_tax` with what of the month's tax rests on unreviewed rows, both worked out by the engine; `review.tax` is the month's own tax, which no spending figure counts, and `review.tax_unreviewed` how much of it is unreviewed.
+`taxed` says whether the viewer's statements hold any tax (`statements.taxed`, judged on what their statements read and nothing else), so the app's switch to count tax as spending applies to the Overview too.
 Each is null when there is none, or when the viewer's own totals are not complete enough to show (`docs/review.md`, "Totals that lean on unreviewed rows").
 A `transactions` entry names the review it waits on (`review`) only to whoever may make it.
 
@@ -292,7 +294,7 @@ Narrowed to `categories`, each entry also says its `part`: the part of its `amou
 ### Statements
 
 The four statement screens read the parts of the household the viewer may see in full, and nothing else (`docs/privacy-boundary.md`, "Statements"): their own accounts, joint accounts with their co-owners, and another member's only when that member shares every facet.
-Every answer says so in `scope`: whose accounts it reads (`parts`), whose it leaves out (`without`), what it is without of accounts hearth does not see (`leaves_out`, in the words a total uses), and how many of its balances are not known yet (`awaiting`), while which nothing that adds up balances is a figure.
+Every answer says so in `scope`: whose accounts it reads (`parts`), whose it leaves out (`without`), what it is without of accounts hearth does not see (`leaves_out`, in the words a total uses), how many of its balances are not known yet (`awaiting`), while which nothing that adds up balances is a figure, and whether its books hold any tax at all (`taxed`, `statements.taxed`), over all their history, judged on its own accounts alone.
 Without `from` and `to`, a statement is this year so far; a `to` past the books' own day ends on it, and a `from` after it, or before the year the viewer's statements begin in (or 1900), is missing.
 `valuation` is `market` unless asked for `cost`, and `columns` is `month` unless asked otherwise; an income statement of more than 36 columns is missing (`statements.MOST_COLUMNS`).
 How every figure is defined, and how the change in net worth adds up, is in `docs/reports.md`, "Statements".
@@ -300,13 +302,20 @@ How every figure is defined, and how the change in net worth adds up, is in `doc
 - A line (`net_worth`, `savings_rate`, `spending` and each of `lines`) has `now`, `before`, `change` and `share`, a `tone` of `favourable`, `unfavourable` or `quiet`, the `categories` whose rows it adds up, for the journal, and whether it is a `total`, at a `depth`.
   `before` is the same days a year before, or for `net_worth` the start of the period, and is null where the books do not hold that period in full (`covered`, `against_covered`).
   A savings rate is a ratio, written as a decimal string like money.
+- Spending is without tax, which is its own line (`docs/reports.md`, "Tax is its own figure").
+  The summary's `with_tax` holds the same `spending`, `savings_rate` and `lines` with tax counted as spending, each worked out by the engine, or is null when `scope.taxed` is false, as they would be the same.
+  The app shows one or the other whole, by its switch, and adds nothing up: saved from work is the same either way, and a savings rate, being a ratio, could not be had by adding.
 - `why` is null while a balance is not known; otherwise `start`, `saved`, `investment_income`, `market` (null at cost), `other` and each of `others` by `key` and `label`, `end`, and `difference`, which is shown, never hidden.
 - `is_floor` says net worth leaves out holdings with no price, so is at least what it says; `late` names the accounts whose holdings the books know only from inside the period, which net worth's start, and why it changed, are without.
 - `valuing` says the day of the newest price (`priced_on`), the holdings with no price, not valued at market value (`unpriced`), those with neither a price nor a cost, left out (`unvalued`), how many positions are at a stale price (`stale`), and how many amounts, booked before anything priced them, were converted at the first price there was (`later`); the income statement says `later` of its whole period too.
 - `unreviewed` says how many rows nobody has checked yet (`rows`), what of income and expenses rests on them, and how many nothing has placed yet (`unplaced`), with the money they moved each way.
 - The income statement's `income` and `expenses` are trees of `name` (the ledger name, which narrows the journal to it and everything beneath it), `label`, `kind`, `cells`, `total` and `children`, largest first; `columns` says each column's days, whether the period cuts it short (`partial`) and its `unreviewed`; `net` is income less expenses.
+  `totals` are figures by kind rather than by the tree, each with `key`, `label`, a cell per column, `total` and the `categories` whose rows it adds up: `spending` (without tax), `tax`, and `spending_with_tax`, each column worked out by the engine.
 - The balance sheet's `assets`, `liabilities` and `net_worth` are rows of `label`, `account` (its id and name, which opens its page, for an account), `since` (the day an account's history begins, when that is inside the period), `start` and `end` (each `value`, `cost` and `gain` as Holdings gives them, null where nothing says what it cost, whether it holds `securities`, and whether `value` `is_floor`; null while not known), `change`, and `children`.
-- `year_by_year` has a row a year: `year`, whether it is in progress (`partial`) or `sparse`, `net_worth`, `pay`, `spending`, `saved` and `savings_rate`.
+- `year_by_year` has a row a year: `year`, whether it is in progress (`partial`) or `sparse`, `net_worth`, `pay`, `spending` (without tax), `tax`, `spending_with_tax`, `saved`, `savings_rate` (over pay after tax) and `savings_rate_with_tax` (over pay, tax counted as spending).
+
+Every figure with tax counted in it is sent beside the one without, never worked out by the app.
+That costs a few more figures on the wire and leaves no arithmetic to the app: no sum to round or to get wrong, no rate to divide, and nothing to keep in step when what spending means changes.
 
 ## The boundary
 

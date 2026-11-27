@@ -37,6 +37,8 @@ public struct StatementScope: Decodable, Sendable, Equatable {
     /// How many of its balances are not known yet; while any are, nothing that adds up
     /// balances is a figure.
     public let awaiting: Int
+    /// Whether its books hold any tax at all, so counting tax as spending changes anything.
+    public let taxed: Bool
 }
 
 /// What a change means for the household: never up or down, which the sign says.
@@ -115,11 +117,16 @@ public struct StatementSummary: Screen {
     public let againstCovered: Bool
     public let scope: StatementScope
     public let netWorth: StatementLine
+    /// Saved from work over pay after tax.
     public let savingsRate: StatementLine
+    /// Spending, without tax, which is its own line.
     public let spending: StatementLine
     /// What the market added or took away; nil while a balance is not known.
     public let market: Money?
     public let lines: [StatementLine]
+    /// The same figures with tax counted as spending, as the engine works them out; nil when
+    /// the scope holds no tax, as they would be the same.
+    public let withTax: Counted?
     /// Why net worth changed; nil while a balance is not known.
     public let why: Why?
     public let valuing: Valuing
@@ -129,6 +136,21 @@ public struct StatementSummary: Screen {
     /// Accounts whose holdings the books know only from inside the period: net worth's start,
     /// and why it changed, are without them.
     public let late: [String]
+
+    /// The figures that change when tax is counted as spending.
+    public struct Counted: Decodable, Sendable, Equatable {
+        public let spending: StatementLine
+        public let savingsRate: StatementLine
+        public let lines: [StatementLine]
+    }
+
+    /// Spending, the savings rate and the compact income statement as the person counts tax:
+    /// with it in spending only when they chose so and the scope holds any. Nothing is added
+    /// up here; each is the engine's own.
+    public func counted(withTax: Bool) -> Counted {
+        if withTax, scope.taxed, let withTax = self.withTax { return withTax }
+        return Counted(spending: spending, savingsRate: savingsRate, lines: lines)
+    }
 
     /// Why net worth changed: from the start, through each part, to the end, and whatever is
     /// left, shown, never hidden.
@@ -170,6 +192,30 @@ public struct IncomeStatement: Screen {
     public let unreviewed: StatementUnreviewed
     /// Amounts converted on their own day at a later first price, over the whole period.
     public let later: Int
+    /// Spending without tax, tax, and spending with tax, by kind rather than by the tree, each
+    /// column worked out by the engine.
+    public let totals: [Total]
+
+    /// A figure by kind: a cell per column, the period's total, and the categories whose rows
+    /// it adds up.
+    public struct Total: Decodable, Sendable, Equatable, Identifiable {
+        public let key: String
+        public let label: String
+        public let cells: [Money]
+        public let total: Money
+        public let categories: [String]
+
+        public var id: String { key }
+    }
+
+    /// The figures by kind the table shows under net income, as the person counts tax: none
+    /// when the scope holds no tax, as spending is then every expense the tree shows; spending
+    /// and tax apart; or spending with tax in it, tax still its own line beneath.
+    public func totalsShown(withTax: Bool) -> [Total] {
+        guard scope.taxed else { return [] }
+        let keys = withTax ? ["spending_with_tax", "tax"] : ["spending", "tax"]
+        return keys.compactMap { key in totals.first { $0.key == key } }
+    }
 
     public struct Column: Decodable, Sendable, Equatable {
         public let from: Day
@@ -283,10 +329,22 @@ public struct YearByYear: Screen {
         public let sparse: Bool
         public let netWorth: Money?
         public let pay: Money
+        /// Without tax, which is its own figure.
         public let spending: Money
+        public let tax: Money
+        public let spendingWithTax: Money
         public let saved: Money
+        /// Saved from work over pay after tax.
         public let savingsRate: Money?
+        /// Saved from work over pay, tax counted as spending.
+        public let savingsRateWithTax: Money?
 
         public var id: Int { year }
+
+        /// Spending as the person counts tax; nothing is added up here.
+        public func spending(withTax: Bool) -> Money { withTax ? spendingWithTax : spending }
+
+        /// The savings rate as the person counts tax.
+        public func savingsRate(withTax: Bool) -> Money? { withTax ? savingsRateWithTax : savingsRate }
     }
 }

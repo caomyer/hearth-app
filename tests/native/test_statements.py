@@ -67,6 +67,7 @@ def test_the_summary_reads_the_viewers_own_and_joint_accounts(world: World) -> N
         "without": ["Blake", "Casey"],
         "leaves_out": "1 of the joint accounts hearth does not see",
         "awaiting": 0,
+        "taxed": False,
     }
     assert D(answer["net_worth"]["now"]) == AVERY_NET_WORTH
     assert D(answer["spending"]["now"]) == AVERY_SPENT
@@ -304,9 +305,9 @@ def test_take_home_pay_is_pay_as_the_books_hold_it(world: World) -> None:
     assert D(line(summary, "saved")["now"]) == D("700.00") - AVERY_SPENT
 
 
-def test_spending_on_the_dashboard_is_spending_and_tax_here(world: World) -> None:
-    """For the same parts and month, what the dashboard counts as spending (every expense but
-    what is not spending) is the statement's spending and tax together."""
+def test_spending_is_without_tax_on_the_dashboard_and_here(world: World) -> None:
+    """For the same parts and month, what the dashboard counts as spending is the statement's
+    spending, without tax, and the tax both count apart is the statement's tax."""
     book(world, WITHHELD)
     books_now = world.bookkeeper.status.books
     assert books_now is not None
@@ -325,8 +326,9 @@ def test_spending_on_the_dashboard_is_spending_and_tax_here(world: World) -> Non
 
     summary = ask(world, "avery", "statement_summary", **{"from": "2026-10-01", "to": "2026-10-31"})
 
-    statement = D(summary["spending"]["now"]) + D(line(summary, "tax")["now"])
-    assert dashboard == statement == D("1311.07") + D("1640.84") + D("300.00")
+    assert dashboard == D(summary["spending"]["now"]) == D("1311.07") + D("1640.84")
+    taxed = sum((october.taxed_out(p) for p in parts), D(0))
+    assert taxed == D(line(summary, "tax")["now"]) == D("300.00")
 
 
 def test_a_figure_opens_onto_exactly_the_rows_it_adds_up(world: World) -> None:
@@ -763,3 +765,121 @@ def test_every_line_of_the_sample_is_what_its_rows_add_up_to(tmp_path: Path) -> 
                     break
             income = found["key"] in ("pay", "investment_income", "other_income")
             assert (total if income else -total) == D(found["now"]), (viewer, found["key"])
+
+
+PAYSLIP = """
+2026-10-10 open Income:Salary
+2026-10-10 open Expenses:Taxes
+2026-10-10 open Expenses:Payroll:Retirement401k
+2026-10-10 * "Payee Employer" ""
+  Assets:Zq:AverySolo  600.00 USD
+  Income:Salary  -1000.00 USD
+  Expenses:Taxes  300.00 USD
+  Expenses:Payroll:Retirement401k  100.00 USD
+"""
+"""Pay booked gross, with what was withheld as tax and a retirement contribution beside what
+reached the bank, in one entry, as a household's own ledger books a payslip."""
+
+
+def shown(summary: dict[str, Any], with_tax: bool) -> dict[str, Any]:
+    """The summary's spending, savings rate and lines, as the app shows them by its switch."""
+    found: dict[str, Any] = summary["with_tax"] if with_tax else summary
+    return found
+
+
+@pytest.mark.parametrize("with_tax", [False, True], ids=["tax apart", "tax as spending"])
+def test_the_summary_adds_up_line_by_line_whichever_way_tax_is_counted(
+    world: World, with_tax: bool
+) -> None:
+    """Gross pay, tax and a retirement contribution in one entry: income less tax, spending and
+    what was not spending is what was left over, line by line, with tax its own line counted
+    apart or under spending; saved from work is the same either way, and only the savings rate
+    changes, as its name says."""
+    book(world, PAYSLIP)
+    summary = ask(world, "avery", "statement_summary")
+    assert summary["scope"]["taxed"] is True
+    figures_ = shown(summary, with_tax)
+    lines = figures_["lines"]
+    by = {found["key"]: D(found["now"]) for found in lines}
+
+    assert by["pay"] == D("1000.00")
+    assert by["tax"] == D("300.00")
+    assert by["not_spending"] == D("100.00")
+    apart = D(0) if with_tax else by["tax"]
+    assert by["spending"] == AVERY_SPENT + (by["tax"] if with_tax else 0)
+    assert D(figures_["spending"]["now"]) == by["spending"]
+    # Every line under spending, tax among them when counted in it, adds up to it.
+    assert sum((D(f["now"]) for f in lines if f["depth"] == 1), D(0)) == by["spending"]
+    assert next(f for f in lines if f["key"] == "tax")["depth"] == int(with_tax)
+    assert by["pay"] - apart - by["spending"] == by["saved"] == D("700.00") - AVERY_SPENT
+    # Every income, less tax, spending and what was not spending, is what was left over, as
+    # why net worth changed says it.
+    income = by["pay"] + by["investment_income"] + by["other_income"]
+    left = income - apart - by["spending"] - by["not_spending"]
+    why, parts = summary["why"], others(summary["why"])
+    elsewhere = parts["other_income"] + parts["not_spending"]
+    assert left == D(why["saved"]) + D(why["investment_income"]) + elsewhere
+    rate = D(figures_["savings_rate"]["now"])
+    assert rate == by["saved"] / (by["pay"] - apart)
+    assert figures_["savings_rate"]["label"] == (
+        "Savings rate, with tax" if with_tax else "Savings rate, after tax"
+    )
+
+
+def test_a_scope_without_tax_says_so_and_has_one_way_to_count(world: World) -> None:
+    summary = ask(world, "avery", "statement_summary")
+
+    assert summary["scope"]["taxed"] is False
+    assert summary["with_tax"] is None
+    assert summary["savings_rate"]["label"] == "Savings rate"
+    assert ask(world, "avery", "overview")["taxed"] is False
+
+
+def test_every_figure_with_tax_is_what_the_rows_it_opens_onto_add_up_to(world: World) -> None:
+    """Every line of the summary, either way tax is counted, its headline spending, and every
+    cell of the income statement's spending and tax by kind, is what the journal it opens onto
+    adds up to."""
+    book(world, PAYSLIP)
+    summary = ask(world, "avery", "statement_summary")
+    for with_tax in (False, True):
+        figures_ = shown(summary, with_tax)
+        for found in [figures_["spending"], *figures_["lines"]]:
+            if not found["categories"]:
+                continue
+            rows = journal_sum(world, "avery", found, summary["period"])
+            income = found["key"] in ("pay", "investment_income", "other_income")
+            assert (rows if income else -rows) == D(found["now"]), (with_tax, found["key"])
+    statement = ask(world, "avery", "income_statement")
+    totals = {t["key"]: t for t in statement["totals"]}
+    assert D(totals["tax"]["total"]) == D("300.00")
+    assert D(totals["spending_with_tax"]["total"]) == AVERY_SPENT + D("300.00")
+    for total in totals.values():
+        assert -journal_sum(world, "avery", total, statement["period"]) == D(total["total"])
+        for column, cell in zip(statement["columns"], total["cells"], strict=True):
+            days = {"from": column["from"], "to": column["to"]}
+            assert -journal_sum(world, "avery", total, days) == D(cell), (total["key"], days)
+
+
+def test_year_by_year_says_spending_and_its_rate_both_ways(world: World) -> None:
+    book(world, PAYSLIP)
+    (year,) = ask(world, "avery", "year_by_year")["years"]
+
+    assert D(year["tax"]) == D("300.00")
+    assert D(year["spending"]) == AVERY_SPENT
+    assert D(year["spending_with_tax"]) == AVERY_SPENT + D("300.00")
+    assert D(year["saved"]) == D("700.00") - AVERY_SPENT
+    assert D(year["savings_rate"]) == D(year["saved"]) / D("700.00")
+    assert D(year["savings_rate_with_tax"]) == D(year["saved"]) / D("1000.00")
+
+
+def test_whether_a_statement_holds_tax_says_nothing_of_tax_outside_it(world: World) -> None:
+    """Avery pays tax: Avery's statements, and the overview's switch, say so; Casey's, which
+    read none of Avery's accounts, are exactly what they were, whatever else Avery shares."""
+    world.choose("avery", EVERYTHING - {Facet.TRANSACTIONS})
+    before = every_statement(world, "casey")
+    overview = ask(world, "casey", "overview")["taxed"]
+    book(world, PAYSLIP)
+
+    assert ask(world, "avery", "overview")["taxed"] is True
+    assert every_statement(world, "casey") == before
+    assert ask(world, "casey", "overview")["taxed"] is overview is False

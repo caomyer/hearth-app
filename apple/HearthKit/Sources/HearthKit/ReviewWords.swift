@@ -145,6 +145,33 @@ public enum ReviewWords {
         return [said(waiting.unplacedSpending, "spending"), said(waiting.unplacedIncome, "income")].compactMap { $0 }
     }
 
+    /// How much of this month's own spending waits in Review, as the person counts tax: "$1,120
+    /// of November's spending is not reviewed yet.", or with tax counted as spending, "$1,420
+    /// of November's spending and tax is not reviewed yet." Each figure is the engine's own.
+    public static func unreviewedSpending(
+        _ waiting: Overview.Waiting, withTax: Bool, month: String, currency: String,
+        locale: Locale = .current
+    ) -> String? {
+        let (amount, what) = withTax
+            ? (waiting.spendingWithTax, "spending and tax") : (waiting.spending, "spending")
+        guard let amount else { return nil }
+        return "\(Figures.total(amount, currency: currency, locale: locale)) of \(month)'s \(what) is not reviewed yet."
+    }
+
+    /// This month's own tax, which no spending figure counts, as the person's own page says it:
+    /// "$910 of tax is not counted as spending, $300 of it not yet reviewed." Nothing when tax
+    /// is counted as spending, as the figure above it then holds it.
+    public static func tax(
+        _ waiting: Overview.Waiting, withTax: Bool, currency: String, locale: Locale = .current
+    ) -> String? {
+        guard !withTax, let tax = waiting.tax else { return nil }
+        var text = "\(Figures.total(tax, currency: currency, locale: locale)) of tax is not counted as spending"
+        if let waits = waiting.taxUnreviewed {
+            text += ", \(Figures.total(waits, currency: currency, locale: locale)) of it not yet reviewed"
+        }
+        return text + "."
+    }
+
     /// A count of transactions: "1 transaction", "1,144 transactions".
     public static func transactions(_ count: Int) -> String {
         count == 1 ? "1 transaction" : "\(count.formatted()) transactions"

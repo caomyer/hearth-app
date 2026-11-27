@@ -21,7 +21,8 @@
         "Casey"
       ],
       "leaves_out": "1 of the joint accounts hearth does not see",
-      "awaiting": 0
+      "awaiting": 0,
+      "taxed": true
     },
     "assets": {
       "label": "Assets",
@@ -35,13 +36,13 @@
         "is_floor": false
       },
       "end": {
-        "value": "158206.46",
-        "cost": "158206.46",
+        "value": "158906.46",
+        "cost": "158906.46",
         "gain": "0.00",
         "securities": true,
         "is_floor": false
       },
-      "change": "158206.46",
+      "change": "158906.46",
       "children": [
         {
           "label": "Cash",
@@ -55,13 +56,13 @@
             "is_floor": false
           },
           "end": {
-            "value": "72341.59",
-            "cost": "72341.59",
+            "value": "73041.59",
+            "cost": "73041.59",
             "gain": "0.00",
             "securities": false,
             "is_floor": false
           },
-          "change": "72341.59",
+          "change": "73041.59",
           "children": [
             {
               "label": "Narwhal Joint",
@@ -102,13 +103,13 @@
                 "is_floor": false
               },
               "end": {
-                "value": "52341.17",
-                "cost": "52341.17",
+                "value": "53041.17",
+                "cost": "53041.17",
                 "gain": "0.00",
                 "securities": false,
                 "is_floor": false
               },
-              "change": "52341.17",
+              "change": "53041.17",
               "children": []
             }
           ]
@@ -218,13 +219,13 @@
         "is_floor": false
       },
       "end": {
-        "value": "158206.46",
-        "cost": "158206.46",
+        "value": "158906.46",
+        "cost": "158906.46",
         "gain": "0.00",
         "securities": true,
         "is_floor": false
       },
-      "change": "158206.46",
+      "change": "158906.46",
       "children": []
     },
     "valuing": {

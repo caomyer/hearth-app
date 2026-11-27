@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import delta, hero_value, worth_amount, asof, failure_alert, private, part_avatar, as_table, priced_from_note, unreviewed_sub, unreviewed_caveat, unplaced_note, kept_sentence %}
+{% from "_macros.html" import delta, hero_value, worth_amount, asof, failure_alert, private, part_avatar, as_table, priced_from_note, unreviewed_sub, unreviewed_caveat, unplaced_note, kept_sentence, tax_sentence %}
 {% set h = household %}
 {% set head = h.headline %}
 {% set books = status.books %}
@@ -142,14 +142,15 @@
             {% if versus == 0 %}<span class="delta is-flat">Right where a typical month is</span>{% else %}{{ delta(versus, ("above" if versus > 0 else "below") ~ " a typical month") }}{% endif %}
           </div>
           {% endif %}
-          <div class="inout mt-4">
+          <div class="inout{% if last.tax %} is-taxed{% endif %} mt-4">
             <div><p class="fig-label">Money in</p><p class="fig-value">{{ last.money_in | hero }}</p><p class="fig-sub">{{ lo.parts | names("in_prose") | capitalize_first }}</p></div>
+            {% if last.tax %}<div><p class="fig-label"><span class="op" aria-hidden="true">&minus; </span>Tax</p><p class="fig-value">{{ last.tax | hero }}</p><p class="fig-sub">Not counted as spending</p></div>{% endif %}
             <div><p class="fig-label"><span class="op" aria-hidden="true">&minus; </span>Money out</p><p class="fig-value">{{ last.money_out | hero }}</p><p class="fig-sub">Spending</p></div>
-            <div><p class="fig-label"><span class="op" aria-hidden="true">= </span>Left over</p><p class="fig-value">{{ last.left_over | hero }}</p><p class="fig-sub">{% if lo.share is not none %}{{ lo.share | percent }}% of money in{% elif lo.without %}No money in for {{ lo.parts | names("in_prose") }}{% else %}No money in that month{% endif %}</p></div>
+            <div><p class="fig-label"><span class="op" aria-hidden="true">= </span>Left over</p><p class="fig-value">{{ last.left_over | hero }}</p><p class="fig-sub">{% if lo.share is not none %}{{ lo.share | percent }}% of money in{% if last.tax %} after tax{% endif %}{% elif lo.without %}No money in for {{ lo.parts | names("in_prose") }}{% else %}No money in that month{% endif %}</p></div>
           </div>
           {% endif %}
           {% if lo.parts %}
-          <p class="sm muted mt-4 measure">{{ lo.parts | names("in_prose") | capitalize_first }} {{ "is" if lo.parts | length == 1 and not lo.parts[0].is_joint else "are" }} in all three.{% if lo.typical is not none and lo.covered %} A typical month is the middle of the six complete months before.{% endif %}{% if lo.without %} {{ lo.without | names("in_prose") | capitalize_first }} {{ "does" if lo.without | length == 1 else "do" }} not share both money in and money out with you, so {{ "is" if lo.without | length == 1 else "are" }} in none of these three{% if spent_elsewhere %}; the spending of {{ spent_elsewhere | names("in_prose") }} is under "Where {{ last_name }} went"{% endif %}.{% endif %}{% if lo.covered and (lo.in_unreviewed.leans or lo.out_unreviewed.leans) %} Includes {% if lo.in_unreviewed.leans %}<span class="tnum">{{ (lo.in_unreviewed.amount | abs) | dollars }}</span> of money in{% endif %}{% if lo.in_unreviewed.leans and lo.out_unreviewed.leans %} and {% endif %}{% if lo.out_unreviewed.leans %}<span class="tnum">{{ (lo.out_unreviewed.amount | abs) | dollars }}</span> of spending{% endif %} not yet reviewed, at its suggested category.{% endif %}{% if lo.covered %}{{ kept_sentence(lo.out_unreviewed.kept) }}{{ unplaced_note(lo.out_unreviewed) }}{{ unplaced_note(lo.in_unreviewed) }}{{ unreviewed_caveat(lo.out_unreviewed) }}{% endif %}</p>
+          <p class="sm muted mt-4 measure">{{ lo.parts | names("in_prose") | capitalize_first }} {{ "is" if lo.parts | length == 1 and not lo.parts[0].is_joint else "are" }} in all three.{% if lo.typical is not none and lo.covered %} A typical month is the middle of the six complete months before.{% endif %}{% if lo.without %} {{ lo.without | names("in_prose") | capitalize_first }} {{ "does" if lo.without | length == 1 else "do" }} not share both money in and money out with you, so {{ "is" if lo.without | length == 1 else "are" }} in none of these three{% if spent_elsewhere %}; the spending of {{ spent_elsewhere | names("in_prose") }} is under "Where {{ last_name }} went"{% endif %}.{% endif %}{% if lo.covered and (lo.in_unreviewed.leans or lo.out_unreviewed.leans or lo.out_unreviewed.tax_unreviewed) %}{% set waiting = [] %}{% if lo.in_unreviewed.leans %}{% set _ = waiting.append(((lo.in_unreviewed.amount | abs) | dollars, "money in")) %}{% endif %}{% if lo.out_unreviewed.tax_unreviewed %}{% set _ = waiting.append(((lo.out_unreviewed.tax_unreviewed | abs) | dollars, "tax")) %}{% endif %}{% if lo.out_unreviewed.leans %}{% set _ = waiting.append(((lo.out_unreviewed.amount | abs) | dollars, "spending")) %}{% endif %} Includes {% for amount, what in waiting %}<span class="tnum">{{ amount }}</span> of {{ what }}{% if not loop.last %}{{ " and " if loop.revindex == 2 else ", " }}{% endif %}{% endfor %} not yet reviewed, at its suggested category.{% endif %}{% if lo.covered %}{{ kept_sentence(lo.out_unreviewed.kept) }}{{ unplaced_note(lo.out_unreviewed) }}{{ unplaced_note(lo.in_unreviewed) }}{{ unreviewed_caveat(lo.out_unreviewed) }}{% endif %}</p>
           {% endif %}
           {% if lo.covered %}<p class="asof mt-2"><svg aria-hidden="true"><use href="#i-clock"/></svg>{{ last_name }} is complete for every account behind these figures. Computed {{ when(books.computed_at, today) }}.</p>{% endif %}
           {% if lo.leaves_out_unassigned %}<p class="sm muted mt-2 measure">Some money went through accounts nobody has claimed, or several people's at once. It is in nobody's figures, so it is not counted here. <a href="/settings/connections">Assign accounts</a></p>{% endif %}
@@ -165,21 +166,21 @@
           </div>
           <div class="chart-legend" aria-hidden="true">
             <span class="k"><i class="in"></i>Money in</span>
-            <span class="k"><i class="out"></i>Money out</span>
+            <span class="k"><i class="out"></i>{% if lo.taxed %}Tax and spending{% else %}Money out{% endif %}</span>
             <span class="k"><i class="left"></i>Left over</span>
             {% if lo.months | rejectattr("covered") | list %}<span class="k"><i class="partial"></i>Not known yet</span>{% endif %}
           </div>
           <details class="as-table">
             <summary>Show as a table</summary>
             <table class="table">
-              <caption class="vh">Money in, money out and left over, each month{% if lo.without %}, without {{ lo.without | names("in_prose") }}{% endif %}</caption>
-              <thead><tr><th scope="col">Month</th><th scope="col" class="num">In</th><th scope="col" class="num">Out</th><th scope="col" class="num">Left over</th></tr></thead>
+              <caption class="vh">Money in, {% if lo.taxed %}tax, {% endif %}money out and left over, each month{% if lo.without %}, without {{ lo.without | names("in_prose") }}{% endif %}</caption>
+              <thead><tr><th scope="col">Month</th><th scope="col" class="num">In</th>{% if lo.taxed %}<th scope="col" class="num">Tax</th>{% endif %}<th scope="col" class="num">Out</th><th scope="col" class="num">Left over</th></tr></thead>
               <tbody>
                 {% for m in lo.months %}
                 {% if m.covered %}
-                <tr><td>{{ m.month.label }}</td><td class="num">{{ m.money_in | dollars }}</td><td class="num">{{ m.money_out | dollars }}</td><td class="num">{{ m.left_over | dollars }}</td></tr>
+                <tr><td>{{ m.month.label }}</td><td class="num">{{ m.money_in | dollars }}</td>{% if lo.taxed %}<td class="num">{{ m.tax | dollars }}</td>{% endif %}<td class="num">{{ m.money_out | dollars }}</td><td class="num">{{ m.left_over | dollars }}</td></tr>
                 {% else %}
-                <tr><td>{{ m.month.label }}</td><td class="num muted" colspan="3">Not known yet</td></tr>
+                <tr><td>{{ m.month.label }}</td><td class="num muted" colspan="{{ 4 if lo.taxed else 3 }}">Not known yet</td></tr>
                 {% endif %}
                 {% endfor %}
               </tbody>
@@ -244,7 +245,7 @@
       </div>
       {% if went.known and (went.rows or went.totals_only) %}
       <div class="panel-foot">
-        <span>{% if went.total is not none %}<span class="tnum">{{ went.total | dollars }}</span> in all{% if went.without %}, without {{ went.without | names("in_prose") }}{% endif %}.{% endif %}{% if went.has_typical %} Typical is the middle of the six months before.{% endif %}{% if went.unreviewed.leans %} Includes <span class="tnum">{{ went.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ kept_sentence(went.unreviewed.kept) }}{{ unplaced_note(went.unreviewed) }}{{ unreviewed_caveat(went.unreviewed) }}</span>
+        <span>{% if went.total is not none %}<span class="tnum">{{ went.total | dollars }}</span> in all{% if went.without %}, without {{ went.without | names("in_prose") }}{% endif %}.{% endif %}{% if went.has_typical %} Typical is the middle of the six months before.{% endif %}{% if went.unreviewed.leans %} Includes <span class="tnum">{{ went.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ kept_sentence(went.unreviewed.kept) }}{{ tax_sentence(went.unreviewed) }}{{ unplaced_note(went.unreviewed) }}{{ unreviewed_caveat(went.unreviewed) }}</span>
         {% if review_count and (went.unreviewed.leans or went.unreviewed.leaves_out) %}<a href="/review">Review yours</a>{% endif %}
       </div>
       {% endif %}

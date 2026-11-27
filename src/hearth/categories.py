@@ -22,10 +22,10 @@ an admin changes one with ``hearth categories``. Kinds are the household's, as i
 are, and the books read them on every recompute (``books.Books.kinds``).
 
 What a kind changes is the figures that mean "spending": every spending total, by category,
-by day and by pace, counts only spending and tax, never "not spending" (``figures``). What a
-household did not spend is not lost: income less spending is what was left over, so an amount
-moved somewhere else rather than spent is in what was left over, which still adds up. Income
-totals count every income kind.
+by day and by pace, counts only spending, never tax nor "not spending" (``figures``). Tax is
+its own figure beside spending. What a household did not spend is not lost: income less tax
+and spending is what was left over, so an amount moved somewhere else rather than spent is in
+what was left over, which still adds up. Income totals count every income kind.
 """
 
 import re

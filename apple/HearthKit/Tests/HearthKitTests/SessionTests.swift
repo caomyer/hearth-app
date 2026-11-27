@@ -8,7 +8,7 @@ private let ready = #"""
      "recomputing":false,"connected":true,
      "net_worth":{"value":"21038.25","is_known":true,"is_partial":false,"is_floor":false,"without":[],
                   "since_month_start":null,"over_year":null,"priced_on":null,"stale_prices":0},
-     "history":[{"day":"2026-10-15","value":"21038.25","is_floor":false}],"review":{"waiting":0,"spending":null}}
+     "history":[{"day":"2026-10-15","value":"21038.25","is_floor":false}],"review":{"waiting":0,"spending":null},"taxed":false}
     """#
 private let signedOut = #"{"state":"signed_out"}"#
 

@@ -163,6 +163,7 @@
 <p class="fig-sub">{% if href %}<a class="tag tag-review" href="{{ href }}">{% else %}<span class="tag tag-review">{% endif %}<span class="tnum">{{ (u.amount | abs) | dollars }}</span> not yet reviewed{% if href %}</a>{% else %}</span>{% endif %}</p>
 {% endif %}
 {{ kept_note(u.kept) }}
+{{ tax_note(u) }}
 {% if u.leaves_out %}
 <p class="fig-sub">{% if href %}<a class="tag tag-review" href="{{ href }}">{% else %}<span class="tag tag-review">{% endif %}Leaves out <span class="tnum">{{ (u.unplaced.amount | abs) | dollars }}</span> not placed yet{% if href %}</a>{% else %}</span>{% endif %}</p>
 {% endif %}
@@ -178,6 +179,16 @@
    contribution, is left out of every spending figure; the figure says how much, plainly. #}
 {% macro kept_note(amount) %}
 {% if amount %}<p class="fig-sub"><span class="tnum">{{ (amount | abs) | dollars }}</span> booked as not spending, such as a retirement contribution, is not counted here.</p>{% endif %}
+{% endmacro %}
+
+{# Tax is its own figure, never spending: a spending figure says how much it leaves out, and how
+   much of that rests on rows not reviewed yet, to whoever may see the categories behind it. #}
+{% macro tax_note(u) %}
+{% if u.tax %}<p class="fig-sub"><span class="tnum">{{ (u.tax | abs) | dollars }}</span> of tax is not counted here{% if u.tax_unreviewed %}, <span class="tnum">{{ (u.tax_unreviewed | abs) | dollars }}</span> of it not yet reviewed{% endif %}.</p>{% endif %}
+{% endmacro %}
+
+{% macro tax_sentence(u) %}
+{% if u.tax %} <span class="tnum">{{ (u.tax | abs) | dollars }}</span> of tax is not counted as spending{% if u.tax_unreviewed %}, <span class="tnum">{{ (u.tax_unreviewed | abs) | dollars }}</span> of it not yet reviewed{% endif %}.{% endif %}
 {% endmacro %}
 
 {% macro kept_sentence(amount) %}

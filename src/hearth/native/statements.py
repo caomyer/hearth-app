@@ -23,6 +23,7 @@ from hearth.disclosure.statements import (
     Scope,
     SheetRow,
     Summary,
+    Total,
     Unreviewed,
     Valuing,
     Years,
@@ -123,12 +124,14 @@ def _period(period: Period) -> Answer:
     return {"from": _day(period.start), "to": _day(period.end)}
 
 
-def _scope(scope: Scope) -> Answer:
+def _scope(scope: Scope, taxed: bool) -> Answer:
     return {
         "parts": [part.name for part in scope.refs],
         "without": [part.name for part in scope.without],
         "leaves_out": scope.leaves_out or None,
         "awaiting": len(scope.unknown),
+        # Whether the scope's books hold any tax, so counting it as spending changes anything.
+        "taxed": taxed,
     }
 
 
@@ -194,12 +197,23 @@ def _summary(found: Summary, market: bool) -> Answer:
         "valuation": "market" if market else "cost",
         "covered": found.covered,
         "against_covered": found.against_covered,
-        "scope": _scope(found.scope),
+        "scope": _scope(found.scope, found.taxed),
         "net_worth": _line(found.net_worth),
         "savings_rate": _line(found.savings_rate),
         "spending": _line(found.spending),
         "market": _money(found.market),
         "lines": [_line(line) for line in found.lines],
+        # The same three with tax counted as spending, each worked out by the engine; null
+        # when the scope holds no tax, as they would be the same.
+        "with_tax": (
+            {
+                "spending": _line(found.with_tax.spending),
+                "savings_rate": _line(found.with_tax.savings_rate),
+                "lines": [_line(line) for line in found.with_tax.lines],
+            }
+            if found.with_tax is not None
+            else None
+        ),
         "why": _why(found.bridge),
         "valuing": _valuing(found.valuing),
         "unreviewed": _unreviewed(found.unreviewed),
@@ -222,12 +236,22 @@ def _node(node: Node) -> Answer:
     }
 
 
+def _total(found: Total) -> Answer:
+    return {
+        "key": found.key,
+        "label": found.label,
+        "cells": [_money(cell) for cell in found.cells],
+        "total": _money(found.total),
+        "categories": list(found.categories),
+    }
+
+
 def _income(found: IncomeStatement) -> Answer:
     return {
         "period": _period(found.period),
         "columns_by": found.by.value,
         "covered": found.covered,
-        "scope": _scope(found.scope),
+        "scope": _scope(found.scope, found.taxed),
         "columns": [
             {
                 **_period(column.period),
@@ -239,6 +263,8 @@ def _income(found: IncomeStatement) -> Answer:
         "income": _node(found.income),
         "expenses": _node(found.expenses),
         "net": {"cells": [_money(n) for n in found.net], "total": _money(found.net_total)},
+        # Spending without tax, tax, and spending with tax, by column: by kind, not by the tree.
+        "totals": [_total(each) for each in found.totals],
         "unreviewed": _unreviewed(found.unreviewed),
         "later": found.later,
     }
@@ -283,7 +309,7 @@ def _sheet(found: BalanceSheet) -> Answer:
     return {
         "period": _period(found.period),
         "valuation": "market" if found.market else "cost",
-        "scope": _scope(found.scope),
+        "scope": _scope(found.scope, found.taxed),
         "assets": _row(found.assets, found.market),
         "liabilities": _row(found.liabilities, found.market),
         "net_worth": _row(found.net_worth, found.market),
@@ -294,7 +320,7 @@ def _sheet(found: BalanceSheet) -> Answer:
 def _years(found: Years) -> Answer:
     return {
         "valuation": "market" if found.market else "cost",
-        "scope": _scope(found.scope),
+        "scope": _scope(found.scope, found.taxed),
         "years": [
             {
                 "year": year.year,
@@ -303,8 +329,11 @@ def _years(found: Years) -> Answer:
                 "net_worth": _money(year.net_worth),
                 "pay": _money(year.pay),
                 "spending": _money(year.spending),
+                "tax": _money(year.tax),
+                "spending_with_tax": _money(year.spending_with_tax),
                 "saved": _money(year.saved),
                 "savings_rate": _money(year.savings_rate),
+                "savings_rate_with_tax": _money(year.savings_rate_with_tax),
             }
             for year in found.years
         ],

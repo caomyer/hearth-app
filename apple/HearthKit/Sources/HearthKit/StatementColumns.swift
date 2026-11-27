@@ -59,11 +59,18 @@ extension IncomeStatement {
         Figures.amount(index.map { node.cells[$0] } ?? node.total, signed: false, locale: locale)
     }
 
-    /// Every text the column at `index`, or the total, shows: each node's and net income's.
+    /// What a figure by kind shows in the column at `index`, or in the total when it is nil.
+    public static func text(_ total: Total, at index: Int?, locale: Locale = .current) -> String {
+        Figures.amount(index.map { total.cells[$0] } ?? total.total, signed: false, locale: locale)
+    }
+
+    /// Every text the column at `index`, or the total, shows: each node's, net income's, and
+    /// every figure by kind's, whichever way tax is counted.
     public func texts(at index: Int?, locale: Locale = .current) -> [String] {
         let net = index.map { self.net.cells[$0] } ?? self.net.total
         return everyNode.map { Self.text($0, at: index, locale: locale) }
             + [Figures.amount(net, signed: false, locale: locale)]
+            + totals.map { Self.text($0, at: index, locale: locale) }
     }
 }
 

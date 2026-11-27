@@ -18,14 +18,25 @@ public struct Overview: Decodable, Sendable, Equatable {
     public let history: [Point]
     /// What waits for the viewer in Review.
     public let review: Waiting
+    /// Whether the viewer's statements hold any tax, so counting it as spending changes
+    /// anything: the switch to count it so is offered, and applies here, only then.
+    public let taxed: Bool
 
     /// What waits for the viewer in Review: their own rows nobody has checked, and how much of
     /// their own spending this month rests on them, when any does. Each figure is absent when
     /// there is none, the viewer may not know it, or the engine is older than it.
     public struct Waiting: Decodable, Sendable, Equatable {
         public let waiting: Int
-        /// This month's own spending resting on unreviewed rows, at their suggested category.
+        /// This month's own spending resting on unreviewed rows, at their suggested category,
+        /// without tax, which is never spending.
         public let spending: Money?
+        /// The same with the tax resting on unreviewed rows counted in it, worked out by the
+        /// engine, for whoever counts tax as spending.
+        public let spendingWithTax: Money?
+        /// This month's own tax, which no spending figure counts.
+        public let tax: Money?
+        /// Of `tax`, what rests on unreviewed rows.
+        public let taxUnreviewed: Money?
         /// This month's rows taking money out that nobody has said what they were yet, such as
         /// a new merchant's: in no spending total until placed in Review.
         public let unplacedSpending: Unplaced?
@@ -37,10 +48,14 @@ public struct Overview: Decodable, Sendable, Equatable {
 
         public init(
             waiting: Int, spending: Money? = nil, unplacedSpending: Unplaced? = nil,
-            unplacedIncome: Unplaced? = nil, notSpending: Money? = nil
+            unplacedIncome: Unplaced? = nil, notSpending: Money? = nil,
+            spendingWithTax: Money? = nil, tax: Money? = nil, taxUnreviewed: Money? = nil
         ) {
             self.waiting = waiting
             self.spending = spending
+            self.spendingWithTax = spendingWithTax
+            self.tax = tax
+            self.taxUnreviewed = taxUnreviewed
             self.unplacedSpending = unplacedSpending
             self.unplacedIncome = unplacedIncome
             self.notSpending = notSpending

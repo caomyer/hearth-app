@@ -358,6 +358,16 @@ class Flows:
         after_tax = self.pay - self.tax
         return self.saved / after_tax if after_tax > 0 else None
 
+    @property
+    def spending_with_tax(self) -> Decimal:
+        """Spending with tax counted in it, for whoever reads tax as money spent."""
+        return self.spending + self.tax
+
+    @property
+    def savings_rate_with_tax(self) -> Decimal | None:
+        """Saved from work over pay, tax counted as spending; None without pay."""
+        return self.saved / self.pay if self.pay > 0 else None
+
     def others(self, market: bool) -> dict[Other, Decimal]:
         """Each part of "Other", at cost or at market value."""
         found = {

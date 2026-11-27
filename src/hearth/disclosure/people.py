@@ -281,6 +281,7 @@ def _totals(h: Household, part: Part, this_month: MonthFlows) -> Totals:
                 this_month,
                 this_month.spent_unplaced(part.owners),
                 this_month.kept_out(part.owners),
+                (this_month.taxed_out(part.owners), this_month.taxed_unreviewed(part.owners)),
             ),
         ),
         earned_unreviewed=gate.disclose(
@@ -304,6 +305,7 @@ def _unreviewed(
     flows: MonthFlows,
     placed: Unplaced,
     kept: Decimal = Decimal(0),
+    taxed: tuple[Decimal, Decimal] = (Decimal(0), Decimal(0)),
 ) -> Unreviewed:
     rows = flows.unreviewed.get(part.owners, 0)
     return unreviewed(
@@ -314,6 +316,7 @@ def _unreviewed(
         lambda _: rows,
         lambda _: placed,
         lambda _: kept,
+        lambda _: taxed,
     )
 
 

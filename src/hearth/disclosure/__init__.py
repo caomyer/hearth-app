@@ -415,6 +415,12 @@ class Disclosure:
     def years(self, *, market: bool) -> statements.Years:
         return statements.years(self._household(), market=market)
 
+    def statements_taxed(self) -> bool:
+        """Whether the books the viewer's statements read hold any tax
+        (``statements.taxed``)."""
+        h = self._household()
+        return statements.taxed(h, statements.scope(h))
+
     def _failed(self) -> tuple[str, Failed] | None:
         """The account whose balance check the latest recompute failed, when the viewer may be
         told so (`_failed_check`)."""

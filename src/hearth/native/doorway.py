@@ -203,6 +203,9 @@ def overview(view: Disclosure, _asked: object, around: Around) -> Answer:
             for point in household.history
         ],
         "review": review.waiting(view, around),
+        # Whether the viewer's statements hold any tax, so counting it as spending changes
+        # anything: judged on what their statements read, and nothing else.
+        "taxed": view.statements_taxed(),
     }
 
 

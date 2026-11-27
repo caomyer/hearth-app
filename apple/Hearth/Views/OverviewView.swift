@@ -37,6 +37,8 @@ struct OverviewView: View {
 
 private struct Figures: View {
     let overview: Overview
+    /// Whether tax is counted as spending, as the person chose in Statements.
+    @AppStorage(TaxInSpending.key) private var withTax = false
 
     private var worth: Overview.NetWorth { overview.netWorth }
 
@@ -51,7 +53,9 @@ private struct Figures: View {
                 changes
                     .padding(.top, 6)
                 if overview.review.waiting > 0 {
-                    ReviewBanner(waiting: overview.review, currency: overview.currency, asOf: overview.asOf)
+                    ReviewBanner(
+                        waiting: overview.review, currency: overview.currency, asOf: overview.asOf,
+                        withTax: withTax && overview.taxed)
                         .padding(.top, 20)
                 }
                 if overview.history.count > 1 {
@@ -164,6 +168,8 @@ private struct ReviewBanner: View {
     let waiting: Overview.Waiting
     let currency: String
     let asOf: Day
+    /// Whether tax is counted as spending here, as the person chose and the books hold any.
+    let withTax: Bool
     @Environment(Navigator.self) private var navigator
 
     var body: some View {
@@ -177,8 +183,8 @@ private struct ReviewBanner: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.ink)
                     .accessibilityIdentifier("overview.review.count")
-                if let spending = waiting.spending {
-                    Text("\(HearthKit.Figures.total(spending, currency: currency)) of \(month)'s spending is not reviewed yet.")
+                if let spending = HearthKit.ReviewWords.unreviewedSpending(waiting, withTax: withTax, month: month, currency: currency) {
+                    Text(spending)
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.ink2)
                         .accessibilityIdentifier("overview.review.spending")
@@ -189,6 +195,13 @@ private struct ReviewBanner: View {
                         .foregroundStyle(Palette.ink2)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("overview.review.unplaced")
+                }
+                if let tax = HearthKit.ReviewWords.tax(waiting, withTax: withTax, currency: currency) {
+                    Text(tax)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("overview.review.tax")
                 }
                 if let kept = waiting.notSpending {
                     Text("\(HearthKit.Figures.total(kept, currency: currency)) booked as not spending, such as a retirement contribution, is not counted as spending.")
