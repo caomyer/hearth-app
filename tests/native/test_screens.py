@@ -170,6 +170,15 @@ def test_an_account_asked_for_in_another_shape_is_missing(world: World, given: o
     assert door.answer("account", given) == {"state": "missing"}  # type: ignore[arg-type]
 
 
+def test_an_account_asked_for_with_anything_besides_its_id_is_missing(world: World) -> None:
+    """Even for an account the viewer may see: a key the ask does not take is never ignored."""
+    door = Doorway(world.settings, world.bookkeeper, "avery")
+    mine = world.account_ids["avery_solo"]
+
+    assert door.answer("account", {"id": mine})["state"] == "ready"
+    assert door.answer("account", {"id": mine, "month": "2026-10"}) == {"state": "missing"}
+
+
 def test_a_screen_that_takes_nothing_refuses_to_be_narrowed(world: World) -> None:
     door = Doorway(world.settings, world.bookkeeper, "avery")
 

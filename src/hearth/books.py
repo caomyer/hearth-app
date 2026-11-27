@@ -165,6 +165,9 @@ class Books:
     begun: frozenset[str] = frozenset()
     """Carried accounts with a ruling on one of their review rows (`begun`): from then on the
     match, and the base, are fixed."""
+    price_sources: tuple[str, ...] = PRICE_SOURCES
+    """The sources the stored prices it was valued at were taken from (`stored_prices`), so
+    that a price's history is read from exactly those."""
 
     @property
     def balance_unknown(self) -> frozenset[str]:
@@ -349,13 +352,15 @@ def compute(
     carried: Mapping[str, Carry] | None = None,
     unproved: Mapping[str, Unknown] | None = None,
     held_back: Mapping[str, tuple[date, date]] | None = None,
+    price_sources: Sequence[str] = PRICE_SOURCES,
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
     recent month end. `synced` is each fed ledger account's connection and its last successful
     sync (`synced_through`); `unknown`, each account whose opening balance could not be
     derived, with why; `invested`, each account a brokerage account feeds; `unfed`, each the
     household holds that nothing opens; `carried`, each account of the base hearth carries on;
-    `unproved`, each of those its bank's balance cannot prove yet, with why.
+    `unproved`, each of those its bank's balance cannot prove yet, with why; `price_sources`,
+    the sources `lookup` reads stored prices from.
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
@@ -423,6 +428,7 @@ def compute(
         },
         reconciling=reconciling(entries),
         begun=begun(ledger, carried, {r for r, d in decided.items() if d.ruling is not None}),
+        price_sources=tuple(price_sources),
     )
 
 
@@ -1019,6 +1025,7 @@ def from_household(
                 unfed=household.unfed,
                 carried=household.carried,
                 held_back=household.held_back,
+                price_sources=sources,
             )
         finally:
             conn.close()

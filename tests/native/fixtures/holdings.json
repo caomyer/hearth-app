@@ -1,0 +1,99 @@
+{
+  "id": 9,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "priced_on": "2026-10-14",
+    "accounts": [
+      {
+        "id": "fCeIYhUVFW5MJ1eC",
+        "name": "Wombat Shares",
+        "owners": ["Avery"],
+        "yours": true,
+        "known": true,
+        "why": null,
+        "held": [
+          {
+            "symbol": "ZQAA",
+            "ticker": "ZQAA",
+            "name": "Zq Total Market",
+            "is_cash": false,
+            "units": "15",
+            "freshness": "current",
+            "price": {"value": "1234.56", "day": "2026-10-14", "source": "eodhd", "fetched_at": "2026-10-15T06:00:00Z", "age": 1},
+            "value": "18518.40",
+            "cost": "17345.60",
+            "gain": "1172.80"
+          },
+          {
+            "symbol": "ZQCC",
+            "ticker": "ZQCC",
+            "name": "Zq Copper Miners",
+            "is_cash": false,
+            "units": "3",
+            "freshness": "unpriced",
+            "price": null,
+            "value": null,
+            "cost": "150.00",
+            "gain": null
+          },
+          {
+            "symbol": "ZQDD",
+            "ticker": "ZQDD",
+            "name": "Zq Dune Index",
+            "is_cash": false,
+            "units": "4",
+            "freshness": "stale",
+            "price": {"value": "25.00", "day": "2026-10-05", "source": "eodhd", "fetched_at": "2026-10-06T06:00:00Z", "age": 10},
+            "value": "100.00",
+            "cost": "80.00",
+            "gain": "20.00"
+          },
+          {
+            "symbol": "ZQEE",
+            "ticker": "ZQEE",
+            "name": null,
+            "is_cash": false,
+            "units": "2",
+            "freshness": "current",
+            "price": {"value": "7.50", "day": "2026-10-14", "source": "hand", "fetched_at": "2026-10-15T06:00:00Z", "age": 1},
+            "value": "15.00",
+            "cost": null,
+            "gain": null
+          },
+          {
+            "symbol": "USD",
+            "ticker": null,
+            "name": null,
+            "is_cash": true,
+            "units": "212.30",
+            "freshness": "current",
+            "price": null,
+            "value": "212.30",
+            "cost": "212.30",
+            "gain": null
+          }
+        ],
+        "totals": {"value": "18845.70", "unpriced": 1, "cost": "17787.90", "uncosted": 1, "gain": "1192.80", "ungained": 2, "waiting": 0}
+      },
+      {
+        "id": "Kp2rS7tUvW9xYz1b",
+        "name": "Juniper Brokerage",
+        "owners": ["Avery"],
+        "yours": true,
+        "known": false,
+        "why": "investment",
+        "held": [],
+        "totals": {"value": "0", "unpriced": 0, "cost": "0", "uncosted": 0, "gain": "0", "ungained": 0, "waiting": 1}
+      }
+    ],
+    "totals": {"value": "18845.70", "unpriced": 1, "cost": "17787.90", "uncosted": 1, "gain": "1192.80", "ungained": 2, "waiting": 1},
+    "withheld": [
+      {"name": "Blake", "owners": ["Blake"], "joint": false, "in_total": true},
+      {"name": "Joint accounts", "owners": ["Avery", "Casey"], "joint": true, "in_total": false}
+    ]
+  }
+}

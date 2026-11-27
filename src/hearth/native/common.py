@@ -17,6 +17,7 @@ from hearth.connections import Connections
 from hearth.disclosure import Disclosure
 from hearth.refresh import Syncing
 from hearth.review.rulings import RulingStore
+from hearth.valuation.pricestore import PriceStore
 
 type Answer = dict[str, object]
 type Given = Mapping[str, object]
@@ -38,12 +39,14 @@ class Malformed(Exception):  # noqa: N818 - it names an outcome, not a fault
 class Around:
     """What a screen is written from beside the viewer's view: the connections hearth holds,
     every member's, which only disclosure narrows to the viewer's, where this engine's syncs
-    stand, and the rulings the viewer's review desk is built over."""
+    stand, the rulings the viewer's review desk is built over, and the stored prices, which only
+    disclosure reads a security's history from."""
 
     connections: Connections
     syncing: Syncing
     rulings: RulingStore
     clock: Clock
+    prices: PriceStore
 
 
 @dataclass(frozen=True, slots=True)

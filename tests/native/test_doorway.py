@@ -7,6 +7,7 @@ signed in to the bridge.
 """
 
 import json
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -147,7 +148,13 @@ def differences(told: object, example: object, at: str = "answer") -> list[str]:
     return [] if type(told) is type(example) else [f"{at}: {type(told).__name__}"]
 
 
-NARROWED = {"account": "id", "transactions": "with", "review": "with", "review_row": "id"}
+NARROWED = {
+    "account": "id",
+    "transactions": "with",
+    "review": "with",
+    "review_row": "id",
+    "price_history": "symbol",
+}
 """Screens that are asked with what narrows them, which the crawl asks every way
 `narrowings` names. A screen added to `SCREENS` is asked plainly unless it is named here."""
 
@@ -188,7 +195,22 @@ def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
     asked += [("review", {"text": w}) for w in words]
     asked += [("review_row", {"id": row[0]}) for row in REVIEW_ROWS]
     asked += [("review_row", {"id": "no-such-row"})]
+    # Every security in the household, cash, and one nobody holds: a price history is a
+    # holding's, so one the viewer may not see is missing, whoever holds it.
+    symbols = [*household.SECURITIES, "USD", "ZQZZ"]
+    asked += [("price_history", {"symbol": s}) for s in symbols]
     return asked
+
+
+def positions() -> Iterator[household.Secret]:
+    """What each position is, as the doorway writes it: its units and its price, each a quoted
+    decimal, which every close of its price history is too. They go with its account's
+    balances, as its symbol and its value do (``household.secrets``)."""
+    for symbol, (held_in, units, price) in household.SECURITIES.items():
+        owners = next(a.owners for a in household.ACCOUNTS if a.ledger_account == held_in)
+        visible = household.shared(Facet.ACCOUNT_BALANCES, owners)
+        yield household.secret(f'"units": "{units}"', f"{symbol} units", visible)
+        yield household.secret(f'"{price}"', f"{symbol} price", visible)
 
 
 def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]]]:
@@ -296,7 +318,7 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
 
     leaked = [
         f"{secret.what}: {text!r}"
-        for secret in household.secrets(world.account_ids)
+        for secret in [*household.secrets(world.account_ids), *positions()]
         if not secret.visible(viewer, choices)
         for text in secret.texts
         if text.replace(",", "") in seen
