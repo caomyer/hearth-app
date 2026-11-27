@@ -894,8 +894,10 @@ private struct YearsTab: View {
                         .width(width(\.saved, "Saved from work"))
                         .alignment(.trailing)
                     TableColumn(rateTitle) { year in
-                        Text(StatementWords.figure(year.savingsRate(withTax: counted), rate: true, currency: years.currency)).monospacedDigit()
+                        Text(rate(year)).monospacedDigit()
                     }
+                    // As wide as its heading, which says how tax is counted, and its widest rate.
+                    .width(FigureWidth.holding(years.years.map(rate), title: rateTitle))
                     .alignment(.trailing)
                 }
                 // A few years, never a page of them: stripes would run on down the empty table.
@@ -908,6 +910,10 @@ private struct YearsTab: View {
 
     private func money(_ value: Money?) -> some View {
         Text(StatementWords.figure(value, rate: false, currency: years.currency)).monospacedDigit().lineLimit(1)
+    }
+
+    private func rate(_ year: YearByYear.Year) -> String {
+        StatementWords.figure(year.savingsRate(withTax: counted), rate: true, currency: years.currency)
     }
 
     private func width(_ value: KeyPath<YearByYear.Year, Money?>, _ title: String) -> CGFloat {
