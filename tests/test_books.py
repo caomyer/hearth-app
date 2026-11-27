@@ -16,6 +16,7 @@ from beancount.parser import parser
 from hearth import books, db
 from hearth.books import Bookkeeper, Books
 from hearth.months import Month
+from hearth.valuation import pricetable
 from hearth.valuation.networth import NetWorth
 from hearth.valuation.pricestore import PriceStore
 from hearth.valuation.quotes import Quote
@@ -75,7 +76,7 @@ def _entries(text: str) -> tuple[Directive, ...]:
 
 
 def _computed(on: datetime) -> books.Books:
-    return books.compute(_entries(""), lambda symbol, day: None, now=on, decide=lambda pile: {})
+    return books.compute(_entries(""), pricetable.none(), now=on, decide=lambda pile: {})
 
 
 def test_figures_are_as_of_today_however_early_the_ledger_stops() -> None:

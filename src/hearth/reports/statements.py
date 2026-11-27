@@ -60,6 +60,7 @@ from beancount.core.data import Directive, Posting, Transaction
 from beancount.core.position import Cost
 
 from hearth.categories import Kind
+from hearth.categories import words as category_words
 from hearth.reports.common import is_balance_sheet, root, units
 from hearth.review.pile import WAITING
 from hearth.valuation.networth import STALE_AFTER_MISSED_SESSIONS, missed_sessions
@@ -609,7 +610,10 @@ class Ledger:
             reducing = held.units != 0 and (held.units > 0) != (amount.number > 0)
             if reducing and posting.cost is not None:
                 lots.add(id(posting))
-            if bare and reducing and held.cost is not None:
+            if splits:
+                # A split changes units and nothing else: no leg gives up or takes on cost.
+                moved.append((posting, held, ZERO))
+            elif bare and reducing and held.cost is not None:
                 given = held.cost * amount.number / held.units
                 pool[amount.currency][0] += -amount.number
                 pool[amount.currency][1] += -given
@@ -641,7 +645,7 @@ class Ledger:
                 cost = weighs
             held.units += amount.number
             held.cost = None if held.cost is None or cost is None else held.cost + cost
-            if held.units == 0:
+            if held.units == 0 and not splits:
                 held.cost = ZERO
             held.note(ordinal)
             rate = self._rate(amount.currency, day)
@@ -689,9 +693,15 @@ class Ledger:
 
     def _splits(self, entry: Transaction, postings: list[Posting], legs: list[Posting]) -> bool:
         """Whether a part is a split of a holding with no lot: in one commodity, with no lot
-        and no price, it takes the old position out of an account and puts the new one in the
-        same account. Units added against an opening or a reconciling entry alone are never
-        one: they came from somewhere, and are an opening."""
+        and no price, it changes units and nothing else. It is one of two shapes alone. Either
+        it takes the old position out of an account and puts the new one in the same account;
+        or it adds units to, or takes some but not all units from, accounts that each already
+        hold that commodity, against equity accounts every one of which is named for a split
+        (`split_equity`), as `Equity:Splits`. Anything else, against any other equity account
+        and in either direction, came from somewhere or went somewhere, and is an opening at
+        what it was worth; so is every entry a `pad` made, whatever account it pads from."""
+        if entry.flag == PADDED:
+            return False
         commodities = {units(p, entry).currency for p in postings}
         if len(commodities) != 1 or self.currency in commodities:
             return False
@@ -700,7 +710,23 @@ class Ledger:
         by_account: defaultdict[str, set[bool]] = defaultdict(set)
         for posting in legs:
             by_account[posting.account].add(units(posting, entry).number > 0)
-        return any(signs == {True, False} for signs in by_account.values())
+        if any(signs == {True, False} for signs in by_account.values()):
+            return True
+        equity = [p.account for p in postings if root(p.account) == "Equity"]
+        if not legs or not equity or len(equity) + len(legs) != len(postings):
+            return False
+        if not all(split_equity(account) for account in equity):
+            return False
+        (commodity,) = commodities
+        changed: defaultdict[str, Decimal] = defaultdict(lambda: ZERO)
+        for posting in legs:
+            changed[posting.account] += units(posting, entry).number
+        for account, change in changed.items():
+            held = self._positions.get((account, commodity), _Position()).units
+            # Nothing left to carry the cost, or more taken than was held: not a split.
+            if held == 0 or (held > 0) != (held + change > 0) or held + change == 0:
+                return False
+        return True
 
     def _file(self, event: _Event) -> None:
         signature = self._signatures.setdefault(event.accounts, _Signature(event.accounts))
@@ -878,6 +904,23 @@ class Ledger:
             if quantity and price is not None:
                 found += quantity * price
         return found
+
+
+SPLIT_WORDS = frozenset({"split", "splits", "stocksplit", "stocksplits"})
+"""The words an equity account is named for a split by, each a whole word of its name as
+``hearth.categories`` reads them, which separates `Equity:StockSplit`, `Equity:Stock-Split` and
+`Equity:Reverse-Splits` into words of their own. Never part of a word: `Equity:Splitwise`,
+`Equity:Splitting-Bills` and `Equity:Unsplit` are named for no split, and units moved against
+an equity account named for nothing here are an opening."""
+PADDED = "P"
+"""The flag beancount gives an entry a `pad` made."""
+
+
+def split_equity(account: str) -> bool:
+    """Whether an equity account is named for a split, by `SPLIT_WORDS`."""
+    return root(account) == "Equity" and any(
+        word in SPLIT_WORDS for word in category_words(account)
+    )
 
 
 _KINDS = ("open", "earn", "beside")

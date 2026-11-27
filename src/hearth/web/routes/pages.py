@@ -131,7 +131,7 @@ OUTCOMES = {
     "price-recorded": "Price recorded as entered by you. Net worth is recomputing with it.",
     "price-not-understood": "That price could not be used. Enter a positive number for a past day.",
     "price-out-of-range": (
-        "That price was not kept: a price is between 0.000001 and 1,000,000,000,"
+        "That price was not kept: a price is between 0.000000000001 and 1,000,000,000,"
         " with at most 15 digits."
     ),
     "source-unavailable": "The price source is not set up yet, so it could not be asked again.",

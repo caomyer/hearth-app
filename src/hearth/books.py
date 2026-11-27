@@ -27,7 +27,6 @@ import threading
 from collections.abc import Callable, Collection, Hashable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +68,7 @@ from hearth.review.decision import Decision, guarded, postable
 from hearth.review.overlay import reviewed
 from hearth.review.pile import UNRESOLVED, PileItem, read_pile
 from hearth.review.rulings import RulingStore
-from hearth.valuation import institution
+from hearth.valuation import institution, pricetable
 from hearth.valuation.holdings import holdings_at
 from hearth.valuation.networth import NetWorth, PriceLookup, value_holdings
 from hearth.valuation.pricestore import PriceStore
@@ -175,10 +174,10 @@ class Books:
     kinds: Mapping[str, Kind] = field(default_factory=dict)
     """Each income and expense account the books name, with what kind of money it is: as a
     person said, or as its name says (``hearth.categories``)."""
-    prices: PriceLookup = field(default=lambda symbol, day: None, compare=False)
+    prices: PriceTable = field(default_factory=pricetable.none, compare=False)
     """The prices the books were valued at, for valuing them on any other day: a statement's
     start and end (``hearth.reports.statements``). Held in memory, as the recompute read them,
-    so a page never reads the price table itself. A function, so two books are compared by
+    so a page never reads the price table itself. Never compared, so two books are compared by
     what they were valued at (`today`, `month_ends`), not by it."""
     ledger: Ledger | None = field(default=None, compare=False)
     """The books as statements read them, read once here so every statement asked of them is a
@@ -369,7 +368,7 @@ type Decide = Callable[[Sequence[PileItem]], Mapping[str, Decision]]
 
 def compute(
     ledger: Sequence[Directive],
-    lookup: PriceLookup,
+    lookup: PriceTable,
     *,
     now: datetime,
     decide: Decide,
@@ -463,7 +462,7 @@ def compute(
         kinds=categories.kinds(_categories(entries), kinds or {}),
         prices=lookup,
         price_sources=tuple(price_sources),
-        ledger=statements.read(entries, priced(lookup), CURRENCY),
+        ledger=statements.read(entries, lookup, CURRENCY),
     )
 
 
@@ -1029,31 +1028,6 @@ def stored_prices(store: PriceStore, sources: Sequence[str] = PRICE_SOURCES) -> 
         return max(found, key=lambda quote: (quote.as_of, quote.fetched_at), default=None)
 
     return lookup
-
-
-def priced(lookup: PriceLookup) -> statements.Prices:
-    """The prices a ledger is read at: the table itself, or a bare lookup with no history."""
-    if isinstance(lookup, PriceTable):
-        return lookup
-    return _Lookup(lookup)
-
-
-@dataclass(frozen=True, slots=True)
-class _Lookup:
-    """A bare lookup, as tests and a few callers give one: it has no first price to tell."""
-
-    lookup: PriceLookup
-
-    def price(self, symbol: str, on_or_before: date, currency: str) -> Decimal | None:
-        quote = self.lookup(symbol, on_or_before)
-        return quote.price if quote is not None and quote.currency == currency else None
-
-    def day(self, symbol: str, on_or_before: date) -> date | None:
-        quote = self.lookup(symbol, on_or_before)
-        return quote.as_of if quote is not None else None
-
-    def first(self, symbol: str, currency: str) -> date | None:
-        return None
 
 
 def remembered_prices(
