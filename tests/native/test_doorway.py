@@ -183,7 +183,7 @@ STATEMENT_PERIODS: list[dict[str, object]] = [
     {"from": "2026-08-01", "to": "2026-08-31"},
     {"from": "2026-09-01", "to": "2026-10-15"},
     {"from": "2026-10-03", "to": "2026-10-03"},
-    {"from": "2025-10-16", "to": "2026-10-15"},
+    {"from": "2026-07-01", "to": "2026-09-30"},
 ]
 
 
@@ -210,7 +210,7 @@ def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
     asked += [("transactions", {"within": "statements", "limit": 200})]
     asked += [("transactions", {"within": "statements", "categories": [c]}) for c in categories]
     asked += [("transactions", {"categories": categories, "limit": 200})]
-    # Every statement, for periods that cut months, a single day, a year back, and none, at
+    # Every statement, for periods that cut months, a single day, a quarter, and none, at
     # market value and at cost, split every way.
     for period in STATEMENT_PERIODS:
         for valuation in ("market", "cost"):
@@ -291,7 +291,11 @@ def assert_within(narrowed: dict[str, object], whole: dict[str, object]) -> None
     def rows(answer: dict[str, object]) -> list[str]:
         entries = answer["entries"]
         assert isinstance(entries, list)
-        return [json.dumps({k: v for k, v in e.items() if k != "position"}) for e in entries]
+        # Where it stands, and the part of it a narrowing's categories are, say of the narrowing.
+        return [
+            json.dumps({k: v for k, v in e.items() if k not in ("position", "part")})
+            for e in entries
+        ]
 
     held = rows(whole)
     assert all(row in held for row in rows(narrowed)), "a narrowed journal found more"
@@ -376,6 +380,41 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     others = [row for row in household.PILE + household.MOVED if OWNER[row[2]] != viewer]
     found = [text for row in others for text in (row[1], row[4]) if text in reviewing]
     assert not found, f"{viewer} was shown another member's review rows: {found}"
+
+
+@pytest.mark.parametrize("facet", list(Facet))
+@pytest.mark.parametrize("viewer", household.USERNAMES)
+def test_no_statement_holds_what_a_part_shared_in_all_but_one_facet_keeps(
+    world: World, facet: Facet, viewer: str
+) -> None:
+    """Every member shares every facet but one, the same one: every part not the viewer's is
+    left out of their statements, and no statement, nor the journal of a statement's rows,
+    holds a datum the viewer may not see, on any tab, period, split or valuation."""
+    choices = dict.fromkeys(household.USERNAMES, frozenset(Facet) - {facet})
+    for username, shared in choices.items():
+        world.choose(username, shared)
+    door = Doorway(world.settings, world.bookkeeper, viewer)
+
+    answers = [door.answer(ask, given) for ask, given in narrowings(world) if ask in STATEMENTS]
+    answers += [
+        door.answer(ask, given)
+        for ask, given in narrowings(world)
+        if ask == "transactions" and "within" in given
+    ]
+    assert all(answer["state"] == "ready" for answer in answers)
+    seen = household.Seen("\n".join(json.dumps(answer) for answer in answers))
+
+    leaked = [
+        f"{secret.what}: {text!r}"
+        for secret in [*household.secrets(world.account_ids), *positions()]
+        if not secret.visible(viewer, choices)
+        for text in secret.texts
+        if text.replace(",", "") in seen
+    ]
+    assert not leaked, f"{viewer} could see private data: {leaked}"
+    mine = {"avery": ["Avery", "Joint accounts"], "blake": ["Blake", "Joint accounts"]}
+    parts = [a["scope"]["parts"] for a in answers if isinstance(a.get("scope"), dict)]  # type: ignore[index]
+    assert all(p == mine.get(viewer, ["Casey"]) for p in parts), parts
 
 
 @pytest.mark.parametrize("scenario", LEARNED_SCENARIOS)

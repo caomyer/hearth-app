@@ -33,10 +33,10 @@
       "key": "net_worth",
       "label": "Net worth",
       "now": "158206.46",
-      "before": null,
-      "change": null,
+      "before": "0",
+      "change": "158206.46",
       "share": null,
-      "tone": "quiet",
+      "tone": "favourable",
       "categories": [],
       "total": false,
       "depth": 0
@@ -274,9 +274,24 @@
           "amount": "-777.31"
         },
         {
+          "key": "taken",
+          "label": "Gains already counted in value, booked as income",
+          "amount": "0"
+        },
+        {
+          "key": "unpriced",
+          "label": "Holdings with no price, not valued",
+          "amount": "0.00"
+        },
+        {
           "key": "realised",
           "label": "Gains not booked as income",
-          "amount": "0.00"
+          "amount": "0"
+        },
+        {
+          "key": "rounding",
+          "label": "Rounding the books allow",
+          "amount": "0"
         }
       ],
       "end": "158206.46",
@@ -284,9 +299,9 @@
     },
     "valuing": {
       "priced_on": "2026-10-14",
-      "at_cost": [],
-      "cost_unknown": [],
-      "unvalued": []
+      "unpriced": [],
+      "unvalued": [],
+      "stale": 0
     },
     "unreviewed": {
       "rows": 0,
@@ -295,6 +310,8 @@
       "unplaced": 0,
       "unplaced_out": "0",
       "unplaced_in": "0"
-    }
+    },
+    "is_floor": false,
+    "late": []
   }
 }

@@ -31,13 +31,15 @@
         "value": "0",
         "cost": "0",
         "gain": "0",
-        "securities": false
+        "securities": false,
+        "is_floor": false
       },
       "end": {
         "value": "158206.46",
         "cost": "158206.46",
         "gain": "0.00",
-        "securities": true
+        "securities": true,
+        "is_floor": false
       },
       "change": "158206.46",
       "children": [
@@ -49,20 +51,22 @@
             "value": "0",
             "cost": "0",
             "gain": "0",
-            "securities": false
+            "securities": false,
+            "is_floor": false
           },
           "end": {
             "value": "72341.59",
             "cost": "72341.59",
             "gain": "0.00",
-            "securities": false
+            "securities": false,
+            "is_floor": false
           },
           "change": "72341.59",
           "children": [
             {
               "label": "Narwhal Joint",
               "account": {
-                "id": "zo9ZLCuijby7fBrh",
+                "id": "33rC0un4mA1XYtKv",
                 "name": "Narwhal Joint"
               },
               "since": "2026-08-01",
@@ -70,13 +74,15 @@
                 "value": "0",
                 "cost": "0",
                 "gain": "0",
-                "securities": false
+                "securities": false,
+                "is_floor": false
               },
               "end": {
                 "value": "20000.42",
                 "cost": "20000.42",
                 "gain": "0.00",
-                "securities": false
+                "securities": false,
+                "is_floor": false
               },
               "change": "20000.42",
               "children": []
@@ -84,7 +90,7 @@
             {
               "label": "Quokka Savings",
               "account": {
-                "id": "s-G862PuoBCUDszL",
+                "id": "6U1pT6hiLIuNN3Qn",
                 "name": "Quokka Savings"
               },
               "since": "2026-08-01",
@@ -92,13 +98,15 @@
                 "value": "0",
                 "cost": "0",
                 "gain": "0",
-                "securities": false
+                "securities": false,
+                "is_floor": false
               },
               "end": {
                 "value": "52341.17",
                 "cost": "52341.17",
                 "gain": "0.00",
-                "securities": false
+                "securities": false,
+                "is_floor": false
               },
               "change": "52341.17",
               "children": []
@@ -113,20 +121,22 @@
             "value": "0",
             "cost": "0",
             "gain": "0",
-            "securities": false
+            "securities": false,
+            "is_floor": false
           },
           "end": {
             "value": "85864.87",
             "cost": "85864.87",
             "gain": "0.00",
-            "securities": true
+            "securities": true,
+            "is_floor": false
           },
           "change": "85864.87",
           "children": [
             {
               "label": "Bilby Brokerage",
               "account": {
-                "id": "fmk-QZk69zWrjcgN",
+                "id": "EaRApI_RP5cgNOAG",
                 "name": "Bilby Brokerage"
               },
               "since": "2026-08-01",
@@ -134,13 +144,15 @@
                 "value": "0",
                 "cost": "0",
                 "gain": "0",
-                "securities": false
+                "securities": false,
+                "is_floor": false
               },
               "end": {
                 "value": "73519.27",
                 "cost": "73519.27",
                 "gain": "0.00",
-                "securities": true
+                "securities": true,
+                "is_floor": false
               },
               "change": "73519.27",
               "children": []
@@ -148,7 +160,7 @@
             {
               "label": "Wombat Shares",
               "account": {
-                "id": "8hFGTiXUSTF_nDZb",
+                "id": "nNblcRVV6sZMj1f6",
                 "name": "Wombat Shares"
               },
               "since": "2026-08-01",
@@ -156,13 +168,15 @@
                 "value": "0",
                 "cost": "0",
                 "gain": "0",
-                "securities": false
+                "securities": false,
+                "is_floor": false
               },
               "end": {
                 "value": "12345.60",
                 "cost": "12345.60",
                 "gain": "0.00",
-                "securities": true
+                "securities": true,
+                "is_floor": false
               },
               "change": "12345.60",
               "children": []
@@ -179,13 +193,15 @@
         "value": "0",
         "cost": "0",
         "gain": "0",
-        "securities": false
+        "securities": false,
+        "is_floor": false
       },
       "end": {
         "value": "0",
         "cost": "0",
         "gain": "0",
-        "securities": false
+        "securities": false,
+        "is_floor": false
       },
       "change": "0",
       "children": []
@@ -198,22 +214,24 @@
         "value": "0",
         "cost": "0",
         "gain": "0",
-        "securities": false
+        "securities": false,
+        "is_floor": false
       },
       "end": {
         "value": "158206.46",
         "cost": "158206.46",
         "gain": "0.00",
-        "securities": true
+        "securities": true,
+        "is_floor": false
       },
       "change": "158206.46",
       "children": []
     },
     "valuing": {
       "priced_on": "2026-10-14",
-      "at_cost": [],
-      "cost_unknown": [],
-      "unvalued": []
+      "unpriced": [],
+      "unvalued": [],
+      "stale": 0
     }
   }
 }

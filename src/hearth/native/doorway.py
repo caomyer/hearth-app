@@ -573,6 +573,8 @@ def _entry(position: int, entry: Entry, reason: str | None) -> Answer:
         "amount": _money(entry.amount),
         "sides": [_side(side) for side in entry.sides],
         "review": entry.review,
+        # Narrowed to categories, the part of it that is theirs: what a statement's line adds.
+        "part": _money(entry.part),
     }
 
 

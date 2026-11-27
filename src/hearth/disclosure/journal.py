@@ -21,7 +21,7 @@ fail one are not books (``books.compute``).
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -116,6 +116,9 @@ class Entry:
     """A check of its bank's balance that the books meet only by an entry reconciling the
     imported ledger with the bank, which nobody has confirmed yet (``books.reconciling``): it
     is not shown as matching its bank."""
+    part: Decimal | None = None
+    """For a journal narrowed to `Filter.categories`, the part of `amount` that is theirs, in
+    its sign: of an entry split across categories, only what a statement's line adds up."""
 
     @property
     def suggested(self) -> bool:
@@ -196,7 +199,7 @@ def journal(
             if check is not None and start <= check.date <= end:
                 found.append(((check.date, 1, index), check))
     found.sort(key=lambda pair: pair[0], reverse=True)
-    kept = [e for _, e in found if _keeps(e, narrowed, account)]
+    kept = [_part(e, narrowed) for _, e in found if _keeps(e, narrowed, account)]
     counts = Counts(
         everything=len(kept),
         unreviewed=sum(1 for e in kept if e.unreviewed),
@@ -221,6 +224,16 @@ def _opening(entry: Transaction) -> bool:
         root(p.account) == "Equity" and not p.account.startswith(REVIEW_EQUITY)
         for p in entry.postings
     )
+
+
+def _part(entry: Entry, narrowed: Filter) -> Entry:
+    """The entry, with the part of it the categories asked for are, in the sign of what it did
+    to the viewer's accounts."""
+    if not narrowed.categories:
+        return entry
+    wanted = set(narrowed.categories)
+    mine = sum((s.amount for s in entry.sides if s.category in wanted), Decimal(0))
+    return replace(entry, part=-mine)
 
 
 def _read_by(entry: Transaction, within: frozenset[str]) -> bool:

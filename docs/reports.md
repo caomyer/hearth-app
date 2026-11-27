@@ -16,7 +16,7 @@ The discipline is the same as for valuation (`docs/valuation.md`): a figure that
 | Income, expenses by category, net and savings rate, by month | `statement.income_statement` | an income or expense amount is in another currency (`excluded`); entries flagged `!` are counted as `unreviewed` |
 | Each account's balance, checked against the statements | `balances.account_balances` | the postings do not reproduce one of the account's balance assertions (`disagreements`) |
 | How much history each account holds, and from where | `coverage.account_coverage` | (it is the measure of completeness itself) |
-| What came in and went out, what was held, and why it changed, over the accounts given | `statements.flows`, `statements.sheets`, `statements.bridge` | a holding has no price (`Held.at_cost`) or neither price nor cost (`Held.unvalued`); an amount cannot be converted (`Flows.unconverted`, `Bridge.difference`) |
+| What came in and went out, what was held, and why it changed, over the accounts given | `statements.Ledger.flows`, `Ledger.held`, `statements.bridge` | a lot has no price (`Held.unpriced`, a floor) or a holding neither price nor cost (`Held.unvalued`); an amount cannot be converted (`Flows.unconverted`, `Bridge.difference`) |
 
 Amounts are `Decimal` throughout and are never converted between currencies.
 The savings rate is `None` in a month with no income, because any rate there would be invented.
@@ -56,21 +56,25 @@ Pass another `origin` function when feed-imported entries carry a different labe
 
 `statements` reads the books the way a business reads its own, over the accounts it is given and nothing else.
 Who may see which accounts is decided before it is asked (`hearth.disclosure.statements`, and "Statements" in `docs/privacy-boundary.md`).
-It has three parts that share one set of numbers, so they always agree:
+Each recompute reads the books into one `Ledger` (`Books.ledger`), so a statement over any accounts and days is a few lookups, never a pass over the history.
+It answers three things that share one set of numbers, so they always agree:
 
-- `flows`: every income and expense account's money over a period, and the money that moved what the accounts hold without being earned or spent;
-- `sheets`: what each account held at the end of a day, at cost and at market value;
-- `bridge`: why what the accounts hold changed between two sheets.
+- `Ledger.flows`: every income and expense account's money over a period, and every other amount that moved what the accounts hold;
+- `Ledger.held`: what each account held at the end of a day, at cost and at market value;
+- `bridge`: why what the accounts hold changed between two days.
 
 ### What each account holds
 
 - Money is worth its units.
-- A lot is held at its cost, and valued at the latest price on or before the day (`Books.prices`, the prices the recompute read, held in memory).
-- A holding with no price at all is valued at its cost and named (`Held.at_cost`), never left out and never valued at zero.
+- A lot is held at its cost, and at market value at the latest price on or before the day (`Books.prices`, the prices the recompute read, held compactly in memory as `valuation.pricetable.PriceTable`).
+- A lot with no price is not valued at market value, as Overview, Accounts and Holdings do not value it: it is named (`Held.unpriced`), and every market value it is in is a floor ("at least").
+  At cost it is its cost.
 - A holding booked without a lot, as hearth books what a brokerage reports, costs what it was worth on the day it was booked.
-  Less of one gives up its average cost, whatever it went for.
+  One booked before anything priced it, as a brokerage's report can be, enters the books on its first price, as an opening, at cost and at market value alike; so does money in a currency received before its first rate.
+- Less of a holding with no lot gives up its average cost, whatever it went for; moved between two accounts in one entry, it keeps what it cost.
+- Units of a holding already held, added against equity with no money, lot or price, as a split is booked, change its units and nothing else: no cost, no value, no opening.
 - A holding with neither a price nor a cost is left out of both values and named (`Held.unvalued`).
-- One booked when nothing said what it was worth, that has a price now, costs what it is worth now and is named (`Held.cost_unknown`).
+- Each statement says how many of the positions it values are at a stale price (`Held.stale`), as Overview does.
 
 ### What came in and went out
 
@@ -87,7 +91,7 @@ What it did to the accounts inside is one amount, and none of its categories is 
 
 | Figure | What it is |
 |---|---|
-| Take-home pay | Income of kind pay. Pay is counted as it reached the bank, so the statement starts from take-home pay. |
+| Take-home pay | Income of kind pay, as the books hold it. Pay is counted as it reached the bank, so the statement starts from take-home pay; a ledger that books gross pay with what was withheld beside it in the same entry shows the gross here and what was withheld under tax, and saved from work is the same either way. |
 | Tax | Expenses of kind tax. |
 | Spending | Expenses of kind spending, by the branch of `Expenses` each is under: the six largest by name, the rest as "Other spending", so every category is in one line. |
 | Saved from work | Take-home pay less tax and spending. |
@@ -96,7 +100,16 @@ What it did to the accounts inside is one amount, and none of its categories is 
 | Investment income | Income of kind investment income, realised gains among it. |
 | Other income | Income of kind other income, which is every income account no rule recognises. |
 | Net worth | What the accounts hold at the end of the period's last day, at market value or at cost. |
-| Market movement | The change in gain not yet realised (value less cost), less the gain that moves across the accounts' edge carried in or out. |
+| Market movement | What prices did to what was held over the period (below); nothing when prices did not move. |
+
+#### Spending here and on the dashboard
+
+The dashboard's spending (`Books.spends`, `figures.month_flows`) counts every expense but what is not spending, so tax is in it; the statement keeps tax as its own line.
+For the same parts and month the two agree: the dashboard's spending is the statement's spending and tax together (`tests/native/test_statements.py`).
+They differ where their rules do:
+
+- an amount in another currency is left out of the dashboard's figures, and converted here at the latest rate on or before its day, or left out and counted (`Flows.unconverted`) when there is none;
+- a row paid from accounts of different owners is in no part on the dashboard, so in nobody's spending; here it is counted when every account it moves is in the statement, and is one amount at the edge when one is not.
 
 ### Why net worth changed
 
@@ -104,17 +117,26 @@ What it did to the accounts inside is one amount, and none of its categories is 
 start + saved from work + investment income + market movement + other = end
 ```
 
-"Other" is never one hidden number: each part is its own line (`statements.Other`).
-Other income, less what was not counted as spending, plus opening balances and adjustments, money not placed yet, moves to and from accounts outside the statement, gains on holdings with no lot given up for more or less than their average cost, which the books booked as no income, and what entries leave over within the tolerance beancount balances them to, such as a lot whose units times its cost is not to the cent of what was paid.
+"Other" is never one hidden number: each part is its own line (`statements.Other`):
+
+- other income, less what was not counted as spending;
+- opening balances and adjustments, at market value with any gain a holding came in with;
+- money not placed yet;
+- moves to and from accounts outside the statement, at market value with the gain the holdings moved carried with them;
+- at market value, gains already counted in value, booked as income: when a holding is sold for a gain the books book as income, investment income says the gain, which the holding's value already held, and this line takes it back out, so it is not counted twice;
+- at market value, holdings with no price: what was paid for lots nothing prices, which no screen values, and what a lot was worth when its first price came;
+- at cost, gains on holdings with no lot given up for more or less than their average cost, which the books booked as no income;
+- what entries leave over within the tolerance beancount balances them to.
 
 It adds up because every transaction balances.
-What the accounts hold at cost changes by exactly what each transaction's other postings weigh, which are the flows above, plus what a holding without a lot gave up beyond what it weighs, which is its own line.
-At market value the change is the change at cost plus the change in gain not yet realised, which is market movement plus the gain moves carried.
-A holding that arrives with a gain it had already made, booked against an opening balance or moved in from outside, brings that gain with it: it is part of the move that brought it, not of the period's market movement.
+At cost, what the accounts hold changes by exactly what each transaction's other postings weigh, plus what a holding without a lot gave up beyond what it weighs.
+At market value every posting is marked at its day's price as well: market movement is the market value at the end, less at the start, less every posting's value on its day and each lot's value on its first price, so it is what prices did to what was held between those days, and the gap between a posting's mark and what it was booked at is said where it belongs.
+A sale a little off the day's close is the market's, and is in market movement.
 
 `Bridge.difference` is whatever is left, shown as its own line, never hidden.
-It can only come from an amount with no price to convert it.
-`tests/reports/test_statements.py` proves it nothing, to the cent, at cost and at market value, for every period between two of many days of a ledger with a pad, lots at cost, prices, a lot opened at a gain, a lot with no price, a sale, holdings booked without lots and one sold, moves out, a row not placed and a reconciling entry; and on `tests/household.py` and `tests/ledgers.py`.
+It can only come from an amount nothing can price.
+`tests/reports/test_statements.py` proves it nothing, to the cent, at cost and at market value, for every period between two of many days of a ledger with a pad, lots at cost, prices, a lot opened at a gain, a lot with no price, a sale, holdings booked without lots and one sold, moves out, a row not placed and a reconciling entry.
+It works by hand, line by line, a holding moved between two accounts while its price rose, a split, a gain made before the period and taken in it, money in another currency spent, and a holding and money booked before anything priced them; and it checks `tests/household.py`, `tests/ledgers.py`, and the sample with its prices in `tests/native/test_statements.py`.
 
 ### Comparing, and colouring a change
 
@@ -122,13 +144,25 @@ A period is set against the same days a year before, so part of a year is never 
 A period is `covered` when the books hold every month it touches in full, by `figures.flows_cover`.
 A figure from a period the books do not hold in full is not set against anything: its earlier figure is none, never zero.
 
+A brokerage's holdings are known from the day it reported them (`books.positioned`), and nothing says what it held before.
+So a net worth on any day before that has no figure, and is set against nothing: net worth's start, and its end for a period that ended before; the account's start on the balance sheet; and the year in Year by year.
+Why net worth changed is then worked out without the account, and names it.
+
 A change is coloured only when it is both over 1,000 in the operating currency and over 10% of what it is set against (`statements.MATERIAL`, one named pair).
 The colour says whether it is good or bad for the household (`Tone`), never up or down: more spending or tax is unfavourable, more pay, saved or investment income favourable.
 The savings rate, net worth's other parts and other income are never coloured.
 
+No statement starts before the year the books begin in, nor before 1900 (`disclosure.statements.FLOOR`): such an ask is missing, as is one that starts after the books' own day.
+
 ### The other views
 
-- The income statement is the income and expense account tree for the period, with a cell for each calendar month, quarter or year the period touches, cut to it, and a total; each column says what of it rests on rows nobody has reviewed yet, at their suggested category, and how many nothing has placed.
+- The income statement is the income and expense account tree for the period, with a cell for each calendar month, quarter or year the period touches, cut to it, and a total; a category that comes to nothing over a span is left out of it; each column says what of it rests on rows nobody has reviewed yet, at their suggested category, and how many nothing has placed.
 - The balance sheet is every account at the start of the period beside its end, grouped Cash, Investments and Other assets, then Credit and Other liabilities, with cost and gain not yet realised as Holdings gives them, from the same lots (`valuation.holdings.Holding.cost`): none where a security is held with no lot, and no gain where it has no price; an account whose history begins inside the period says from when.
+  Its net worth at market value is Overview's, for the same parts and day.
 - Year by year is net worth, take-home pay, spending, saved from work and the savings rate for every year the books hold.
   A year is sparse when the books hold fewer than half its months in full, of those it has had so far for the year in progress (`SPARSE_SHARE`).
+
+### What it costs
+
+Measured over ten invented years, 18,500 transactions and 104,360 daily prices of forty securities, on a laptop: the price table takes 0.27 s to read and 3.2 MB to hold, and reading the ledger 0.22 s and 6.7 MB, each once a recompute.
+Then a summary's year so far takes under a millisecond, a 35-column income statement 5 ms, and year by year over eleven years 3 ms.

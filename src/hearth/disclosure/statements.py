@@ -25,6 +25,7 @@ from beancount.core.data import Directive
 
 from hearth import figures
 from hearth.accounts import Account
+from hearth.books import priced
 from hearth.categories import Kind
 from hearth.disclosure.common import Household, LeftOut, PartRef, left_out
 from hearth.disclosure.gate import Concealed
@@ -38,20 +39,19 @@ from hearth.reports.statements import (
     Columns,
     Flows,
     Held,
+    Ledger,
     Other,
     Period,
     Tone,
     Unreviewed,
     bridge,
     columns,
-    first_day,
-    flows,
     movement,
     share,
-    sheets,
     tone,
     total,
 )
+from hearth.reports.statements import read as read_ledger
 from hearth.valuation.holdings import holdings_at
 
 __all__ = [
@@ -89,6 +89,10 @@ it has had so far, for the year in progress): too little history to set against 
 
 OTHER_SPENDING = "Other spending"
 
+FLOOR = date(1900, 1, 1)
+"""No statement starts before this, whatever the books hold: a day of a year with no year
+before it to set against is no period anyone keeps books for."""
+
 GROUPS = {
     "Assets": ("Cash", "Investments", "Other assets"),
     "Liabilities": ("Credit", "Other liabilities"),
@@ -101,6 +105,8 @@ LABELS: Mapping[Other, str] = {
     Other.OPENING: "Opening balances and adjustments",
     Other.UNPLACED: "Not placed yet",
     Other.OUTSIDE: "Moved to or from accounts outside the statement",
+    Other.TAKEN: "Gains already counted in value, booked as income",
+    Other.UNPRICED: "Holdings with no price, not valued",
     Other.REALISED: "Gains not booked as income",
     Other.ROUNDING: "Rounding the books allow",
 }
@@ -156,23 +162,24 @@ class Valuing:
     market: bool
     priced_on: date | None
     """The newest price day behind a market value."""
-    at_cost: tuple[str, ...]
-    """Holdings with no price, valued at what they cost."""
-    cost_unknown: tuple[str, ...]
-    """Holdings booked with no cost and nothing to say what they were worth then, which cost
-    what they are worth now."""
+    unpriced: tuple[str, ...]
+    """Holdings with no price, not valued at market value, as no screen values them: every
+    market value they are in is a floor."""
     unvalued: tuple[str, ...]
-    """Holdings with neither a price nor a cost, left out."""
+    """Holdings with neither a price nor a cost, left out at cost and at market value."""
+    stale: int
+    """How many positions are valued at an old price (``networth.Freshness.STALE``)."""
 
 
-def _valuing(held: Sequence[Held], market: bool) -> Valuing:
+def _valuing(held: Sequence[Held], market: bool, end: Held) -> Valuing:
+    """How `held` was valued, with the stale prices behind `end`, the figure a page shows."""
     every = total(held)
     return Valuing(
         market=market,
         priced_on=every.priced if market else None,
-        at_cost=tuple(sorted(every.at_cost)) if market else (),
-        cost_unknown=tuple(sorted(every.cost_unknown)),
+        unpriced=tuple(sorted(every.unpriced)) if market else (),
         unvalued=tuple(sorted(every.unvalued)),
+        stale=end.stale if market else 0,
     )
 
 
@@ -186,6 +193,9 @@ class Reading:
     closing: dict[str, Held]
     covered: bool
     """Whether the books hold every month of it in full for every part in the scope."""
+    late: tuple[Account, ...] = ()
+    """Accounts of the scope whose holdings the books know only from a day after the period
+    began (`books.positioned`): what they held at its start is not known, never nothing."""
 
     @property
     def start(self) -> Held:
@@ -196,28 +206,44 @@ class Reading:
         return total(self.closing.values())
 
 
+def ledger(h: Household) -> Ledger:
+    """The books as statements read them: kept by the recompute, read here only for books
+    made without one."""
+    books = h.books
+    if books.ledger is not None:
+        return books.ledger
+    return read_ledger(books.entries, priced(books.prices), books.currency)
+
+
 def period_of(h: Household, start: date | None, end: date | None) -> Period:
     """The days a statement is asked for: this year so far unless told, and never past the
-    books' own day. One that starts after it is not there."""
+    books' own day. One that starts after it, or before the year the books begin in (or
+    `FLOOR`), or ends before it, is not there."""
     today = h.books.as_of
+    began = ledger(h).first_day(None)
+    floor = max(date(began.year, 1, 1) if began else date(today.year, 1, 1), FLOOR)
     first = start or date(today.year, 1, 1)
     last = min(end or today, today)
-    if first > last:
+    if first < floor or first > last:
         raise Concealed
     return Period(first, last)
 
 
 def read(h: Household, s: Scope, period: Period) -> Reading:
-    books = h.books
-    held = sheets(
-        books.entries, [period.before, period.end], s.ledger, books.prices, books.currency
+    """One period over the scope. Accounts whose holdings are known only from later than its
+    start (`books.positioned`) are left out of what it compares, and named."""
+    found = ledger(h)
+    late = tuple(
+        a for a in s.accounts if h.books.positioned.get(a.ledger_account, date.min) > period.before
     )
+    held = frozenset(a.ledger_account for a in s.accounts if a not in late)
     return Reading(
         period=period,
-        flows=flows(books.entries, period, s.ledger, books.kind, books.prices, books.currency),
-        opening=held[period.before],
-        closing=held[period.end],
+        flows=found.flows(period, held, h.books.kind),
+        opening=found.held(period.before, held),
+        closing=found.held(period.end, held),
         covered=covered(h, s, period),
+        late=late,
     )
 
 
@@ -290,6 +316,11 @@ class Summary:
     """Why net worth changed; None while a balance is not known."""
     valuing: Valuing
     unreviewed: Unreviewed
+    late: tuple[Account, ...] = ()
+    """Accounts whose holdings the books know only from inside the period: net worth's start,
+    and why it changed, are without them, and say so."""
+    floor: bool = False
+    """Whether net worth leaves out holdings with no price, so is at least what it says."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,6 +364,7 @@ def summary(h: Household, period: Period, *, market: bool) -> Summary:
     both = _Compared(now, read(h, s, against))
     n, t = now.flows, both.then.flows
     start, end = now.start, now.end
+    whole = total(ledger(h).held(period.end, s.ledger).values())
     return Summary(
         period=period,
         against=against,
@@ -340,8 +372,8 @@ def summary(h: Household, period: Period, *, market: bool) -> Summary:
         covered=now.covered,
         against_covered=both.then.covered,
         net_worth=_since_start(
-            end.value(market) if s.known else None,
-            start.value(market) if s.known and now.covered else None,
+            whole.value(market) if s.known and not _late(h, s, period.end) else None,
+            start.value(market) if s.known and now.covered and not now.late else None,
         ),
         savings_rate=both.line(
             "savings_rate", "Savings rate", n.savings_rate, t.savings_rate, Better.NEITHER
@@ -352,9 +384,16 @@ def summary(h: Household, period: Period, *, market: bool) -> Summary:
         market=movement(start, end, n) if s.known else None,
         lines=_lines(both),
         bridge=bridge(start, end, n, market=market) if s.known else None,
-        valuing=_valuing([start, end], market),
+        valuing=_valuing([start, whole], market, whole),
         unreviewed=n.unreviewed,
+        late=now.late,
+        floor=market and whole.is_floor,
     )
+
+
+def _late(h: Household, s: Scope, day: date) -> bool:
+    """Whether an account of the scope has holdings the books know only from after `day`."""
+    return any(h.books.positioned.get(a.ledger_account, date.min) > day for a in s.accounts)
 
 
 def _since_start(end: Decimal | None, start: Decimal | None) -> Line:
@@ -507,11 +546,9 @@ def income_statement(h: Household, period: Period, by: Columns) -> IncomeStateme
     spans = columns(period, by)
     if len(spans) > MOST_COLUMNS:
         raise Concealed
-    per = [
-        flows(books.entries, span, s.ledger, books.kind, books.prices, books.currency)
-        for span in spans
-    ]
-    whole = flows(books.entries, period, s.ledger, books.kind, books.prices, books.currency)
+    found = ledger(h)
+    per = [found.flows(span, s.ledger, books.kind) for span in spans]
+    whole = found.flows(period, s.ledger, books.kind)
     income = _tree("Income", per, whole)
     expenses = _tree("Expenses", per, whole)
     return IncomeStatement(
@@ -598,10 +635,8 @@ class BalanceSheet:
 def balance_sheet(h: Household, period: Period, *, market: bool) -> BalanceSheet:
     s = scope(h)
     books = h.books
-    held = sheets(
-        books.entries, [period.before, period.end], s.ledger, books.prices, books.currency
-    )
-    opening, closing = held[period.before], held[period.end]
+    found = ledger(h)
+    opening, closing = found.held(period.before, s.ledger), found.held(period.end, s.ledger)
     paid = {
         day: _paid(books.entries, day, s.ledger, books.currency)
         for day in (period.before, period.end)
@@ -610,11 +645,15 @@ def balance_sheet(h: Household, period: Period, *, market: bool) -> BalanceSheet
     rows: defaultdict[str, list[SheetRow]] = defaultdict(list)
     for account in sorted(s.accounts, key=lambda a: a.name):
         name = account.ledger_account
-        if name not in opening and name not in closing and name not in s.unknown:
+        reported = books.positioned.get(name, date.min) > period.before
+        if not ({name} & (opening.keys() | closing.keys() | s.unknown)) and not reported:
             continue
         unknown = name in s.unknown
-        start = None if unknown else opening.get(name, Held())
-        end = None if unknown else closing.get(name, Held())
+        # What a brokerage held before the day it first reported is not known, not nothing.
+        known_from = books.positioned.get(name, date.min)
+        late = known_from > period.before
+        start = None if unknown or late else opening.get(name, Held())
+        end = None if unknown or known_from > period.end else closing.get(name, Held())
         opened = began.get(name)
         rows[_group(account, start, end, books.invested)].append(
             SheetRow(
@@ -624,8 +663,8 @@ def balance_sheet(h: Household, period: Period, *, market: bool) -> BalanceSheet
                 account=account,
                 since=opened if opened is not None and opened > period.before else None,
                 paid=(
-                    None if unknown else paid[period.before].get(name, Decimal(0)),
-                    None if unknown else paid[period.end].get(name, Decimal(0)),
+                    None if unknown or late else paid[period.before].get(name, Decimal(0)),
+                    None if end is None else paid[period.end].get(name, Decimal(0)),
                 ),
             )
         )
@@ -662,7 +701,7 @@ def balance_sheet(h: Household, period: Period, *, market: bool) -> BalanceSheet
             _sum([assets.end, liabilities.end]),
             paid=_paid_sum([assets, liabilities]),
         ),
-        valuing=_valuing([*opening.values(), *closing.values()], market),
+        valuing=_valuing([*opening.values(), *closing.values()], market, total(closing.values())),
     )
 
 
@@ -749,7 +788,8 @@ def years(h: Household, *, market: bool) -> Years:
     """Every year the books hold of the viewer's statement scope, oldest first."""
     s = scope(h)
     books = h.books
-    first = first_day(books.entries, s.ledger)
+    books_read = ledger(h)
+    first = books_read.first_day(s.ledger)
     if first is None:
         return Years(s, market, ())
     today = books.as_of
@@ -757,10 +797,12 @@ def years(h: Household, *, market: bool) -> Years:
         Period(date(y, 1, 1), min(date(y, 12, 31), today))
         for y in range(first.year, today.year + 1)
     ]
-    held = sheets(books.entries, [p.end for p in spans], s.ledger, books.prices, books.currency)
     found = []
     for span in spans:
-        moved = flows(books.entries, span, s.ledger, books.kind, books.prices, books.currency)
+        moved = books_read.flows(span, s.ledger, books.kind)
+        # A year that ended before an account's holdings were first reported has no net worth
+        # the books know: never one without them that reads as whole.
+        late = any(books.positioned.get(a, date.min) > span.end for a in s.ledger)
         months = _months(span)
         whole = sum(
             1
@@ -772,7 +814,11 @@ def years(h: Household, *, market: bool) -> Years:
                 year=span.start.year,
                 partial=span.end != date(span.start.year, 12, 31),
                 sparse=Decimal(whole) < SPARSE_SHARE * len(months),
-                net_worth=total(held[span.end].values()).value(market) if s.known else None,
+                net_worth=(
+                    total(books_read.held(span.end, s.ledger).values()).value(market)
+                    if s.known and not late
+                    else None
+                ),
                 pay=moved.pay,
                 spending=moved.spending,
                 saved=moved.saved,
