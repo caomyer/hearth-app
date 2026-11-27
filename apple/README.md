@@ -6,7 +6,7 @@ Nothing is computed twice: every figure on screen is one hearth worked out.
 
 The plan and the screens it is building towards are in `.lavish/hearth-apple.html`.
 For now the app opens a household's existing hearth data on this Mac in place, for a member who signs in, or the invented sample household.
-It shows the Overview, the journal (Transactions), Holdings, the accounts and each account's own page, lets a member review what their banks sent, and brings the household's connections up to date when the person allows it.
+It shows the Overview, the journal (Transactions), Holdings, Statements, the accounts and each account's own page, lets a member review what their banks sent, and brings the household's connections up to date when the person allows it.
 
 ## Opening books
 
@@ -52,11 +52,20 @@ It shows the Overview, the journal (Transactions), Holdings, the accounts and ea
   Nothing here changes a price or a lot: a price is entered by hand in Hearth in the browser.
 - The list fits the window it is given: narrower, the units go under each name, then the gain under the value.
 
+## Statements
+
+- Statements reads the books the way a business reads its own, over the parts of the household the member may see in full: their own accounts, joint accounts with their co-owners, and another member's only when that member shares everything; each tab says whose accounts it reads and whom it is without (`docs/native.md`, "Statements").
+- Summary sets this year so far against the same days a year before, or a whole year against the one before: net worth and its change, the savings rate, spending and its change, what the market added, the income statement in a few lines, and why net worth changed, which says it matches the balance sheet or shows any difference.
+- A change is coloured only when it is both over $1,000 and over 10%, and the colour says good or bad for the household, never up or down; every change has its arrow and its word as well.
+- Income statement is the income and expense account tree, a column a month, quarter or year, with net income and how many rows of each column nobody has reviewed yet; Balance sheet is every account at the start of the period beside its end, with cost and gain not yet realised for investments, at market value or at cost; Year by year is every year the books hold, a year with too little of it in the books marked sparse.
+- The period and the valuation are chosen at the top and apply to every tab.
+  A figure that adds up rows opens Transactions narrowed to exactly those rows, and an account opens its page.
+
 ## How it fits together
 
-- `HearthKit/` is everything that is not a view: which books are open, who is signed in and what the engine may ask the banks (`Session`, `Setup`, `Consent`), starting the engine, signing in to it, asking it for a screen and asking it to sync (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Banks`, `Review`, `Holdings`, `PriceHistory`, `Money`, `Quantity`, `Day`), each screen's state (`Desk`, `ScreenModel`, `SyncModel`, `JournalModel` with its `JournalFilter`, and `ReviewModel` with its `ReviewQuery`), the review decisions and the one an Undo takes back (`Decisions`), and how figures, balances, holdings and decisions are written for a person (`Figures`, `AccountWords`, `HoldingsWords`, `SyncWords`, `ReviewWords`).
+- `HearthKit/` is everything that is not a view: which books are open, who is signed in and what the engine may ask the banks (`Session`, `Setup`, `Consent`), starting the engine, signing in to it, asking it for a screen and asking it to sync (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Banks`, `Review`, `Holdings`, `PriceHistory`, `Statements`, `Money`, `Quantity`, `Day`), each screen's state (`Desk`, `ScreenModel`, `SyncModel`, `JournalModel` with its `JournalFilter`, `ReviewModel` with its `ReviewQuery`, and `StatementsModel`), the review decisions and the one an Undo takes back (`Decisions`), and how figures, balances, holdings and decisions are written for a person (`Figures`, `AccountWords`, `HoldingsWords`, `StatementWords`, `SyncWords`, `ReviewWords`).
   It is a Swift package, so it builds and tests without the app.
-- `Hearth/` is the app: one window, with the start screen, signing in, and the books, with the sync control in the toolbar: a sidebar of Overview, Review, Transactions, Holdings, Accounts and every account the member may see, and the screen chosen.
+- `Hearth/` is the app: one window, with the start screen, signing in, and the books, with the sync control in the toolbar: a sidebar of Overview, Review, Transactions, Holdings, Statements, Accounts and every account the member may see, and the screen chosen.
   An account's name anywhere opens the account; a category opens Transactions narrowed to it.
 - `engine/main.py` and `scripts/bundle-engine.sh` put a pinned Python, everything `uv.lock` names, and `src/hearth` into the app's resources, signed as the app is signed.
 - On the Python side, `hearth.native` is the doorway: `hearth bridge` answers the app over standard input and output, one JSON object a line, with views from `hearth.disclosure` and nothing else (`docs/native.md`).
@@ -116,7 +125,7 @@ HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE
 ```
 
 - `-openBooks sample|own` opens those books at once.
-- `-startScreen overview|review|transactions|holdings|accounts|account:<name>|holding:<symbol>` opens that screen; an account is found by its name once the accounts are in, and a holding by its symbol, with its price beside Holdings, once Holdings is in.
+- `-startScreen overview|review|transactions|holdings|statements|accounts|account:<name>|holding:<symbol>|statements:<tab>` opens that screen, Statements on `summary`, `incomeStatement`, `balanceSheet` or `years`; an account is found by its name once the accounts are in, and a holding by its symbol, with its price beside Holdings, once Holdings is in.
 - `-firstReview YES` opens the sample as a first import leaves it: two years, over a thousand rows, none reviewed (`hearth demo --first-review`).
 - `-sampleAsOf YYYY-MM-DD` opens the sample as it stood on that day (`hearth demo --as-of`).
   The sample is drawn back from the day it is opened, so what waits in its Review changes from day to day; the UI tests that work Review pin it this way.

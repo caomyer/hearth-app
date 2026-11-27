@@ -22,12 +22,15 @@ public enum Asked: Sendable, Hashable {
     case number(Int)
     /// Ids, each with text: the rows a decision showed.
     case table([String: String])
+    /// Several pieces of text: the categories a statement's line adds up.
+    case list([String])
 
     var json: Any {
         switch self {
         case .text(let text): text
         case .number(let number): number
         case .table(let table): table
+        case .list(let list): list
         }
     }
 }

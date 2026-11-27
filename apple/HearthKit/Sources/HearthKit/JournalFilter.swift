@@ -19,16 +19,34 @@ public struct JournalFilter: Sendable, Hashable {
     public var category: CategoryRef?
     public var text: String
     public var show: Show
+    /// The rows a statement's figure adds up, which it opens onto.
+    public var statement: StatementRows?
 
     public init(
         period: Period = .yearToDate, account: AccountRef? = nil, category: CategoryRef? = nil,
-        text: String = "", show: Show = .everything
+        text: String = "", show: Show = .everything, statement: StatementRows? = nil
     ) {
         self.period = period
         self.account = account
         self.category = category
         self.text = text
         self.show = show
+        self.statement = statement
+    }
+
+    /// The rows a statement's figure adds up: those of the categories it names, each exactly,
+    /// among the rows the viewer's statements read, which leave out moves to accounts they
+    /// do not read (`hearth.native.doorway`, `within`).
+    public struct StatementRows: Sendable, Hashable {
+        /// What the figure is called: "Dining", "Take-home pay".
+        public let label: String
+        /// Every category the figure adds up; empty for every row the statements read.
+        public let categories: [String]
+
+        public init(label: String, categories: [String]) {
+            self.label = label
+            self.categories = categories
+        }
     }
 
     /// The words to find, as they will be asked for: without the spaces around them.
@@ -46,6 +64,10 @@ public struct JournalFilter: Sendable, Hashable {
         // The engine takes at most 200 characters of words to find.
         if !words.isEmpty { given["text"] = .text(String(words.prefix(200))) }
         if show != .everything { given["show"] = .text(show.rawValue) }
+        if let statement {
+            given["within"] = .text("statements")
+            if !statement.categories.isEmpty { given["categories"] = .list(statement.categories) }
+        }
         return given
     }
 
@@ -55,6 +77,7 @@ public struct JournalFilter: Sendable, Hashable {
         case account(AccountRef)
         case category(CategoryRef)
         case text(String)
+        case statement(StatementRows)
 
         public var id: String {
             switch self {
@@ -62,6 +85,7 @@ public struct JournalFilter: Sendable, Hashable {
             case .account: "account"
             case .category: "category"
             case .text: "text"
+            case .statement: "statement"
             }
         }
     }
@@ -74,6 +98,7 @@ public struct JournalFilter: Sendable, Hashable {
         if let account { tokens.append(.account(account)) }
         if let category { tokens.append(.category(category)) }
         if !words.isEmpty { tokens.append(.text(words)) }
+        if let statement { tokens.append(.statement(statement)) }
         return tokens
     }
 
@@ -85,6 +110,7 @@ public struct JournalFilter: Sendable, Hashable {
         case .account: filter.account = nil
         case .category: filter.category = nil
         case .text: filter.text = ""
+        case .statement: filter.statement = nil
         }
         return filter
     }

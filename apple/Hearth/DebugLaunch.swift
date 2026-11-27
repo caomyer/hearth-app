@@ -4,7 +4,7 @@ import HearthKit
 
 /// Ways to open a debug build straight onto a screen, so each can be looked at without a
 /// click: `-openBooks sample|own`,
-/// `-startScreen overview|review|transactions|holdings|holding:<symbol>|accounts|account:<name>`,
+/// `-startScreen overview|review|transactions|holdings|holding:<symbol>|statements|statements:<tab>|accounts|account:<name>`,
 /// `-appearance light|dark`,
 /// `-firstReview YES` for a sample none of whose two years is reviewed yet,
 /// `-sampleAsOf YYYY-MM-DD` for the sample as it stood that day, and, for a
@@ -76,10 +76,24 @@ enum StartScreen {
             case "transactions": .transactions
             case "holdings": .holdings
             case let named? where named.hasPrefix("holding:"): .holdings
+            case "statements": .statements
+            case let named? where named.hasPrefix("statements:"): .statements
             case "accounts": .accounts
             case let named? where named.hasPrefix("account:"): .accounts
             default: nil
             }
+        #else
+            nil
+        #endif
+    }
+
+    /// The tab of Statements to open on: `summary`, `incomeStatement`, `balanceSheet` or
+    /// `years`.
+    static var statementsTab: StatementsModel.Tab? {
+        #if DEBUG
+            guard let named = UserDefaults.standard.string(forKey: "startScreen"), named.hasPrefix("statements:")
+            else { return nil }
+            return StatementsModel.Tab(rawValue: String(named.dropFirst("statements:".count)))
         #else
             nil
         #endif

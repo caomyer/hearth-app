@@ -378,6 +378,43 @@ final class FirstLaunchTests: XCTestCase {
         waitFor(app.staticTexts["review.remaining"], toSay: "1")
     }
 
+    /// Statements opens on the Summary: net worth in whole dollars, why it changed adding up to
+    /// the balance sheet, and spending opening the journal onto exactly its rows.
+    @MainActor
+    func testStatementsSummaryAddsUpAndOpensItsRows() {
+        let app = sample(startingOn: "statements")
+
+        let netWorth = app.staticTexts["statements.netWorth"]
+        XCTAssertTrue(netWorth.waitForExistence(timeout: 60), "the summary did not open")
+        let figure = text(of: netWorth)
+        XCTAssertNotNil(figure.wholeMatch(of: /\$\d{1,3}(,\d{3})+/), "\(figure) is not a total in whole dollars")
+        let adds = app.descendants(matching: .any)["statements.why.difference"].firstMatch
+        XCTAssertTrue(adds.waitForExistence(timeout: 20), "why net worth changed is not shown")
+        XCTAssertTrue(
+            text(of: adds).contains("Matches the balance sheet") || adds.label.contains("Matches the balance sheet"),
+            "\(text(of: adds)) does not say it matches the balance sheet")
+
+        app.buttons["statements.spending"].click()
+        XCTAssertTrue(
+            app.buttons["Remove Spending, in Statements"].waitForExistence(timeout: 30),
+            "the journal was not narrowed to the summary's spending")
+    }
+
+    /// The balance sheet lists every account the viewer's statements read, each opening its
+    /// page.
+    @MainActor
+    func testTheBalanceSheetOpensAnAccount() {
+        let app = sample(startingOn: "statements:balanceSheet")
+
+        let sheet = app.descendants(matching: .any)["statements.sheet"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 60), "the balance sheet did not open")
+        let checking = sheet.buttons["Everyday checking"].firstMatch
+        XCTAssertTrue(checking.waitForExistence(timeout: 60), "the balance sheet did not list the account")
+        checking.click()
+        let balance = app.staticTexts["account.balance"]
+        XCTAssertTrue(balance.waitForExistence(timeout: 30), "the account did not open from the balance sheet")
+    }
+
     /// An unreviewed row of the member's own, opened from Transactions, is decided beside the
     /// journal; what was done and its Undo stay there after the row is no longer unreviewed.
     @MainActor

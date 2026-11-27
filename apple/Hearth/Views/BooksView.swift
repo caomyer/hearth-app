@@ -7,6 +7,7 @@ enum Place: Hashable {
     case review
     case transactions
     case holdings
+    case statements
     case accounts
     case account(String)
 }
@@ -34,6 +35,13 @@ final class Navigator {
         place = .transactions
         let period = desk.transactions.filter.period
         Task { await desk.transactions.apply(JournalFilter(period: period, category: category)) }
+    }
+
+    /// The journal, narrowed to exactly the rows a statement's figure adds up, over its days.
+    func show(_ rows: JournalFilter.StatementRows, from: Day, to: Day) {
+        place = .transactions
+        let filter = JournalFilter(period: .range(from: from, to: to), statement: rows)
+        Task { await desk.transactions.apply(filter) }
     }
 
     /// One account's own page, made the first time it is opened and kept while the books are.
@@ -130,6 +138,8 @@ struct BooksView: View {
                 .id("transactions")
         case .holdings:
             HoldingsView(model: navigator.desk.holdings)
+        case .statements:
+            StatementsView(model: navigator.desk.statements)
         case .accounts:
             AccountsView(model: navigator.desk.accounts)
         case .account(let id):
@@ -165,6 +175,9 @@ private struct Sidebar: View {
                 Label("Holdings", systemImage: "chart.line.uptrend.xyaxis")
                     .tag(Place.holdings)
                     .accessibilityIdentifier("sidebar.holdings")
+                Label("Statements", systemImage: "doc.text")
+                    .tag(Place.statements)
+                    .accessibilityIdentifier("sidebar.statements")
                 Label("Accounts", systemImage: "building.columns")
                     .tag(Place.accounts)
                     .accessibilityIdentifier("sidebar.accounts")

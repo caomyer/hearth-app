@@ -3,7 +3,7 @@ import Observation
 
 /// The screens of the books while they are open to someone, each asking the one engine: the
 /// Overview, the accounts the sidebar and the Accounts list show, Review, the journal, Holdings,
-/// and each account's own page as it is opened.
+/// Statements, and each account's own page as it is opened.
 @MainActor
 @Observable
 public final class Desk {
@@ -19,6 +19,9 @@ public final class Desk {
     public let whereItWent: ScreenModel<WherePage>
     /// What the investment accounts the viewer may see hold.
     public let holdings: ScreenModel<Holdings>
+    /// The books read the way a business reads its own: Summary, the income statement, the
+    /// balance sheet and year by year.
+    public let statements: StatementsModel
 
     private let engine: any Asking
     private let signedOut: @MainActor () -> Void
@@ -38,6 +41,7 @@ public final class Desk {
         review = ReviewModel(engine: engine, decisions: decisions, pause: pause, signedOut: signedOut)
         whereItWent = ScreenModel(engine: engine, screen: "where", pause: pause, signedOut: signedOut)
         holdings = ScreenModel(engine: engine, screen: "holdings", pause: pause, signedOut: signedOut)
+        statements = StatementsModel(engine: engine, pause: pause, signedOut: signedOut)
         let transactions = transactions
         journals = [{ transactions }]
         decisions.whenDecided { [weak self] in await self?.decided(pause: pause) }

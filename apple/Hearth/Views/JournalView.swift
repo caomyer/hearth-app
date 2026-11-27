@@ -213,6 +213,7 @@ private struct JournalHead: View {
         case .account(let account): account.name
         case .category(let category): category.label
         case .text(let words): "\u{201C}\(words)\u{201D}"
+        case .statement(let rows): "\(rows.label), in Statements"
         }
     }
 }
