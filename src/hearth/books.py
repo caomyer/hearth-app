@@ -463,6 +463,7 @@ def compute(
         kinds=categories.kinds(_categories(entries), kinds or {}),
         prices=lookup,
         price_sources=tuple(price_sources),
+        ledger=statements.read(entries, priced(lookup), CURRENCY),
     )
 
 
@@ -1051,7 +1052,7 @@ class _Lookup:
         quote = self.lookup(symbol, on_or_before)
         return quote.as_of if quote is not None else None
 
-    def first(self, symbol: str) -> date | None:
+    def first(self, symbol: str, currency: str) -> date | None:
         return None
 
 

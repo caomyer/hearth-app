@@ -398,19 +398,19 @@ class Disclosure:
         """This period, this year so far unless told, against the same days a year before, over
         the parts the viewer may see in full (``hearth.disclosure.statements``)."""
         h = self._household()
-        return statements.summary(h, statements.period_of(h, start, end), market=market)
+        return statements.summary(h, _period(h, start, end), market=market)
 
     def income_statement(
         self, start: date | None, end: date | None, by: Columns
     ) -> statements.IncomeStatement:
         h = self._household()
-        return statements.income_statement(h, statements.period_of(h, start, end), by)
+        return statements.income_statement(h, _period(h, start, end), by)
 
     def balance_sheet(
         self, start: date | None, end: date | None, *, market: bool
     ) -> statements.BalanceSheet:
         h = self._household()
-        return statements.balance_sheet(h, statements.period_of(h, start, end), market=market)
+        return statements.balance_sheet(h, _period(h, start, end), market=market)
 
     def years(self, *, market: bool) -> statements.Years:
         return statements.years(self._household(), market=market)
@@ -707,6 +707,11 @@ class Disclosure:
             return None
         member = self._members[index]
         return MemberRef(member.username, member.display_name, index % IDENTITY_HUES + 1)
+
+
+def _period(h: Household, start: date | None, end: date | None) -> statements.Period:
+    """The days a statement is asked for, floored on what the viewer's statements read."""
+    return statements.period_of(h, statements.scope(h), start, end)
 
 
 def review_decisions(

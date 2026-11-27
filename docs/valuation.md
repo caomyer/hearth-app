@@ -44,6 +44,9 @@ Every stored price records:
 A raw close is what a share was worth that day.
 A dividend-adjusted close rewrites history every time a fund distributes, and would misstate past net worth, so adjusted figures are never read.
 
+A price typed by hand is kept only between 0.000001 and 1,000,000,000 and with at most 15 digits (`quotes.enterable`); anything else is refused in plain words.
+A price stored outside those bounds all the same is held whole and valued as it is, and never stops a recompute.
+
 The table is append-only.
 When a source sends a different price for a day it already priced, the newer row becomes current and the older one stays, so a wrong quote that once fed a figure remains visible (`PriceStore.revisions`).
 

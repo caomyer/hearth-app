@@ -56,7 +56,7 @@ Pass another `origin` function when feed-imported entries carry a different labe
 
 `statements` reads the books the way a business reads its own, over the accounts it is given and nothing else.
 Who may see which accounts is decided before it is asked (`hearth.disclosure.statements`, and "Statements" in `docs/privacy-boundary.md`).
-Each recompute reads the books into one `Ledger` (`Books.ledger`), so a statement over any accounts and days is a few lookups, never a pass over the history.
+Each recompute reads the books into one `Ledger` (`Books.ledger`), so a statement over any accounts and days is a few lookups, never a pass over the history; a statement asked of books without one is an error, never a quiet replay.
 It answers three things that share one set of numbers, so they always agree:
 
 - `Ledger.flows`: every income and expense account's money over a period, and every other amount that moved what the accounts hold;
@@ -66,13 +66,17 @@ It answers three things that share one set of numbers, so they always agree:
 ### What each account holds
 
 - Money is worth its units.
-- A lot is held at its cost, and at market value at the latest price on or before the day (`Books.prices`, the prices the recompute read, held compactly in memory as `valuation.pricetable.PriceTable`).
+- A lot is held at its cost, and at market value at the latest price on or before the day in the operating currency (`Books.prices`, the prices the recompute read, held compactly in memory as `valuation.pricetable.PriceTable`, which keeps any price exactly, and one too long or too large to pack as it is).
+  A price only ever quoted in another currency is no price in this one, and its first price is the first in this one.
 - A lot with no price is not valued at market value, as Overview, Accounts and Holdings do not value it: it is named (`Held.unpriced`), and every market value it is in is a floor ("at least").
   At cost it is its cost.
 - A holding booked without a lot, as hearth books what a brokerage reports, costs what it was worth on the day it was booked.
-  One booked before anything priced it, as a brokerage's report can be, enters the books on its first price, as an opening, at cost and at market value alike; so does money in a currency received before its first rate.
+  One booked before anything priced it, as a brokerage's report can be, stays on its own day and is converted at its first price, and so is money in a currency received before its first rate, with its income or spending in its own month; each figure that holds such an amount says how many (`Flows.later`), as a stale price is said.
+  At market value such a holding is not valued until its first price, which is then said on the unpriced line.
 - Less of a holding with no lot gives up its average cost, whatever it went for; moved between two accounts in one entry, it keeps what it cost.
-- Units of a holding already held, added against equity with no money, lot or price, as a split is booked, change its units and nothing else: no cost, no value, no opening.
+- A split is recognised by its shape, never by its other leg: in one commodity, with no lot and no price, an entry that takes the old position out of an account and puts the new one in the same account changes units and nothing else, no cost, no value, no opening, whatever else balances it.
+  Units added to a holding against an opening or a reconciling entry alone are never a split: they came from somewhere, and are an opening at what they were worth.
+  A split of lots, the old lots taken out at their cost and the new ones put in at theirs, needs no rule: its cost is the same, and the gap between its marks and its lots' cost is what the market did.
 - A holding with neither a price nor a cost is left out of both values and named (`Held.unvalued`).
 - Each statement says how many of the positions it values are at a stale price (`Held.stale`), as Overview does.
 
@@ -84,8 +88,9 @@ A transaction whose balance-sheet postings are all among the accounts is read in
 - a posting to `Equity:Review:` as money not placed yet, which counts in no income or spending;
 - any other equity posting as an opening balance or adjustment: what an account held before its history, a pad, a difference reconciling an imported ledger with a bank.
 
-A transaction that also moves an account outside them is a move across their edge.
+A transaction that also moves an account outside them, in any currency it moves, is a move across their edge.
 What it did to the accounts inside is one amount, and none of its categories is counted, as nothing says whose they were.
+The journal of a statement's rows (`within: "statements"`) reads every entry by the same rule, so each line's figure is what the rows it opens onto add up to, each by its part (tested over the household and the sample).
 
 ### The summary's figures
 
@@ -123,7 +128,7 @@ start + saved from work + investment income + market movement + other = end
 - opening balances and adjustments, at market value with any gain a holding came in with;
 - money not placed yet;
 - moves to and from accounts outside the statement, at market value with the gain the holdings moved carried with them;
-- at market value, gains already counted in value, booked as income: when a holding is sold for a gain the books book as income, investment income says the gain, which the holding's value already held, and this line takes it back out, so it is not counted twice;
+- at market value, gains already counted in value, booked as income: when an entry gives up a lot and books income, investment income says the gain, which the lot's value already held, and this line takes back the gap between what the lot given up was worth that day and what it cost, so it is not counted twice; a gap on any other posting, a buy or a reinvested dividend off the day's close, is market movement;
 - at market value, holdings with no price: what was paid for lots nothing prices, which no screen values, and what a lot was worth when its first price came;
 - at cost, gains on holdings with no lot given up for more or less than their average cost, which the books booked as no income;
 - what entries leave over within the tolerance beancount balances them to.
@@ -152,7 +157,8 @@ A change is coloured only when it is both over 1,000 in the operating currency a
 The colour says whether it is good or bad for the household (`Tone`), never up or down: more spending or tax is unfavourable, more pay, saved or investment income favourable.
 The savings rate, net worth's other parts and other income are never coloured.
 
-No statement starts before the year the books begin in, nor before 1900 (`disclosure.statements.FLOOR`): such an ask is missing, as is one that starts after the books' own day.
+No statement starts before the year the viewer's statements begin in, nor before 1900 (`disclosure.statements.FLOOR`): such an ask is missing, as is one that starts after the books' own day.
+The floor is of what the viewer reads, so whether a statement is there says nothing of when anyone else's history begins.
 
 ### The other views
 
@@ -164,5 +170,8 @@ No statement starts before the year the books begin in, nor before 1900 (`disclo
 
 ### What it costs
 
-Measured over ten invented years, 18,500 transactions and 104,360 daily prices of forty securities, on a laptop: the price table takes 0.27 s to read and 3.2 MB to hold, and reading the ledger 0.22 s and 6.7 MB, each once a recompute.
+The ledger is read once a recompute, in `books.compute`; every ask reads it, and none reads the entries.
+
+Measured over ten invented years, 18,500 transactions and 104,360 daily prices of forty securities, on a laptop: the price table takes 0.28 s to read and 3.2 MB to hold, and reading the ledger 0.23 s and 6.7 MB, each once a recompute.
 Then a summary's year so far takes under a millisecond, a 35-column income statement 5 ms, and year by year over eleven years 3 ms.
+On the sample (972 entries), reading the ledger takes 11 ms a recompute, and each statement asked through the doorway 1 to 2 ms.

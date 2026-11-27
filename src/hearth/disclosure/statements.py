@@ -17,7 +17,7 @@ account's balance is not known yet, nothing that adds up balances is a figure.
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 
@@ -25,7 +25,6 @@ from beancount.core.data import Directive
 
 from hearth import figures
 from hearth.accounts import Account
-from hearth.books import priced
 from hearth.categories import Kind
 from hearth.disclosure.common import Household, LeftOut, PartRef, left_out
 from hearth.disclosure.gate import Concealed
@@ -51,7 +50,6 @@ from hearth.reports.statements import (
     tone,
     total,
 )
-from hearth.reports.statements import read as read_ledger
 from hearth.valuation.holdings import holdings_at
 
 __all__ = [
@@ -169,6 +167,9 @@ class Valuing:
     """Holdings with neither a price nor a cost, left out at cost and at market value."""
     stale: int
     """How many positions are valued at an old price (``networth.Freshness.STALE``)."""
+    later: int = 0
+    """How many amounts were booked before anything priced them, and converted on their own
+    day at the first price there was."""
 
 
 def _valuing(held: Sequence[Held], market: bool, end: Held) -> Valuing:
@@ -207,20 +208,21 @@ class Reading:
 
 
 def ledger(h: Household) -> Ledger:
-    """The books as statements read them: kept by the recompute, read here only for books
-    made without one."""
-    books = h.books
-    if books.ledger is not None:
-        return books.ledger
-    return read_ledger(books.entries, priced(books.prices), books.currency)
+    """The books as statements read them, which the recompute read once (`Books.ledger`):
+    never read again on an ask."""
+    found = h.books.ledger
+    if found is None:
+        raise RuntimeError("books without a ledger: statements are read from a recompute's")
+    return found
 
 
-def period_of(h: Household, start: date | None, end: date | None) -> Period:
+def period_of(h: Household, s: Scope, start: date | None, end: date | None) -> Period:
     """The days a statement is asked for: this year so far unless told, and never past the
-    books' own day. One that starts after it, or before the year the books begin in (or
-    `FLOOR`), or ends before it, is not there."""
+    books' own day. One that starts after it, or before the year the viewer's statements
+    begin in (or `FLOOR`), or ends before it, is not there: the floor is of what the viewer
+    reads, so whether an ask is there says nothing of anyone else's history."""
     today = h.books.as_of
-    began = ledger(h).first_day(None)
+    began = ledger(h).first_day(s.ledger)
     floor = max(date(began.year, 1, 1) if began else date(today.year, 1, 1), FLOOR)
     first = start or date(today.year, 1, 1)
     last = min(end or today, today)
@@ -384,7 +386,7 @@ def summary(h: Household, period: Period, *, market: bool) -> Summary:
         market=movement(start, end, n) if s.known else None,
         lines=_lines(both),
         bridge=bridge(start, end, n, market=market) if s.known else None,
-        valuing=_valuing([start, whole], market, whole),
+        valuing=replace(_valuing([start, whole], market, whole), later=n.later),
         unreviewed=n.unreviewed,
         late=now.late,
         floor=market and whole.is_floor,
@@ -538,6 +540,8 @@ class IncomeStatement:
     net_total: Decimal
     unreviewed: Unreviewed
     """Of the whole period."""
+    later: int = 0
+    """Amounts converted on their own day at a later first price (`Flows.later`)."""
 
 
 def income_statement(h: Household, period: Period, by: Columns) -> IncomeStatement:
@@ -565,6 +569,7 @@ def income_statement(h: Household, period: Period, by: Columns) -> IncomeStateme
         net=tuple(i - e for i, e in zip(income.cells, expenses.cells, strict=True)),
         net_total=income.total - expenses.total,
         unreviewed=whole.unreviewed,
+        later=whole.later,
     )
 
 

@@ -7,7 +7,7 @@ any tab, for any period and at cost or at market value, depends on a part it lea
 """
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -20,7 +20,10 @@ from hearth.disclosure import Disclosure, Worth, may_learn, rulings_in
 from hearth.months import Month
 from hearth.native.doorway import Doorway
 from hearth.plaid import feed
+from hearth.reports import statements as statements_engine
 from hearth.sharing import DEFAULT_SHARED, Facet
+from hearth.valuation.pricestore import PriceStore
+from hearth.valuation.quotes import Quote
 from tests import household
 from tests.conftest import FakeClock, World
 from tests.native.test_doorway import differences
@@ -614,3 +617,149 @@ def test_a_brokerage_known_only_from_inside_the_period_is_never_read_as_nothing_
     september = answer("statement_summary", {"from": "2026-09-01", "to": "2026-09-30"})
     assert september["net_worth"]["now"] is None
     assert september["net_worth"]["tone"] == "quiet"
+
+
+def test_the_recompute_reads_the_ledger_once_and_every_statement_reads_that(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The books a recompute leaves hold the ledger read once; a statement asked afterwards
+    reads that and never the history again."""
+    found = world.bookkeeper.status.books
+    assert found is not None
+    assert found.ledger is not None
+
+    def replayed(*_: object) -> None:
+        raise AssertionError("a statement read the history again")
+
+    monkeypatch.setattr(statements_engine.Ledger, "read", replayed)
+    for screen in ("statement_summary", "income_statement", "balance_sheet", "year_by_year"):
+        assert ask(world, "avery", screen)["state"] == "ready", screen
+
+
+@pytest.mark.parametrize("price", ["1234.567890123456789012345", "1E+200", "0.1E-130"])
+def test_a_price_no_table_can_pack_is_refused_at_entry_and_never_stops_a_recompute(
+    world: World, price: str
+) -> None:
+    """Typed by hand, a price too long or too large is refused with a plain word; one that is
+    stored all the same, as an older hearth may have kept it, is held whole, and the books are
+    still worked out."""
+    avery = world.signed_in("avery")
+    form = {"csrf": world.csrf(avery), "symbol": "ZQAA", "day": "2026-10-14", "price": price}
+
+    refused = avery.post("/net-worth/prices", data=form)
+
+    assert refused.headers["location"] == "/net-worth?outcome=price-out-of-range"
+    page = avery.get(refused.headers["location"]).text
+    assert "between 0.000001 and 1,000,000,000" in page
+    conn = world.connect()
+    try:
+        PriceStore(conn).record(
+            Quote("ZQAA", date(2026, 10, 14), Decimal(price), "USD", "hand", "older", world.clock())
+        )
+    finally:
+        conn.close()
+    world.recompute()
+    status = world.bookkeeper.status
+    assert status.failure is None, status.failure
+    assert status.books is not None
+    assert status.books.prices("ZQAA", date(2026, 10, 15)).price == Decimal(price)  # type: ignore[union-attr]
+    assert ask(world, "avery", "balance_sheet")["state"] == "ready"
+
+
+def test_whether_a_statement_is_there_says_nothing_of_anyone_elses_history(world: World) -> None:
+    """An account nobody in Avery's statements owns, whose history begins in 2020: every
+    statement Avery can ask for, over every year back to then, is there or missing exactly as
+    before it was in the books."""
+    years = [{"from": f"{y}-01-01", "to": f"{y}-12-31"} for y in range(2019, 2027)]
+
+    def states(viewer: str) -> list[str]:
+        return [
+            ask(world, viewer, screen, **period)["state"]
+            for period in years
+            for screen in ("statement_summary", "income_statement", "balance_sheet")
+        ]
+
+    before = {viewer: states(viewer) for viewer in household.USERNAMES}
+    book(
+        world,
+        "\n2020-01-01 open Assets:Zq:Elsewhere2020\n2020-01-01 open Equity:Elsewhere\n"
+        '2020-01-02 * "Opening"\n  Assets:Zq:Elsewhere2020  100.00 USD\n  Equity:Elsewhere\n',
+    )
+    assert {viewer: states(viewer) for viewer in household.USERNAMES} == before
+
+
+FOREIGN_GIFT = """
+2026-08-01 open Assets:Zq:Abroad
+2026-10-06 * "Payee Two Currencies" ""
+  Assets:Zq:AverySolo  -50.00 USD
+  Assets:Zq:Abroad  -10 EUR
+  Expenses:Avocados  50.00 USD
+  Expenses:Avocados  10 EUR
+"""
+
+
+def journal_sum(
+    world: World, viewer: str, line_: dict[str, Any], period: dict[str, Any]
+) -> Decimal:
+    """What the journal a line opens onto adds up to, every page of it."""
+    found, offset = Decimal(0), 0
+    while True:
+        page = ask(
+            world,
+            viewer,
+            "transactions",
+            within="statements",
+            categories=line_["categories"],
+            offset=offset,
+            limit=200,
+            **period,
+        )
+        found += sum((Decimal(e["part"]) for e in page["entries"]), Decimal(0))
+        offset += len(page["entries"])
+        if offset >= page["total"] or not page["entries"]:
+            return found
+
+
+def test_every_line_is_what_the_rows_it_opens_onto_add_up_to(world: World) -> None:
+    """For every viewer and every line of the summary that adds up rows, the journal it opens
+    onto adds up to it, with an entry in two currencies that crosses the statement's edge
+    left out of both."""
+    book(world, FOREIGN_GIFT)
+    for viewer in household.USERNAMES:
+        summary = ask(world, viewer, "statement_summary")
+        for found in summary["lines"]:
+            if not found["categories"]:
+                continue
+            rows = journal_sum(world, viewer, found, summary["period"])
+            income = found["key"] in ("pay", "investment_income", "other_income")
+            assert (rows if income else -rows) == D(found["now"]), (viewer, found["key"])
+    avocados = line(ask(world, "avery", "statement_summary"), "spending:Expenses:Avocados")
+    assert D(avocados["now"]) == D("1311.07") + D("88.83")
+
+
+def test_every_line_of_the_sample_is_what_its_rows_add_up_to(tmp_path: Path) -> None:
+    settings, keeper = sample(tmp_path)
+    for viewer in ("avery", "blake"):
+        door = Doorway(settings, keeper, viewer)
+        summary: dict[str, Any] = door.answer("statement_summary")
+        for found in summary["lines"]:
+            if not found["categories"]:
+                continue
+            total, offset = Decimal(0), 0
+            while True:
+                page: dict[str, Any] = door.answer(
+                    "transactions",
+                    {
+                        "within": "statements",
+                        "categories": found["categories"],
+                        "offset": offset,
+                        "limit": 200,
+                        **summary["period"],
+                    },
+                )
+                total += sum((Decimal(e["part"]) for e in page["entries"]), Decimal(0))
+                offset += len(page["entries"])
+                if offset >= page["total"] or not page["entries"]:
+                    break
+            income = found["key"] in ("pay", "investment_income", "other_income")
+            assert (total if income else -total) == D(found["now"]), (viewer, found["key"])

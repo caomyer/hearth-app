@@ -10,15 +10,16 @@ to the cent at cost and at market value, for every period between the days below
 for each way market movement could be told wrongly says what it is, line by line.
 """
 
+import random
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from itertools import combinations
 from pathlib import Path
 
 import pytest
 from beancount import loader
-from beancount.core.data import Directive
+from beancount.core.data import Directive, Transaction
 
 from hearth import books, categories
 from hearth.reports.statements import (
@@ -382,8 +383,9 @@ def test_a_holding_with_no_lot_moved_between_own_accounts_keeps_its_cost() -> No
 
 
 def test_a_split_changes_units_and_nothing_else() -> None:
-    """Ten at 100 split into twenty at 50, worth 55 at the end: no opening, no cost, and the
-    100 it rose since is market movement."""
+    """Ten at 100, split into twenty at 50 by taking the old position out and putting the new
+    one in, worth 55 at the end: no opening, no cost, and the 100 it rose since is market
+    movement. With no lot, the split needs equity to balance its units, and is still one."""
     entries = load(
         MOVED
         + """
@@ -391,7 +393,8 @@ def test_a_split_changes_units_and_nothing_else() -> None:
   Assets:A  10 X
   Equity:Opening-Balances  -10 X
 2025-02-10 * "Split"
-  Assets:A  10 X
+  Assets:A  -10 X
+  Assets:A  20 X
   Equity:Opening-Balances  -10 X
 """
     )
@@ -412,6 +415,184 @@ def test_a_split_changes_units_and_nothing_else() -> None:
         Decimal(1000),
         Decimal(0),
     )
+
+
+def test_a_split_of_lots_is_read_by_their_cost() -> None:
+    """Ten lots at 100 split into twenty at 50, as a ledger books one: the same cost, and the
+    market's only move is from 50 to 55 after it."""
+    entries = load(
+        MOVED
+        + """
+2025-01-02 * "Opening position"
+  Assets:A  10 X {100 USD}
+  Equity:Opening-Balances
+2025-02-10 * "Split"
+  Assets:A  -10 X {100 USD}
+  Assets:A  20 X {50 USD}
+"""
+    )
+    prices = {
+        "X": [(date(2025, 1, 2), "100"), (date(2025, 2, 10), "50"), (date(2025, 3, 31), "55")]
+    }
+    period = Period(date(2025, 2, 1), date(2025, 3, 31))
+    market = why(entries, period, market=True, scope=frozenset({"Assets:A"}), prices=prices)
+
+    assert (market.start, market.end, market.movement) == (
+        Decimal(1000),
+        Decimal(1100),
+        Decimal(100),
+    )
+    assert market.other == 0
+
+
+def test_units_added_against_an_opening_are_an_opening_never_a_split() -> None:
+    """Ten held at 100; five more moved in against the opening account when the price is 120,
+    and the price is 130 at the end: 600 came in, and the market added 350."""
+    entries = load(
+        MOVED
+        + """
+2025-01-02 * "Holdings as reported"
+  Assets:A  10 X
+  Equity:Opening-Balances  -10 X
+2025-02-10 * "Moved in"
+  Assets:A  5 X
+  Equity:Opening-Balances  -5 X
+"""
+    )
+    prices = {
+        "X": [(date(2025, 1, 2), "100"), (date(2025, 2, 10), "120"), (date(2025, 3, 31), "130")]
+    }
+    period = Period(date(2025, 2, 1), date(2025, 3, 31))
+    scope = frozenset({"Assets:A"})
+
+    market = why(entries, period, market=True, scope=scope, prices=prices)
+    cost = why(entries, period, market=False, scope=scope, prices=prices)
+
+    assert (market.start, market.end) == (Decimal(1000), Decimal(1950))
+    assert market.others[Other.OPENING] == Decimal(600)
+    assert market.movement == Decimal(350)
+    assert (cost.end, cost.others[Other.OPENING]) == (Decimal(1600), Decimal(600))
+    assert market.difference == cost.difference == 0
+
+
+def test_a_carried_brokerages_reconciling_shares_are_an_opening() -> None:
+    """Two more shares than the imported ledger held, reconciled against its bank's report at
+    120, worth 130 at the end: 240 came in with the reconciling entry and cost that, and the
+    market added 10 a share on all twelve."""
+    entries = load(
+        MOVED
+        + """
+2024-01-01 open Equity:Ledger-Bank-Difference
+2025-01-02 * "Holdings as reported"
+  Assets:A  10 X
+  Equity:Opening-Balances  -10 X
+2025-02-10 * "Reconciling"
+  Assets:A  2 X
+  Equity:Ledger-Bank-Difference  -2 X
+"""
+    )
+    prices = {
+        "X": [(date(2025, 1, 2), "100"), (date(2025, 2, 10), "120"), (date(2025, 3, 31), "130")]
+    }
+    period = Period(date(2025, 2, 1), date(2025, 3, 31))
+    scope = frozenset({"Assets:A"})
+
+    market = why(entries, period, market=True, scope=scope, prices=prices)
+    cost = why(entries, period, market=False, scope=scope, prices=prices)
+
+    assert market.others[Other.OPENING] == Decimal(240)
+    assert market.movement == Decimal(320)
+    assert (cost.end, cost.others[Other.OPENING]) == (Decimal(1240), Decimal(240))
+
+
+def test_only_a_lot_given_up_is_a_gain_already_counted_in_value() -> None:
+    """Two buys at 100 on a day the close is 120: one with its dividend reinvested, one with
+    a little interest beside it. Neither gives up a lot, so neither is a gain taken: the 20 a
+    share over the price paid is what the market did, as is its fall to 110."""
+    entries = load(
+        MOVED
+        + """
+2024-01-01 open Income:Dividends
+2024-01-01 open Income:Interest
+2025-01-02 * "Opening"
+  Assets:Bank  2000.00 USD
+  Equity:Opening-Balances
+2025-02-10 * "Dividend reinvested"
+  Assets:A  2 X {100 USD}
+  Income:Dividends  -200 USD
+2025-02-11 * "Buy, and interest"
+  Assets:A  10 X {100 USD}
+  Assets:Bank  -995.00 USD
+  Income:Interest  -5.00 USD
+"""
+    )
+    prices = {"X": [(date(2025, 2, 10), "120"), (date(2025, 3, 31), "110")]}
+    scope = frozenset({"Assets:A", "Assets:Bank"})
+    period = Period(date(2025, 2, 1), date(2025, 3, 31))
+
+    market = why(entries, period, market=True, scope=scope, prices=prices)
+
+    assert market.investment_income == Decimal(205)
+    assert market.others[Other.TAKEN] == 0
+    # Twelve shares bought for 1,200 were worth 1,440 that day (+240), then fell 10 each.
+    assert market.movement == Decimal(240 - 120)
+    assert market.end == Decimal("1005.00") + Decimal(1320)
+    assert market.difference == 0
+
+
+def test_a_lot_priced_only_in_another_currency_is_not_priced_in_this_one() -> None:
+    """A lot whose only price is in euros has no price in dollars until one comes: until then
+    it is not valued, and its first dollar price is said on the unpriced line, never as the
+    market's."""
+    entries = load(
+        MOVED
+        + """
+2025-01-02 * "Opening position"
+  Assets:A  10 X {100 USD}
+  Equity:Opening-Balances
+"""
+    )
+    quotes = [
+        Quote("X", date(2025, 1, 2), Decimal(90), "EUR", "test", "X", FETCHED),
+        Quote("X", date(2025, 3, 1), Decimal(170), "USD", "test", "X", FETCHED),
+    ]
+    ledger = Ledger.read(entries, PriceTable.of(quotes), USD)
+    scope = frozenset({"Assets:A"})
+    start = total(ledger.held(FIRST_QUARTER.before, scope).values())
+    end = total(ledger.held(FIRST_QUARTER.end, scope).values())
+    market = bridge(start, end, ledger.flows(FIRST_QUARTER, scope, kind), market=True)
+
+    assert PriceTable.of(quotes).first("X", USD) == date(2025, 3, 1)
+    assert market.others[Other.UNPRICED] == Decimal(-1000) + Decimal(1700)
+    assert market.movement == 0
+    assert market.difference == 0
+
+
+def test_an_entry_in_two_currencies_that_crosses_the_edge_is_one_amount() -> None:
+    """A gift paid 50 from the bank and 10 euros from an account outside the statement: the
+    entry crosses the edge, so none of it is spending, in any currency, as the journal of the
+    statement's rows leaves it out."""
+    entries = load(
+        MOVED
+        + """
+2024-01-01 open Expenses:Gift
+2024-01-01 open Assets:Theirs
+2025-01-02 * "Opening"
+  Assets:Bank  100.00 USD
+  Equity:Opening-Balances
+2025-02-10 * "Gift"
+  Assets:Bank  -50.00 USD
+  Assets:Theirs  -10 EUR
+  Expenses:Gift  50.00 USD
+  Expenses:Gift  10 EUR
+"""
+    )
+    _, _, moved = read(
+        entries, FIRST_QUARTER, frozenset({"Assets:Bank"}), {"EUR": [(date(2025, 1, 1), "1.10")]}
+    )
+
+    assert moved.by_account == {}
+    assert moved.others(market=False)[Other.OUTSIDE] == Decimal("-50.00")
 
 
 def test_a_gain_made_before_the_period_and_taken_in_it_is_not_market_movement() -> None:
@@ -481,9 +662,10 @@ def test_money_in_another_currency_spent_is_no_gain_at_market_value() -> None:
     assert cost.difference == 0
 
 
-def test_a_holding_booked_before_anything_priced_it_enters_at_its_first_price() -> None:
-    """Reported mid-2024, first priced at 150 in March 2025: it opens then, at cost and at
-    market value alike, and nothing is left as a difference."""
+def test_a_holding_booked_before_anything_priced_it_is_converted_at_its_first_price() -> None:
+    """Reported mid-2024, first priced at 150 in March 2025: it is booked on its own day at
+    that first price, so at cost it held 1,500 all along; at market value it is not valued
+    until it is priced, and its first price is said on the unpriced line."""
     entries = load(
         MOVED
         + """
@@ -494,15 +676,19 @@ def test_a_holding_booked_before_anything_priced_it_enters_at_its_first_price() 
     )
     prices = {"X": [(date(2025, 3, 1), "150")]}
     scope = frozenset({"Assets:A"})
-    for market in (True, False):
-        found = why(entries, FIRST_QUARTER, market=market, scope=scope, prices=prices)
-        assert (found.start, found.end) == (Decimal(0), Decimal(1500))
-        assert found.others[Other.OPENING] == Decimal(1500)
-        assert found.movement in (None, Decimal(0))
-        assert found.difference == 0
+    cost = why(entries, FIRST_QUARTER, market=False, scope=scope, prices=prices)
+    market = why(entries, FIRST_QUARTER, market=True, scope=scope, prices=prices)
+
+    assert (cost.start, cost.end, cost.other) == (Decimal(1500), Decimal(1500), Decimal(0))
+    assert (market.start, market.end) == (Decimal(0), Decimal(1500))
+    assert market.others[Other.UNPRICED] == Decimal(1500)
+    assert market.movement == 0
+    assert market.difference == cost.difference == 0
 
 
-def test_money_received_before_any_rate_enters_at_the_first_rate() -> None:
+def test_money_received_before_any_rate_is_in_its_own_month_at_the_first_rate() -> None:
+    """Euros received in January, before the first rate in February: the gift is January's,
+    at that first rate, and the figure says it was converted at a later rate."""
     entries = load(
         MOVED
         + """
@@ -514,6 +700,10 @@ def test_money_received_before_any_rate_enters_at_the_first_rate() -> None:
     )
     prices = {"EUR": [(date(2025, 2, 1), "1.19")]}
     scope = frozenset({"Assets:Euro"})
+    january = Period(date(2025, 1, 1), date(2025, 1, 31))
+    _, _, moved = read(entries, january, scope, prices)
+    assert moved.other_income == Decimal("1190.00")
+    assert moved.later == 2
     for market in (True, False):
         found = why(entries, FIRST_QUARTER, market=market, scope=scope, prices=prices)
         assert found.end == Decimal("1190.00")
@@ -665,7 +855,8 @@ def test_the_price_table_answers_as_the_store_would() -> None:
 
     assert prices.price("X", date(2025, 1, 1), USD) is None
     assert prices.price("X", date(2025, 2, 9), USD) == Decimal("100.25")
-    assert prices.first("X") == date(2025, 1, 2)
+    assert prices.first("X", USD) == date(2025, 1, 2)
+    assert prices.first("X", "EUR") is None
     found = prices("X", date(2026, 1, 1))
     assert found is not None
     assert (found.as_of, found.price, found.fetched_at) == (
@@ -694,3 +885,74 @@ def test_a_category_that_comes_to_nothing_is_no_line() -> None:
     _, _, moved = read(entries, FIRST_QUARTER, frozenset({"Assets:Bank"}), {})
 
     assert moved.by_account == {}
+
+
+def naive_market(
+    entries: Iterable[Directive], day: date, scope: frozenset[str], prices: PriceTable
+) -> dict[str, Decimal]:
+    """What each account in `scope` is worth at the end of `day`, the long way: its units of
+    each commodity added up from every posting to then, at the latest price, a holding with
+    no price left out."""
+    held: dict[tuple[str, str], Decimal] = {}
+    for entry in entries:
+        if isinstance(entry, Transaction) and entry.date <= day:
+            for posting in entry.postings:
+                if posting.account in scope and posting.units is not None:
+                    key = (posting.account, posting.units.currency)
+                    held[key] = held.get(key, Decimal(0)) + Decimal(posting.units.number or 0)
+    found: dict[str, Decimal] = {}
+    for (account, commodity), quantity in held.items():
+        price = Decimal(1) if commodity == USD else prices.price(commodity, day, USD)
+        if quantity and price is not None:
+            found[account] = found.get(account, Decimal(0)) + quantity * price
+    return found
+
+
+def naive_categories(
+    entries: Iterable[Directive], period: Period, scope: frozenset[str]
+) -> dict[str, Decimal]:
+    """Each category over `period`, the long way: every entry dated in it whose balance-sheet
+    accounts are all in `scope`, its income and expense postings in dollars."""
+    found: dict[str, Decimal] = {}
+    for entry in entries:
+        if not isinstance(entry, Transaction) or entry.date not in period:
+            continue
+        legs = {
+            p.account
+            for p in entry.postings
+            if p.account.split(":")[0] in ("Assets", "Liabilities")
+        }
+        if not legs or not legs <= scope:
+            continue
+        for posting in entry.postings:
+            kind = posting.account.split(":")[0]
+            if kind in ("Income", "Expenses") and posting.units is not None:
+                assert posting.units.currency == USD
+                number = Decimal(posting.units.number or 0)
+                found[posting.account] = found.get(posting.account, Decimal(0)) + (
+                    -number if kind == "Income" else number
+                )
+    return {a: n for a, n in found.items() if n != 0}
+
+
+def test_the_ledger_read_once_answers_as_a_replay_of_the_entries_would(
+    entries: list[Directive],
+) -> None:
+    """The ledger a recompute reads once, asked over random periods and scopes, says what
+    adding up the entries afresh says: every account's market value at each end, and every
+    category's money over the period."""
+    rng = random.Random(20251126)  # noqa: S311 - a fixed seed, for periods and scopes
+    prices = table(PRICES)
+    ledger = Ledger.read(entries, prices, USD)
+    accounts = sorted(SCOPE | {"Assets:Theirs", "Assets:TheirsBroker"})
+    days = [date(2024, 12, 31) + timedelta(days=n) for n in range(0, 120)]
+    for _ in range(300):
+        first, last = sorted(rng.sample(days, 2))
+        scope = frozenset(rng.sample(accounts, rng.randint(1, len(accounts))))
+        period = Period(first, last)
+        for day in (period.before, period.end):
+            held = {a: h.market for a, h in ledger.held(day, scope).items() if h.market}
+            assert held == naive_market(entries, day, scope, prices), (day, scope)
+        assert ledger.flows(period, scope, kind).by_account == naive_categories(
+            entries, period, scope
+        ), (period, scope)
