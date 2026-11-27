@@ -305,6 +305,8 @@ How every figure is defined, and how the change in net worth adds up, is in `doc
 - Spending is without tax, which is its own line (`docs/reports.md`, "Tax is its own figure").
   The summary's `with_tax` holds the same `spending`, `savings_rate` and `lines` with tax counted as spending, each worked out by the engine, or is null when `scope.taxed` is false, as they would be the same.
   The app shows one or the other whole, by its switch, and adds nothing up: saved from work is the same either way, and a savings rate, being a ratio, could not be had by adding.
+  Pay is labelled "Pay before tax" where `scope.taxed`, as pay is then booked before it, and "Take-home pay" where not; Year by year's column follows the same words (`StatementWords.pay`).
+  Tax is signed: a period with more refunded than paid has a negative tax, labelled "Tax, less refunds", and `review.tax` is negative.
 - `why` is null while a balance is not known; otherwise `start`, `saved`, `investment_income`, `market` (null at cost), `other` and each of `others` by `key` and `label`, `end`, and `difference`, which is shown, never hidden.
 - `is_floor` says net worth leaves out holdings with no price, so is at least what it says; `late` names the accounts whose holdings the books know only from inside the period, which net worth's start, and why it changed, are without.
 - `valuing` says the day of the newest price (`priced_on`), the holdings with no price, not valued at market value (`unpriced`), those with neither a price nor a cost, left out (`unvalued`), how many positions are at a stale price (`stale`), and how many amounts, booked before anything priced them, were converted at the first price there was (`later`); the income statement says `later` of its whole period too.
