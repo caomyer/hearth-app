@@ -287,12 +287,13 @@ An entry is one of `transaction`, `transfer` or `balance` (`hearth.disclosure.jo
 `categories` keeps the entries booked to any of the categories it names, each exactly, as a statement's line adds up the rows of every category in it.
 `within: "statements"` keeps only the rows the viewer's statements read: entries every account of which is in them, so no move to an account outside them, and no balance check.
 A statement's figure opens onto exactly its rows by asking for both, with its period.
+Narrowed to `categories`, each entry also says its `part`: the part of its `amount` that is booked to them, in its sign, so the entries of a split row add up to the line that opened them; it is null on any other journal.
 
 ### Statements
 
 The four statement screens read the parts of the household the viewer may see in full, and nothing else (`docs/privacy-boundary.md`, "Statements"): their own accounts, joint accounts with their co-owners, and another member's only when that member shares every facet.
 Every answer says so in `scope`: whose accounts it reads (`parts`), whose it leaves out (`without`), what it is without of accounts hearth does not see (`leaves_out`, in the words a total uses), and how many of its balances are not known yet (`awaiting`), while which nothing that adds up balances is a figure.
-Without `from` and `to`, a statement is this year so far; a `to` past the books' own day ends on it, and a `from` after it is missing.
+Without `from` and `to`, a statement is this year so far; a `to` past the books' own day ends on it, and a `from` after it, or before the year the books begin in (or 1900), is missing.
 `valuation` is `market` unless asked for `cost`, and `columns` is `month` unless asked otherwise; an income statement of more than 36 columns is missing (`statements.MOST_COLUMNS`).
 How every figure is defined, and how the change in net worth adds up, is in `docs/reports.md`, "Statements".
 
@@ -300,10 +301,11 @@ How every figure is defined, and how the change in net worth adds up, is in `doc
   `before` is the same days a year before, or for `net_worth` the start of the period, and is null where the books do not hold that period in full (`covered`, `against_covered`).
   A savings rate is a ratio, written as a decimal string like money.
 - `why` is null while a balance is not known; otherwise `start`, `saved`, `investment_income`, `market` (null at cost), `other` and each of `others` by `key` and `label`, `end`, and `difference`, which is shown, never hidden.
-- `valuing` says the day of the newest price (`priced_on`), the holdings valued at cost for want of a price (`at_cost`), those whose cost is not known (`cost_unknown`) and those with neither, left out (`unvalued`).
+- `is_floor` says net worth leaves out holdings with no price, so is at least what it says; `late` names the accounts whose holdings the books know only from inside the period, which net worth's start, and why it changed, are without.
+- `valuing` says the day of the newest price (`priced_on`), the holdings with no price, not valued at market value (`unpriced`), those with neither a price nor a cost, left out (`unvalued`), and how many positions are at a stale price (`stale`).
 - `unreviewed` says how many rows nobody has checked yet (`rows`), what of income and expenses rests on them, and how many nothing has placed yet (`unplaced`), with the money they moved each way.
 - The income statement's `income` and `expenses` are trees of `name` (the ledger name, which narrows the journal to it and everything beneath it), `label`, `kind`, `cells`, `total` and `children`, largest first; `columns` says each column's days, whether the period cuts it short (`partial`) and its `unreviewed`; `net` is income less expenses.
-- The balance sheet's `assets`, `liabilities` and `net_worth` are rows of `label`, `account` (its id and name, which opens its page, for an account), `since` (the day an account's history begins, when that is inside the period), `start` and `end` (each `value`, `cost`, `gain` and whether it holds `securities`, null while not known), `change`, and `children`.
+- The balance sheet's `assets`, `liabilities` and `net_worth` are rows of `label`, `account` (its id and name, which opens its page, for an account), `since` (the day an account's history begins, when that is inside the period), `start` and `end` (each `value`, `cost` and `gain` as Holdings gives them, null where nothing says what it cost, whether it holds `securities`, and whether `value` `is_floor`; null while not known), `change`, and `children`.
 - `year_by_year` has a row a year: `year`, whether it is in progress (`partial`) or `sparse`, `net_worth`, `pay`, `spending`, `saved` and `savings_rate`.
 
 ## The boundary
@@ -318,7 +320,7 @@ The doorway is a page by another name, and is held to everything a page is.
   A new screen is covered the moment it is added to `SCREENS`; one that takes something to narrow it must be named in the crawl's `NARROWED`, or its plain ask is missing and the crawl fails.
   Narrowed screens are asked for every account in the household by id, every member's and the one nobody owns, every category and payee in it, each chip, periods and windows, and every security in it, cash and one nobody holds for a price history, and a narrowed journal must hold nothing the whole of it did not.
   Beside the household's secrets, it looks for each position's units and price as the doorway writes them, which every close of its history is too.
-  Every statement is asked for periods that cut months, a single day, a year back and none, at market value and at cost, split every way, and so is the journal of a statement's rows, by every category.
+  Every statement is asked for periods that cut months, a single day, a quarter and none, at market value and at cost, split every way, and so is the journal of a statement's rows, by every category; and again, statements alone, with every member sharing every facet but one, for each facet.
   It makes every review decision on every review row in the household and on rows in nobody's books, against every account, as the row said and as it did not, under forged groups, and takes back every ruling: one on anything not on the viewer's desk must answer `missing` and record nothing, and no review screen or decision may name a row on anyone else's desk.
 - Anything private answers exactly like something missing.
 

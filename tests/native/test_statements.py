@@ -14,19 +14,22 @@ from typing import Any
 
 import pytest
 
-from hearth import books, db, demo
+from hearth import accounts, books, db, demo, figures, members
 from hearth.config import Settings
-from hearth.disclosure import may_learn, rulings_in
+from hearth.disclosure import Disclosure, Worth, may_learn, rulings_in
+from hearth.months import Month
 from hearth.native.doorway import Doorway
 from hearth.plaid import feed
 from hearth.sharing import DEFAULT_SHARED, Facet
 from tests import household
-from tests.conftest import World
+from tests.conftest import FakeClock, World
 from tests.native.test_doorway import differences
 from tests.native.test_screens import kept  # noqa: F401 - a fixture
+from tests.test_positions import connected
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EVERYTHING = frozenset(Facet)
+NOTHING: frozenset[Facet] = frozenset()
 D = Decimal
 
 
@@ -91,6 +94,10 @@ def test_why_net_worth_changed_adds_up_to_the_balance_sheet(world: World) -> Non
         "unplaced": 0,
         # Avery said the 777.31 went to the joint savings hearth does not see.
         "outside": D("-777.31"),
+        # ZQAA had no price until Sep 30: until then it was not valued, then it was, at what
+        # it cost.
+        "taken": 0,
+        "unpriced": 0,
         "realised": 0,
         "rounding": 0,
     }
@@ -190,6 +197,7 @@ def test_the_balance_sheet_groups_accounts_start_beside_end(world: World) -> Non
         "cost": "12345.60",
         "gain": "0.00",
         "securities": True,
+        "is_floor": False,
     }
     # Every account's history begins inside the period, so it says from when.
     assert {a["since"] for g in assets["children"] for a in g["children"]} == {"2026-08-01"}
@@ -231,6 +239,91 @@ def test_year_by_year_marks_a_year_with_too_little_history(world: World) -> None
     assert year["sparse"] is True
     assert D(year["net_worth"]) == AVERY_NET_WORTH
     assert D(year["spending"]) == AVERY_SPENT
+
+
+def book(world: World, text: str) -> None:
+    """Entries added to the household's ledger, and the books recomputed over them."""
+    with world.ledger.open("a") as ledger:
+        ledger.write(text)
+    world.recompute()
+    assert world.bookkeeper.status.failure is None, world.bookkeeper.status.failure
+
+
+SPLIT = """
+2026-10-09 * "Payee Split Shop" ""
+  Assets:Zq:AverySolo  -100.00 USD
+  Expenses:Avocados  60.00 USD
+  Expenses:Umbrellas  40.00 USD
+"""
+
+
+def test_a_split_entry_opens_as_the_part_of_it_the_line_adds_up(world: World) -> None:
+    """An entry split across two categories is in each of their lines by its own part, and
+    the journal a line opens onto gives each entry's part, which add up to the line."""
+    book(world, SPLIT)
+    summary = ask(world, "avery", "statement_summary")
+    avocados = line(summary, "spending:Expenses:Avocados")
+
+    rows = ask(
+        world,
+        "avery",
+        "transactions",
+        within="statements",
+        categories=avocados["categories"],
+        **summary["period"],
+    )
+
+    split = next(e for e in rows["entries"] if e["payee"] == "Payee Split Shop")
+    assert (D(split["amount"]), D(split["part"])) == (D("-100.00"), D("-60.00"))
+    assert sum(-D(e["part"]) for e in rows["entries"]) == D(avocados["now"])
+    assert D(avocados["now"]) == D("1311.07") + D("88.83") + D("60.00")
+
+
+WITHHELD = """
+2026-10-10 open Income:Salary
+2026-10-10 open Expenses:Taxes
+2026-10-10 * "Payee Employer" ""
+  Assets:Zq:AverySolo  700.00 USD
+  Income:Salary  -1000.00 USD
+  Expenses:Taxes  300.00 USD
+"""
+
+
+def test_take_home_pay_is_pay_as_the_books_hold_it(world: World) -> None:
+    """Pay booked before what was withheld from it, beside it in the same entry: take-home pay
+    is pay as booked, 1,000, and the 300 withheld is tax, so saved from work is what reached
+    the bank less what was spent."""
+    book(world, WITHHELD)
+    summary = ask(world, "avery", "statement_summary")
+
+    assert D(line(summary, "pay")["now"]) == D("1000.00")
+    assert D(line(summary, "tax")["now"]) == D("300.00")
+    assert D(line(summary, "saved")["now"]) == D("700.00") - AVERY_SPENT
+
+
+def test_spending_on_the_dashboard_is_spending_and_tax_here(world: World) -> None:
+    """For the same parts and month, what the dashboard counts as spending (every expense but
+    what is not spending) is the statement's spending and tax together."""
+    book(world, WITHHELD)
+    books_now = world.bookkeeper.status.books
+    assert books_now is not None
+    conn = world.connect()
+    try:
+        everyone = accounts.all_accounts(conn)
+    finally:
+        conn.close()
+    owners = figures.ownership(everyone)
+    october = figures.month_flows(books_now, owners, Month(2026, 10))
+    parts = [
+        frozenset({world.member_ids["avery"]}),
+        frozenset(world.member_ids[u] for u in ("avery", "blake")),
+    ]
+    dashboard = sum((october.spent(p) for p in parts), D(0))
+
+    summary = ask(world, "avery", "statement_summary", **{"from": "2026-10-01", "to": "2026-10-31"})
+
+    statement = D(summary["spending"]["now"]) + D(line(summary, "tax")["now"])
+    assert dashboard == statement == D("1311.07") + D("1640.84") + D("300.00")
 
 
 def test_a_figure_opens_onto_exactly_the_rows_it_adds_up(world: World) -> None:
@@ -284,6 +377,31 @@ def test_a_statement_asked_for_in_another_shape_is_missing(
     assert ask(world, "avery", screen, **given) == {"state": "missing"}
 
 
+EXTREME = ["0001-01-01", "0002-02-29", "0002-03-01", "1899-12-31", "1900-01-01", "2025-12-31",
+           "2026-01-01", "2026-10-15", "2026-10-16", "9999-12-31"]  # fmt: skip
+"""Days from the first a date can be to the last, around the floor and the books' own day."""
+
+
+def test_no_statement_ask_raises_whatever_days_it_is_given(world: World) -> None:
+    """Every pair of extreme days, either way round, on every statement: each is answered,
+    ready or missing, and one that starts before the year the books begin in is missing."""
+    door = Doorway(world.settings, world.bookkeeper, "avery")
+    for first in EXTREME:
+        for last in EXTREME:
+            for screen, more in [
+                ("statement_summary", {"valuation": "cost"}),
+                ("balance_sheet", {}),
+                ("income_statement", {"columns": "year"}),
+            ]:
+                answer = door.answer(screen, {"from": first, "to": last, **more})
+                assert answer["state"] in ("ready", "missing"), (screen, first, last)
+                if first < "2026-01-01" or first > last or first > "2026-10-15":
+                    assert answer["state"] == "missing", (screen, first, last)
+        for screen in ("statement_summary", "balance_sheet", "income_statement"):
+            assert door.answer(screen, {"from": first})["state"] in ("ready", "missing")
+            assert door.answer(screen, {"to": first})["state"] in ("ready", "missing")
+
+
 # Nothing of a part left out, by subtraction or otherwise
 
 
@@ -294,7 +412,7 @@ def every_statement(world: World, viewer: str) -> list[dict[str, Any]]:
         {"from": "2026-08-01", "to": "2026-08-31"},
         {"from": "2026-09-01", "to": "2026-10-15"},
         {"from": "2026-10-03", "to": "2026-10-03"},
-        {"from": "2025-10-16", "to": "2026-10-15"},
+        {"from": "2026-07-01", "to": "2026-09-30"},
     ]
     found = []
     for period in periods:
@@ -310,6 +428,30 @@ def every_statement(world: World, viewer: str) -> list[dict[str, Any]]:
         assert answer["state"] == "ready", answer
         answer.pop("computed_at")
     return found
+
+
+@pytest.mark.parametrize("facet", list(Facet))
+def test_a_part_shared_in_all_but_one_facet_is_named_and_changes_nothing(
+    world: World, facet: Facet
+) -> None:
+    """Blake, and with Avery the joint account, share every facet but one: neither is in
+    Casey's statements, both are named, and every statement Casey can ask for is what it is
+    when they share nothing at all. Whichever facet is held back."""
+    world.choose("avery", NOTHING)
+    world.choose("blake", NOTHING)
+    alone = every_statement(world, "casey")
+    world.choose("avery", EVERYTHING - {facet})
+    world.choose("blake", EVERYTHING - {facet})
+
+    shared = every_statement(world, "casey")
+
+    assert shared[0]["scope"]["parts"] == ["Casey"]
+    assert shared[0]["scope"]["without"] == ["Avery", "Blake", "Joint accounts"]
+    assert shared == alone
+    # Shared in full, they are in.
+    world.choose("avery", EVERYTHING)
+    world.choose("blake", EVERYTHING)
+    assert every_statement(world, "casey")[0]["scope"]["without"] == []
 
 
 def test_nothing_of_the_joint_line_can_be_had_by_subtraction(world: World) -> None:
@@ -354,15 +496,14 @@ def test_the_fixtures_shapes_are_what_the_statement_screens_answer(kept: Doorway
         assert differences(kept.answer(screen), example["answer"]) == [], screen
 
 
-def test_why_net_worth_changed_adds_up_on_the_sample_for_every_member(tmp_path: Path) -> None:
-    """The sample household the app opens: two years of banks, cards, brokerages with lots at
-    cost and prices, moves between members, and lots bought for a cash amount not to the cent
-    of units times cost, which the books' rounding line holds. Every member's change in net
-    worth adds up to the cent, for a whole year, the year so far and stretches that cut months,
-    at market value and at cost, with nothing left as a difference."""
+def sample(
+    folder: Path, sources: tuple[str, ...] = (demo.PRICE_SOURCE,)
+) -> tuple[Settings, books.Bookkeeper]:
+    """The sample household the app opens, valued at the prices from `sources`: its own,
+    unless asked for none."""
     now = datetime(2026, 10, 18, 9, 0, tzinfo=UTC)
-    ledger = tmp_path / "household.beancount"
-    settings = Settings.in_directory(tmp_path, ledger=ledger)
+    ledger = folder / "household.beancount"
+    settings = Settings.in_directory(folder, ledger=ledger)
     db.initialise(settings.database)
     conn = db.connect(settings.database)
     try:
@@ -372,19 +513,34 @@ def test_why_net_worth_changed_adds_up_on_the_sample_for_every_member(tmp_path: 
     feed.initialise(settings.feed_database)
     demo.connect(settings, demo.plaid(lambda: now.astimezone().date(), ledger), now=now)
     keeper = books.Bookkeeper(
-        books.from_household(settings, rulings=rulings_in, learns=may_learn), lambda: now
+        books.from_household(settings, rulings=rulings_in, learns=may_learn, sources=sources),
+        lambda: now,
     )
     keeper.recompute(wait=True)
     assert keeper.status.failure is None, keeper.status.failure
-    periods: list[dict[str, object]] = [
-        {},
-        {"from": "2025-01-01", "to": "2025-12-31"},
-        {"from": "2025-11-15", "to": "2026-02-10"},
-        {"from": "2026-06-01", "to": "2026-06-30"},
-    ]
+    return settings, keeper
+
+
+SAMPLE_PERIODS: list[dict[str, object]] = [
+    {},
+    {"from": "2025-01-01", "to": "2025-12-31"},
+    {"from": "2025-11-15", "to": "2026-02-10"},
+    {"from": "2026-06-01", "to": "2026-06-30"},
+]
+
+
+def test_why_net_worth_changed_adds_up_on_the_sample_for_every_member(tmp_path: Path) -> None:
+    """The sample household the app opens, at its own prices: two years of banks, cards,
+    brokerages with lots at cost, moves between members, and lots bought for a cash amount not
+    to the cent of units times cost, which the books' rounding line holds. Every member's
+    change in net worth adds up to the cent, for a whole year, the year so far and stretches
+    that cut months, at market value and at cost, with nothing left as a difference; and the
+    market moved, so the market-value half of this proves something."""
+    settings, keeper = sample(tmp_path)
+    moved = []
     for viewer in ("avery", "blake"):
         door = Doorway(settings, keeper, viewer)
-        for period in periods:
+        for period in SAMPLE_PERIODS:
             for valuation in ("market", "cost"):
                 why = door.answer("statement_summary", {**period, "valuation": valuation})["why"]
                 assert isinstance(why, dict), (viewer, period)
@@ -392,3 +548,69 @@ def test_why_net_worth_changed_adds_up_on_the_sample_for_every_member(tmp_path: 
                 parts += [D(why["market"] or 0), *(D(o["amount"]) for o in why["others"])]
                 assert sum(parts, D(0)).quantize(D("0.01")) == D(why["end"]).quantize(D("0.01"))
                 assert D(why["difference"]) == 0, (viewer, period, valuation, why)
+                if valuation == "market":
+                    moved.append(D(why["market"]))
+    assert any(abs(m) > 100 for m in moved), moved
+
+
+@pytest.mark.parametrize("sources", [(demo.PRICE_SOURCE,), ()], ids=["priced", "no prices"])
+def test_the_balance_sheet_says_the_net_worth_overview_does(
+    tmp_path: Path, sources: tuple[str, ...]
+) -> None:
+    """For the same day and the same parts, the balance sheet's net worth at market value is
+    Overview's to the cent: with the sample's prices, and with none, when every holding is
+    named, left out, and both totals are floors."""
+    settings, keeper = sample(tmp_path, sources)
+    conn = db.connect(settings.database)
+    try:
+        for viewer in ("avery", "blake"):
+            member = members.find(conn, viewer)
+            assert member is not None
+            view = Disclosure.load(conn, member, keeper.status)
+            sheet = view.balance_sheet(None, None, market=True)
+            parts = {p.name for p in sheet.scope.refs}
+            overview = view.household()
+            rows = [*overview.members, *overview.joint]
+            worths = [r.net_worth for r in rows if r.part.name in parts]
+            assert all(isinstance(w, Worth) for w in worths)
+            known = sum((w.value for w in worths if isinstance(w, Worth)), D(0))
+            floor = any(w.is_floor for w in worths if isinstance(w, Worth))
+            assert sheet.net_worth.end is not None
+            assert sheet.net_worth.end.market == known, (viewer, sources)
+            assert sheet.net_worth.end.is_floor == floor
+            assert floor == (sources == ())
+    finally:
+        conn.close()
+
+
+def test_a_brokerage_known_only_from_inside_the_period_is_never_read_as_nothing_before(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    """A brokerage connected today holds what it reported today: what it held on Jan 1 is not
+    known. Net worth's start says nothing, no change is coloured, why it changed is without
+    it and names it, its own start on the balance sheet is not known, and a period that ended
+    before today has no net worth at all."""
+    fresh = connected(tmp_path, clock)
+    door = Doorway(fresh.settings, fresh.bookkeeper, "avery")
+
+    def answer(screen: str, given: dict[str, object] | None = None) -> dict[str, Any]:
+        return door.answer(screen, given or {})
+
+    summary = answer("statement_summary")
+    sheet = answer("balance_sheet")
+    (invested,) = [g for g in sheet["assets"]["children"] if g["label"] == "Investments"]
+    assert summary["late"] == [invested["children"][0]["label"]]
+    assert summary["net_worth"]["before"] is None
+    assert summary["net_worth"]["tone"] == "quiet"
+    assert D(summary["net_worth"]["now"]) == D("12500.00")  # the brokerage's 10,000 in it
+    # Why it changed is without the brokerage: the checking account's 2,500, whose 500 to
+    # the brokerage is a move across the edge.
+    why = summary["why"]
+    assert D(why["end"]) == D("2500.00")
+    assert D(why["difference"]) == 0
+    assert invested["children"][0]["start"] is None
+    assert D(invested["children"][0]["end"]["value"]) == D("10000.00")
+    assert sheet["net_worth"]["start"] is None
+    september = answer("statement_summary", {"from": "2026-09-01", "to": "2026-09-30"})
+    assert september["net_worth"]["now"] is None
+    assert september["net_worth"]["tone"] == "quiet"

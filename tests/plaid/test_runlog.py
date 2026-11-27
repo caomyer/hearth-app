@@ -8,7 +8,7 @@ import logging
 import logging.handlers
 import os
 import stat
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import pytest
@@ -66,12 +66,11 @@ def test_stopping_writes_no_more(world: World, log: Path) -> None:
     assert "after" not in log.read_text()
 
 
-def test_the_log_holds_every_plaid_operation_and_its_outcome_and_nothing_of_anyones(
-    world: World, log: Path
-) -> None:
-    relay = as_production(world)
+def connect_refused_and_abandoned(world: World) -> list[str]:
+    """Dana links Casey's bank, whose accounts fail to load, then closes Link at another bank.
+    Returns what must never be logged: every key and token she was handed or hearth holds, and
+    every balance, account, mask and payee there is."""
     dana = dana_at(world, SERVED_AT)
-
     link_token = opened_token(dana.post("/connect/link", data={"csrf": world.csrf(dana)}).text)
     public = world.plaid.public_token(link_token, "ins_casey")
     world.plaid.fail_next("/accounts/get", "INSTITUTION_NOT_RESPONDING")
@@ -90,6 +89,33 @@ def test_the_log_holds_every_plaid_operation_and_its_outcome_and_nothing_of_anyo
             "request_id": "Zq7RequestSynthetic01",
         },
     )
+    never = [
+        "client-dana",
+        "secret-dana",
+        link_token,
+        public,
+        *(item.access_token for item in world.plaid._items.values()),
+    ]
+    for p in household.PLAID:
+        never += [p.checking, p.card, p.checking_mask, p.card_mask, p.payee]
+        for balance in (p.checking_balance, p.card_balance):
+            never += [balance, balance.replace(",", "")]
+    return [*never, "42.00", "Dana"]
+
+
+def leaked(written: str, never: Iterable[str]) -> list[str]:
+    """Each of `never` the log holds as itself (``household.appears``). Its request ids and
+    Item ids are random hex, and about one log in a hundred holds a card's four mask digits
+    inside one of them, which is the stand-in's dice and nobody's figure."""
+    seen = household.Seen(written)
+    return [value for value in never if value in seen]
+
+
+def test_the_log_holds_every_plaid_operation_and_its_outcome_and_nothing_of_anyones(
+    world: World, log: Path
+) -> None:
+    relay = as_production(world)
+    never = connect_refused_and_abandoned(world)
     written = log.read_text()
 
     # Which operation, which institution, and how each went, with Plaid's request ids.
@@ -107,17 +133,31 @@ def test_the_log_holds_every_plaid_operation_and_its_outcome_and_nothing_of_anyo
     assert relay.sent
 
     # Never a key, a token, a balance, an account or a payee.
-    never = [
-        "client-dana",
-        "secret-dana",
-        link_token,
-        public,
-        *(item.access_token for item in world.plaid._items.values()),
-    ]
+    assert not (found := leaked(written, never)), found
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ["mask={value}", "as item {item_id}: {value}", "{{'mask': '{value}'}}", "({value})", "{value}"],
+)
+def test_anything_of_anyones_the_log_could_hold_is_found(
+    world: World, log: Path, shape: str
+) -> None:
+    as_production(world)
+    never = connect_refused_and_abandoned(world)
+    item_id = world.plaid.items()[-1]
+
+    plaid = logging.getLogger("hearth.plaid.client")
+    for value in never:
+        plaid.info("planted %s", shape.format(value=value, item_id=item_id))
+
+    assert leaked(log.read_text(), never) == never
+
+
+def test_a_masks_digits_inside_a_random_id_are_not_the_mask() -> None:
     for p in household.PLAID:
-        never += [p.checking, p.card, p.checking_mask, p.card_mask, p.payee]
-        for balance in (p.checking_balance, p.card_balance):
-            never += [balance, balance.replace(",", "")]
-    never += ["42.00", "Dana"]
-    leaked = [value for value in never if value in written]
-    assert not leaked, leaked
+        for mask in (p.checking_mask, p.card_mask):
+            for at in range(13 - len(mask)):
+                hexes = ("f" * at + mask).ljust(12, "0")
+                line = f"ok request_id=demo{hexes} as item item-demo-{hexes}\n"
+                assert leaked(line, [mask]) == [], line

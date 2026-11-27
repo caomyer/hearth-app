@@ -30,7 +30,8 @@
           {"amount": "-41.90", "account": {"id": "eDUVDA9IScyfzS3o", "name": "Rewards card"}, "category": null, "waiting": false, "elsewhere": false},
           {"amount": "41.90", "account": null, "category": {"name": "Expenses:Shopping:Books", "label": "Books"}, "waiting": false, "elsewhere": false}
         ],
-        "review": "5f0c2a9e1d"
+        "review": "5f0c2a9e1d",
+        "part": null
 
       },
       {
@@ -48,7 +49,8 @@
         "reason": null,
         "amount": "3250.40",
         "sides": [],
-        "review": null
+        "review": null,
+        "part": null
       },
       {
         "position": 2,
@@ -71,7 +73,8 @@
           {"amount": "-300.00", "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"}, "category": null, "waiting": false, "elsewhere": false},
           {"amount": "300.00", "account": {"id": "eDUVDA9IScyfzS3o", "name": "Rewards card"}, "category": null, "waiting": false, "elsewhere": false}
         ],
-        "review": null
+        "review": null,
+        "part": null
 
       },
       {
@@ -92,7 +95,8 @@
           {"amount": "-84.12", "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"}, "category": null, "waiting": false, "elsewhere": false},
           {"amount": "84.12", "account": null, "category": null, "waiting": true, "elsewhere": false}
         ],
-        "review": null
+        "review": null,
+        "part": null
 
       },
       {
@@ -113,7 +117,8 @@
           {"amount": "250.00", "account": {"id": "10omYJBYKWbu7QCF", "name": "Car loan"}, "category": null, "waiting": false, "elsewhere": false},
           {"amount": "-250.00", "account": null, "category": null, "waiting": false, "elsewhere": true}
         ],
-        "review": null
+        "review": null,
+        "part": null
 
       }
     ]

@@ -24,10 +24,10 @@ import logging
 import os
 import sqlite3
 import threading
-from bisect import bisect_right
 from collections.abc import Callable, Collection, Hashable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -60,9 +60,11 @@ from hearth.months import Month
 from hearth.plaid import booking, feed, opening
 from hearth.plaid.opening import Unknown
 from hearth.proposals import MayLearn, Opens, learn_nothing
+from hearth.reports import statements
 from hearth.reports.balances import AssertionCheck, check_balance_assertions
 from hearth.reports.common import is_balance_sheet, root
 from hearth.reports.coverage import AccountCoverage, account_coverage
+from hearth.reports.statements import Ledger
 from hearth.review.decision import Decision, guarded, postable
 from hearth.review.overlay import reviewed
 from hearth.review.pile import UNRESOLVED, PileItem, read_pile
@@ -71,6 +73,7 @@ from hearth.valuation import institution
 from hearth.valuation.holdings import holdings_at
 from hearth.valuation.networth import NetWorth, PriceLookup, value_holdings
 from hearth.valuation.pricestore import PriceStore
+from hearth.valuation.pricetable import PriceTable
 from hearth.valuation.quotes import Quote
 
 _log = logging.getLogger(__name__)
@@ -177,6 +180,9 @@ class Books:
     start and end (``hearth.reports.statements``). Held in memory, as the recompute read them,
     so a page never reads the price table itself. A function, so two books are compared by
     what they were valued at (`today`, `month_ends`), not by it."""
+    ledger: Ledger | None = field(default=None, compare=False)
+    """The books as statements read them, read once here so every statement asked of them is a
+    few lookups (``hearth.reports.statements``); None only for books made by hand."""
     price_sources: tuple[str, ...] = PRICE_SOURCES
     """The sources the stored prices it was valued at were taken from (`stored_prices`), so
     that a price's history is read from exactly those."""
@@ -1024,29 +1030,37 @@ def stored_prices(store: PriceStore, sources: Sequence[str] = PRICE_SOURCES) -> 
     return lookup
 
 
+def priced(lookup: PriceLookup) -> statements.Prices:
+    """The prices a ledger is read at: the table itself, or a bare lookup with no history."""
+    if isinstance(lookup, PriceTable):
+        return lookup
+    return _Lookup(lookup)
+
+
+@dataclass(frozen=True, slots=True)
+class _Lookup:
+    """A bare lookup, as tests and a few callers give one: it has no first price to tell."""
+
+    lookup: PriceLookup
+
+    def price(self, symbol: str, on_or_before: date, currency: str) -> Decimal | None:
+        quote = self.lookup(symbol, on_or_before)
+        return quote.price if quote is not None and quote.currency == currency else None
+
+    def day(self, symbol: str, on_or_before: date) -> date | None:
+        quote = self.lookup(symbol, on_or_before)
+        return quote.as_of if quote is not None else None
+
+    def first(self, symbol: str) -> date | None:
+        return None
+
+
 def remembered_prices(
     store: PriceStore, symbols: Iterable[str], sources: Sequence[str] = PRICE_SOURCES
-) -> PriceLookup:
-    """`stored_prices` for `symbols`, read once and held in memory: the books keep it, so any
-    day can be valued after the database is closed, by the same rule."""
-    by_symbol: dict[str, tuple[list[date], list[Quote]]] = {}
-    for symbol in set(symbols):
-        quotes = sorted(
-            (quote for source in sources for quote in store.history(symbol, source)),
-            key=lambda quote: (quote.as_of, quote.fetched_at),
-        )
-        if quotes:
-            by_symbol[symbol] = ([quote.as_of for quote in quotes], quotes)
-
-    def lookup(symbol: str, on_or_before: date) -> Quote | None:
-        found = by_symbol.get(symbol)
-        if found is None:
-            return None
-        days, quotes = found
-        index = bisect_right(days, on_or_before)
-        return quotes[index - 1] if index else None
-
-    return lookup
+) -> PriceTable:
+    """`stored_prices` for `symbols`, read once and held compactly in memory: the books keep
+    it, so any day can be valued after the database is closed, by the same rule."""
+    return PriceTable.read(store, symbols, sources)
 
 
 def commodities(entries: Iterable[Directive]) -> frozenset[str]:

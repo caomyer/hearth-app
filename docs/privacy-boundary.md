@@ -134,6 +134,7 @@ The scope is decided once, before any figure is worked out (`hearth.disclosure.s
 So no figure, no difference of two periods or tabs, and no figure at cost set against one at market value, holds anything of a part left out.
 A move between an account in the statement and one outside it, another member's or one hearth does not see, is one amount of the account inside, and none of its categories is counted, as nothing says whose they were.
 `tests/native/test_statements.py` changes the joint account and another member's account under a viewer who may see neither in full, and requires every statement the viewer can ask for to be the same, byte for byte.
+It also holds back each facet in turn from members who share every other, and requires them out of every statement, named, and every statement unchanged; the doorway's crawl asks every statement under the same scenarios.
 
 ## Where it is enforced
 

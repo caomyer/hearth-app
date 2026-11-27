@@ -21,9 +21,11 @@ from hearth import accounts, auth, categories, figures, matching
 from hearth.categories import Kind
 from hearth.figures import ownership
 from hearth.ledger_import import ImportRefused, import_ledger
+from hearth.merchants import merchant
 from hearth.months import Month
 from hearth.native.common import Acted, Decided
 from hearth.native.doorway import Doorway
+from hearth.plaid import booking
 from hearth.plaid.fake import FakeAccount, FakeInstitution, FakeTransaction
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
@@ -380,6 +382,35 @@ def test_rows_accepted_before_suggestions_were_learned_stay_accepted(
         assert household.state(item) is State.REVIEWED
         assert booked_to(household, item) == item.plain
     assert any(item.proposed != item.plain for item in suggested)
+
+
+def test_rows_decided_under_an_older_merchant_rule_stay_decided(
+    tmp_path: Path, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every row was decided while the merchant rule took every row of the bank for one
+    merchant, as it once took "CARD PURCHASE 09/12 ..." for "card purchase". Opened by this
+    hearth, whose rule tells them apart, nothing comes back to Review and each stays booked
+    where it was decided."""
+    household = connected(tmp_path, clock)
+    monkeypatch.setattr(booking, "merchant", lambda *texts: "card purchase")
+    rows = household.books().pile
+    assert len(rows) > 1
+    for n, item in enumerate(rows):
+        household.decide(
+            "/review/rows/book", review_id=item.review_id, account=f"Expenses:Zq:Kept{n}"
+        )
+    booked = {item.review_id: booked_to(household, item) for item in rows}
+    waiting = _waiting(household)
+    assert not waiting & set(booked)
+
+    monkeypatch.undo()
+    assert len({merchant(item.payee) for item in rows}) > 1
+    household.books()
+
+    assert _waiting(household) == waiting
+    for item in rows:
+        assert household.state(item) is State.REVIEWED
+        assert booked_to(household, item) == booked[item.review_id]
 
 
 def test_rows_accepted_before_learning_in_a_household_with_no_ledger_stay_accepted(

@@ -227,19 +227,19 @@ def probes_of(values: dict[str, list[str]]) -> Iterator[Probe]:
         yield Probe(path, {}, {})
 
 
-def everything_seen(world: World, client: TestClient) -> str:
+def everything_seen(world: World, client: TestClient) -> household.Seen:
     """Every byte the client can make the application send back, joined up."""
     return seen_through(probes(world), client)
 
 
-def seen_through(found: Iterator[Probe], client: TestClient) -> str:
+def seen_through(found: Iterator[Probe], client: TestClient) -> household.Seen:
     """Every byte the client is sent back for each of `found`, joined up."""
     seen: list[str] = []
     for probe in found:
         response = client.get(probe.url, headers=probe.headers)
         seen.extend(f"{name}: {value}" for name, value in response.headers.items())
         seen.append(response.text)
-    return "\n".join(seen)
+    return household.Seen("\n".join(seen))
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS)

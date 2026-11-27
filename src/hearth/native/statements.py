@@ -135,9 +135,9 @@ def _scope(scope: Scope) -> Answer:
 def _valuing(valuing: Valuing) -> Answer:
     return {
         "priced_on": _day(valuing.priced_on),
-        "at_cost": list(valuing.at_cost),
-        "cost_unknown": list(valuing.cost_unknown),
+        "unpriced": list(valuing.unpriced),
         "unvalued": list(valuing.unvalued),
+        "stale": valuing.stale,
     }
 
 
@@ -201,6 +201,11 @@ def _summary(found: Summary, market: bool) -> Answer:
         "why": _why(found.bridge),
         "valuing": _valuing(found.valuing),
         "unreviewed": _unreviewed(found.unreviewed),
+        # Net worth at least this much: it leaves out holdings with no price.
+        "is_floor": found.floor,
+        # Accounts whose holdings are known only from inside the period, which net worth's
+        # start, and why it changed, are without.
+        "late": [account.name for account in found.late],
     }
 
 
@@ -245,8 +250,10 @@ def _held(held: Held | None, paid: Decimal | None, market: bool) -> Answer | Non
         "value": _money(held.value(market)),
         "cost": _money(paid),
         # A holding with no price has no gain to tell, only its cost, as Holdings says.
-        "gain": _money(held.market - paid) if paid is not None and not held.at_cost else None,
+        "gain": _money(held.market - paid) if paid is not None and not held.unpriced else None,
         "securities": held.securities,
+        # A market value without holdings no screen can price is at least what it says.
+        "is_floor": market and held.is_floor,
     }
 
 
