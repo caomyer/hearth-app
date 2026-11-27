@@ -9,7 +9,8 @@ import os
 /// `-appearance light|dark`, `-firstReview YES` for a sample none of whose two years is
 /// reviewed yet, `-sampleAsOf YYYY-MM-DD` for the sample as it stood that day, and, for a
 /// household's own books, `-signInAs <username>` with the password in the environment's
-/// `HEARTH_SIGN_IN_PASSWORD`. A Release build reads none of them.
+/// `HEARTH_SIGN_IN_PASSWORD`; `-ledgerSheet <step>` with `-ledgerFile <path>` (see
+/// `LedgerLaunch`); `-askAboutLedger NO`. A Release build reads none of them.
 enum DebugLaunch {
     /// Draws the app light or dark whatever the Mac is set to, so each screen can be looked at
     /// both ways.
@@ -62,6 +63,28 @@ enum DebugLaunch {
             return GivenSignIn(Credential(username: username, password: password))
         #else
             nil
+        #endif
+    }
+
+    /// A ledger file to read in place of the one the open panel would ask for, so its sheets
+    /// can be looked at, and tested, without a panel.
+    static var ledgerFile: URL? {
+        #if DEBUG
+            UserDefaults.standard.string(forKey: "ledgerFile").map { URL(fileURLWithPath: $0) }
+        #else
+            nil
+        #endif
+    }
+
+    /// Whether an admin is asked once if they keep a ledger; `-askAboutLedger NO` leaves the
+    /// question out, as a test about something else does.
+    static var asksAboutLedger: Bool {
+        #if DEBUG
+            // A launch argument's NO arrives as text, which bool(forKey:) reads and a cast does not.
+            UserDefaults.standard.object(forKey: "askAboutLedger") == nil
+                || UserDefaults.standard.bool(forKey: "askAboutLedger")
+        #else
+            true
         #endif
     }
 
@@ -229,3 +252,71 @@ enum StartScreen {
         func forget(for household: String) async throws { kept = nil }
     }
 #endif
+
+/// The ledger's sheet to open the books on, from `-ledgerSheet`, each reached through the engine
+/// as a person reaches it, with the file `-ledgerFile` names:
+///
+/// - `question`, "Do you keep a beancount ledger?";
+/// - `check`, what the file holds, or why it cannot be brought in;
+/// - `confirm`, the confirmation after the check;
+/// - `bringingIn`, the import's progress, drawn without starting one;
+/// - `waiting`, waiting on a ledger someone else is bringing in, drawn without one;
+/// - `booksFailed`, a ledger in whose books could not be worked out, drawn without one;
+/// - `refused`, the file's refusal as an import that was refused says it;
+/// - `bringIn`, the file checked, confirmed and brought in for real, then matching;
+/// - `matching`, matching the accounts connected to the ledger brought in;
+/// - `done`, the file brought in for real, every account matched as proposed, and what is
+///   matched then.
+enum LedgerLaunch {
+    enum Sheet: String {
+        case question, check, confirm, bringingIn, waiting, refused, booksFailed, bringIn, matching, done
+    }
+
+    static var requested: Sheet? {
+        #if DEBUG
+            UserDefaults.standard.string(forKey: "ledgerSheet").flatMap(Sheet.init(rawValue:))
+        #else
+            nil
+        #endif
+    }
+
+    @MainActor
+    static func open(_ sheet: Sheet, flow: LedgerFlow) async {
+        let file = DebugLaunch.ledgerFile ?? URL(fileURLWithPath: "/nowhere/household.beancount")
+        switch sheet {
+        case .question:
+            flow.begin(at: .question)
+        case .check:
+            await flow.check(file)
+        case .confirm:
+            await flow.check(file)
+            flow.confirm()
+        case .bringingIn:
+            flow.begin(at: .bringingIn(file))
+        case .waiting:
+            flow.begin(at: .waitingForAnother)
+        case .booksFailed:
+            flow.begin(at: .inButBooksFailed)
+        case .refused:
+            await flow.check(file)
+            if case .checked(_, let check) = flow.step {
+                flow.begin(at: .notBroughtIn(check.refused))
+            }
+        case .bringIn:
+            await flow.check(file)
+            flow.confirm()
+            await flow.bringIn()
+        case .matching:
+            await flow.openMatching()
+        case .done:
+            // Reached for real: the file checked, brought in, every account matched as the
+            // ledger proposes, and then what is matched.
+            await flow.check(file)
+            flow.confirm()
+            await flow.bringIn()
+            if case .matching = flow.step {
+                await flow.match()
+            }
+        }
+    }
+}

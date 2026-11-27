@@ -238,7 +238,13 @@ public final class Session {
 
     private func show(_ books: Books, on engine: any Bridging) {
         let mine = generation
-        desk = Desk(engine: engine, signedOut: { [weak self] in self?.endedElsewhere(mine) })
+        let defaults = defaults
+        let asked = "ledger asked \(setup.key)"
+        desk = Desk(
+            engine: engine, signedOut: { [weak self] in self?.endedElsewhere(mine) },
+            // The sample is invented, and asked nothing of.
+            ledgerAsked: { books == .sample || defaults.bool(forKey: asked) },
+            rememberLedgerAsked: { defaults.set(true, forKey: asked) })
         screen = .open(books)
     }
 

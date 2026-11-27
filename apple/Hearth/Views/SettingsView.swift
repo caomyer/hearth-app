@@ -1,3 +1,4 @@
+import AppKit
 import HearthKit
 import SwiftUI
 
@@ -9,6 +10,8 @@ struct SettingsView: View {
         TabView {
             BanksPane(session: session)
                 .tabItem { Label("Banks", systemImage: "building.columns") }
+            LedgerPane(session: session)
+                .tabItem { Label("Ledger", systemImage: "book.closed") }
         }
         .frame(width: 520)
     }
@@ -77,5 +80,65 @@ private struct BanksPane: View {
                 consent[keyPath: key] = on
                 Task { await session.allow(consent) }
             })
+    }
+}
+
+/// The household's own ledger: bringing one in, once, and matching connected accounts to it,
+/// each done in a sheet over the books (`LedgerSheet`).
+private struct LedgerPane: View {
+    let session: Session
+
+    var body: some View {
+        Form {
+            if let desk = session.desk, session.books == .own {
+                let flow = desk.ledger
+                Section {
+                    if let standing = flow.standing {
+                        Text(LedgerWords.standing(standing))
+                            .accessibilityIdentifier("settings.ledger")
+                        if let whyNot = standing.whyNot, standing.imported == nil {
+                            Text(whyNot.said).foregroundStyle(.secondary)
+                        }
+                    }
+                } footer: {
+                    if let unclaimed = LedgerWords.unclaimed(flow.standing) {
+                        Text(unclaimed)
+                    }
+                }
+                Section {
+                    if flow.standing?.mayBringIn == true {
+                        Button("Bring In a Ledger\u{2026}") {
+                            showBooks()
+                            chooseFile(flow)
+                        }
+                        .accessibilityIdentifier("settings.bringIn")
+                    }
+                    if flow.standing?.imported != nil {
+                        Button("Match Accounts\u{2026}") {
+                            showBooks()
+                            Task { await flow.openMatching() }
+                        }
+                        .accessibilityIdentifier("settings.match")
+                    }
+                } footer: {
+                    if flow.standing?.imported != nil {
+                        Text("Say which of your ledger's accounts each connected account is, such as one connected since.")
+                    }
+                }
+                .task { await flow.refresh() }
+            } else {
+                Text("Open your books and sign in to bring in a ledger.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The window of the books, in front, where the sheet opens.
+    private func showBooks() {
+        NSApplication.shared.windows
+            .first { $0.styleMask.contains(.resizable) && $0.isVisible && !($0.identifier?.rawValue.contains("Settings") ?? false) }?
+            .makeKeyAndOrderFront(nil)
     }
 }
