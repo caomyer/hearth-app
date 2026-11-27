@@ -151,9 +151,18 @@ TAMPERED_QUERIES: tuple[dict[str, str], ...] = (
 )
 
 
+def altered_ids(world: World) -> dict[str, list[str]]:
+    """Identifiers hearth made up, as a curious member might alter them; a page may echo one."""
+    account_id = next(iter(world.account_ids.values()))
+    return {
+        "item_id": [next(iter(world.item_ids.values())).upper()],
+        "account_id": [account_id.upper(), account_id[:-1]],
+    }
+
+
 def path_values(world: World) -> dict[str, list[str]]:
     """Everything a curious member might put into each path parameter."""
-    ids = list(world.account_ids.values())
+    altered = altered_ids(world)
     return {
         "username": [
             *household.USERNAMES,
@@ -168,15 +177,14 @@ def path_values(world: World) -> dict[str, list[str]]:
             *world.item_ids.values(),
             "nonexistent",
             "item-demo-000000000000",
-            next(iter(world.item_ids.values())).upper(),
+            *altered["item_id"],
         ],
         "account_id": [
-            *ids,
+            *world.account_ids.values(),
             "nonexistent",
             "1",
             quote(household.ACCOUNTS[0].ledger_account, safe=""),
-            ids[0].upper(),
-            ids[0][:-1],
+            *altered["account_id"],
             "%2E%2E",
         ],
     }
@@ -227,9 +235,10 @@ def probes_of(values: dict[str, list[str]]) -> Iterator[Probe]:
         yield Probe(path, {}, {})
 
 
-def everything_seen(world: World, client: TestClient) -> str:
+def everything_seen(world: World, client: TestClient) -> household.Seen:
     """Every byte the client can make the application send back, joined up."""
-    return seen_through(probes(world), client)
+    altered = {value for values in altered_ids(world).values() for value in values}
+    return household.Seen(seen_through(probes(world), client), world.made_up() | altered)
 
 
 def seen_through(found: Iterator[Probe], client: TestClient) -> str:

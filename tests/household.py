@@ -11,7 +11,7 @@ of against itself.
 """
 
 import re
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
@@ -305,6 +305,28 @@ def secret(text: str, what: str, visible: Rule) -> Secret:
         whole = Decimal(text.replace(",", "")).quantize(Decimal(1), rounding=ROUND_HALF_UP)
         forms.append(f"{whole:,}")
     return Secret(tuple(forms), what, visible)
+
+
+class Seen:
+    """Everything a member was shown, or hearth wrote, to be searched for secrets with ``in``.
+
+    hearth and the stand-in Plaid make up random identifiers: account ids, Plaid's request ids
+    and Item ids. A short secret, a card's four mask digits or a four-letter ticker, turns up
+    inside one of them now and then by chance, which is nobody's datum. So each of `made_up` is
+    passed over when looking for anything else, and the same text anywhere else, even run
+    straight into one, is still found. An identifier that is itself a secret is looked for in
+    the whole text.
+    """
+
+    def __init__(self, text: str, made_up: Collection[str]) -> None:
+        self.text = text
+        self.made_up = frozenset(made_up)
+        longest_first = sorted(self.made_up, key=len, reverse=True)
+        pattern = "|".join(map(re.escape, longest_first))
+        self._apart = re.sub(pattern, "\n", text) if pattern else text
+
+    def __contains__(self, text: str) -> bool:
+        return text in (self.text if text in self.made_up else self._apart)
 
 
 def owners_of(key: str) -> frozenset[str]:

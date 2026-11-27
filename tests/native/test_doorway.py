@@ -297,7 +297,7 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     answers += [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
     answers += [door.answer(ask, given) for ask, given in narrowings(world) if "review" in ask]
     # The doorway writes money without the thousands separators a page shows it with.
-    seen = "\n".join(json.dumps(answer) for answer in answers)
+    seen = household.Seen("\n".join(json.dumps(answer) for answer in answers), world.made_up())
 
     leaked = [
         f"{secret.what}: {text!r}"

@@ -87,6 +87,16 @@ class World:
     def connect(self) -> sqlite3.Connection:
         return db.connect(self.settings.database)
 
+    def made_up(self) -> frozenset[str]:
+        """Every random identifier a page or the log may carry: each account's id, and each
+        request id and Item id the stand-in Plaid issued."""
+        conn = self.connect()
+        try:
+            ids = {account_id for (account_id,) in conn.execute("SELECT id FROM accounts")}
+        finally:
+            conn.close()
+        return frozenset(ids | self.plaid.issued)
+
     def anonymous(self) -> TestClient:
         return TestClient(self.app, follow_redirects=False)
 
