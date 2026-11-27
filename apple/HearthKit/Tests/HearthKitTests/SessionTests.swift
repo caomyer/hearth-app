@@ -454,6 +454,26 @@ struct SetupTests {
         #expect(!everything.arguments.contains("remove"))
     }
 
+    @Test("the sample may be opened as it stood on a day, and a household's books never are")
+    func sampleAsOf() throws {
+        let setup = Setup(dataDirectory: URL(fileURLWithPath: "/Users/someone/.local/share/hearth"))
+        let resources = URL(fileURLWithPath: "/Applications/Hearth.app/Contents/Resources")
+        let day = try #require(Day("2026-11-22"))
+        func hearth(_ books: Books) -> [String] {
+            Array(
+                EngineCommand.bundled(
+                    books, setup: setup, consent: Consent(transactions: true), sampleAsOf: day, in: resources,
+                    home: "/Users/someone", temporary: "/tmp/x"
+                ).arguments.dropFirst(3))
+        }
+
+        #expect(hearth(.sample) == ["demo", "--bridge", "--as-of", "2026-11-22", "--approve-plaid", "read"])
+        #expect(hearth(.own) == ["bridge", "--approve-plaid", "read"])
+        #expect(Day("2026-2-3") == nil)
+        #expect(Day("2026-13-01") == nil)
+        #expect(Day(year: 2026, month: 2, day: 3).iso == "2026-02-03")
+    }
+
     @Test("consent is kept per set of books and per household, and starts off")
     func consentKept() throws {
         let defaults = UserDefaults(suiteName: "hearth-tests-\(UUID().uuidString)")!

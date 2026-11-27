@@ -251,16 +251,19 @@ extension EngineCommand {
     /// nothing until the app signs in as one of its members. It may ask the banks for what
     /// `consent` allows and nothing else, which the engine itself enforces. With
     /// `firstReview`, the invented household is the one a first import leaves: two years of
-    /// history, none of it reviewed (`hearth demo --first-review`).
+    /// history, none of it reviewed (`hearth demo --first-review`). With `sampleAsOf`, it is
+    /// the invented household as it stood that day, the same whichever day it is opened
+    /// (`hearth demo --as-of`).
     public static func bundled(
         _ books: Books, setup: Setup, consent: Consent = .nothing, firstReview: Bool = false,
-        in resources: URL, home: String, temporary: String
+        sampleAsOf: Day? = nil, in resources: URL, home: String, temporary: String
     ) -> EngineCommand {
         switch books {
         case .sample:
             bundled(
                 in: resources,
-                hearth: ["demo", "--bridge"] + (firstReview ? ["--first-review"] : []) + consent.arguments,
+                hearth: ["demo", "--bridge"] + (firstReview ? ["--first-review"] : [])
+                    + (sampleAsOf.map { ["--as-of", $0.iso] } ?? []) + consent.arguments,
                 home: home, temporary: temporary)
         case .own:
             bundled(

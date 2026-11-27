@@ -275,8 +275,9 @@ final class FirstLaunchTests: XCTestCase {
 
     /// The queue from the keyboard alone, as the Review menu offers it: the arrows move, C
     /// chooses another category by typing it, Return saves it, Command-Z takes it back, Return
-    /// accepts a group that is one decision, S skips and X excludes. The sample waits on two
-    /// rows: Kibble Co, a group one accept settles, and Greenleaf Market, a guess of its own.
+    /// accepts a group that is one decision, S skips and X excludes. The sample, as it stood on
+    /// `sampleDay`, waits on two rows: Kibble Co, a group one accept settles, and Greenleaf
+    /// Market, in the group of guesses the import was unsure of.
     @MainActor
     func testTheQueueIsWorkedFromTheKeyboard() {
         let app = sample(startingOn: "review")
@@ -312,7 +313,8 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertFalse(app.buttons["review.option.Groceries"].exists, "typing narrowed nothing")
         app.typeKey(.return, modifierFlags: [])
         waitFor(decide, toSay: "Save as Pets")
-        XCTAssertFalse(field.exists, "the chooser stayed open")
+        let closed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: field)
+        wait(for: [closed], timeout: 10)
         XCTAssertTrue(app.buttons["review.choice.Pets"].exists, "the category chosen is not shown on")
 
         // Return, back in the queue, saves it; Command-Z takes it back.
@@ -413,12 +415,18 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertTrue(market.waitForExistence(timeout: 30), "the row taken back is not unreviewed again")
     }
 
-    /// The sample, opened straight onto a screen, in a data directory of no household's.
+    /// The day the sample stands on for the tests that work its Review. The sample is drawn
+    /// back from the day it is opened, so what waits in it changes from day to day; on this day
+    /// Avery's queue is Kibble Co, a group of one, and Greenleaf Market, a guess.
+    private let sampleDay = "2026-11-22"
+
+    /// The sample as it stood on `sampleDay`, opened straight onto a screen, in a data
+    /// directory of no household's.
     @MainActor
     private func sample(startingOn screen: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["HEARTH_DATA_DIR"] = "/var/empty/no-hearth-\(UUID().uuidString)"
-        app.launchArguments += ["-openBooks", "sample", "-startScreen", screen]
+        app.launchArguments += ["-openBooks", "sample", "-sampleAsOf", sampleDay, "-startScreen", screen]
         app.launch()
         return app
     }

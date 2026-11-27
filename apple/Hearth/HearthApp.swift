@@ -49,6 +49,7 @@ struct HearthApp: App {
             guard let resources else { throw Engine.Failure.stopped }
             let command = EngineCommand.bundled(
                 books, setup: setup, consent: consent, firstReview: DebugLaunch.firstReview,
+                sampleAsOf: DebugLaunch.sampleAsOf,
                 in: resources, home: home, temporary: NSTemporaryDirectory())
             return try Engine.launch(command)
         }

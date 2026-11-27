@@ -5,7 +5,8 @@ import HearthKit
 /// Ways to open a debug build straight onto a screen, so each can be looked at without a
 /// click: `-openBooks sample|own`,
 /// `-startScreen overview|review|transactions|accounts|account:<name>`, `-appearance light|dark`,
-/// `-firstReview YES` for a sample none of whose two years is reviewed yet, and, for a
+/// `-firstReview YES` for a sample none of whose two years is reviewed yet,
+/// `-sampleAsOf YYYY-MM-DD` for the sample as it stood that day, and, for a
 /// household's own books, `-signInAs <username>` with the password in the environment's
 /// `HEARTH_SIGN_IN_PASSWORD`. A Release build reads none of them.
 enum DebugLaunch {
@@ -38,6 +39,16 @@ enum DebugLaunch {
             UserDefaults.standard.bool(forKey: "firstReview")
         #else
             false
+        #endif
+    }
+
+    /// The day the sample stands on, instead of today (`hearth demo --as-of`), so what waits
+    /// in its Review is the same whichever day it is opened, as the UI tests need.
+    static var sampleAsOf: Day? {
+        #if DEBUG
+            UserDefaults.standard.string(forKey: "sampleAsOf").flatMap(Day.init)
+        #else
+            nil
         #endif
     }
 

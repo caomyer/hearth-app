@@ -109,6 +109,8 @@ HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE
 - `-openBooks sample|own` opens those books at once.
 - `-startScreen overview|review|transactions|accounts|account:<name>` opens that screen; an account is found by its name once the accounts are in.
 - `-firstReview YES` opens the sample as a first import leaves it: two years, over a thousand rows, none reviewed (`hearth demo --first-review`).
+- `-sampleAsOf YYYY-MM-DD` opens the sample as it stood on that day (`hearth demo --as-of`).
+  The sample is drawn back from the day it is opened, so what waits in its Review changes from day to day; the UI tests that work Review pin it this way.
 - `-signInAs <username>` hands the engine that member with the password in `HEARTH_SIGN_IN_PASSWORD`, in place of the Keychain, which it leaves alone.
 - `-appearance light|dark` draws the app that way whatever the Mac is set to, to look at each screen both ways.
 
