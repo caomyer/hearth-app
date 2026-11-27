@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HearthKit
+import os
 
 /// Ways to open a debug build straight onto a screen and a state, so each can be looked at
 /// without a click: `-openBooks sample|own`, `-startScreen <screen>` (see `StartScreen`),
@@ -141,6 +142,7 @@ enum DebugLaunch {
 ///   for one;
 /// - `transactions:find:<words>`, Transactions narrowed to those words;
 /// - `holding:<symbol>`, Holdings with that holding's price beside the list;
+/// - `statements`, and `statements:<tab>` on its `summary`, `income`, `balance` or `years` tab;
 /// - `account:<name>`, that account's page;
 /// - `settings`, the Overview with the Settings window open over it.
 ///
@@ -166,6 +168,7 @@ enum StartScreen {
         case let named? where named.hasPrefix("review"): .review
         case let named? where named.hasPrefix("transaction"): .transactions
         case let named? where named.hasPrefix("holding"): .holdings
+        case let named? where named.hasPrefix("statements"): .statements
         case let named? where named.hasPrefix("account"): .accounts
         default: nil
         }
@@ -195,6 +198,21 @@ enum StartScreen {
 
     /// The account to open once the accounts are known, by its name.
     static var account: String? { named("account:") }
+
+    /// The tab of Statements to open on: `summary`, `income`, `balance` or `years`. Any other
+    /// name opens the Summary and says so in the log.
+    static var statementsTab: StatementsModel.Tab? {
+        guard let tab = named("statements:") else { return nil }
+        guard let found = StatementsModel.Tab(rawValue: tab) else {
+            let known = StatementsModel.Tab.allCases.map(\.rawValue).joined(separator: ", ")
+            let said = "-startScreen statements:\(tab) is no tab of Statements; the tabs are \(known)"
+            Logger(subsystem: "dev.hearth.Hearth", category: "launch").error("\(said, privacy: .public)")
+            // And on standard error, where whoever launched the build is looking.
+            FileHandle.standardError.write(Data((said + "\n").utf8))
+            return nil
+        }
+        return found
+    }
 }
 
 #if DEBUG
