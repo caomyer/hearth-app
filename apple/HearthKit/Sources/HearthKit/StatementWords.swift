@@ -44,12 +44,6 @@ public enum StatementWords {
         withTax ? "Spending and tax" : "Spending"
     }
 
-    /// Pay's name, as the engine names its line: "Pay before tax" where the books hold tax,
-    /// as pay is then booked before it, and "Take-home pay" where they hold none.
-    public static func pay(taxed: Bool) -> String {
-        taxed ? "Pay before tax" : "Take-home pay"
-    }
-
     /// The savings rate's name, saying how tax is counted wherever the books hold any:
     /// "Savings rate, after tax" or "Savings rate, with tax"; plain without tax.
     public static func savingsRate(taxed: Bool, withTax: Bool) -> String {
@@ -91,14 +85,26 @@ public enum StatementWords {
     }
 
     /// What rests on rows not reviewed yet, and what nothing has placed: "3 transactions not
-    /// reviewed yet, $1,120 of expenses and $300 of income", "2 placed nowhere yet, $79 out".
-    /// Expenses, as tax is among them, which is never spending.
-    public static func unreviewed(_ found: StatementUnreviewed, currency: String, locale: Locale = .current) -> [String] {
+    /// reviewed yet, $1,120 of spending, $300 of tax and $500 of income", or with tax counted
+    /// as spending "$1,420 of spending and tax", and what was booked as not spending apart;
+    /// "2 placed nowhere yet, $79 out". Each amount is the engine's own.
+    public static func unreviewed(
+        _ found: StatementUnreviewed, withTax: Bool = false, currency: String, locale: Locale = .current
+    ) -> [String] {
         var lines: [String] = []
         if found.rows > 0 {
             var line = found.rows == 1 ? "1 transaction not reviewed yet" : "\(found.rows.formatted()) transactions not reviewed yet"
             var amounts: [String] = []
-            if found.expenses.amount != 0 { amounts.append("\(Figures.total(found.expenses, currency: currency, locale: locale)) of expenses") }
+            func said(_ amount: Money, _ what: String) {
+                if amount.amount != 0 { amounts.append("\(Figures.total(amount, currency: currency, locale: locale)) of \(what)") }
+            }
+            if withTax {
+                said(found.spendingWithTax, "spending and tax")
+            } else {
+                said(found.spending, "spending")
+                said(found.tax, "tax")
+            }
+            said(found.notSpending, "what is not spending")
             if found.income.amount != 0 { amounts.append("\(Figures.total(found.income, currency: currency, locale: locale)) of income") }
             if !amounts.isEmpty { line += ", " + amounts.formatted(.list(type: .and)) }
             lines.append(line + ".")

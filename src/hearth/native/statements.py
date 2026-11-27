@@ -151,6 +151,12 @@ def _unreviewed(found: Unreviewed) -> Answer:
         "rows": found.rows,
         "income": _money(found.income),
         "expenses": _money(found.expenses),
+        # Of expenses, by kind, and spending with tax in it, each worked out here so the app
+        # says whichever its switch asks for and adds nothing up.
+        "spending": _money(found.spending),
+        "tax": _money(found.tax),
+        "spending_with_tax": _money(found.spending + found.tax),
+        "not_spending": _money(found.expenses - found.spending - found.tax),
         "unplaced": found.unplaced,
         "unplaced_out": _money(found.unplaced_out),
         "unplaced_in": _money(found.unplaced_in),
@@ -321,6 +327,8 @@ def _years(found: Years) -> Answer:
     return {
         "valuation": "market" if found.market else "cost",
         "scope": _scope(found.scope, found.taxed),
+        # What the engine calls pay, "Pay before tax" or "Take-home pay": the column's heading.
+        "pay_label": found.pay_label,
         "years": [
             {
                 "year": year.year,

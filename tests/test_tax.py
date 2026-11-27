@@ -3,6 +3,7 @@ was left over said truly whatever tax came to."""
 
 import re
 
+from tests import household
 from tests.conftest import World
 
 
@@ -66,3 +67,14 @@ def test_tax_above_money_in_leaves_a_share_of_money_in_that_is_true(world: World
 
     assert "No money in that month" not in words
     assert re.search(r"\S?\d+% of money in", words), words
+
+
+def test_hidden_tax_is_said_once_beside_the_months_spending(world: World) -> None:
+    """Blake and Casey share only their spending totals, so any tax of theirs is inside them:
+    "Where the month went" and the month so far sit side by side, and say so once, for both."""
+    book(world, "\n" + household.tax_text())
+
+    words = plain(world.signed_in("avery").get("/").text)
+
+    assert words.count("Any tax of those whose categories are not shared with you") == 1
+    assert "is in a total shown alone, and in October so far, not said apart." in words

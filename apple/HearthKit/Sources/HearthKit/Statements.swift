@@ -85,6 +85,27 @@ public struct StatementUnreviewed: Decodable, Sendable, Equatable {
     public let unplaced: Int
     public let unplacedOut: Money
     public let unplacedIn: Money
+    /// Of `expenses`, by kind, and spending with tax in it, as the engine works them out.
+    public let spending: Money
+    public let tax: Money
+    public let spendingWithTax: Money
+    public let notSpending: Money
+
+    public init(
+        rows: Int, income: Money, expenses: Money, unplaced: Int, unplacedOut: Money,
+        unplacedIn: Money, spending: Money, tax: Money, spendingWithTax: Money, notSpending: Money
+    ) {
+        self.rows = rows
+        self.income = income
+        self.expenses = expenses
+        self.unplaced = unplaced
+        self.unplacedOut = unplacedOut
+        self.unplacedIn = unplacedIn
+        self.spending = spending
+        self.tax = tax
+        self.spendingWithTax = spendingWithTax
+        self.notSpending = notSpending
+    }
 }
 
 /// How the holdings behind a statement were valued.
@@ -319,6 +340,8 @@ public struct YearByYear: Screen {
     public let recomputing: Bool
     public let valuation: String
     public let scope: StatementScope
+    /// What pay is called, as the engine decides it: "Pay before tax" or "Take-home pay".
+    public let payLabel: String
     public let years: [Year]
 
     public struct Year: Decodable, Sendable, Equatable, Identifiable {
