@@ -268,7 +268,7 @@ private struct SummaryTab: View {
                 open: rows(shown.spending))
             Tile(
                 label: (summary.market?.amount ?? 0) < 0 ? "Market took away" : "Market added",
-                figure: summary.market.map { Figures.total(Money(abs($0.amount)), currency: currency) } ?? "\u{2014}",
+                figure: summary.market.map { Figures.total(Money(abs($0.amount)), currency: currency) } ?? "\u{2013}",
                 detail: "Gain not yet realised", tone: .quiet, identifier: "statements.market")
         }
     }
@@ -897,6 +897,8 @@ private struct YearsTab: View {
                     }
                     .alignment(.trailing)
                 }
+                // A few years, never a page of them: stripes would run on down the empty table.
+                .alternatingRowBackgrounds(.disabled)
                 .frame(minWidth: 320, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .accessibilityIdentifier("statements.years")
             }

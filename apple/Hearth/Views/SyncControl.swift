@@ -4,13 +4,20 @@ import SwiftUI
 /// The toolbar's sync control, on every screen of the books: when the banks were last
 /// updated, which opens how each of them stands, and the button that asks them again now.
 ///
-/// With asking switched off it says so, and its button leads to Settings, where it is
-/// switched on: nothing here looks like a sync that does not happen.
+/// With asking switched off it says so plainly, as the person's own choice, and its button
+/// leads to Settings, where it is switched on: nothing here looks like a sync that does not
+/// happen. Only what needs the person, a bank to sign in to again or an update that went
+/// wrong, is drawn as a warning.
 struct SyncControl: View {
     let model: SyncModel
+    /// The sample's banks are invented, and said to be.
+    let isSample: Bool
 
     @Environment(\.openSettings) private var openSettings
     @State private var showing = false
+
+    private var label: String { model.label(sample: isSample) }
+    private var attention: Bool { model.needsAttention(sample: isSample) }
 
     var body: some View {
         if model.banks != nil {
@@ -19,12 +26,12 @@ struct SyncControl: View {
                     showing.toggle()
                 } label: {
                     HStack(spacing: 5) {
-                        if model.needsAttention {
+                        if attention {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(Palette.warning)
                         }
-                        Text(model.label())
-                            .foregroundStyle(Palette.ink2)
+                        Text(label)
+                            .foregroundStyle(attention ? Palette.ink : Palette.ink2)
                             .monospacedDigit()
                     }
                     .padding(.horizontal, 4)
@@ -32,21 +39,22 @@ struct SyncControl: View {
                 }
                 .help("How your banks stand")
                 // A button in the toolbar is read as one element: its words are the control's.
-                .accessibilityLabel(model.label())
-                .accessibilityValue(model.needsAttention ? "Needs you" : "")
+                .accessibilityLabel(label)
+                .accessibilityValue(attention ? "Needs you" : "")
                 .accessibilityIdentifier("sync.status")
                 .popover(isPresented: $showing, arrowEdge: .bottom) {
-                    SyncDetail(model: model, openSettings: openSettings)
+                    SyncDetail(model: model, isSample: isSample, openSettings: openSettings)
                 }
                 action
             }
             // A toolbar item keeps the accessibility of the view it first showed, so what it says
             // and offers is a new view each time either changes: VoiceOver, and the tests, then
             // read what is on screen.
-            .id(
-                Appearance(
-                    label: model.label(), attention: model.needsAttention, syncing: model.isSyncing,
-                    mayAsk: model.mayAsk))
+            .id(Appearance(label: label, attention: attention, syncing: model.isSyncing, mayAsk: model.mayAsk))
+            .onAppear {
+                // A debug build asked to show how the banks stand shows it once they are known.
+                if DebugLaunch.showSync { showing = true }
+            }
             .onChange(of: model.answered) {
                 // The person asked; what came of it is said where they asked.
                 showing = true
@@ -72,13 +80,14 @@ struct SyncControl: View {
             .accessibilityLabel("Update now")
             .accessibilityIdentifier("sync.now")
         } else {
+            // Not a sync that will not happen: the way to where asking is switched on.
             Button {
                 openSettings()
             } label: {
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: "gearshape")
             }
-            .help("Hearth is not asking your banks. Turn it on in Settings.")
-            .accessibilityLabel("Turn on updates in Settings")
+            .help("Hearth is not asking your banks. You can let it in Settings.")
+            .accessibilityLabel("Open Settings to let Hearth ask your banks")
             .accessibilityIdentifier("sync.settings")
         }
     }
@@ -95,15 +104,25 @@ private struct Appearance: Hashable {
 /// How each of the viewer's banks stands, and what the last sync brought or what went wrong.
 private struct SyncDetail: View {
     let model: SyncModel
+    let isSample: Bool
     let openSettings: OpenSettingsAction
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Your banks")
+            Text(isSample ? "The sample's banks" : "Your banks")
                 .font(.headline)
                 .foregroundStyle(Palette.ink)
+                .accessibilityAddTraits(.isHeader)
             if let banks = model.banks {
-                if !model.mayAsk {
+                if isSample {
+                    Text(
+                        model.mayAsk
+                            ? "They are invented, and nothing reaches Plaid."
+                            : "They are invented, and nothing reaches Plaid. Hearth asks them nothing until you let it in Settings."
+                    )
+                    .foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else if !model.mayAsk {
                     Text("Hearth is not asking your banks for anything. You can let it in Settings.")
                         .foregroundStyle(Palette.ink2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -122,13 +141,15 @@ private struct SyncDetail: View {
                         .foregroundStyle(Palette.ink2)
                         .accessibilityIdentifier("sync.arrived")
                 }
-                ForEach(banks.troubles, id: \.self) { trouble in
+                ForEach(banks.notes(sample: isSample), id: \.self) { note in
                     Label {
-                        Text(trouble).fixedSize(horizontal: false, vertical: true)
+                        Text(note.text).fixedSize(horizontal: false, vertical: true)
                     } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.warning)
+                        Image(systemName: note.needsYou ? "exclamationmark.triangle.fill" : "info.circle")
+                            .foregroundStyle(note.needsYou ? Palette.warning : Palette.ink3)
                     }
-                    .foregroundStyle(Palette.ink)
+                    .foregroundStyle(note.needsYou ? Palette.ink : Palette.ink2)
+                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("sync.trouble")
                 }
             }
@@ -163,10 +184,12 @@ private struct BankLine: View {
                 Text(bank.freshness())
                     .foregroundStyle(Palette.ink2)
                     .monospacedDigit()
+                    .fixedSize()
                 if let added = bank.added {
                     Text(Banks.count(added))
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.ink3)
+                        .fixedSize()
                 }
             }
         }

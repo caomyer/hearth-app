@@ -70,7 +70,7 @@ private struct Figures: View {
             }
             .frame(maxWidth: 720, alignment: .leading)
             .padding(.horizontal, 28)
-            .padding(.vertical, 26)
+            .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -90,6 +90,7 @@ private struct Figures: View {
             Text(HearthKit.Figures.total(worth.value, currency: overview.currency))
                 .font(.system(size: 46, weight: .semibold))
                 .tracking(-1)
+                .monospacedDigit()
                 .foregroundStyle(Palette.ink)
                 .textSelection(.enabled)
                 .accessibilityIdentifier("overview.netWorth")
@@ -104,7 +105,7 @@ private struct Figures: View {
     @ViewBuilder
     private var changes: some View {
         if worth.isKnown {
-            HStack(spacing: 14) {
+            HStack(spacing: 16) {
                 if let since = worth.sinceMonthStart {
                     Change(amount: since, currency: overview.currency, over: "since \(monthStart)")
                 }
@@ -125,7 +126,8 @@ private struct Figures: View {
     private var freshness: String {
         var text = "Computed \(HearthKit.Figures.moment(overview.computedAt))"
         if let priced = worth.pricedOn {
-            text += ", with prices from \(priced.date().formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))"
+            // The day as Holdings writes it.
+            text += ", with prices from \(HearthKit.Figures.weekday(priced, asOf: priced))"
         }
         text += "."
         if worth.stalePrices > 0 {
@@ -146,6 +148,7 @@ private struct Change: View {
         HStack(spacing: 4) {
             Text(HearthKit.Figures.change(amount, currency: currency))
                 .fontWeight(.semibold)
+                .monospacedDigit()
                 .foregroundStyle(colour)
             Text(over).foregroundStyle(Palette.ink2)
         }
@@ -216,10 +219,10 @@ private struct ReviewBanner: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .accessibilityIdentifier("overview.review")
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.line, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 10).fill(Palette.background))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.line, lineWidth: 1))
     }
 
     private var count: String {

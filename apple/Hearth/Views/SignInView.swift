@@ -44,7 +44,7 @@ struct SignInView: View {
                     .accessibilityLabel("Username")
                     .accessibilityIdentifier("signIn.username")
                     .onSubmit { focus = .password }
-                label("Password").padding(.top, 14)
+                label("Password").padding(.top, 16)
                 SecureField("", text: $password)
                     .textContentType(.password)
                     .focused($focus, equals: .password)
@@ -64,7 +64,7 @@ struct SignInView: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
                 .disabled(username.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty || session.isSigningIn)
-                .padding(.top, 22)
+                .padding(.top, 24)
                 .accessibilityIdentifier("signIn.submit")
             }
             .font(.system(size: 13))
@@ -116,7 +116,7 @@ struct SignInView: View {
         case .throttled:
             "Too many attempts. Wait a few minutes, then try again."
         case .mustChangePassword:
-            "That is a one-time password. Choose your own in Hearth in your browser, then sign in here with it."
+            "That is a one-time password. Choose your own in Hearth in the browser, then sign in here with it."
         case .savedSignInFailed:
             "The password saved on this Mac no longer works. Sign in again."
         }
@@ -135,15 +135,15 @@ private struct Problem: View {
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .padding(.leading, 12)
-        .padding(.trailing, 14)
+        .padding(.trailing, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.errorBackground)
         .overlay(alignment: .leading) {
             Rectangle().fill(Palette.unfavourable).frame(width: 3)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("signIn.problem")
     }

@@ -8,6 +8,7 @@ struct ReviewView: View {
     @State private var section: Section = .queue
     @State private var text = ""
     @State private var choosing = false
+    @State private var openedStart = false
     @FocusState private var queueFocused: Bool
 
     enum Section: Hashable {
@@ -52,7 +53,7 @@ struct ReviewView: View {
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
                         ReviewHead(review: review, queue: queue, section: $section)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, 28)
                             .padding(.top, 20)
                             .padding(.bottom, 12)
                         Divider().overlay(Palette.line)
@@ -73,7 +74,10 @@ struct ReviewView: View {
                     }
                 }
                 }
-                .onAppear { queueFocused = true }
+                .onAppear {
+                    queueFocused = true
+                    openStart(queue)
+                }
                 .onChange(of: choosing) { _, open in
                     // Once a category is chosen the queue has the keyboard again, so Return saves it.
                     if !open, section == .queue { queueFocused = true }
@@ -82,6 +86,29 @@ struct ReviewView: View {
                     if rows == 0 { section = .queue }
                 }
             }
+        }
+    }
+
+    /// What a debug build was asked to open Review on: "Where did it go?", or a row by its
+    /// payee, with its category chooser open or not (`StartScreen`).
+    private func openStart(_ queue: ReviewQueue) {
+        guard !openedStart else { return }
+        openedStart = true
+        if StartScreen.elsewhere, queue.elsewhere.rows > 0 {
+            section = .elsewhere
+        }
+        guard let (payee, choose) = StartScreen.reviewRow,
+            let row = queue.rows.first(where: { $0.title == payee })
+        else { return }
+        if !review.oneByOne, let group = queue.groups.first(where: { $0.rows.contains(row.id) }),
+            !review.isOpen(group)
+        {
+            review.toggle(group)
+        }
+        review.selection = .row(row.id)
+        if choose {
+            // Once the row's own detail, which holds the chooser, is in.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { choosing = true }
         }
     }
 
@@ -178,7 +205,9 @@ private struct ReviewHead: View {
         var text = "\(Figures.cents(queue.remaining.moved, currency: queue.currency)) moved, across "
         text += queue.groupsWaiting == 1 ? "1 group." : "\(queue.groupsWaiting.formatted()) groups."
         if let oldest = queue.oldest {
-            text += " Oldest from \(Figures.day(oldest, asOf: queue.asOf))."
+            // A day is never broken over two lines.
+            let day = Figures.day(oldest, asOf: queue.asOf).replacingOccurrences(of: " ", with: "\u{00A0}")
+            text += " Oldest from \(day)."
         }
         return text
     }
@@ -505,13 +534,14 @@ private struct GroupLine: View {
                 Text("\(group.name) · \(group.size.formatted())")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("review.groupName")
+                // Wrapped where the queue is narrow, never cut.
                 Text(caption)
                     .font(.system(size: 12))
                     .foregroundStyle(Palette.ink3)
                     .monospacedDigit()
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             if group.oneDecision {
@@ -556,18 +586,26 @@ private struct QueueRow: View {
                 Text(row.title)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Palette.ink)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("review.payee")
-                Text(caption)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Palette.ink3)
-                    .lineLimit(1)
+                // Its day and why it is suggested so are never cut: the group and the account,
+                // which the item beside the queue says too, give way first, then the line wraps.
+                ViewThatFits(in: .horizontal) {
+                    ForEach(Array(captions.enumerated()), id: \.offset) { _, caption in
+                        Text(caption).lineLimit(1)
+                    }
+                    Text(captions.last ?? "").fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.ink3)
+                .accessibilityIdentifier("review.caption")
+                .help(captions.first ?? "")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(row.isReconciling ? "To confirm" : row.suggested?.label ?? "None")
                 .font(.system(size: 12))
                 .foregroundStyle(row.suggested == nil ? Palette.ink3 : Palette.ink2)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 104, alignment: .leading)
             Text(Figures.amount(row.amount))
                 .font(.system(size: 13))
@@ -580,12 +618,23 @@ private struct QueueRow: View {
         .accessibilityIdentifier("review.row.\(row.id)")
     }
 
-    private var caption: String {
-        // A difference's reason is what to do about it, which its detail says in full.
-        var parts = [Figures.day(row.date, asOf: asOf)] + (row.isReconciling ? [] : [row.reason])
-        if showsGroup { parts.append(row.group) }
-        if let account = row.account { parts.append(account.name) }
-        return parts.joined(separator: " · ")
+    /// The second line, whole first, then with less: the account goes, then the group. The day
+    /// and the reason always stay. A difference's reason is what to do about it, which its
+    /// detail says in full, so it carries its account instead.
+    private var captions: [String] {
+        let day = Figures.day(row.date, asOf: asOf).replacingOccurrences(of: " ", with: "\u{00A0}")
+        let account = row.account?.name
+        if row.isReconciling {
+            return [[day, account].compactMap { $0 }.joined(separator: " · "), day]
+        }
+        // "Nothing suggested" beside a suggestion that says None says nothing more.
+        let reason = row.suggested == nil && row.reason == "Nothing suggested" ? nil : row.reason
+        let kept = [day, reason].compactMap { $0 }
+        let group = showsGroup ? [row.group] : []
+        var said = [(kept + group + [account].compactMap { $0 }).joined(separator: " · ")]
+        if account != nil { said.append((kept + group).joined(separator: " · ")) }
+        if !group.isEmpty { said.append(kept.joined(separator: " · ")) }
+        return said
     }
 }
 
@@ -617,8 +666,8 @@ private struct NoticeBar: View {
                         .accessibilityIdentifier("review.undo")
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 12)
             }
             .background(Palette.surface)
         }
@@ -685,23 +734,42 @@ private struct GroupDetail: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                HStack(spacing: 8) {
-                    if group.oneDecision {
-                        Button("Accept \(group.rows.count.formatted()) as \(group.suggested.first?.label ?? "suggested")") {
-                            Task { await review.accept(group) }
-                        }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(review.decisions.isDeciding)
-                        .accessibilityIdentifier("review.decideGroup")
+                // The keys beside the buttons where they fit whole, under them where they do not.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        actions
+                        Spacer(minLength: 8)
+                        keys
                     }
-                    Button(review.isOpen(group) ? "Hide them" : "Show them") { review.toggle(group) }
-                        .buttonStyle(.bordered)
-                    Spacer(minLength: 0)
-                    KeyHint(text: group.oneDecision ? "↑↓ · Return" : "↑↓ · Return opens it")
+                    VStack(alignment: .leading, spacing: 8) {
+                        actions
+                        keys
+                    }
                 }
             }
-            .padding(22)
+            .padding(20)
         }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            if group.oneDecision {
+                Button("Accept \(group.rows.count.formatted()) as \(group.suggested.first?.label ?? "suggested")") {
+                    Task { await review.accept(group) }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(review.decisions.isDeciding)
+                .accessibilityIdentifier("review.decideGroup")
+            }
+            Button(review.isOpen(group) ? "Hide them" : "Show them") { review.toggle(group) }
+                .buttonStyle(.bordered)
+        }
+        .fixedSize()
+    }
+
+    private var keys: some View {
+        KeyHint(text: group.oneDecision ? "↑↓ · Return" : "↑↓ · Return opens it")
+            .fixedSize()
     }
 
     private var suggested: String {
@@ -742,8 +810,8 @@ struct Panel<Content: View>: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.line, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 10).fill(Palette.background))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.line, lineWidth: 1))
     }
 }
 

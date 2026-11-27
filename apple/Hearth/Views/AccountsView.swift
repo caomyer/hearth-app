@@ -12,7 +12,7 @@ struct TransactionsView: View {
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(Palette.ink)
                 .padding(.horizontal, 28)
-                .padding(.top, 22)
+                .padding(.top, 24)
             JournalView(model: model, accounts: accounts, identifier: "transactions")
         }
     }
@@ -58,7 +58,7 @@ private struct AccountList: View {
                     .padding(.bottom, 4)
                 Text("Each account says when it was last updated and whether its balance agrees with its bank.")
                     .foregroundStyle(Palette.ink2)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 16)
                 ColumnHeads()
                 ForEach(accounts.groups) { group in
                     Text(group.name.uppercased())
@@ -82,7 +82,7 @@ private struct AccountList: View {
             .font(.system(size: 13))
             .frame(maxWidth: 880, alignment: .leading)
             .padding(.horizontal, 28)
-            .padding(.vertical, 22)
+            .padding(.vertical, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -91,7 +91,7 @@ private struct AccountList: View {
 /// The "Last updated" column: wide enough for a date with its year on one line, and for the
 /// sign-in hint on two.
 private enum LastUpdated {
-    static let width: CGFloat = 200
+    static let width: CGFloat = 160
 }
 
 private struct ColumnHeads: View {
@@ -99,8 +99,8 @@ private struct ColumnHeads: View {
         HStack(spacing: 16) {
             Text("Account").frame(maxWidth: .infinity, alignment: .leading)
             Text("Last updated").frame(width: LastUpdated.width, alignment: .leading)
-            Text("Balance").frame(width: 130, alignment: .trailing)
-            Text("Bank balance").frame(width: 220, alignment: .leading)
+            Text("Balance").frame(width: 120, alignment: .trailing)
+            Text("Bank balance").frame(width: 200, alignment: .leading)
         }
         .font(.system(size: 12, weight: .medium))
         .foregroundStyle(Palette.ink3)
@@ -137,9 +137,9 @@ private struct AccountLine: View {
             Text(account.balanceText(currency: currency) ?? "")
                 .monospacedDigit()
                 .foregroundStyle(Palette.ink)
-                .frame(width: 130, alignment: .trailing)
+                .frame(width: 120, alignment: .trailing)
             StandingLine(account: account, asOf: asOf, currency: currency)
-                .frame(width: 220, alignment: .leading)
+                .frame(width: 200, alignment: .leading)
         }
         .padding(.vertical, 9)
         .contentShape(Rectangle())
@@ -197,7 +197,7 @@ struct AccountView: View {
             VStack(alignment: .leading, spacing: 0) {
                 AccountHead(page: page)
                     .padding(.horizontal, 28)
-                    .padding(.top, 22)
+                    .padding(.top, 24)
                     .padding(.bottom, 6)
                 if page.account.transactions {
                     JournalView(model: screen.journal, accounts: nil, identifier: "account.journal")
@@ -240,7 +240,7 @@ private struct AccountHead: View {
                         .foregroundStyle(Palette.ink2)
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, 16)
             .accessibilityIdentifier("account.balance")
             StandingLine(account: account, asOf: page.asOf, currency: page.currency)
                 .padding(.top, 6)
