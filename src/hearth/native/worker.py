@@ -51,6 +51,13 @@ class Worker:
         threading.Thread(target=self._run, args=(job, work), name="hearth-ask", daemon=True).start()
         return None
 
+    def forget(self, viewer: str) -> None:
+        """Let go of every answer worked out for `viewer`, finished or not, as an act of theirs
+        may have changed what it says (each key starts with the viewer's username)."""
+        with self._lock:
+            for key in [k for k in self._jobs if isinstance(k, tuple) and k[:1] == (viewer,)]:
+                del self._jobs[key]
+
     def wait(self, key: Hashable, timeout: float | None = None) -> None:
         """Return once the work for `key`, if any, has ended."""
         with self._lock:

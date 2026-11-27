@@ -716,15 +716,26 @@ def recorded(held: Held, proposal: Proposal) -> bool:
     Proposed by its Plaid ids, which only that bank account's rows carry; at least `MINIMUM` of
     them agreeing on the account, as many as content alone needs to propose anything; and
     reaching the base's latest month on it (`RECENT`), so an account that was this bank's
-    once, years ago, and is something else since, does not pass on everything after."""
+    once, years ago, and is something else since, does not pass on everything after; and on a
+    strict majority of the base's entries on the account from the first of them to its last
+    entry there, so a few rows of this bank's at the end of an account that holds years of
+    something else's do not hand all of it over."""
     account = proposal.proposed
     if proposal.how is not How.ID or account is None:
         return False
     on = proposal.ids.on.get(account)
-    if on is None or on.count < MINIMUM or on.last is None:
+    if on is None or on.count < MINIMUM or on.first is None or on.last is None:
         return False
     last = held.last_entry.get(account)
-    return last is None or on.last >= last - RECENT
+    if last is not None and on.last < last - RECENT:
+        return False
+    end = max(on.last, last) if last is not None else on.last
+    spanned = {
+        posting.entry
+        for posting in held.postings
+        if posting.account == account and on.first <= posting.day <= end
+    }
+    return 2 * on.count > len(spanned)
 
 
 def confirm(
@@ -737,9 +748,10 @@ def confirm(
     weighing: Weighing | None = None,
 ) -> None:
     """Record each match in `wanted`, a connected account's Plaid id with the base account it
-    is, or None for the one proposed, as the mapping a member confirms on the Connect page.
-    Every one is checked before any is written, and one hearth refuses raises `MatchRefused`
-    having written nothing.
+    is, or None for the one proposed, as the mapping a member confirms on the Connect page, and
+    return nothing: whoever wants the survey as it stands after asks for it (`survey`). Every
+    one is checked against the survey it was weighed from before any is written, and one
+    hearth refuses raises `MatchRefused` having written nothing.
 
     `by` is the member who confirms it, as the Connect page records one, or None for whoever
     runs hearth on its machine (``hearth match-accounts``). `weighing` is the survey the

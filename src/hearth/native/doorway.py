@@ -24,12 +24,13 @@ screen. Days are ISO dates, and moments are UTC to the second (``2026-10-15T12:0
 
 import json
 import sqlite3
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
 from datetime import date
 
 from hearth import db, members
 from hearth.books import Bookkeeper
+from hearth.books import standing as standing_of
 from hearth.clock import Clock, system_clock
 from hearth.config import Settings
 from hearth.connections import RegisteredConnections
@@ -109,11 +110,26 @@ class Doorway:
         except Malformed:
             return dict(MISSING)
         if screen.slow and self.worker is not None:
-            # The same ask, by the same viewer, is the same piece of work.
-            key = (self.viewer, ask, json.dumps(given or {}, sort_keys=True))
-            found = self.worker.answer(key, lambda: self._answer_now(screen, asked))
+            found = self.worker.answer(
+                self._key(ask, given), lambda: self._answer_now(screen, asked)
+            )
             return dict(LOADING) if found is None else found
         return self._answer_now(screen, asked)
+
+    def _key(self, ask: str, given: Given | None) -> Hashable:
+        """What makes a slow answer the same one: the viewer and whether they are an admin, as
+        things stand (``books.standing``, which changes whenever anything a recompute reads
+        does) on their own day, and the ask itself. An answer worked out under anything else is
+        never handed out."""
+        conn = db.connect(self.settings.database)
+        try:
+            member = members.find(conn, self.viewer)
+        finally:
+            conn.close()
+        admin = member.is_admin if member is not None else None
+        today = self.clock().astimezone().date()
+        standing = standing_of(self.settings)
+        return (self.viewer, admin, standing, today, ask, json.dumps(given or {}, sort_keys=True))
 
     def _answer_now(self, screen: Screen, asked: object) -> Answer:
         conn = db.connect(self.settings.database)
@@ -161,6 +177,9 @@ class Doorway:
         own desk and nothing else, then recompute the books behind it, as a page's decision
         does; or one of the ledger's actions (``hearth.native.ledger``). Anything it names that
         is not on the viewer's desk is missing, like an action that is not there."""
+        if self.worker is not None:
+            # Whatever the viewer asked before this is not as things will stand after it.
+            self.worker.forget(self.viewer)
         if action in LEDGER_ACTIONS:
             return self._ledger(action, given or {})
         decision = review.DECISIONS.get(action)

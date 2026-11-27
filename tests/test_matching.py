@@ -934,3 +934,42 @@ def test_a_live_ledger_hearth_inherits_is_vouched_for_through_the_last_sync(
     synced = min(item.last_synced_at.astimezone().date(), TODAY)
     assert synced > BASE_ENDS
     assert found.synced == {"Assets:Zq:Checking": synced}
+
+
+def _pot(days: int, ours: int) -> tuple[carrying.Held, matching.Proposal]:
+    """An account of `days` entries, one a day, the last `ours` of them the connection's rows by
+    their ids, proposed by those ids."""
+    text = "2010-01-01 open Assets:Zq:Pot USD\n2010-01-01 open Income:Zq:X USD\n"
+    first = date(2010, 1, 2)
+    for n in range(days):
+        text += f'{first + timedelta(days=n)} * "zq"\n  Assets:Zq:Pot  1.00 USD\n  Income:Zq:X\n'
+    entries, errors, _ = loader.load_string(text)
+    assert not errors
+    held = read(tuple(entries))
+    last = held.last_entry["Assets:Zq:Pot"]
+    ids = matching.ById({"Assets:Zq:Pot": Stretch(ours, last - timedelta(days=ours - 1), last)})
+    return held, matching.Proposal(None, "Assets:Zq:Pot", How.ID, ids, (), None)  # type: ignore[arg-type]
+
+
+def test_ids_that_hold_only_the_end_of_an_accounts_history_vouch_for_none_of_it() -> None:
+    """The reviewer's case: five of the bank's ids in the last weeks of an account the base
+    holds three thousand days of, recent and enough of them, but over the days they span most
+    of the account's entries are something else's: its history is not handed over by them.
+    Every entry over those days being the bank's, it is."""
+    held, _ = _pot(3000, 5)
+    last = held.last_entry["Assets:Zq:Pot"]
+    partial = matching.Proposal(
+        None,  # type: ignore[arg-type]
+        "Assets:Zq:Pot",
+        How.ID,
+        matching.ById({"Assets:Zq:Pot": Stretch(5, last - timedelta(days=10), last)}),
+        (),
+        None,
+    )
+    assert not matching.recorded(held, partial)
+    spread = matching.ById(
+        {"Assets:Zq:Pot": Stretch(5, date(2010, 1, 2), date(2010, 1, 2) + timedelta(days=2999))}
+    )
+    assert not matching.recorded(held, replace(partial, ids=spread)), "five ids over 3,000 days"
+    held, whole = _pot(40, 40)
+    assert matching.recorded(held, whole)
