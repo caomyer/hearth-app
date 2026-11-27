@@ -125,7 +125,7 @@ HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE
 ```
 
 - `-openBooks sample|own` opens those books at once.
-- `-startScreen overview|review|transactions|holdings|statements|accounts|account:<name>|holding:<symbol>|statements:<tab>` opens that screen, Statements on `summary`, `incomeStatement`, `balanceSheet` or `years`; an account is found by its name once the accounts are in, and a holding by its symbol, with its price beside Holdings, once Holdings is in.
+- `-startScreen overview|review|transactions|holdings|statements|accounts|account:<name>|holding:<symbol>|statements:<tab>` opens that screen, Statements on `summary`, `income`, `balance` or `years` (any other tab opens the Summary and says so in the log); an account is found by its name once the accounts are in, and a holding by its symbol, with its price beside Holdings, once Holdings is in.
 - `-firstReview YES` opens the sample as a first import leaves it: two years, over a thousand rows, none reviewed (`hearth demo --first-review`).
 - `-sampleAsOf YYYY-MM-DD` opens the sample as it stood on that day (`hearth demo --as-of`).
   The sample is drawn back from the day it is opened, so what waits in its Review changes from day to day; the UI tests that work Review pin it this way.

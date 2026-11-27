@@ -404,7 +404,7 @@ final class FirstLaunchTests: XCTestCase {
     /// page.
     @MainActor
     func testTheBalanceSheetOpensAnAccount() {
-        let app = sample(startingOn: "statements:balanceSheet")
+        let app = sample(startingOn: "statements:balance")
 
         let sheet = app.descendants(matching: .any)["statements.sheet"].firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 60), "the balance sheet did not open")

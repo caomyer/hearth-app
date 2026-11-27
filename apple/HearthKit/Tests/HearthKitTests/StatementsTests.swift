@@ -22,7 +22,10 @@ struct StatementsTests {
         #expect(summary.scope.without == ["Casey"])
         #expect(summary.period == StatementPeriod(from: Day(year: 2026, month: 8, day: 1), to: Day(year: 2026, month: 10, day: 15)))
         #expect(summary.netWorth.now == money("158206.46"))
-        #expect(summary.netWorth.before == nil)
+        // The accounts' history begins on Aug 1, the period's first day: nothing was held before.
+        #expect(summary.netWorth.before == money("0"))
+        #expect(!summary.isFloor)
+        #expect(summary.late.isEmpty)
         #expect(summary.spending.now == money("5701.81"))
         #expect(summary.spending.categories.contains("Expenses:Bonsai"))
         #expect(summary.lines.first?.key == "pay")
@@ -66,6 +69,19 @@ struct StatementsTests {
         #expect(year.year == 2026)
         #expect(year.partial && year.sparse)
         #expect(year.savingsRate == nil)
+    }
+
+    @Test("a debug build opens a tab by an obvious name")
+    func tabNames() {
+        #expect(StatementsModel.Tab.allCases.map(\.rawValue) == ["summary", "income", "balance", "years"])
+    }
+
+    @Test("an entry opened from a statement's line says its part, and one from anywhere else none")
+    func part() throws {
+        let entry = #"{"position":0,"kind":"transaction","date":"2026-10-09","payee":"Split Shop","narration":"","accounts":[],"category":null,"unreviewed":false,"suggested":false,"waiting":null,"checked":null,"reason":null,"amount":"-100.00","sides":[],"review":null,"part":"-60.00"}"#
+        #expect(try replyDecoder().decode(Entry.self, from: Data(entry.utf8)).part == money("-60.00"))
+        let older = entry.replacingOccurrences(of: #","part":"-60.00""#, with: "")
+        #expect(try replyDecoder().decode(Entry.self, from: Data(older.utf8)).part == nil)
     }
 
     @Test("a tone the app does not know is told without colour")

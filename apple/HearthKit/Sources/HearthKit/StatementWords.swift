@@ -102,13 +102,15 @@ public enum StatementWords {
             let style = Date.FormatStyle(locale: locale).weekday(.abbreviated).month(.abbreviated).day()
             lines.append("Prices from \(day.date(in: Day.calendar).formatted(style.utc)).")
         }
-        if !valuing.atCost.isEmpty {
-            let named = valuing.atCost.formatted(.list(type: .and))
-            lines.append(valuing.atCost.count == 1 ? "\(named) has no price, so it is valued at what it cost." : "\(named) have no price, so they are valued at what they cost.")
+        if !valuing.unpriced.isEmpty {
+            let named = valuing.unpriced.formatted(.list(type: .and))
+            lines.append(
+                valuing.unpriced.count == 1
+                    ? "\(named) has no price, so it is not valued: each figure it is in is at least what it says."
+                    : "\(named) have no price, so they are not valued: each figure they are in is at least what it says.")
         }
-        if !valuing.costUnknown.isEmpty {
-            let named = valuing.costUnknown.formatted(.list(type: .and))
-            lines.append("Nothing says what \(named) cost, so cost is taken as what it is worth.")
+        if valuing.stale > 0 {
+            lines.append(valuing.stale == 1 ? "One price is older." : "\(valuing.stale.formatted()) prices are older.")
         }
         if !valuing.unvalued.isEmpty {
             let named = valuing.unvalued.formatted(.list(type: .and))

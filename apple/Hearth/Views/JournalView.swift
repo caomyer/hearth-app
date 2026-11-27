@@ -365,7 +365,8 @@ private struct EntryRow: View {
         switch entry.kind {
         case .balance: Figures.amount(entry.amount, signed: false)
         case .transfer where entry.isOwnTransfer: Figures.amount(entry.amount, signed: false)
-        default: Figures.amount(entry.amount)
+        // Opened from a statement's line, the part of a split row that line adds up.
+        default: Figures.amount(entry.part ?? entry.amount)
         }
     }
 

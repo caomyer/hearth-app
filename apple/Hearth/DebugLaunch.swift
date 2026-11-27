@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import HearthKit
+import os
 
 /// Ways to open a debug build straight onto a screen, so each can be looked at without a
 /// click: `-openBooks sample|own`,
@@ -87,13 +88,22 @@ enum StartScreen {
         #endif
     }
 
-    /// The tab of Statements to open on: `summary`, `incomeStatement`, `balanceSheet` or
-    /// `years`.
+    /// The tab of Statements to open on: `summary`, `income`, `balance` or `years`. Any other
+    /// name opens the Summary and says so in the log.
     static var statementsTab: StatementsModel.Tab? {
         #if DEBUG
             guard let named = UserDefaults.standard.string(forKey: "startScreen"), named.hasPrefix("statements:")
             else { return nil }
-            return StatementsModel.Tab(rawValue: String(named.dropFirst("statements:".count)))
+            let tab = String(named.dropFirst("statements:".count))
+            guard let found = StatementsModel.Tab(rawValue: tab) else {
+                let known = StatementsModel.Tab.allCases.map(\.rawValue).joined(separator: ", ")
+                let said = "-startScreen statements:\(tab) is no tab of Statements; the tabs are \(known)"
+                Logger(subsystem: "dev.hearth.Hearth", category: "launch").error("\(said, privacy: .public)")
+                // And on standard error, where whoever launched the build is looking.
+                FileHandle.standardError.write(Data((said + "\n").utf8))
+                return nil
+            }
+            return found
         #else
             nil
         #endif

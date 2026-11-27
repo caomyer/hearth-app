@@ -88,12 +88,13 @@ public struct StatementUnreviewed: Decodable, Sendable, Equatable {
 /// How the holdings behind a statement were valued.
 public struct Valuing: Decodable, Sendable, Equatable {
     public let pricedOn: Day?
-    /// Holdings with no price, valued at what they cost.
-    public let atCost: [String]
-    /// Holdings whose cost is not known, which cost what they are worth.
-    public let costUnknown: [String]
+    /// Holdings with no price, not valued at market value, as no screen values them: a market
+    /// value they are in is at least what it says.
+    public let unpriced: [String]
     /// Holdings with neither a price nor a cost, left out.
     public let unvalued: [String]
+    /// How many positions are valued at an old price.
+    public let stale: Int
 }
 
 /// The Statements Summary: this period against the same days a year before
@@ -120,6 +121,11 @@ public struct StatementSummary: Screen {
     public let why: Why?
     public let valuing: Valuing
     public let unreviewed: StatementUnreviewed
+    /// Whether net worth leaves out holdings with no price, so is at least what it says.
+    public let isFloor: Bool
+    /// Accounts whose holdings the books know only from inside the period: net worth's start,
+    /// and why it changed, are without them.
+    public let late: [String]
 
     /// Why net worth changed: from the start, through each part, to the end, and whatever is
     /// left, shown, never hidden.
@@ -222,10 +228,14 @@ public struct BalanceSheet: Screen {
     /// What an account or a group held at the start or the end.
     public struct Held: Decodable, Sendable, Equatable {
         public let value: Money
-        public let cost: Money
-        /// Gain not yet realised: what it is worth less what it cost.
-        public let gain: Money
+        /// What it cost by its lots, as Holdings says it; nil where nothing says.
+        public let cost: Money?
+        /// Gain not yet realised: what it is worth less what it cost; nil without a cost or
+        /// a price.
+        public let gain: Money?
         public let securities: Bool
+        /// Whether `value` leaves out holdings with no price.
+        public let isFloor: Bool
     }
 
     /// An account, or a group of them.

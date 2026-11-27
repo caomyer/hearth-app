@@ -213,6 +213,10 @@ private struct SummaryTab: View {
         if !summary.againstCovered {
             lines.append("The books do not hold all of the same days a year before, so nothing is set against them.")
         }
+        if !summary.late.isEmpty {
+            let named = summary.late.formatted(.list(type: .and))
+            lines.append("What \(named) held at the start is not known: it is known only from later, so net worth's start, and why it changed, are without it.")
+        }
         if summary.scope.awaiting > 0 {
             lines.append("A balance is not known yet, so net worth and why it changed are not shown.")
         }
@@ -222,7 +226,7 @@ private struct SummaryTab: View {
     private var headline: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
             Tile(
-                label: "Net worth",
+                label: summary.isFloor ? "Net worth, at least" : "Net worth",
                 figure: StatementWords.figure(summary.netWorth.now, rate: false, currency: currency),
                 detail: StatementWords.change(summary.netWorth, currency: currency),
                 tone: summary.netWorth.tone, identifier: "statements.netWorth",
@@ -771,6 +775,7 @@ private struct SheetTab: View {
             Text(Figures.amount(money, signed: signed))
                 .fontWeight(row.total ? .semibold : .regular)
                 .monospacedDigit()
+                .help(row.node.end?.isFloor == true ? "At least this: a holding in it has no price" : "")
         } else if row.node.end == nil {
             Text("Not known").foregroundStyle(Palette.ink3)
         } else {

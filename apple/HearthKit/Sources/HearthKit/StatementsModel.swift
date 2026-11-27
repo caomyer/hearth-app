@@ -6,10 +6,11 @@ import Observation
 @MainActor
 @Observable
 public final class StatementsModel {
+    /// Each tab, by the name a debug build opens it with: `-startScreen statements:<name>`.
     public enum Tab: String, Sendable, Hashable, CaseIterable, Identifiable {
         case summary
-        case incomeStatement
-        case balanceSheet
+        case incomeStatement = "income"
+        case balanceSheet = "balance"
         case years
 
         public var id: String { rawValue }
