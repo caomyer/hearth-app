@@ -27,7 +27,7 @@ from pathlib import Path
 
 from beancount.core.data import Open
 
-from hearth import base, ledger_import
+from hearth import base, ledger_child, ledger_import
 from hearth import matching as matches
 from hearth.accounts import Account
 from hearth.books import Books
@@ -294,9 +294,10 @@ class LedgerDesk:
         nothing. Concealed from anyone who may not bring a ledger in."""
         if not self._gate.may_bring_in_ledger():
             raise Concealed
-        checked = ledger_import.check_ledger(self._settings, path, now=self._clock())
+        # Read in a process of its own, which beancount's parser cannot hold the bridge up from.
+        checked = ledger_child.check(self._settings, path, now=self._clock())
         refused = checked.refused
-        return LedgerCheck(_found(checked), Said.of(refused) if refused is not None else None)
+        return LedgerCheck(_found(checked.found), Said.of(refused) if refused is not None else None)
 
     def bring_in(self, path: Path) -> BroughtIn:
         """Bring the ledger at `path` in as the household's base, once, exactly as
@@ -304,14 +305,15 @@ class LedgerDesk:
         if not self._gate.may_bring_in_ledger():
             raise Concealed
         try:
-            done = ledger_import.import_ledger(self._settings, path, now=self._clock(), once=True)
-        except ledger_import.ImportRefused as refused:
-            return BroughtIn("refused", Said.of(refused))
+            done = ledger_child.bring_in(self._settings, path, now=self._clock())
         except Exception:
             # Nothing is written unless the import commits whole (``hearth.base``).
             _log.exception("bringing a ledger in stopped on an unexpected error")
             return BroughtIn("failed")
-        return BroughtIn("unchanged" if done.unchanged else "imported")
+        if done.refused is not None:
+            failed = done.refused.why is ledger_import.Refusal.FAILED
+            return BroughtIn("failed" if failed else "refused", Said.of(done.refused))
+        return BroughtIn(done.outcome)
 
     def _unclaimed(self) -> int | None:
         if self._books is None:
@@ -513,35 +515,28 @@ class LedgerDesk:
         return self._clock().astimezone().date()
 
 
-def _found(checked: ledger_import.Checked) -> LedgerFound | None:
-    examined = checked.examined
-    if examined is None:
+def _found(found: ledger_import.Summary | None) -> LedgerFound | None:
+    if found is None:
         return None
-    check = examined.check
-    worth = check.worth
     counted: dict[str, int] = {}
-    for opened in checked.accounts:
+    for opened in found.accounts:
         counted[opened.kind] = counted.get(opened.kind, 0) + 1
-    unused = check.unused
+    unused = found.unused
     return LedgerFound(
-        files=check.files,
-        entry_count=check.entries,
-        first=check.first,
-        last=check.last,
-        accounts=checked.accounts,
+        files=found.files,
+        entry_count=found.entries,
+        first=found.first,
+        last=found.last,
+        accounts=found.accounts,
         kinds=tuple(counted.items()),
-        assertions=check.assertions,
-        failing=checked.failing,
-        currencies=checked.currencies,
-        commodities=checked.commodities,
+        assertions=found.assertions,
+        failing=found.failing,
+        currencies=found.currencies,
+        commodities=found.commodities,
         worth=Worth(
-            worth.known_total,
-            worth.currency,
-            worth.as_of,
-            not worth.complete,
-            tuple((p.holding.commodity, p.holding.account) for p in worth.unpriced),
+            found.worth, found.worth_currency, found.worth_as_of, found.worth_floor, found.unpriced
         ),
-        runs=check.runs,
+        runs=found.runs,
         unused=unused,
         plugins=sum(1 for u in unused if u.kind in ("plugin", "documents")),
         custom=sum(1 for u in unused if u.kind == "custom"),

@@ -37,6 +37,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -195,15 +196,40 @@ def staged(
         shutil.rmtree(staging, ignore_errors=True)
 
 
+WAIT = 120.0
+"""How many seconds an import waits for another to let the base's lock go before it gives up:
+longer than any import of a household's ledger takes."""
+
+
+class LockTimedOut(Exception):  # noqa: N818 - it names an outcome
+    """Another import held the base's lock for longer than `WAIT`."""
+
+
+class LockUnavailable(Exception):  # noqa: N818 - it names an outcome
+    """The file system cannot lock a file, so imports cannot be kept from racing."""
+
+
 @contextmanager
-def locked(directory: Path) -> Iterator[None]:
+def locked(directory: Path, wait: float | None = None) -> Iterator[None]:
     """Hold the base's lock: every import holds it from asking whether the household may import
     through naming the new base, in this process or another, so imports take turns. The lock is
-    the system's (`flock`), let go when the block ends or the process dies."""
+    the system's (`flock`), let go when the block ends or the process dies. Raises
+    `LockTimedOut` when another holds it longer than `wait` seconds (`WAIT`), and
+    `LockUnavailable` when the file system cannot lock at all."""
     directory.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor = os.open(_lock(directory), os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        deadline = time.monotonic() + (WAIT if wait is None else wait)
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise LockTimedOut from None
+                time.sleep(0.05)
+            except OSError as error:
+                raise LockUnavailable(error.strerror) from error
         yield
     finally:
         os.close(descriptor)

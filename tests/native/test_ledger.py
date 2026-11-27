@@ -7,6 +7,8 @@ accounts the ledger's evidence says are theirs, and what lives only in the ledge
 Every name and figure is invented (``tests.ledgers``)."""
 
 import contextlib
+import errno
+import fcntl
 import json
 import os
 import stat
@@ -14,13 +16,14 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import replace
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from hearth import accounts, auth, base, books, ledger_import, matching
+from hearth import accounts, auth, base, books, ledger_child, ledger_import, matching
+from hearth.config import Settings
 from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.disclosure.ledger import BroughtIn
 from hearth.matching import ById, Stretch, Unproposed
@@ -62,6 +65,21 @@ def fresh(tmp_path: Path, clock: FakeClock) -> Household:
     """The matching household before its ledger is brought in: its banks connected, its
     ledger written beside its data directory, nothing imported and nothing claimed."""
     return build(tmp_path, clock, imported=False, claims={})
+
+
+@pytest.fixture
+def in_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check and the import done in the test's own process, where what it patches holds:
+    as the child process does them (``ledger_child.answer``), told the same, through JSON."""
+
+    def here(
+        settings: Settings, asked: dict[str, object], now: datetime, limit: float | None
+    ) -> dict[str, Any]:
+        request = json.loads(json.dumps(ledger_child._request(settings, asked, now)))
+        told: dict[str, Any] = json.loads(json.dumps(ledger_child.answer(request)))
+        return told
+
+    monkeypatch.setattr(ledger_child, "_run", here)
 
 
 @pytest.fixture
@@ -281,7 +299,11 @@ def test_a_file_that_is_not_a_ledger_is_refused_and_never_echoed(
 
 
 def test_a_file_larger_than_any_ledger_is_refused_unread(
-    fresh: Household, clock: FakeClock, kept: Path, monkeypatch: pytest.MonkeyPatch
+    fresh: Household,
+    clock: FakeClock,
+    kept: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    in_process: None,
 ) -> None:
     monkeypatch.setattr(ledger_import, "LARGEST", 1024 * 1024)
     door = bridge(fresh, clock, "avery")
@@ -378,7 +400,11 @@ def test_nothing_hearth_keeps_is_read_as_a_ledger_to_bring_in(
 
 
 def test_a_file_swapped_for_a_pipe_once_read_is_never_opened_again(
-    fresh: Household, clock: FakeClock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    fresh: Household,
+    clock: FakeClock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    in_process: None,
 ) -> None:
     """Each file is read once and the copy of those bytes is what loads: a file swapped for a
     pipe after it was read cannot make the check, or the bridge behind it, wait."""
@@ -391,7 +417,7 @@ def test_a_file_swapped_for_a_pipe_once_read_is_never_opened_again(
     part.write_text("2020-01-01 open Assets:Zq:A USD\n")
     real = ledger_import._gathered
 
-    def gathered_then_swapped(source: Path, keeping: Path) -> tuple[Path, str, dict[str, bytes]]:
+    def gathered_then_swapped(source: Path, keeping: Path) -> ledger_import.Gathered:
         found = real(source, keeping)
         part.unlink()
         os.mkfifo(part)
@@ -425,7 +451,11 @@ def test_an_include_from_the_home_folder_is_said_as_what_beancount_reads(
 
 
 def test_a_ledger_of_more_files_than_any_or_kept_in_icloud_is_refused_unread(
-    fresh: Household, clock: FakeClock, kept: Path, monkeypatch: pytest.MonkeyPatch
+    fresh: Household,
+    clock: FakeClock,
+    kept: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    in_process: None,
 ) -> None:
     door = bridge(fresh, clock, "avery")
     monkeypatch.setattr(ledger_import, "MOST_FILES", 2)
@@ -447,7 +477,11 @@ def test_a_ledger_of_more_files_than_any_or_kept_in_icloud_is_refused_unread(
 
 
 def test_a_slow_check_never_holds_up_the_apps_other_asks(
-    fresh: Household, clock: FakeClock, kept: Path, monkeypatch: pytest.MonkeyPatch
+    fresh: Household,
+    clock: FakeClock,
+    kept: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    in_process: None,
 ) -> None:
     """Worked out off the wire: while a check waits on a file, the overview is answered, and
     the check is answered `loading` until it is done, then once."""
@@ -556,7 +590,11 @@ def test_an_import_another_member_started_is_never_told_to_them(
 
 @pytest.mark.parametrize("stops", ["loading the copy", "naming it in the manifest"])
 def test_an_import_that_stops_part_way_leaves_no_half_base(
-    fresh: Household, clock: FakeClock, monkeypatch: pytest.MonkeyPatch, stops: str
+    fresh: Household,
+    clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    stops: str,
+    in_process: None,
 ) -> None:
     """Stopped while the copy is staged, or once its folder is in place but before the
     manifest names it, the household holds no base, and a later import goes ahead whole."""
@@ -635,7 +673,7 @@ def test_an_import_is_one_at_a_time(fresh: Household, clock: FakeClock) -> None:
 
 
 def test_two_imports_at_once_take_turns_and_the_second_is_refused(
-    fresh: Household, clock: FakeClock, tmp_path: Path
+    fresh: Household, clock: FakeClock, tmp_path: Path, in_process: None
 ) -> None:
     """Two bridges bring two ledgers in at the same moment: one is the base, the other is told
     a ledger was brought in once, and the base is never replaced underneath the first."""
@@ -1137,3 +1175,274 @@ def test_each_ledger_screen_has_the_shape_the_app_decodes(
     example = json.loads((FIXTURES / f"{screen}.json").read_text())
 
     assert differences(every_screen[screen], example["answer"]) == []
+
+
+# What a ledger may read: never past itself (the second review).
+
+
+def _escaping(tmp_path: Path, include: str, *extra: str) -> Path:
+    """A ledger two folders down from `tmp_path`, beside the data directory, that includes
+    `include`; `extra` are files written beside it, by their path from `tmp_path`."""
+    folder = tmp_path / "x" / "a"
+    folder.mkdir(parents=True)
+    for name in extra:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("2020-01-02 open Assets:Zq:Beside USD\n")
+    ledger = folder / "main.beancount"
+    ledger.write_text(
+        f'option "operating_currency" "USD"\n2020-01-01 open Assets:Zq:A USD\ninclude "{include}"\n'
+    )
+    return ledger
+
+
+@pytest.mark.parametrize(
+    ("include", "extra", "why"),
+    [
+        # Matches nothing beside the ledger, but in a copy kept in the data directory, the very
+        # same glob finds hearth's own books there.
+        ("../../*.beancount", (), "include_missing"),
+        # Matches a file beside the ledger, by a way that climbs above the folder that holds
+        # every file the ledger reads, as no copy of that folder could follow.
+        ("../../x/b/y.beancount", ("x/b/y.beancount",), "include_outside"),
+        ("*/../../../*.beancount", ("x/a/c/q.beancount", "z.beancount"), "include_outside"),
+    ],
+    ids=["matching nothing", "climbing out and back", "climbing after a wildcard"],
+)
+@pytest.mark.parametrize("by", ["check", "the app's import", "the command line's import"])
+def test_no_include_ever_reads_past_the_ledger_or_into_hearths_own_books(
+    fresh: Household,
+    clock: FakeClock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    in_process: None,
+    include: str,
+    extra: tuple[str, ...],
+    why: str,
+    by: str,
+) -> None:
+    """The reviewer's case: a ledger beside the data directory whose include, copied into it,
+    would read hearth's books, every member's. Refused before any copy is loaded: beancount
+    reads no file but the ledger's own copy, and no answer names the data directory."""
+    ledger = _escaping(tmp_path, include, *extra)
+    door = bridge(fresh, clock, "avery")
+    read: list[str] = []
+    real = books._read
+
+    def spy(path: Path) -> Any:
+        found = real(path)
+        read.extend(found[2]["include"])
+        return found
+
+    monkeypatch.setattr(books, "_read", spy)
+    if by == "check":
+        answer: Any = check(door, ledger)
+        refused = answer["refused"]
+    elif by == "the app's import":
+        answer = _brought_in(door, ledger)
+        refused = answer["refused"]
+    else:
+        with pytest.raises(ledger_import.ImportRefused) as caught:
+            ledger_import.import_ledger(fresh.settings, ledger, now=NOW)
+        answer = {"why": caught.value.why.value, "said": caught.value.plain}
+        refused = answer
+
+    assert refused["why"] == why
+    assert read == [], "beancount read files while a ledger that leaves itself was refused"
+    assert str(fresh.settings.data_dir) not in json.dumps(answer)
+    assert "books.beancount" not in json.dumps(answer)
+    assert base.current(fresh.settings.ledger_base) is None
+
+
+def test_a_check_that_takes_too_long_is_stopped_and_leaves_nothing(
+    fresh: Household, clock: FakeClock, kept: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run in a process of its own, a check that runs past its limit is killed, refused in
+    words of its own, and the copy it was loading is taken away."""
+    monkeypatch.setattr(ledger_child, "LIMIT", 0.01)
+    door = bridge(fresh, clock, "avery")
+
+    assert check(door, kept)["refused"]["why"] == "too_slow"
+    assert not list(fresh.settings.data_dir.glob(f"{base.CHECKING}*"))
+
+
+def test_a_file_of_one_endless_line_is_refused_promptly_and_holds_nothing_up(
+    fresh: Household, clock: FakeClock, tmp_path: Path
+) -> None:
+    """The reviewer's case: 8 MB on one line, which beancount's parser takes a minute over,
+    holding Python's interpreter lock the while. Refused before it is parsed, in a process of
+    its own, and every other ask the app makes meanwhile is answered at once."""
+    door = bridge(fresh, clock, "avery")
+    line = tmp_path / "one-line.json"
+    line.write_bytes(b";" * (8 << 20) + b"\n")
+    given = {"path": str(line)}
+    started = time.perf_counter()
+
+    assert door.answer("ledger_check", given) == {"state": "loading"}
+    slowest = 0.0
+    while (told := door.answer("ledger_check", given))["state"] == "loading":
+        asked = time.perf_counter()
+        assert door.answer("overview")["state"] == "ready"
+        slowest = max(slowest, time.perf_counter() - asked)
+        time.sleep(0.02)
+
+    assert told["refused"] == {
+        "why": "line_too_long",
+        "said": "one-line.json has a line longer than 1 MB, which no ledger has, so it is not a"
+        " ledger.",
+    }
+    assert time.perf_counter() - started < 10
+    assert slowest < 0.5, f"an ask waited {slowest:.2f}s on the check"
+
+
+def test_an_import_that_waits_too_long_on_another_is_refused_in_words(
+    fresh: Household, clock: FakeClock, monkeypatch: pytest.MonkeyPatch, in_process: None
+) -> None:
+    """A holder of the base's lock that never lets go: the import ends as a refusal of its own,
+    not `running` for ever."""
+    monkeypatch.setattr(base, "WAIT", 0.2)
+    door = bridge(fresh, clock, "avery")
+
+    with base.locked(fresh.settings.ledger_base):
+        told = _brought_in(door, fresh.ledger)
+
+    assert told["outcome"] == "refused"
+    assert told["refused"]["why"] == "busy"
+    assert base.current(fresh.settings.ledger_base) is None
+
+
+def test_a_file_system_that_cannot_lock_is_refused_in_words(
+    fresh: Household, clock: FakeClock, monkeypatch: pytest.MonkeyPatch, in_process: None
+) -> None:
+    def cannot(descriptor: int, operation: int) -> None:
+        raise OSError(errno.ENOLCK, os.strerror(errno.ENOLCK))
+
+    monkeypatch.setattr(fcntl, "flock", cannot)
+    door = bridge(fresh, clock, "avery")
+
+    told = _brought_in(door, fresh.ledger)
+
+    assert told["refused"]["why"] == "lock_unavailable"
+
+
+# Slow answers, worked out off the wire, are always as things stand (the second review).
+
+
+def test_an_answer_worked_out_before_the_viewers_own_act_is_never_handed_out_after_it(
+    matched: Household, clock: FakeClock
+) -> None:
+    door = bridge(matched, clock, "avery")
+    chk = matched.ids["ins_zq_bank/chk"]
+    assert door.answer("matching") == {"state": "loading"}
+
+    assert match(door, {chk: "Assets:Zq:Checking"}) is Acted.MATCHED
+
+    assert _accounts(ask(door, "matching"))[chk]["state"] == "matched"
+
+
+def test_an_answer_finished_before_somebody_else_changed_things_is_worked_out_again(
+    matched: Household, clock: FakeClock
+) -> None:
+    """Finished, and not yet picked up, when the mortgage nobody had claimed is claimed for
+    Avery elsewhere, as an admin's shell does: the next answer is as things stand after it."""
+    door = bridge(matched, clock, "avery")
+    loan = matched.ids["ins_zq_bank/loan"]
+    assert _accounts(ask(door, "matching"))[loan]["proposed"] is None
+    assert door.answer("matching") == {"state": "loading"}
+    time.sleep(1)  # finished by now, and not picked up
+    conn = matched.fresh.connect()
+    try:
+        accounts.claim(
+            conn,
+            ledger_account="Liabilities:Zq:Mortgage",
+            name="Mortgage",
+            owners=[matched.fresh.member_ids["avery"]],
+            now=NOW,
+        )
+    finally:
+        conn.close()
+
+    after = _accounts(ask(door, "matching"))[loan]
+
+    assert after["proposed"]["account"] == "Liabilities:Zq:Mortgage"
+
+
+def test_one_members_slow_answer_never_reaches_another(
+    matched: Household, clock: FakeClock, kept: Path
+) -> None:
+    door = bridge(matched, clock, "avery")
+    # Both admins, so nothing but who is asking tells their answers apart.
+    conn = matched.fresh.connect()
+    try:
+        conn.execute("UPDATE members SET is_admin = 1 WHERE username = 'blake'")
+        conn.commit()
+    finally:
+        conn.close()
+    assert door.answer("matching") == {"state": "loading"}
+    time.sleep(1)
+
+    assert door.sign_in("blake", password_of("blake")) is Outcome.SIGNED_IN
+    blakes = {v for k, v in matched.ids.items() if k.startswith("ins_zq_blake/")}
+
+    assert set(_accounts(ask(door, "matching"))) == blakes
+
+
+def test_an_admin_who_is_one_no_longer_is_told_nothing_worked_out_while_they_were(
+    matched: Household, clock: FakeClock, kept: Path
+) -> None:
+    door = bridge(matched, clock, "avery")
+    given = {"path": str(kept)}
+    assert door.answer("ledger_check", given) == {"state": "loading"}
+    time.sleep(1)
+    conn = matched.fresh.connect()
+    try:
+        conn.execute("UPDATE members SET is_admin = 0 WHERE username = 'avery'")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert settled(door, "ledger_check", given) == {"state": "missing"}
+
+
+def test_ids_elsewhere_are_counted_only_on_accounts_the_viewer_may_name(
+    matched: Household, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Checking's ids, said to land three on Blake's savings and three on Avery's own union
+    account besides: only Avery's three are counted elsewhere."""
+    real = matching.weigh
+    chk = matched.ids["ins_zq_bank/chk"]
+
+    def weighed(settings: Settings, today: date | None = None) -> matching.Weighing:
+        found = real(settings, today)
+        one = found.survey.find(chk)
+        assert one is not None
+        ids = one.proposal.ids
+        on = {
+            **ids.on,
+            "Assets:Zq:Blake:Savings": Stretch(3),
+            "Assets:Zq:Union": Stretch(3),
+        }
+        changed = replace(one, proposal=replace(one.proposal, ids=replace(ids, on=on)))
+        accounts_ = tuple(changed if s is one else s for s in found.survey.accounts)
+        return replace(found, survey=replace(found.survey, accounts=accounts_))
+
+    monkeypatch.setattr(matching, "weigh", weighed)
+    door = bridge(matched, clock, "avery")
+
+    proposed = _accounts(ask(door, "matching"))[chk]["proposed"]
+
+    assert proposed["account"] == "Assets:Zq:Checking"
+    assert proposed["elsewhere"] == 3
+
+
+def test_any_act_of_the_viewers_lets_go_of_what_was_worked_out_for_them(
+    matched: Household, clock: FakeClock
+) -> None:
+    """Even one that changes nothing: the next slow answer is worked out afresh, never one from
+    before it."""
+    door = bridge(matched, clock, "avery")
+    assert door.answer("matching") == {"state": "loading"}
+    time.sleep(1)  # finished by now, and not picked up
+
+    assert match(door, {"no-such-account": "Assets:Zq:Checking"}) is Acted.MISSING
+
+    assert door.answer("matching") == {"state": "loading"}
