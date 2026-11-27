@@ -177,6 +177,32 @@ def may_name_other_side(viewer: Member, owners: Collection[MemberId]) -> bool:
     return viewer.id in owners
 
 
+def may_bring_in_ledger(viewer: Member) -> bool:
+    """Bringing the household's own ledger into hearth, and reading a ledger file to see what
+    it holds before it is brought in, is an admin's.
+
+    The base it becomes is every member's books from then on, so bringing it in is a household
+    act, not one member's, as entering the household's Plaid account is
+    (``may_manage_household_credentials``). On the command line it is whoever runs hearth on
+    its machine; among the household's members, the nearest to that is an admin. A file is
+    read as the engine's own process, which is the person's at the Mac, so reading one tells
+    an admin nothing they could not open themselves."""
+    return viewer.is_admin
+
+
+def may_carry_on(viewer: Member, owners: Collection[MemberId], *, recorded: bool) -> bool:
+    """Whether ``viewer`` may move an account hearth keeps for ``owners`` onto an account of
+    the imported ledger that nobody has claimed yet, whose claim then becomes that account's,
+    so its owners see its whole history in the ledger (``hearth.matching``).
+
+    Only an owner of the account moved, and only where ``recorded``: the ledger itself holds
+    the connection's own transaction ids on that account, so it is that bank account, kept
+    before hearth. An account that only looks like it by its rows could be anyone's, and
+    moving onto it would hand its history to whoever chose it, which ``may_feed`` refuses for
+    every account a member does not own. Being an admin grants nothing."""
+    return viewer.id in owners and recorded
+
+
 def may_administer(viewer: Member) -> bool:
     """Admins manage members and passwords. That is all being an admin means."""
     return viewer.is_admin

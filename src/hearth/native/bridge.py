@@ -30,7 +30,8 @@ from enum import StrEnum
 from hearth import auth, db, members, sessions
 from hearth.books import Bookkeeper
 from hearth.config import Settings
-from hearth.native.doorway import Acted, Answer, Done, Doorway, Given
+from hearth.native.doorway import LEDGER_ACTIONS, Acted, Answer, Done, Doorway, Given
+from hearth.native.importer import Importer
 from hearth.native.review import DECISIONS
 from hearth.refresh import NOT_SYNCING, Begun, Refresher, Syncing
 
@@ -57,9 +58,9 @@ class Outcome(StrEnum):
     SIGNED_OUT = "signed_out"
 
 
-ACTIONS = frozenset({"sync", *DECISIONS})
-"""Everything the app may ask hearth to do, by the name it asks with: sync, and the review
-decisions."""
+ACTIONS = frozenset({"sync", *DECISIONS, *LEDGER_ACTIONS})
+"""Everything the app may ask hearth to do, by the name it asks with: sync, the review
+decisions, and bringing in and matching the household's ledger."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +78,8 @@ class Bridge:
     clock: Callable[[], datetime]
     refresher: Refresher | None = None
     """How this bridge syncs, or None for a bridge that never asks a bank for anything."""
+    importer: Importer | None = None
+    """How this bridge brings a ledger in, or None for one that never does."""
     _session: _Session | None = field(default=None, init=False)
 
     def sign_in(self, username: str, password: str) -> Outcome:
@@ -144,7 +147,9 @@ class Bridge:
                 return Acted.NOT_ALLOWED
 
     def _doorway(self, viewer: str) -> Doorway:
-        return Doorway(self.settings, self.bookkeeper, viewer, self._syncing, self.clock)
+        return Doorway(
+            self.settings, self.bookkeeper, viewer, self._syncing, self.clock, self.importer
+        )
 
     def _syncing(self) -> Syncing:
         return self.refresher.status if self.refresher is not None else NOT_SYNCING

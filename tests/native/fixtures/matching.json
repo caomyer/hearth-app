@@ -1,0 +1,350 @@
+{
+  "id": 5,
+  "answer": {
+    "state": "ready",
+    "imported": true,
+    "unsure": null,
+    "accounts": [
+      {
+        "id": "item-demo-06b69d6cba1c-chk",
+        "institution": "Zq Credit Union",
+        "name": "SHARE DRAFT",
+        "mask": "0606",
+        "kind": "checking",
+        "state": "matched",
+        "matched": {
+          "account": "Assets:Zq:Union",
+          "on": "2026-11-22"
+        },
+        "fixed": false,
+        "kept": null,
+        "proposed": {
+          "account": "Assets:Zq:Union",
+          "how": "content",
+          "agreeing": 8,
+          "elsewhere": 0,
+          "of": 8
+        },
+        "why_not": null,
+        "choices": [
+          {
+            "account": "Assets:Zq:Union",
+            "proposed": true,
+            "facing": {
+              "account": "Assets:Zq:Union",
+              "cut_over": "2026-05-24",
+              "carried": true,
+              "postponed": false,
+              "rows": 8,
+              "in_ledger": {
+                "count": 8,
+                "by_id": 0,
+                "by_content": 8
+              },
+              "before": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "booked": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "last_entry": "2026-05-23",
+              "last_balance": null,
+              "last_pad": null
+            },
+            "refused": null
+          },
+          {
+            "account": "Assets:Zq:Checking",
+            "proposed": false,
+            "facing": {
+              "account": "Assets:Zq:Checking",
+              "cut_over": "2026-06-12",
+              "carried": true,
+              "postponed": false,
+              "rows": 8,
+              "in_ledger": {
+                "count": 0,
+                "by_id": 0,
+                "by_content": 0
+              },
+              "before": {
+                "count": 8,
+                "from": "2026-02-05",
+                "to": "2026-05-21"
+              },
+              "booked": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "last_entry": "2026-06-11",
+              "last_balance": "2026-06-12",
+              "last_pad": "2026-01-31"
+            },
+            "refused": null
+          },
+          {
+            "account": "Assets:Zq:Joint",
+            "proposed": false,
+            "facing": {
+              "account": "Assets:Zq:Joint",
+              "cut_over": "2026-06-07",
+              "carried": true,
+              "postponed": false,
+              "rows": 8,
+              "in_ledger": {
+                "count": 0,
+                "by_id": 0,
+                "by_content": 0
+              },
+              "before": {
+                "count": 8,
+                "from": "2026-02-05",
+                "to": "2026-05-21"
+              },
+              "booked": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "last_entry": "2026-06-06",
+              "last_balance": null,
+              "last_pad": null
+            },
+            "refused": null
+          }
+        ],
+        "facing": {
+          "account": "Assets:Zq:Union",
+          "cut_over": "2026-05-24",
+          "carried": true,
+          "postponed": false,
+          "rows": 8,
+          "in_ledger": {
+            "count": 8,
+            "by_id": 0,
+            "by_content": 8
+          },
+          "before": {
+            "count": 0,
+            "from": null,
+            "to": null
+          },
+          "booked": {
+            "count": 0,
+            "from": null,
+            "to": null
+          },
+          "last_entry": "2026-05-23",
+          "last_balance": null,
+          "last_pad": null
+        },
+        "reconciling": false
+      },
+      {
+        "id": "item-demo-0e410ae625fc-card",
+        "institution": "Zq Bank",
+        "name": "ZQ CARD",
+        "mask": "0202",
+        "kind": "credit card",
+        "state": "unmatched",
+        "matched": null,
+        "fixed": false,
+        "kept": null,
+        "proposed": {
+          "account": "Liabilities:Zq:Card",
+          "how": "id",
+          "agreeing": 6,
+          "elsewhere": 0,
+          "of": 7
+        },
+        "why_not": null,
+        "choices": [
+          {
+            "account": "Liabilities:Zq:Card",
+            "proposed": true,
+            "facing": {
+              "account": "Liabilities:Zq:Card",
+              "cut_over": "2026-06-12",
+              "carried": true,
+              "postponed": false,
+              "rows": 7,
+              "in_ledger": {
+                "count": 7,
+                "by_id": 6,
+                "by_content": 1
+              },
+              "before": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "booked": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "last_entry": "2026-06-11",
+              "last_balance": null,
+              "last_pad": null
+            },
+            "refused": null
+          },
+          {
+            "account": "Liabilities:Zq:CardA",
+            "proposed": false,
+            "facing": {
+              "account": "Liabilities:Zq:CardA",
+              "cut_over": "2026-04-21",
+              "carried": true,
+              "postponed": false,
+              "rows": 7,
+              "in_ledger": {
+                "count": 0,
+                "by_id": 0,
+                "by_content": 0
+              },
+              "before": {
+                "count": 4,
+                "from": "2026-02-10",
+                "to": "2026-04-11"
+              },
+              "booked": {
+                "count": 3,
+                "from": "2026-05-01",
+                "to": "2026-06-11"
+              },
+              "last_entry": "2026-04-20",
+              "last_balance": null,
+              "last_pad": null
+            },
+            "refused": null
+          }
+        ],
+        "facing": null,
+        "reconciling": false
+      },
+      {
+        "id": "item-demo-0e410ae625fc-blakes",
+        "institution": "Zq Bank",
+        "name": "ZQ SAVINGS FOR BLAKE",
+        "mask": "1010",
+        "kind": "savings",
+        "state": "unmatched",
+        "matched": null,
+        "fixed": false,
+        "kept": null,
+        "proposed": null,
+        "why_not": "not_yours",
+        "choices": [
+          {
+            "account": "Assets:Zq:Checking",
+            "proposed": false,
+            "facing": {
+              "account": "Assets:Zq:Checking",
+              "cut_over": "2026-06-12",
+              "carried": true,
+              "postponed": false,
+              "rows": 3,
+              "in_ledger": {
+                "count": 0,
+                "by_id": 0,
+                "by_content": 0
+              },
+              "before": {
+                "count": 3,
+                "from": "2026-02-20",
+                "to": "2026-04-21"
+              },
+              "booked": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "last_entry": "2026-06-11",
+              "last_balance": "2026-06-12",
+              "last_pad": "2026-01-31"
+            },
+            "refused": null
+          },
+          {
+            "account": "Assets:Zq:Joint",
+            "proposed": false,
+            "facing": {
+              "account": "Assets:Zq:Joint",
+              "cut_over": "2026-06-07",
+              "carried": true,
+              "postponed": false,
+              "rows": 3,
+              "in_ledger": {
+                "count": 0,
+                "by_id": 0,
+                "by_content": 0
+              },
+              "before": {
+                "count": 3,
+                "from": "2026-02-20",
+                "to": "2026-04-21"
+              },
+              "booked": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "last_entry": "2026-06-06",
+              "last_balance": null,
+              "last_pad": null
+            },
+            "refused": null
+          },
+          {
+            "account": "Assets:Zq:Union",
+            "proposed": false,
+            "facing": {
+              "account": "Assets:Zq:Union",
+              "cut_over": "2026-05-24",
+              "carried": true,
+              "postponed": false,
+              "rows": 3,
+              "in_ledger": {
+                "count": 0,
+                "by_id": 0,
+                "by_content": 0
+              },
+              "before": {
+                "count": 3,
+                "from": "2026-02-20",
+                "to": "2026-04-21"
+              },
+              "booked": {
+                "count": 0,
+                "from": null,
+                "to": null
+              },
+              "last_entry": "2026-05-23",
+              "last_balance": null,
+              "last_pad": null
+            },
+            "refused": {
+              "why": "taken",
+              "count": null,
+              "day": null
+            }
+          }
+        ],
+        "facing": null,
+        "reconciling": false
+      }
+    ],
+    "totals": {
+      "matched": 1,
+      "of": 8,
+      "in_ledger": 8,
+      "booked": 0
+    }
+  }
+}

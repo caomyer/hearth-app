@@ -138,6 +138,18 @@ A move between an account in the statement and one outside it, another member's 
 `tests/native/test_statements.py` changes the joint account and another member's account under a viewer who may see neither in full, and requires every statement the viewer can ask for to be the same, byte for byte.
 It also holds back each facet in turn from members who share every other, and requires them out of every statement, named, and every statement unchanged; the doorway's crawl asks every statement under the same scenarios.
 
+### The household's own ledger, from the Mac app
+
+Bringing a ledger in and matching accounts to it are the command line's, done for a member (`docs/real-ledger.md`, "From the Mac app"):
+
+- Only an admin reads a ledger file to see what it holds, or brings one in (`access.may_bring_in_ledger`): the base becomes every member's books, so it is a household act, as the household's Plaid account is.
+  A file is read as the engine's own process, which is the person's at the Mac, so reading one tells an admin nothing they could not open themselves.
+  But once the household holds a base or inherits a ledger, no file's contents are told at all, and nothing in hearth's own data directory is ever read as a ledger: either would tell an admin every member's accounts, which hearth tells each member only of their own.
+- A member matches only their own connections, onto accounts they own, as a connection is filed (`access.may_use_connection`, `access.may_feed`); another member's connections are never listed.
+- An account the ledger's evidence points at that someone else owns is never named to a member, only said not to be theirs.
+- Matching moves a claim in one case: an account hearth keeps for a member onto a base account nobody has claimed, whose whole history its owners then see.
+  Over the app that is allowed only where the ledger's own entries record that connection's Plaid ids on the account (`access.may_carry_on`), which says it is that bank account, kept before hearth; an account only its rows point at could be anyone's.
+
 ## Where it is enforced
 
 - `src/hearth/access.py` holds the rules.

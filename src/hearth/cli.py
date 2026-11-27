@@ -50,6 +50,7 @@ from hearth.disclosure import may_learn, rulings_in
 from hearth.members import MemberRejectedError, normalise_username
 from hearth.native import stdio
 from hearth.native.bridge import Bridge, Outcome
+from hearth.native.importer import Importer
 from hearth.plaid import booking, export, feed
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
@@ -797,7 +798,7 @@ def _answer_the_app(
     bookkeeper.recompute_daily()
     watching = bookkeeper.recompute_on_change()
     refresher = Refresher(settings, plaid, bookkeeper, clock)
-    bridge = Bridge(settings, bookkeeper, clock, refresher)
+    bridge = Bridge(settings, bookkeeper, clock, refresher, Importer(bookkeeper, clock))
     syncing = refresher.daily()
     try:
         if signed_in_as is not None and bridge.sign_in(*signed_in_as) is not Outcome.SIGNED_IN:

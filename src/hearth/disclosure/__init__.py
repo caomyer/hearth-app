@@ -74,6 +74,8 @@ if TYPE_CHECKING:
 
     from hearth.books import Decide
     from hearth.clock import Clock
+    from hearth.config import Settings
+    from hearth.disclosure.ledger import LedgerDesk
     from hearth.plaid.connector import Connector, Runner
     from hearth.plaid.setup import PlaidSetup
     from hearth.review.desk import Decision, ReviewDesk
@@ -651,6 +653,15 @@ class Disclosure:
             if books
             else set(),
             conn=conn,
+        )
+
+    def ledger_desk(self, settings: Settings, clock: Clock) -> LedgerDesk:
+        """The household's own ledger, as the viewer may bring it in and match their own
+        connected accounts to it (``hearth.disclosure.ledger``)."""
+        from hearth.disclosure.ledger import LedgerDesk
+
+        return LedgerDesk(
+            self._gate, accounts=self._accounts, settings=settings, clock=clock, books=self.books
         )
 
     def matched(self) -> int:

@@ -17,14 +17,25 @@ Importing again replaces the base, until a member makes a review ruling after it
 rulings rest on the base as it is, so it is refused, with a sentence saying why.
 """
 
+import glob
 import os
+import stat
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-from beancount.core.data import Balance, Directive, Document, Open, Price
+from beancount.core.data import (
+    Balance,
+    Close,
+    Commodity,
+    Directive,
+    Document,
+    Open,
+    Price,
+    Transaction,
+)
 from beancount.parser import _parser, grammar, printer  # type: ignore[attr-defined]
 
 from hearth import base, books, carrying, db
@@ -55,6 +66,9 @@ class Unused:
     file: str
     line: int
     what: str
+    kind: str = ""
+    """What kind of line it is: a `plugin`, a `custom` directive, a `document`, or the
+    `documents` option."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,49 +98,27 @@ class Outcome:
     """Each matched account hearth carries on from the base, and what that meets."""
 
 
-def import_ledger(settings: Settings, source: Path, *, now: datetime) -> Outcome:
+def import_ledger(
+    settings: Settings, source: Path, *, now: datetime, once: bool = False
+) -> Outcome:
     """Import the ledger opened from `source` as the household's base, or raise
     `ImportRefused` having written nothing.
 
     `now` is the clock's moment (``hearth.clock``), never read here, so the caller decides it.
     Every day the import names, today and the day a base was imported, is that moment on the
     household's own calendar, as every figure hearth shows takes it (``books.compute``): the
-    machine's local day, not Greenwich's."""
-    if settings.ledger is not None:
-        raise ImportRefused(
-            f"{LEDGER_VARIABLE} is set, to {settings.ledger}: hearth would then be given two"
-            f" ledgers, which it refuses. Unset {LEDGER_VARIABLE} and import again; a hearth"
-            " serving with it set refuses to compute once a ledger is imported."
-        )
-    source = Path(os.path.normpath(source.absolute()))
-    try:
-        # Beancount reports a ledger it cannot open as an error in it, which names no cause.
-        source.open("rb").close()
-    except OSError as error:
-        raise ImportRefused(f"{source} cannot be read: {error.strerror}.") from error
-    try:
-        before = base.current(settings.ledger_base)
-    except BaseError as error:
-        raise ImportRefused(str(error)) from error
-    newest = _newest_ruling(settings)
-    if before is not None and newest > before.rulings_through:
-        since = newest - before.rulings_through
-        raise ImportRefused(
-            f"The ledger imported on {_day(before.imported_at.astimezone().date())} is not"
-            f" replaced: {since} review ruling{'s have' if since > 1 else ' has'} been made"
-            " since, and rulings rest on the ledger as it was imported."
-        )
-    if before is not None:
-        _not_carried_on(settings, before, now.astimezone().date())
+    machine's local day, not Greenwich's.
 
-    original = _load(source)
+    With `once`, as the Mac app imports, a household that holds a base already is refused
+    rather than given another: the app brings a ledger in once, and hearth's books are the
+    truth from then on. The command line may still replace a base nobody has ruled on since.
+    """
+    before = household_allows(settings, now, once=once)
+    examined = examine(source, now=now, keeping=settings.data_dir)
+    source, original = examined.source, examined.loaded
     _assertions_pass(original.entries)
-    _, names = base.layout(original.files, source)
-    root = next(name for name, path in names.items() if path == source)
-    try:
-        contents = {name: path.read_bytes() for name, path in names.items()}
-    except OSError as error:
-        raise ImportRefused(f"{error.filename} cannot be read: {error.strerror}.") from error
+    root, contents = examined.root, examined.contents
+    newest = _newest_ruling(settings)
     today = now.astimezone().date()
 
     if before is not None and before.base.digest == base.digest(root, contents):
@@ -152,6 +144,228 @@ def import_ledger(settings: Settings, source: Path, *, now: datetime) -> Outcome
     return Outcome(
         imported, check, replaced=before, carried=_carried(settings, copy.entries, today)
     )
+
+
+def household_allows(settings: Settings, now: datetime, *, once: bool) -> Imported | None:
+    """The base the household holds now, if any; or raise `ImportRefused` when the household
+    may not import a ledger: `HEARTH_LEDGER` is set, its base cannot be read, it holds one and
+    `once` says a ledger is imported once, or rulings rest on the base it holds."""
+    if settings.ledger is not None:
+        raise ImportRefused(
+            f"{LEDGER_VARIABLE} is set, to {settings.ledger}: hearth would then be given two"
+            f" ledgers, which it refuses. Unset {LEDGER_VARIABLE} and import again; a hearth"
+            " serving with it set refuses to compute once a ledger is imported."
+        )
+    try:
+        before = base.current(settings.ledger_base)
+    except BaseError as error:
+        raise ImportRefused(str(error)) from error
+    if before is not None and once:
+        raise ImportRefused(
+            f"Your ledger was brought in on {_day(before.imported_at.astimezone().date())}, and"
+            " a ledger is brought in once: hearth's books are the truth from then on."
+        )
+    newest = _newest_ruling(settings)
+    if before is not None and newest > before.rulings_through:
+        since = newest - before.rulings_through
+        raise ImportRefused(
+            f"The ledger imported on {_day(before.imported_at.astimezone().date())} is not"
+            f" replaced: {since} review ruling{'s have' if since > 1 else ' has'} been made"
+            " since, and rulings rest on the ledger as it was imported."
+        )
+    if before is not None:
+        _not_carried_on(settings, before, now.astimezone().date())
+    return before
+
+
+LARGEST = 64 * 1024 * 1024
+"""The largest file a ledger may read, in bytes: far more than any household's text, and a
+bound on what a file chosen by mistake, a film say, costs to look at."""
+
+
+@dataclass(frozen=True, slots=True)
+class Examined:
+    """A ledger read where it is, writing nothing: what it loads as, every file it read by its
+    path relative to the folder that holds them all, with their bytes (`root` is the one it is
+    opened from), and the check a person holds against their own figures."""
+
+    source: Path
+    loaded: books.Loaded
+    root: str
+    contents: dict[str, bytes]
+    check: Check
+
+
+def examine(source: Path, *, now: datetime, keeping: Path) -> Examined:
+    """Read the ledger opened from `source` where it is, and work out its check, writing
+    nothing anywhere; or raise `ImportRefused`, saying why it cannot be imported.
+
+    It is read as a base would be: regular files of at most `LARGEST` bytes, none of them in
+    `keeping`, hearth's own data directory, and no include by an absolute path, which a frozen
+    copy would still read from where it is. Each is refused before beancount follows any
+    include (`_scan`), so no file beyond what a base may hold is ever opened, and nothing
+    hearth keeps, its books or a base it froze, is ever read as a ledger to import. The check
+    is the import's (`_check`), worked out from the files as they are.
+    """
+    source = Path(os.path.normpath(source.absolute()))
+    _scan(source, keeping)
+    loaded = _load(source)
+    common, names = base.layout(loaded.files, source)
+    root = next(name for name, path in names.items() if path == source)
+    try:
+        contents = {name: path.read_bytes() for name, path in names.items()}
+    except OSError as error:
+        raise ImportRefused(f"{error.filename} cannot be read: {error.strerror}.") from error
+    where = Base(common, root, tuple(sorted(contents)), base.digest(root, contents))
+    check = _check(loaded, where, _noted(where), now.astimezone().date(), now)
+    return Examined(source, loaded, root, contents, check)
+
+
+ROOTS = ("Assets", "Liabilities", "Equity", "Income", "Expenses")
+"""Beancount's five kinds of account, in the order a balance sheet and then an income
+statement read them."""
+
+
+@dataclass(frozen=True, slots=True)
+class Opened:
+    """An account a ledger opens: its name, its kind (its root), and the days it is open."""
+
+    account: str
+    kind: str
+    opened: date
+    closed: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class Checked:
+    """What a ledger file holds, read where it is, and why it would not be imported if it would
+    not (`check_ledger`). `examined` is None when the file does not load, as `refused` says."""
+
+    examined: Examined | None
+    refused: str | None
+
+    @property
+    def accounts(self) -> tuple[Opened, ...]:
+        if self.examined is None:
+            return ()
+        entries = self.examined.loaded.entries
+        closed = {e.account: e.date for e in entries if isinstance(e, Close)}
+        found = [
+            Opened(e.account, e.account.split(":", 1)[0], e.date, closed.get(e.account))
+            for e in entries
+            if isinstance(e, Open)
+        ]
+        order = {kind: n for n, kind in enumerate(ROOTS)}
+        return tuple(sorted(found, key=lambda o: (order.get(o.kind, len(ROOTS)), o.account)))
+
+    @property
+    def currencies(self) -> tuple[str, ...]:
+        """The ledger's operating currencies, as its options name them."""
+        if self.examined is None:
+            return ()
+        return tuple(self.examined.loaded.options["operating_currency"])
+
+    @property
+    def commodities(self) -> tuple[str, ...]:
+        """Every other commodity it holds or prices, by the name it gives it."""
+        if self.examined is None:
+            return ()
+        named: set[str] = set()
+        for entry in self.examined.loaded.entries:
+            if isinstance(entry, (Commodity, Price)):
+                named.add(entry.currency)
+            elif isinstance(entry, Transaction):
+                named |= {p.units.currency for p in entry.postings if p.units is not None}
+        return tuple(sorted(named - set(self.currencies)))
+
+    @property
+    def failing(self) -> int:
+        """How many of its balance assertions its postings do not reproduce."""
+        if self.examined is None:
+            return 0
+        checks = check_balance_assertions(self.examined.loaded.entries)
+        return sum(1 for check in checks if not check.agrees)
+
+
+def check_ledger(settings: Settings, source: Path, *, now: datetime) -> Checked:
+    """What the ledger opened from `source` holds, as the Mac app's import would bring it in,
+    writing nothing anywhere: asked again, it reads the file again and answers the same.
+
+    `refused` is the sentence the app's import (`import_ledger` with `once`) would refuse with,
+    and None when it would go ahead. A household that may not import a ledger at all, as one
+    that holds a base or inherits a ledger, is told why and nothing of the file: the ledger it
+    keeps is every member's, and its file read again would tell whoever asked what hearth tells
+    each member only of their own. Otherwise what the file holds is said beside a balance
+    assertion of it that fails."""
+    try:
+        household_allows(settings, now, once=True)
+        examined = examine(source, now=now, keeping=settings.data_dir)
+    except ImportRefused as refused:
+        return Checked(None, str(refused))
+    try:
+        _assertions_pass(examined.loaded.entries)
+    except ImportRefused as refused:
+        return Checked(examined, str(refused))
+    return Checked(examined, None)
+
+
+def _scan(source: Path, keeping: Path) -> None:
+    """Refuse a ledger that is not regular files of at most `LARGEST` bytes outside `keeping`,
+    or that includes a file by its absolute path, before beancount follows any include: each
+    file is parsed for its includes alone, each resolved as the loader resolves it, a glob
+    relative to the file that has it."""
+    kept = keeping.resolve()
+    seen: set[Path] = set()
+    waiting = [source]
+    while waiting:
+        path = waiting.pop(0)
+        if path in seen:
+            continue
+        seen.add(path)
+        if path.resolve().is_relative_to(kept):
+            raise ImportRefused(
+                f"{path} is in hearth's own data directory, where it keeps its books, so it is"
+                " not a ledger to import. Choose the ledger the household kept itself."
+            )
+        _regular(path)
+        builder = _Noting(_named(path, source.parent))
+        with path.open("rb") as file:
+            _parser.Parser(builder).parse(file, filename=str(path), lineno=1)
+        included = [note for note in builder.noted if note.kind == "include"]
+        _includes_stay_inside(included)
+        for note in included:
+            # Exactly as beancount's loader globs it, which Path.glob does not.
+            pattern = os.path.join(path.parent, note.value)  # noqa: PTH118
+            found = glob.glob(pattern, recursive=True)  # noqa: PTH207
+            waiting += [Path(os.path.normpath(name)) for name in sorted(found)]
+
+
+def _regular(path: Path) -> None:
+    """Refuse a path that is not a file a ledger may read: a folder, a pipe that would wait for
+    a writer, a device, or one too large to be a household's text."""
+    try:
+        found = path.stat()
+    except OSError as error:
+        raise ImportRefused(f"{path} cannot be read: {error.strerror}.") from error
+    if not stat.S_ISREG(found.st_mode):
+        raise ImportRefused(f"{path} is not a file, so it is not a ledger.")
+    if found.st_size > LARGEST:
+        raise ImportRefused(
+            f"{path} is larger than {LARGEST // (1024 * 1024)} MB, which no ledger's text is."
+        )
+    try:
+        # Beancount reports a ledger it cannot open as an error in it, which names no cause.
+        path.open("rb").close()
+    except OSError as error:
+        raise ImportRefused(f"{path} cannot be read: {error.strerror}.") from error
+
+
+def _named(path: Path, folder: Path) -> str:
+    """`path` as a person names it beside the ledger: from the ledger's own folder when it is
+    inside it, else by its name alone."""
+    if path.is_relative_to(folder):
+        return PurePosixPath(*path.relative_to(folder).parts).as_posix()
+    return path.name
 
 
 def _not_carried_on(settings: Settings, before: Imported, today: date) -> None:
@@ -343,7 +557,7 @@ def _check(
     runs = tuple(n.value for n in top if n.kind == "plugin" and books.runs(n.value))
     used = {id(n) for n in top if n.kind == "plugin" and books.runs(n.value)}
     unused = tuple(
-        Unused(n.file, n.line, _unused(n, n.file == frozen.root))
+        Unused(n.file, n.line, _unused(n, n.file == frozen.root), n.kind)
         for n in noted
         if n.kind != "include" and id(n) not in used
     )

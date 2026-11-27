@@ -45,7 +45,7 @@ from hearth.disclosure.balances import Standing
 from hearth.disclosure.holdings import Held, HeldAccount, Price, Totals
 from hearth.disclosure.journal import Entry, Show, Side
 from hearth.names import readable
-from hearth.native import review, statements
+from hearth.native import ledger, review, statements
 from hearth.native.common import (
     CATEGORY,
     DAY,
@@ -66,6 +66,7 @@ from hearth.native.common import (
 from hearth.native.common import day as _day
 from hearth.native.common import moment as _moment
 from hearth.native.common import money as _money
+from hearth.native.importer import Importer
 from hearth.refresh import NOT_SYNCING, Syncing
 from hearth.review.rulings import RulingStore
 from hearth.valuation.pricestore import PriceStore
@@ -92,6 +93,8 @@ class Doorway:
     syncing: Callable[[], Syncing] = lambda: NOT_SYNCING
     """Where this engine's syncs stand (`hearth.refresh.Refresher.status`)."""
     clock: Clock = system_clock
+    importer: Importer | None = None
+    """How this engine brings a ledger in, or None for one that never does."""
 
     def answer(self, ask: str, given: Given | None = None) -> Answer:
         screen = SCREENS.get(ask)
@@ -113,15 +116,12 @@ class Doorway:
             # A viewer who is no longer a member is told what anyone else would be: nothing.
             return dict(MISSING)
         view = Disclosure.load(conn, member, self.bookkeeper.status)
-        around = Around(
-            RegisteredConnections(self.settings.database),
-            self.syncing(),
-            RulingStore(conn),
-            self.clock,
-            PriceStore(conn),
-        )
+        around = self._around(conn)
         if not screen.of_books:
-            return {"state": "ready", **screen.write(view, asked, around)}
+            try:
+                return {"state": "ready", **screen.write(view, asked, around)}
+            except Concealed:
+                return dict(MISSING)
         if view.books is None:
             notice = view.notice()
             if notice is None:
@@ -132,11 +132,25 @@ class Doorway:
         except Concealed:
             return dict(MISSING)
 
+    def _around(self, conn: sqlite3.Connection) -> Around:
+        return Around(
+            RegisteredConnections(self.settings.database),
+            self.syncing(),
+            RulingStore(conn),
+            self.clock,
+            PriceStore(conn),
+            self.settings,
+            self.importer,
+            self.viewer,
+        )
+
     def act(self, action: str, given: Given | None = None) -> Done:
         """Make one of the viewer's review decisions (``hearth.native.review``), through their
         own desk and nothing else, then recompute the books behind it, as a page's decision
-        does. Anything it names that is not on the viewer's desk is missing, like an action
-        that is not there."""
+        does; or one of the ledger's actions (``hearth.native.ledger``). Anything it names that
+        is not on the viewer's desk is missing, like an action that is not there."""
+        if action in LEDGER_ACTIONS:
+            return self._ledger(action, given or {})
         decision = review.DECISIONS.get(action)
         if decision is None:
             return Acted.MISSING
@@ -160,6 +174,33 @@ class Doorway:
             # A ruling changes the books, so they are recomputed, behind the app.
             self.bookkeeper.recompute_in_background()
         return done
+
+    def _ledger(self, action: str, given: Given) -> Acted:
+        """Bring a ledger in, or match an account to it, as the viewer, through their own view
+        of the household's ledger and nothing else."""
+        conn = db.connect(self.settings.database)
+        try:
+            member = members.find(conn, self.viewer)
+            if member is None:
+                return Acted.MISSING
+            view = Disclosure.load(conn, member, self.bookkeeper.status)
+            try:
+                done = LEDGER_ACTIONS[action](view, given, self._around(conn))
+            except Malformed, Concealed:
+                return Acted.MISSING
+        finally:
+            conn.close()
+        if done is Acted.MATCHED:
+            # A match changes what the books carry on, so they are recomputed, behind the app.
+            self.bookkeeper.recompute_in_background()
+        return done
+
+
+LEDGER_ACTIONS: Mapping[str, Callable[[Disclosure, Given, Around], Acted]] = {
+    "bring_in_ledger": ledger.bring_in,
+    "match_account": ledger.match,
+}
+"""What the app may ask done to the household's ledger, by the name it asks with."""
 
 
 def _books(view: Disclosure) -> Answer:
@@ -439,6 +480,9 @@ SCREENS: Mapping[str, Screen] = {
     "year_by_year": Screen(statements.read_years, statements.years_screen),
     "holdings": Screen(_nothing, holdings),
     "price_history": Screen(_symbol, price_history),
+    "ledger": Screen(_nothing, ledger.ledger_screen, of_books=False),
+    "ledger_check": Screen(ledger.read_path, ledger.check_screen, of_books=False),
+    "matching": Screen(_nothing, ledger.matching_screen, of_books=False),
 }
 """Every screen the app may ask for, by the name it asks with."""
 

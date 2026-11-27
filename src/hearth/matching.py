@@ -77,7 +77,7 @@ from hearth.config import Settings
 from hearth.db import transaction
 from hearth.disclosure import review_decisions
 from hearth.disclosure.gate import Gate
-from hearth.members import Member, get
+from hearth.members import Member, MemberId, get
 from hearth.plaid import booking, feed
 from hearth.plaid.client import Transaction as Row
 from hearth.plaid.feed import Feed
@@ -401,8 +401,66 @@ def _posted(rows: Sequence[Row]) -> list[Row]:
 # The household's connected accounts, for ``hearth match-accounts``.
 
 
+class Refusal(StrEnum):
+    """Why a match is refused, for a screen that says it in its own words; the sentence a
+    `MatchRefused` carries says it for a terminal."""
+
+    NO_BASE = "no_base"
+    """No ledger has been imported, so there is nothing of its to match to."""
+    UNREADABLE = "unreadable"
+    """The imported ledger cannot be read."""
+    TWICE = "twice"
+    """One connected account, or one ledger account, is named twice in one confirmation."""
+    NOT_CONNECTED = "not_connected"
+    """No working connection reaches the connected account named."""
+    NOTHING_PROPOSED = "nothing_proposed"
+    """Nothing is proposed for it, and no account was named."""
+    NOT_OPENED = "not_opened"
+    """The imported ledger opens no such account."""
+    WRONG_SIDE = "wrong_side"
+    """The account is not on the side of the ledger a connected account of its kind goes."""
+    CLOSED = "closed"
+    """The imported ledger closes the account, so nothing can be carried on into it."""
+    MOVED_INTO = "moved_into"
+    """Rows are moved into the account in Review."""
+    UNSURE = "unsure"
+    """Hearth cannot tell whether carrying the match it has on has begun."""
+    FIXED = "fixed"
+    """A decision has been made in Review on its transactions carried on, so its match is
+    fixed (``books.begun``)."""
+    UNCLAIMED = "unclaimed"
+    """Nobody has claimed the account yet, and matching never says who owns one."""
+    NAMED = "named"
+    """The account is one a member named, which no connection feeds."""
+    NOT_YOURS = "not_yours"
+    """The account is not the connection's holder's."""
+    TAKEN = "taken"
+    """Another connected account is matched to the account already."""
+    NOT_CARRIED = "not_carried"
+    """It is of a kind hearth does not carry on from the imported ledger yet."""
+    RULED_ONTO = "ruled_onto"
+    """Rows were moved into the account hearth keeps it as, in Review, and those rulings name
+    it."""
+    OTHER_OWNERS = "other_owners"
+    """The account is claimed with other owners than the one hearth keeps it as."""
+    WOULD_LOSE = "would_lose"
+    """Moving it would take `count` of the rows hearth booked on it, dated before `day`, out
+    of the books."""
+    BOOKING = "booking"
+    """The bank's rows cannot be taken once, so hearth cannot tell what moving it would meet."""
+
+
 class MatchRefused(Exception):  # noqa: N818 - it names a refusal, as `booking.Refused` does
-    """Nothing was matched, for the reason given, which names no amount and no payee."""
+    """Nothing was matched, for the reason given, which names no amount and no payee: in a
+    sentence for a terminal, and as `why`, with the `count` and `day` it needs, for a screen."""
+
+    def __init__(
+        self, said: str, why: Refusal, *, count: int | None = None, day: date | None = None
+    ) -> None:
+        super().__init__(said)
+        self.why = why
+        self.count = count
+        self.day = day
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,7 +513,7 @@ def _survey(settings: Settings, today: date | None = None) -> tuple[Survey, Held
     try:
         held = read(books.load_ledger(frozen).entries)
     except books.LedgerError as error:
-        raise MatchRefused(error.summary) from error
+        raise MatchRefused(error.summary, Refusal.UNREADABLE) from error
     db.initialise(settings.database)
     feed.initialise(settings.feed_database)
     unsure = None
@@ -514,11 +572,12 @@ def _base(settings: Settings) -> Base:
     try:
         found = books.inherited(settings)
     except books.LedgerError as error:
-        raise MatchRefused(error.summary) from error
+        raise MatchRefused(error.summary, Refusal.UNREADABLE) from error
     if not isinstance(found, Base):
         raise MatchRefused(
             "No ledger has been imported, so there are no accounts of its to match to. Import"
-            " it first with hearth import-ledger."
+            " it first with hearth import-ledger.",
+            Refusal.NO_BASE,
         )
     return found
 
@@ -579,56 +638,116 @@ class Moving:
     feeding: tuple[LinkedAccount, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class Weighing:
+    """The survey with what it was worked out from, to weigh any match against without
+    writing anything (`refusal`), by the very checks `confirm` makes before it writes."""
+
+    survey: Survey
+    held: Held
+    today: date
+
+    def facing(self, one: Surveyed, account: str) -> Facing:
+        """What carrying `one` on from `account` would meet."""
+        connected = one.proposal.connected
+        return facing(self.held, account, connected.rows, connected.account.type, self.today)
+
+
+def weigh(settings: Settings, today: date | None = None) -> Weighing:
+    """The household's connected accounts, as `survey` finds them, ready to be weighed. Raises
+    `MatchRefused` as `survey` does."""
+    today = today or datetime.now().astimezone().date()
+    found, held = _survey(settings, today)
+    return Weighing(found, held, today)
+
+
+def refusal(
+    settings: Settings, weighing: Weighing, account_id: str, chosen: str | None
+) -> MatchRefused | None:
+    """Why matching `account_id` to `chosen`, or to what is proposed for it, would be refused
+    as things stand, or None when `confirm` would record it."""
+    conn = db.connect(settings.database)
+    try:
+        _planned(conn, settings, weighing, [(account_id, chosen)])
+    except MatchRefused as refused:
+        return refused
+    finally:
+        conn.close()
+    return None
+
+
 def confirm(
-    settings: Settings, wanted: Sequence[tuple[str, str | None]], *, now: datetime
+    settings: Settings,
+    wanted: Sequence[tuple[str, str | None]],
+    *,
+    now: datetime,
+    by: MemberId | None = None,
 ) -> Survey:
     """Record each match in `wanted`, a connected account's Plaid id with the base account it
     is, or None for the one proposed, as the mapping a member confirms on the Connect page;
     then the survey as it stands. Every one is checked before any is written, and one hearth
     refuses raises `MatchRefused` having written nothing.
 
+    `by` is the member who confirms it, as the Connect page records one, or None for whoever
+    runs hearth on its machine (``hearth match-accounts``).
+
     A match changes nothing about who owns the base account: it must be claimed already, and
     owned by the connection's holder among others. A match may be changed until carrying it
     on begins (``books.begun``); one confirmed again as it stands keeps the day it was first
     confirmed. A connected account filed as an account hearth keeps itself is moved onto the
     base's account only as `_moving` allows."""
-    found, held = _survey(settings, now.astimezone().date())
+    today = now.astimezone().date()
+    weighing = weigh(settings, today)
     conn = db.connect(settings.database)
     try:
-        claimed = {a.ledger_account: a for a in all_accounts(conn)}
-        taking: dict[str, Account] = {}
-        moving: dict[str, Moving] = {}
-        for account_id, chosen in wanted:
-            if account_id in taking or account_id in moving:
-                raise MatchRefused(f"{account_id} is named twice.")
-            one = found.find(account_id)
-            if one is not None and one.filed is not None:
-                with Feed.open(settings.feed_database) as fed:
-                    moving[account_id] = _moving(conn, fed, found, held, claimed, one, chosen)
-            else:
-                taking[account_id] = _checked(found, held, claimed, account_id, chosen)
-        targets = Counter(
-            [
-                *(account.ledger_account for account in taking.values()),
-                *(move.target for move in moving.values()),
-            ]
-        )
-        twice = sorted(a for a, n in targets.items() if n > 1)
-        if twice:
-            raise MatchRefused(
-                f"{twice[0]} is named for two connected accounts; one ledger account is fed by"
-                " one connection at most."
-            )
+        taking, moving = _planned(conn, settings, weighing, wanted)
         registry = Registry(conn)
         for account_id, account in taking.items():
-            one = found.find(account_id)
+            one = weighing.survey.find(account_id)
             if one is not None and one.matched != account.ledger_account:
-                registry.confirm(account_id, account.id, by=None, now=now)
+                registry.confirm(account_id, account.id, by=by, now=now)
         for move in moving.values():
-            _move(conn, move, now=now)
+            _move(conn, move, now=now, by=by)
     finally:
         conn.close()
-    return survey(settings, now.astimezone().date())
+    return survey(settings, today)
+
+
+def _planned(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    weighing: Weighing,
+    wanted: Sequence[tuple[str, str | None]],
+) -> tuple[dict[str, Account], dict[str, Moving]]:
+    """What `confirm` would write for `wanted`: each match to record, and each account hearth
+    keeps itself to move onto the base's, every one checked; or raise `MatchRefused`."""
+    found, held = weighing.survey, weighing.held
+    claimed = {a.ledger_account: a for a in all_accounts(conn)}
+    taking: dict[str, Account] = {}
+    moving: dict[str, Moving] = {}
+    for account_id, chosen in wanted:
+        if account_id in taking or account_id in moving:
+            raise MatchRefused(f"{account_id} is named twice.", Refusal.TWICE)
+        one = found.find(account_id)
+        if one is not None and one.filed is not None:
+            with Feed.open(settings.feed_database) as fed:
+                moving[account_id] = _moving(conn, fed, found, held, claimed, one, chosen)
+        else:
+            taking[account_id] = _checked(found, held, claimed, account_id, chosen)
+    targets = Counter(
+        [
+            *(account.ledger_account for account in taking.values()),
+            *(move.target for move in moving.values()),
+        ]
+    )
+    twice = sorted(a for a, n in targets.items() if n > 1)
+    if twice:
+        raise MatchRefused(
+            f"{twice[0]} is named for two connected accounts; one ledger account is fed by"
+            " one connection at most.",
+            Refusal.TWICE,
+        )
+    return taking, moving
 
 
 def _checked(
@@ -642,20 +761,24 @@ def _checked(
     `MatchRefused` saying why not."""
     one = found.find(account_id)
     if one is None:
-        raise MatchRefused(f"No working connection reaches an account {account_id}.")
+        raise MatchRefused(
+            f"No working connection reaches an account {account_id}.", Refusal.NOT_CONNECTED
+        )
     connected = one.proposal.connected
     target = _target(found, one, held, account_id, chosen)
     if one.matched is not None and one.matched != target:
         if found.unsure is not None:
             raise MatchRefused(
                 f"Hearth cannot tell whether carrying {one.matched} on has begun, so its match"
-                f" is not changed: {found.unsure}"
+                f" is not changed: {found.unsure}",
+                Refusal.UNSURE,
             )
         if one.begun:
             raise MatchRefused(
                 f"{account_id} is carried on from the imported ledger's {one.matched}, and a"
                 " decision has been made in Review on its transactions there. Its match is"
-                " fixed from then on: changing it would leave that decision deciding nothing."
+                " fixed from then on: changing it would leave that decision deciding nothing.",
+                Refusal.FIXED,
             )
     account = claimed.get(target)
     holder = connected.holder
@@ -663,17 +786,20 @@ def _checked(
         raise MatchRefused(
             f"Nobody has claimed {target} yet, and matching never says who owns an account."
             f" Claim it first: hearth add-account {target} --name <name> --owner"
-            f" {holder.username}."
+            f" {holder.username}.",
+            Refusal.UNCLAIMED,
         )
     if account.named is not None:
         raise MatchRefused(
             f"{target} is an account a member named, which no connection feeds"
-            ' (docs/books.md, "Accounts hearth does not see").'
+            ' (docs/books.md, "Accounts hearth does not see").',
+            Refusal.NAMED,
         )
     if not may_match(holder, account):
         raise MatchRefused(
             f"{target} is not {holder.username}'s, so their connection is not matched to it;"
-            " matching never changes who owns an account."
+            " matching never changes who owns an account.",
+            Refusal.NOT_YOURS,
         )
     _not_taken(found, target, account_id)
     return account
@@ -687,19 +813,23 @@ def _target(found: Survey, one: Surveyed, held: Held, account_id: str, chosen: s
     if target is None:
         raise MatchRefused(
             f"Nothing is proposed for {account_id}; name the base account it is:"
-            f" --confirm {account_id}=<ledger account>."
+            f" --confirm {account_id}=<ledger account>.",
+            Refusal.NOTHING_PROPOSED,
         )
     if target not in held.opened:
-        raise MatchRefused(f"The imported ledger opens no account {target}.")
+        raise MatchRefused(f"The imported ledger opens no account {target}.", Refusal.NOT_OPENED)
     side = connected.side
     if not is_balance_sheet(target) or (side is not None and root(target) != side):
         where = side or "Assets or Liabilities"
-        raise MatchRefused(f"{target} is not under {where}, where {account_id} goes.")
+        raise MatchRefused(
+            f"{target} is not under {where}, where {account_id} goes.", Refusal.WRONG_SIDE
+        )
     closed = held.closed_on.get(target)
     if closed is not None:
         raise MatchRefused(
             f"The imported ledger closes {target} on {_day(closed)}, so nothing can be carried"
-            " on into it."
+            " on into it.",
+            Refusal.CLOSED,
         )
     moved = found.moved_into.get(target)
     if moved is not None and target != one.matched:
@@ -714,7 +844,8 @@ def _target(found: Survey, one: Surveyed, held: Held, account_id: str, chosen: s
             " carried on, it would hold them beside its bank's own transactions"
             + (f". They are {rows}" if rows else "")
             + ". Decide them again in Review, onto another account or a category, and"
-            " match it then."
+            " match it then.",
+            Refusal.MOVED_INTO,
         )
     return target
 
@@ -731,7 +862,8 @@ def _not_taken(found: Survey, target: str, account_id: str) -> None:
     if other is not None:
         raise MatchRefused(
             f"{target} is matched to another connected account already; one ledger account is"
-            " fed by one connection at most."
+            " fed by one connection at most.",
+            Refusal.TAKEN,
         )
 
 
@@ -768,30 +900,34 @@ def _moving(
     if not all(carrying.carries(a.type) for a in feeding):
         raise MatchRefused(
             f"{account_id} is not of a kind hearth carries on from the imported ledger yet:"
-            " a brokerage's history stays where the ledger left it."
+            " a brokerage's history stays where the ledger left it.",
+            Refusal.NOT_CARRIED,
         )
     # Only a row moved onto it is named by a ruling as its own; an accept names a category.
     if kept.ledger_account in RulingStore(conn).ruled_onto():
         raise MatchRefused(
             f"Rows were moved into {kept.ledger_account} in Review, so it is not moved onto"
-            f" {target}: those rulings name it."
+            f" {target}: those rulings name it.",
+            Refusal.RULED_ONTO,
         )
     into = claimed.get(target)
     if into is not None and into.owners != kept.owners:
         raise MatchRefused(
             f"{target} is claimed with other owners than {kept.ledger_account}, so moving it"
-            " would change who sees the account, which matching never does."
+            " would change who sees the account, which matching never does.",
+            Refusal.OTHER_OWNERS,
         )
     if into is not None and into.named is not None:
         raise MatchRefused(
             f"{target} is an account a member named, which no connection feeds"
-            ' (docs/books.md, "Accounts hearth does not see").'
+            ' (docs/books.md, "Accounts hearth does not see").',
+            Refusal.NAMED,
         )
     _not_taken(found, target, account_id)
     try:
         feeds, rows = booking.taken_once(conn, fed, opened=held.opened)
     except booking.Refused as refused:
-        raise MatchRefused(str(refused)) from refused
+        raise MatchRefused(str(refused), Refusal.BOOKING) from refused
     mine = [r for r in rows if feeds[r.account_id][1] == kept.ledger_account]
     plan = carrying.carry(held, target, mine)
     lost = [r for r in mine if plan.status(r) is Status.BEFORE]
@@ -802,12 +938,15 @@ def _moving(
             f" {'is' if count == 1 else 'are'} dated before {_day(plan.cut_over)}, where"
             f" carrying {target} on begins, and the imported ledger does not hold"
             f" {'it' if count == 1 else 'them'}, so moving it would take"
-            f" {'it' if count == 1 else 'them'} out of the books. It stays where it is."
+            f" {'it' if count == 1 else 'them'} out of the books. It stays where it is.",
+            Refusal.WOULD_LOSE,
+            count=count,
+            day=plan.cut_over,
         )
     return Moving(kept, target, into, feeding)
 
 
-def _move(conn: sqlite3.Connection, move: Moving, *, now: datetime) -> None:
+def _move(conn: sqlite3.Connection, move: Moving, *, now: datetime, by: MemberId | None) -> None:
     """Carry `move.kept`'s connected accounts on from the base's account (`Moving`)."""
     with transaction(conn):
         if move.into is None:
@@ -818,8 +957,8 @@ def _move(conn: sqlite3.Connection, move: Moving, *, now: datetime) -> None:
             for linked in move.feeding:
                 conn.execute(
                     "UPDATE plaid_accounts SET hearth_account = ?, confirmed_at = ?,"
-                    " confirmed_by = NULL WHERE account_id = ?",
-                    (move.into.id, now.isoformat(), linked.account_id),
+                    " confirmed_by = ? WHERE account_id = ?",
+                    (move.into.id, now.isoformat(), by, linked.account_id),
                 )
             conn.execute("DELETE FROM account_owners WHERE account_id = ?", (move.kept.id,))
             conn.execute("DELETE FROM accounts WHERE id = ?", (move.kept.id,))

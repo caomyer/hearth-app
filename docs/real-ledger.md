@@ -17,6 +17,7 @@ Importing `ledger.beancount` alone leaves the review queue empty and every balan
 
 The import reads the ledger where it is, through the same path every ledger is read by (`books.load_ledger`), and writes nothing unless it loads cleanly and every balance assertion in it passes.
 If it does not, it says why, by file and line and never by amount, and nothing is written.
+Before beancount follows any include, every file the ledger reads is held to what a base may hold: a regular file of at most 64 MB, outside hearth's own data directory, and never named by an absolute path.
 It then prints the check to hold against the ledger's own figures, in fava or by hand, before trusting the copy:
 
 ```text
@@ -86,6 +87,25 @@ From the first ruling made after the import on, rulings rest on the base as it i
 So it is once a member has ruled on a row hearth carries on from the base, or on a reconciling entry (`books.begun`): that row begins at a cut-over the base decides, and another base would move it under the ruling.
 Where matched accounts are carried on from the base being imported, the check says from which day each is, and how many of the bank's transactions before then the base does not hold, which hearth never brings in.
 Importing a ledger exactly as the base already holds it writes nothing.
+
+### From the Mac app
+
+The Mac app brings a ledger in, and matches accounts to it, through the very functions the two commands call (`docs/native.md`, "The household's ledger"):
+
+- `ledger_import.examine` reads a ledger where it is and works out its check, writing nothing; `hearth import-ledger`, the app's check (`check_ledger`) and the app's import all go through it, so they refuse alike, in the same sentences.
+- `matching.weigh` is the survey with what it was worked out from, `matching.refusal` tries one match against it without writing, and `matching.confirm` writes only what that same check allows, recording which member confirmed it when a member did.
+
+Where the app's path differs, it is narrower:
+
+- Only an admin checks a file or brings a ledger in (`access.may_bring_in_ledger`), as the base becomes every member's books; the command line is whoever runs hearth on its machine.
+- The app brings a ledger in once: it refuses where a base is in already, saying so, rather than replace it as the command line may until a ruling rests on it.
+- A household that holds a base or inherits a ledger is told why it may not bring one in, and nothing of any file, as its own ledger, read again, holds every member's accounts.
+- Nothing in hearth's own data directory, its books or the base it froze, is ever read as a ledger to import, by either path.
+- Every file a ledger reads is held to what a base may hold before beancount follows any include: a regular file of at most 64 MB, never a folder or a pipe, and no include by an absolute path (`ledger_import._scan`).
+- A member matches their own connections alone, onto accounts they own, as the Connect page files them; the command line matches every member's.
+  An account hearth keeps itself may move onto a base account nobody has claimed, its claim going with it, only where the ledger's own entries record that connection's Plaid ids on it (`access.may_carry_on`): an account that only its rows point at could be anyone's, and moving onto it would hand its history to whoever chose it.
+  The command line, the machine's operator's, still moves onto any account nobody has claimed.
+- Claiming the base's other accounts stays `hearth add-account`; the app says how many nobody has claimed yet.
 
 ### Inheriting the ledger where it is, for now
 

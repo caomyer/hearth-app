@@ -540,7 +540,28 @@ def test_an_include_by_absolute_path_is_refused_as_one_a_copy_would_still_read(
         " frozen copy would still read from where it is. Make it relative to the file that"
         " includes it, and import again. Nothing was imported."
     )
-    assert sorted(p.name for p in (shell / "ledger-base").iterdir()) == []
+    # Refused before anything is staged, or the file it names is followed.
+    assert not (shell / "ledger-base").exists()
+
+
+def test_nothing_in_hearths_own_data_directory_is_imported(
+    shell: Path, source: Path, tmp_path: Path
+) -> None:
+    """A copy of the ledger kept in the data directory, as its books or a base are, is what
+    hearth keeps, never a ledger to import."""
+    inside = shell / "copied"
+    inside.mkdir(parents=True)
+    copied = ledgers.write(inside)
+
+    with pytest.raises(SystemExit) as refused:
+        main(["import-ledger", str(copied)])
+
+    assert refused.value.code == (
+        f"hearth: {copied} is in hearth's own data directory, where it keeps its books, so it"
+        " is not a ledger to import. Choose the ledger the household kept itself. Nothing was"
+        " imported."
+    )
+    assert not (shell / "ledger-base").exists()
 
 
 def test_a_ledger_that_is_not_there_is_refused(shell: Path, tmp_path: Path) -> None:
