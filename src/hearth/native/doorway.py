@@ -22,6 +22,7 @@ Money is written as a decimal string, never a float, so nothing is rounded on th
 screen. Days are ISO dates, and moments are UTC to the second (``2026-10-15T12:00:00Z``).
 """
 
+import json
 import sqlite3
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -67,6 +68,7 @@ from hearth.native.common import day as _day
 from hearth.native.common import moment as _moment
 from hearth.native.common import money as _money
 from hearth.native.importer import Importer
+from hearth.native.worker import Worker
 from hearth.refresh import NOT_SYNCING, Syncing
 from hearth.review.rulings import RulingStore
 from hearth.valuation.pricestore import PriceStore
@@ -95,6 +97,8 @@ class Doorway:
     clock: Clock = system_clock
     importer: Importer | None = None
     """How this engine brings a ledger in, or None for one that never does."""
+    worker: Worker | None = None
+    """Where this engine works out a slow answer off the wire, or None to work it out at once."""
 
     def answer(self, ask: str, given: Given | None = None) -> Answer:
         screen = SCREENS.get(ask)
@@ -104,6 +108,14 @@ class Doorway:
             asked = screen.read(given or {})
         except Malformed:
             return dict(MISSING)
+        if screen.slow and self.worker is not None:
+            # The same ask, by the same viewer, is the same piece of work.
+            key = (self.viewer, ask, json.dumps(given or {}, sort_keys=True))
+            found = self.worker.answer(key, lambda: self._answer_now(screen, asked))
+            return dict(LOADING) if found is None else found
+        return self._answer_now(screen, asked)
+
+    def _answer_now(self, screen: Screen, asked: object) -> Answer:
         conn = db.connect(self.settings.database)
         try:
             return self._answer(conn, screen, asked)
@@ -198,7 +210,7 @@ class Doorway:
 
 LEDGER_ACTIONS: Mapping[str, Callable[[Disclosure, Given, Around], Acted]] = {
     "bring_in_ledger": ledger.bring_in,
-    "match_account": ledger.match,
+    "match_accounts": ledger.match,
 }
 """What the app may ask done to the household's ledger, by the name it asks with."""
 
@@ -481,8 +493,8 @@ SCREENS: Mapping[str, Screen] = {
     "holdings": Screen(_nothing, holdings),
     "price_history": Screen(_symbol, price_history),
     "ledger": Screen(_nothing, ledger.ledger_screen, of_books=False),
-    "ledger_check": Screen(ledger.read_path, ledger.check_screen, of_books=False),
-    "matching": Screen(_nothing, ledger.matching_screen, of_books=False),
+    "ledger_check": Screen(ledger.read_path, ledger.check_screen, of_books=False, slow=True),
+    "matching": Screen(_nothing, ledger.matching_screen, of_books=False, slow=True),
 }
 """Every screen the app may ask for, by the name it asks with."""
 

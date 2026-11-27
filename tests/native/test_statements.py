@@ -137,6 +137,10 @@ def test_caseys_statement_with_rows_waiting(world: World) -> None:
         "unplaced": 2,
         "unplaced_out": "79.00",
         "unplaced_in": "0",
+        "spending": "0",
+        "tax": "0",
+        "spending_with_tax": "0",
+        "not_spending": "0",
     }
     # The checking account held 5,211.45 before its history and the card owed 297.91.
     assert others(why)["opening"] == D("5211.45") - D("297.91")
@@ -995,3 +999,72 @@ def test_pay_is_called_what_it_is(world: World) -> None:
     summary = ask(world, "avery", "statement_summary")
     assert line(summary, "pay")["label"] == "Pay before tax"
     assert line(summary["with_tax"], "pay")["label"] == "Pay before tax"
+
+
+def test_pay_beside_tax_paid_apart_is_take_home_pay(world: World) -> None:
+    """Blake pays tax apart from pay, and shares everything: Avery's statements read Blake's
+    books, which hold tax, but no pay booked before it, so pay is take-home pay, in the summary
+    and in Year by year."""
+    world.choose("blake", EVERYTHING)
+    book(world, household.tax_text())
+    summary = ask(world, "avery", "statement_summary")
+
+    assert summary["scope"]["taxed"] is True
+    assert line(summary, "pay")["label"] == "Take-home pay"
+    assert line(summary["with_tax"], "pay")["label"] == "Take-home pay"
+    assert ask(world, "avery", "year_by_year")["pay_label"] == "Take-home pay"
+    book(world, PAYSLIP.replace("2026-10-10 open Expenses:Taxes\n", ""))
+    assert ask(world, "avery", "year_by_year")["pay_label"] == "Pay before tax"
+
+
+REFUND_WITHOUT_PAY = """
+2026-10-10 open Expenses:Taxes
+2026-10-11 * "Payee Tax Office" ""
+  Assets:Zq:AverySolo  500.00 USD
+  Expenses:Taxes
+"""
+
+
+def test_a_refund_without_pay_is_no_savings_rate(world: World) -> None:
+    """No pay and 500 refunded: there is no pay to save from, so neither savings rate is a
+    figure, in the summary or in Year by year."""
+    book(world, REFUND_WITHOUT_PAY)
+    summary = ask(world, "avery", "statement_summary")
+
+    assert line(summary, "pay")["now"] == "0"
+    assert summary["savings_rate"]["now"] is None
+    assert summary["with_tax"]["savings_rate"]["now"] is None
+    (year,) = ask(world, "avery", "year_by_year")["years"]
+    assert (year["savings_rate"], year["savings_rate_with_tax"]) == (None, None)
+
+
+def test_what_rests_on_unreviewed_rows_is_said_by_kind(world: World) -> None:
+    """Blake's tax this month waits in review: what rests on unreviewed rows is said as spending
+    and tax apart, and both together, each worked out by the engine."""
+    world.choose("blake", EVERYTHING)
+    before = ask(world, "avery", "statement_summary")["unreviewed"]
+    book(world, household.tax_text())
+    after = ask(world, "avery", "statement_summary")["unreviewed"]
+
+    assert D(after["tax"]) == D("1348.27")
+    assert D(after["spending"]) == D(before["spending"])
+    assert D(after["spending_with_tax"]) == D(after["spending"]) + D("1348.27")
+    assert D(after["expenses"]) == D(after["spending_with_tax"]) + D(after["not_spending"])
+
+
+def test_pay_booked_both_ways_is_called_pay(world: World) -> None:
+    """One payslip booked before tax, and pay that reached the bank booked as it came: pay is
+    neither all before tax nor all take-home, so it is plain "Pay", in every period; and the
+    savings rates beside it still say how tax is counted."""
+    book(world, PAYSLIP)
+    book(
+        world,
+        '\n2026-10-12 * "Payee Employer" ""\n  Assets:Zq:AverySolo  600.00 USD\n  Income:Salary\n',
+    )
+    summary = ask(world, "avery", "statement_summary")
+
+    assert line(summary, "pay")["label"] == "Pay"
+    assert ask(world, "avery", "year_by_year")["pay_label"] == "Pay"
+    august = ask(world, "avery", "statement_summary", **{"from": "2026-08-01", "to": "2026-08-31"})
+    assert line(august, "pay")["label"] == "Pay"
+    assert summary["savings_rate"]["label"] == "Savings rate, after tax"

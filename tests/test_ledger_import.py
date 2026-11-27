@@ -564,6 +564,40 @@ def test_nothing_in_hearths_own_data_directory_is_imported(
     assert not (shell / "ledger-base").exists()
 
 
+def test_an_include_from_the_home_folder_is_said_as_what_beancount_reads(
+    shell: Path, tmp_path: Path
+) -> None:
+    """Beancount reads `~/x` relative to the file, as a folder named ~, never the home folder,
+    so the import says so rather than call it an absolute path, which it is not."""
+    folder = tmp_path / "tilde"
+    folder.mkdir()
+    ledger = folder / "main.beancount"
+    ledger.write_text('option "operating_currency" "USD"\ninclude "~/zq-nope.beancount"\n')
+
+    with pytest.raises(SystemExit) as refused:
+        main(["import-ledger", str(ledger)])
+
+    assert refused.value.code == (
+        "hearth: main.beancount, line 2, includes ~/zq-nope.beancount, which beancount reads as a"
+        " folder named ~ beside the file, not the home folder. Make it relative to the file that"
+        " includes it, and import again. Nothing was imported."
+    )
+
+
+def test_a_pipe_a_glob_finds_is_refused_unopened(shell: Path, tmp_path: Path) -> None:
+    folder = tmp_path / "piped"
+    ledger = ledgers.write(folder)
+    pipe = folder / "years" / "2026-3.beancount"
+    os.mkfifo(pipe)
+
+    with pytest.raises(SystemExit) as refused:
+        main(["import-ledger", str(ledger)])
+
+    assert refused.value.code == (
+        f"hearth: {pipe} is not a file, so it is not a ledger. Nothing was imported."
+    )
+
+
 def test_a_ledger_that_is_not_there_is_refused(shell: Path, tmp_path: Path) -> None:
     missing = tmp_path / "nowhere.beancount"
 

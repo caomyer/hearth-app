@@ -6,17 +6,25 @@ a member could learn of what is not theirs is asked: another member's connection
 accounts the ledger's evidence says are theirs, and what lives only in the ledger file checked.
 Every name and figure is invented (``tests.ledgers``)."""
 
+import contextlib
 import json
 import os
+import stat
 import threading
+import time
+from collections.abc import Iterator, Mapping
+from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from hearth import accounts, base, books, ledger_import
-from hearth.disclosure import may_learn, rulings_in
+from hearth import accounts, auth, base, books, ledger_import, matching
+from hearth.disclosure import Disclosure, may_learn, rulings_in
 from hearth.disclosure.ledger import BroughtIn
+from hearth.matching import ById, Stretch, Unproposed
+from hearth.members import find
 from hearth.native.bridge import Acted, Bridge, Outcome
 from hearth.native.importer import Importer
 from hearth.plaid.registry import Registry
@@ -64,12 +72,23 @@ def kept(tmp_path: Path) -> Path:
     return ledgers.write(folder)
 
 
+def settled(door: Bridge, screen: str, given: Mapping[str, object] | None = None) -> dict[str, Any]:
+    """A screen's answer once it is worked out: a slow one is answered `loading` while it is,
+    off the wire (``hearth.native.worker``), and asked again, as the app asks."""
+    for _ in range(3000):
+        answer = door.answer(screen, given)
+        if answer["state"] != "loading":
+            return answer
+        time.sleep(0.01)
+    raise AssertionError(f"{screen} was never worked out")
+
+
 def ask(door: Bridge, screen: str) -> dict[str, Any]:
-    return door.answer(screen)
+    return settled(door, screen)
 
 
 def check(door: Bridge, path: Path | str) -> dict[str, Any]:
-    return door.answer("ledger_check", {"path": str(path)})
+    return settled(door, "ledger_check", {"path": str(path)})
 
 
 # Checking a file.
@@ -166,13 +185,14 @@ def test_a_file_that_is_not_there_or_not_a_file_is_refused_saying_so(
     missing = tmp_path / "nowhere.beancount"
     (tmp_path / "a-folder").mkdir()
 
-    assert check(door, missing)["refused"] == (
-        f"{missing} cannot be read: No such file or directory."
-    )
+    assert check(door, missing)["refused"] == {
+        "why": "unreadable",
+        "said": "nowhere.beancount cannot be read: No such file or directory.",
+    }
     assert check(door, tmp_path / "a-folder") == {
         "state": "ready",
         "found": None,
-        "refused": f"{tmp_path / 'a-folder'} is not a file, so it is not a ledger.",
+        "refused": {"why": "not_a_file", "said": "a-folder is not a file, so it is not a ledger."},
     }
 
 
@@ -199,16 +219,20 @@ def test_a_pipe_is_never_opened_named_or_included(
     assert named == {
         "state": "ready",
         "found": None,
-        "refused": f"{pipe} is not a file, so it is not a ledger.",
+        "refused": {
+            "why": "not_a_file",
+            "said": "waiting.beancount is not a file, so it is not a ledger.",
+        },
     }
 
     # Included by a glob, beside the ledger, it is refused before beancount would open it.
     os.mkfifo(kept.parent / "years" / "2026-3.beancount")
     globbed = _within(10, lambda: check(door, kept))
     assert isinstance(globbed, dict)
-    assert globbed["refused"] == (
-        f"{kept.parent / 'years' / '2026-3.beancount'} is not a file, so it is not a ledger."
-    )
+    assert globbed["refused"] == {
+        "why": "not_a_file",
+        "said": "years/2026-3.beancount is not a file, so it is not a ledger.",
+    }
 
 
 def test_an_include_by_absolute_path_is_refused_before_it_is_followed(
@@ -231,11 +255,12 @@ def test_an_include_by_absolute_path_is_refused_before_it_is_followed(
     assert answer == {
         "state": "ready",
         "found": None,
-        "refused": (
-            f"accounts.beancount, line 9, includes {outside} by its absolute path, which a"
-            " frozen copy would still read from where it is. Make it relative to the file that"
-            " includes it, and import again."
-        ),
+        "refused": {
+            "why": "absolute_include",
+            "said": "accounts.beancount, line 9, includes a file by its full path, which"
+            " Hearth's copy would still read from where it is. Make the include relative to the"
+            " file that has it, then choose the ledger again.",
+        },
     }
 
 
@@ -249,9 +274,8 @@ def test_a_file_that_is_not_a_ledger_is_refused_and_never_echoed(
     answer = check(door, note)
 
     assert answer["found"] is None
-    refused = answer["refused"]
-    assert isinstance(refused, str)
-    assert refused.startswith("The ledger does not load cleanly.")
+    assert answer["refused"]["why"] == "not_clean"
+    assert answer["refused"]["said"].startswith("It does not load cleanly.")
     for text in ("Zq-secret-word", "1,234.56", "1234.56", "Hideaway", "not a ledger"):
         assert text not in json.dumps(answer)
 
@@ -267,7 +291,11 @@ def test_a_file_larger_than_any_ledger_is_refused_unread(
     assert check(door, kept) == {
         "state": "ready",
         "found": None,
-        "refused": f"{prices} is larger than 1 MB, which no ledger's text is.",
+        "refused": {
+            "why": "too_large",
+            "said": "The ledger and the files it includes come to more than 1 MB, which no"
+            " ledger's text does.",
+        },
     }
 
 
@@ -285,10 +313,11 @@ def test_a_failing_assertion_is_said_where_beside_what_the_ledger_holds(
     found = answer["found"]
     assert isinstance(found, dict)
     assert found["assertions"] == {"count": ledgers.ASSERTIONS, "failing": 1}
-    assert answer["refused"] == (
-        "A balance assertion fails: on Jul 2, 2026, at 2026-2.beancount, line 6, the postings"
-        " do not add up to what it asserts."
-    )
+    assert answer["refused"] == {
+        "why": "assertion",
+        "said": "A balance check in it fails: on Jul 2, 2026, at 2026-2.beancount, line 6, its"
+        " transactions do not add up to what it says.",
+    }
     assert "1999.99" not in json.dumps(answer)
 
 
@@ -303,11 +332,14 @@ def test_a_household_that_inherits_its_ledger_is_told_so_and_nothing_of_any_file
     for path in (kept, world.settings.ledger):
         answer = check(door, path)
         assert answer["found"] is None
-        assert str(answer["refused"]).startswith("HEARTH_LEDGER is set")
+        assert answer["refused"] == {
+            "why": "inherited",
+            "said": "Hearth reads your ledger where it is, so another cannot be brought in.",
+        }
     standing = ask(door, "ledger")
     assert standing["inherited"] is True
     assert standing["may_bring_in"] is False
-    assert str(standing["why_not"]).startswith("HEARTH_LEDGER is set")
+    assert standing["why_not"]["why"] == "inherited"
 
 
 def test_nothing_hearth_keeps_is_read_as_a_ledger_to_bring_in(
@@ -325,23 +357,114 @@ def test_nothing_hearth_keeps_is_read_as_a_ledger_to_bring_in(
     including = folder / "main.beancount"
     including.write_text('include "../linked/books.beancount"\n')
 
-    for path, named in (
-        (written, written),
-        (linked / "books.beancount", linked / "books.beancount"),
-        (including, linked / "books.beancount"),
-    ):
+    hard = tmp_path / "hard.beancount"
+    os.link(written, hard)
+    for path in (written, linked / "books.beancount", including, hard):
         answer = check(door, path)
         assert answer == {
             "state": "ready",
             "found": None,
-            "refused": f"{named} is in hearth's own data directory, where it keeps its books,"
-            " so it is not a ledger to import. Choose the ledger the household kept itself.",
-        }
+            "refused": {
+                "why": "hearths_own",
+                "said": "That is one of the files Hearth keeps its own books in, not a ledger."
+                " Choose the ledger your household kept itself.",
+            },
+        }, path
     assert door.act("bring_in_ledger", {"path": str(written)}) is Acted.STARTED
     importer = door.importer
     assert importer is not None
     importer.wait()
     assert base.current(fresh.settings.ledger_base) is None
+
+
+def test_a_file_swapped_for_a_pipe_once_read_is_never_opened_again(
+    fresh: Household, clock: FakeClock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each file is read once and the copy of those bytes is what loads: a file swapped for a
+    pipe after it was read cannot make the check, or the bridge behind it, wait."""
+    door = bridge(fresh, clock, "avery")
+    folder = tmp_path / "swap"
+    folder.mkdir()
+    main = folder / "main.beancount"
+    main.write_text('option "operating_currency" "USD"\ninclude "part.beancount"\n')
+    part = folder / "part.beancount"
+    part.write_text("2020-01-01 open Assets:Zq:A USD\n")
+    real = ledger_import._gathered
+
+    def gathered_then_swapped(source: Path, keeping: Path) -> tuple[Path, str, dict[str, bytes]]:
+        found = real(source, keeping)
+        part.unlink()
+        os.mkfifo(part)
+        return found
+
+    monkeypatch.setattr(ledger_import, "_gathered", gathered_then_swapped)
+
+    answer = _within(10, lambda: check(door, main))
+
+    assert isinstance(answer, dict)
+    assert answer["refused"] is None
+    assert [a["name"] for a in answer["found"]["accounts"]] == ["Assets:Zq:A"]
+
+
+def test_an_include_from_the_home_folder_is_said_as_what_beancount_reads(
+    fresh: Household, clock: FakeClock, tmp_path: Path
+) -> None:
+    """Beancount reads `~/x` as a folder named ~ beside the file, never the home folder."""
+    door = bridge(fresh, clock, "avery")
+    folder = tmp_path / "tilde"
+    folder.mkdir()
+    main = folder / "main.beancount"
+    main.write_text('option "operating_currency" "USD"\ninclude "~/zq-nope.beancount"\n')
+
+    assert check(door, main)["refused"] == {
+        "why": "home_include",
+        "said": "main.beancount, line 2, includes a file starting with ~, which beancount reads"
+        " as a folder named ~ beside the file, not your home folder. Make the include relative"
+        " to the file that has it, then choose the ledger again.",
+    }
+
+
+def test_a_ledger_of_more_files_than_any_or_kept_in_icloud_is_refused_unread(
+    fresh: Household, clock: FakeClock, kept: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    door = bridge(fresh, clock, "avery")
+    monkeypatch.setattr(ledger_import, "MOST_FILES", 2)
+    assert check(door, kept)["refused"]["why"] == "too_many"
+
+    monkeypatch.setattr(ledger_import, "MOST_FILES", 1000)
+    # Stands in for SF_DATALESS, which only the system sets, by a flag a test may set.
+    monkeypatch.setattr(ledger_import, "DATALESS", stat.UF_HIDDEN)
+    os.chflags(kept.parent / "accounts.beancount", stat.UF_HIDDEN)
+    assert check(door, kept)["refused"] == {
+        "why": "not_downloaded",
+        "said": "accounts.beancount is kept in iCloud and is not downloaded to this Mac. Download"
+        " it in Finder, then choose the ledger again.",
+    }
+
+
+def test_a_slow_check_never_holds_up_the_apps_other_asks(
+    fresh: Household, clock: FakeClock, kept: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Worked out off the wire: while a check waits on a file, the overview is answered, and
+    the check is answered `loading` until it is done, then once."""
+    door = bridge(fresh, clock, "avery")
+    release = threading.Event()
+    real = ledger_import.check_ledger
+
+    def waiting(*args: Any, **kwargs: Any) -> ledger_import.Checked:
+        release.wait(20)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(ledger_import, "check_ledger", waiting)
+    given = {"path": str(kept)}
+
+    assert door.answer("ledger_check", given) == {"state": "loading"}
+    started = time.perf_counter()
+    assert door.answer("overview")["state"] == "ready"
+    assert door.answer("ledger_check", given) == {"state": "loading"}
+    assert time.perf_counter() - started < 1
+    release.set()
+    assert settled(door, "ledger_check", given)["refused"] is None
 
 
 # Bringing it in.
@@ -388,10 +511,11 @@ def test_bringing_in_freezes_the_base_once_and_the_books_then_hold_it(
         "unclaimed": standing["imported"]["unclaimed"],
     }
     assert standing["may_bring_in"] is False
-    assert standing["why_not"] == (
-        f"Your ledger was brought in on Nov {TODAY.day}, 2026, and a ledger is brought in once:"
-        " hearth's books are the truth from then on."
-    )
+    assert standing["why_not"] == {
+        "why": "once",
+        "said": f"Your ledger was brought in on Nov {TODAY.day}, 2026. A ledger is brought in"
+        " once, and Hearth's books are the truth from then on.",
+    }
 
     # Once: the same ledger, or any other, is refused, and nothing is written.
     again = _brought_in(door, fresh.ledger)
@@ -437,6 +561,7 @@ def test_an_import_that_stops_part_way_leaves_no_half_base(
 
     def interrupted_commit(directory: Path, frozen: base.Base, **_: object) -> base.Imported:
         # The copy's folder goes where the manifest would name it, and then the power fails.
+        directory.mkdir(parents=True, exist_ok=True)
         frozen.directory.rename(directory / frozen.digest)
         raise RuntimeError("the power failed")
 
@@ -455,7 +580,7 @@ def test_an_import_that_stops_part_way_leaves_no_half_base(
     assert told["outcome"] == "failed"
     assert base.current(fresh.settings.ledger_base) is None
     assert not (fresh.settings.ledger_base / base.MANIFEST).exists()
-    assert not list(fresh.settings.ledger_base.glob(".importing-*"))
+    assert not list(fresh.settings.data_dir.glob(".importing-*"))
     assert books.inherited(fresh.settings) is None
 
     monkeypatch.setattr(base, "commit", real_commit)
@@ -472,14 +597,95 @@ def test_an_import_is_one_at_a_time(fresh: Household, clock: FakeClock) -> None:
 
     def held_up() -> BroughtIn:
         release.wait(10)
-        return BroughtIn("refused", "held up")
+        return BroughtIn("failed")
 
     assert importer.start("avery", held_up)
 
     assert door.act("bring_in_ledger", {"path": str(fresh.ledger)}) is Acted.RUNNING
     assert ask(door, "ledger")["bringing_in"]["running"] is True
+    assert ask(door, "ledger")["importing"] is True
+    # Another admin signed in to the same engine is told one is being brought in, not whose;
+    # a member who may not bring one in is told nothing of it.
+    conn = fresh.fresh.connect()
+    try:
+        auth.create_member(
+            conn,
+            actor=None,
+            username="casey",
+            display_name="Casey",
+            is_admin=True,
+            password=password_of("casey"),
+            now=NOW,
+        )
+    finally:
+        conn.close()
+    assert door.sign_in("casey", password_of("casey")) is Outcome.SIGNED_IN
+    other = ask(door, "ledger")
+    assert (other["importing"], other["bringing_in"]) == (True, None)
+    assert door.act("bring_in_ledger", {"path": str(fresh.ledger)}) is Acted.RUNNING
+    assert door.sign_in("blake", password_of("blake")) is Outcome.SIGNED_IN
+    assert ask(door, "ledger")["importing"] is False
     release.set()
     importer.wait()
+    assert ask(door, "ledger")["importing"] is False
+
+
+def test_two_imports_at_once_take_turns_and_the_second_is_refused(
+    fresh: Household, clock: FakeClock, tmp_path: Path
+) -> None:
+    """Two bridges bring two ledgers in at the same moment: one is the base, the other is told
+    a ledger was brought in once, and the base is never replaced underneath the first."""
+    folders = []
+    for word in ("a", "b"):
+        folder = tmp_path / word
+        folder.mkdir()
+        ledgers.write(folder)
+        (folder / "main.beancount").write_text(
+            (folder / "main.beancount").read_text() + f"; {word}\n"
+        )
+        folders.append(folder / "main.beancount")
+    first = bridge(fresh, clock, "avery")
+    second = Bridge(
+        fresh.settings, first.bookkeeper, clock, importer=Importer(first.bookkeeper, clock)
+    )
+    assert second.sign_in("avery", password_of("avery")) is Outcome.SIGNED_IN
+    real = base.staged
+    both_inside = threading.Barrier(2, timeout=2)
+
+    @contextlib.contextmanager
+    def slow_staged(*args: Any, **kwargs: Any) -> Iterator[base.Base]:
+        # Whoever gets this far first waits for the other, which the lock holds back.
+        with contextlib.suppress(threading.BrokenBarrierError):
+            both_inside.wait()
+        with real(*args, **kwargs) as staged:
+            yield staged
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(base, "staged", slow_staged)
+        assert first.act("bring_in_ledger", {"path": str(folders[0])}) is Acted.STARTED
+        assert second.act("bring_in_ledger", {"path": str(folders[1])}) is Acted.STARTED
+        for door in (first, second):
+            assert door.importer is not None
+            door.importer.wait()
+
+    outcomes = [ask(door, "ledger")["bringing_in"]["outcome"] for door in (first, second)]
+    assert sorted(outcomes) == ["imported", "refused"]
+    imported = base.current(fresh.settings.ledger_base)
+    assert imported is not None
+    winner = folders[outcomes.index("imported")]
+    assert imported.source == winner
+
+
+def test_what_an_import_that_died_left_is_swept_at_the_next(
+    fresh: Household, clock: FakeClock
+) -> None:
+    folder = fresh.settings.data_dir / f"{base.IMPORTING}left"
+    folder.mkdir(parents=True)
+    (folder / "main.beancount").write_text("; half a copy\n")
+    door = bridge(fresh, clock, "avery")
+
+    assert _brought_in(door, fresh.ledger)["outcome"] == "imported"
+    assert not folder.exists()
 
 
 # Matching.
@@ -492,10 +698,48 @@ def matched(tmp_path: Path, clock: FakeClock) -> Household:
     return build(tmp_path, clock)
 
 
+@pytest.fixture
+def unclaimed(tmp_path: Path, clock: FakeClock) -> Household:
+    """The matching household with its ledger imported and nothing of it claimed, as an
+    import from the app leaves one."""
+    return build(tmp_path, clock, claims={})
+
+
 def _accounts(answer: dict[str, Any]) -> dict[str, dict[str, Any]]:
     found = answer["accounts"]
     assert isinstance(found, list)
     return {a["id"]: a for a in found}
+
+
+def match(door: Bridge, chosen: dict[str, str]) -> Acted:
+    """Match connected accounts as the app does: every one the step chose, in one act."""
+    done = door.act("match_accounts", {"matches": chosen})
+    assert isinstance(done, Acted)
+    return done
+
+
+def keep(household: Household, key: str, name: str, *owners: str) -> None:
+    """File a connected account as an account hearth keeps itself, as the Connect page does,
+    owned by `owners`."""
+    ids = [household.fresh.member_ids[o] for o in owners]
+    conn = household.fresh.connect()
+    try:
+        account = accounts.register(conn, ledger_account=name, name=key, owners=ids)
+        Registry(conn).confirm(household.ids[key], account.id, by=ids[0], now=NOW)
+    finally:
+        conn.close()
+
+
+def owners_of(household: Household) -> dict[str, frozenset[str]]:
+    names = {v: k for k, v in household.fresh.member_ids.items()}
+    conn = household.fresh.connect()
+    try:
+        return {
+            a.ledger_account: frozenset(names[o] for o in a.owners)
+            for a in accounts.all_accounts(conn)
+        }
+    finally:
+        conn.close()
 
 
 def test_a_member_is_shown_their_own_connected_accounts_and_nobody_elses(
@@ -523,12 +767,13 @@ def test_each_is_proposed_as_the_ledger_says_naming_only_what_its_member_owns(
 
     assert proposed("ins_zq_bank/chk") == ("Assets:Zq:Checking", None)
     assert proposed("ins_zq_union/chk") == ("Assets:Zq:Union", None)
-    # Nobody has claimed the mortgage; the ledger records the connection's ids on it.
-    assert proposed("ins_zq_bank/loan") == ("Liabilities:Zq:Mortgage", "unclaimed")
+    # Nobody has claimed the mortgage, so nobody sees it: it reads as no evidence at all.
+    assert proposed("ins_zq_bank/loan") == (None, "unclear")
     assert proposed("ins_zq_bank/sav") == (None, "unclear")
-    # Blake's alone, though Avery's login reaches it: never named to Avery.
-    assert proposed("ins_zq_bank/blakes") == (None, "not_yours")
-    assert "Assets:Zq:Blake" not in json.dumps(answer)
+    # Blake's alone, though Avery's login reaches it: it reads as no evidence at all.
+    assert proposed("ins_zq_bank/blakes") == (None, "unclear")
+    for unseen in ("Assets:Zq:Blake", "Liabilities:Zq:Mortgage", "Liabilities:Zq:CardB"):
+        assert unseen not in json.dumps(answer)
     chk = found[ids["ins_zq_bank/chk"]]
     choices = chk["choices"]
     assert isinstance(choices, list)
@@ -551,15 +796,77 @@ def test_each_is_proposed_as_the_ledger_says_naming_only_what_its_member_owns(
     assert facing["booked"]["count"] == 3
 
 
+def test_an_account_somebody_else_claims_changes_nothing_a_member_is_told(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    """Blake's savings, which Avery's login reaches, while nobody has claimed it and once
+    Blake has: Avery is told the same either way, so learns neither its name nor the claim."""
+    claims = {k: v for k, v in ledgers.CLAIMS.items() if k != "Assets:Zq:Blake:Savings"}
+    household = build(tmp_path, clock, claims=claims)
+    blakes = household.ids["ins_zq_bank/blakes"]
+    before = _accounts(ask(bridge(household, clock, "avery"), "matching"))[blakes]
+    conn = household.fresh.connect()
+    try:
+        accounts.claim(
+            conn,
+            ledger_account="Assets:Zq:Blake:Savings",
+            name="Savings",
+            owners=[household.fresh.member_ids["blake"]],
+            now=NOW,
+        )
+    finally:
+        conn.close()
+    after = _accounts(ask(bridge(household, clock, "avery"), "matching"))[blakes]
+
+    assert before == after
+    assert before["proposed"] is None
+    assert before["why_not"] == "unclear"
+    assert "Blake" not in json.dumps(before)
+
+
+def test_evidence_on_accounts_a_member_may_not_name_reads_as_none(
+    matched: Household, clock: FakeClock
+) -> None:
+    """Ids split between Avery's account and Blake's say nothing of Blake's to Avery: no
+    disagreement, no count of ids elsewhere; split between Avery's own, they are said."""
+    door = bridge(matched, clock, "avery")
+    weighed = matching.weigh(matched.settings, TODAY)
+    one = next(
+        s
+        for s in weighed.survey.accounts
+        if s.proposal.connected.account.account_id == matched.ids["ins_zq_bank/chk"]
+    )
+    conn = matched.fresh.connect()
+    try:
+        avery = find(conn, "avery")
+        assert avery is not None
+        view = Disclosure.load(conn, avery, door.bookkeeper.status)
+        claimed = {a.ledger_account: a for a in accounts.all_accounts(conn)}
+    finally:
+        conn.close()
+    desk = view.ledger_desk(matched.settings, clock)
+
+    def why(on: dict[str, int], unproposed: Unproposed, account: str | None = None) -> object:
+        ids = ById({a: Stretch(n) for a, n in on.items()})
+        proposal = replace(one.proposal, account=account, ids=ids, unproposed=unproposed)
+        return desk._why_not(proposal, claimed, set(), None)
+
+    mine = {"Assets:Zq:Checking": 3, "Assets:Zq:Union": 3}
+    theirs = {"Assets:Zq:Checking": 3, "Assets:Zq:Blake:Savings": 3}
+    assert why(mine, Unproposed.IDS_DISAGREE) == "ids_disagree"
+    assert why(theirs, Unproposed.IDS_DISAGREE) == "unclear"
+    assert why({}, Unproposed.WRONG_SIDE, "Liabilities:Zq:Card") == "wrong_side"
+    assert why({}, Unproposed.WRONG_SIDE, "Liabilities:Zq:Blake:Card") == "unclear"
+    assert why({}, Unproposed.WRONG_SIDE, "Liabilities:Zq:Mortgage") == "unclear"
+
+
 def test_a_match_is_recorded_as_the_member_and_carried_on(
     matched: Household, clock: FakeClock
 ) -> None:
     door = bridge(matched, clock, "avery")
     chk = matched.ids["ins_zq_bank/chk"]
 
-    assert door.act("match_account", {"account": chk, "to": "Assets:Zq:Checking"}) is (
-        Acted.MATCHED
-    )
+    assert match(door, {chk: "Assets:Zq:Checking"}) is Acted.MATCHED
 
     conn = matched.fresh.connect()
     try:
@@ -575,6 +882,33 @@ def test_a_match_is_recorded_as_the_member_and_carried_on(
     assert one["state"] == "matched"
     assert one["matched"] == {"account": "Assets:Zq:Checking", "on": TODAY.isoformat()}
     assert answer["totals"] == {"matched": 1, "of": 8, "in_ledger": 10, "booked": 3}
+
+
+def test_several_accounts_are_matched_in_one_act_or_none_of_them(
+    matched: Household, clock: FakeClock
+) -> None:
+    door = bridge(matched, clock, "avery")
+    ids = matched.ids
+    both = {
+        ids["ins_zq_bank/chk"]: "Assets:Zq:Checking",
+        ids["ins_zq_union/chk"]: "Assets:Zq:Union",
+    }
+
+    # One named for an account the other is named for too: refused whole, nothing written.
+    twice = {ids["ins_zq_bank/chk"]: "Assets:Zq:Union", ids["ins_zq_union/chk"]: "Assets:Zq:Union"}
+    assert match(door, twice) is Acted.REFUSED
+    assert not any(owners for owners in _confirmed(matched))
+    assert match(door, both) is Acted.MATCHED
+    assert sorted(_confirmed(matched)) == ["Assets:Zq:Checking", "Assets:Zq:Union"]
+
+
+def _confirmed(household: Household) -> list[str]:
+    conn = household.fresh.connect()
+    try:
+        names = {a.id: a.ledger_account for a in accounts.all_accounts(conn)}
+        return [names[a.hearth_account or ""] for a in Registry(conn).confirmed()]
+    finally:
+        conn.close()
 
 
 def test_a_match_to_what_was_not_offered_or_on_anothers_connection_is_missing(
@@ -593,59 +927,108 @@ def test_a_match_to_what_was_not_offered_or_on_anothers_connection_is_missing(
         ("no-such-account", "Assets:Zq:Checking"),
     ]
     for account, to in tries:
-        assert avery.act("match_account", {"account": account, "to": to}) is Acted.MISSING
-    assert avery.act("match_account", {"account": ids["ins_zq_bank/chk"]}) is Acted.MISSING
-    conn = matched.fresh.connect()
-    try:
-        assert Registry(conn).confirmed() == []
-    finally:
-        conn.close()
+        assert match(avery, {account: to}) is Acted.MISSING
+        # Beside a match that would be recorded, it is missing too, and neither is.
+        alongside = {ids["ins_zq_union/chk"]: "Assets:Zq:Union", account: to}
+        assert match(avery, alongside) is Acted.MISSING
+    assert avery.act("match_accounts", {"matches": {}}) is Acted.MISSING
+    assert avery.act("match_accounts", {"account": ids["ins_zq_bank/chk"]}) is Acted.MISSING
+    assert _confirmed(matched) == []
 
 
-def test_an_account_hearth_keeps_moves_onto_one_nobody_claimed_only_by_the_ledgers_ids(
-    matched: Household, clock: FakeClock
+# Moving an account hearth keeps onto one nobody claimed (``access.may_carry_on``).
+
+
+def test_rows_alone_never_hand_over_an_account_nobody_claimed(
+    unclaimed: Household, clock: FakeClock
 ) -> None:
-    """Filed as accounts hearth keeps itself: the mortgage, whose ids the ledger records on an
-    account nobody claimed, moves onto it, the claim going with it; the savings, which only an
-    unclaimed account with nothing to say for it could take, is offered nothing of the kind."""
-    avery_id = matched.fresh.member_ids["avery"]
-    conn = matched.fresh.connect()
-    try:
-        for key, name in (
-            ("ins_zq_bank/loan", "Liabilities:Avery:Zq:Mortgage"),
-            ("ins_zq_bank/sav", "Assets:Avery:Zq:Savings"),
-        ):
-            account = accounts.register(conn, ledger_account=name, name=key, owners=[avery_id])
-            Registry(conn).confirm(matched.ids[key], account.id, by=avery_id, now=NOW)
-    finally:
-        conn.close()
-    door = bridge(matched, clock, "avery")
-    found = _accounts(ask(door, "matching"))
-    loan, sav = found[matched.ids["ins_zq_bank/loan"]], found[matched.ids["ins_zq_bank/sav"]]
-    assert loan["state"] == "kept"
-    # The one nobody claimed that its ids are on, first; then Avery's own liabilities.
-    assert [c["account"] for c in loan["choices"]] == [
-        "Liabilities:Zq:Mortgage",
-        "Liabilities:Zq:Card",
-        "Liabilities:Zq:CardA",
-    ]
-    assert loan["why_not"] is None
-    assert "Assets:Zq:Elsewhere" not in json.dumps(sav)
+    """The credit union's checking, filed as an account hearth keeps itself, whose rows the
+    ledger's union account clearly holds by content alone: nobody has claimed that account,
+    and its rows could be anyone's, so it is neither named nor offered, and a match to it is
+    missing."""
+    keep(unclaimed, "ins_zq_union/chk", "Assets:Avery:Zq:Union", "avery")
+    door = bridge(unclaimed, clock, "avery")
 
-    assert (
-        door.act(
-            "match_account",
-            {"account": matched.ids["ins_zq_bank/loan"], "to": "Liabilities:Zq:Mortgage"},
+    one = _accounts(ask(door, "matching"))[unclaimed.ids["ins_zq_union/chk"]]
+
+    assert one["state"] == "kept"
+    assert one["proposed"] is None
+    assert one["why_not"] == "unclear"
+    assert "Assets:Zq:Union" not in json.dumps(one)
+    assert match(door, {unclaimed.ids["ins_zq_union/chk"]: "Assets:Zq:Union"}) is Acted.MISSING
+    assert "Assets:Zq:Union" not in owners_of(unclaimed)
+
+
+@pytest.mark.parametrize("owners", [("avery",), ("avery", "blake")], ids=["alone", "joint"])
+def test_the_ledgers_own_ids_hand_an_account_nobody_claimed_to_its_owners(
+    unclaimed: Household, clock: FakeClock, owners: tuple[str, ...]
+) -> None:
+    """The card, filed as an account hearth keeps, whose six charges the ledger records by
+    their Plaid ids on its card account, up to its last month there: offered, and moved onto,
+    its owners becoming that account's, a co-owner's with them."""
+    card = unclaimed.ids["ins_zq_bank/card"]
+    keep(unclaimed, "ins_zq_bank/card", "Liabilities:Avery:Zq:Card", *owners)
+    door = bridge(unclaimed, clock, "avery")
+
+    one = _accounts(ask(door, "matching"))[card]
+
+    assert one["proposed"]["account"] == "Liabilities:Zq:Card"
+    assert one["why_not"] is None
+    assert one["choices"][0] == {
+        **one["choices"][0],
+        "account": "Liabilities:Zq:Card",
+        "refused": None,
+    }
+    assert match(door, {card: "Liabilities:Zq:Card"}) is Acted.MATCHED
+    owned = owners_of(unclaimed)
+    assert owned["Liabilities:Zq:Card"] == frozenset(owners)
+    assert "Liabilities:Avery:Zq:Card" not in owned
+
+
+def test_an_account_kept_for_someone_else_is_not_handed_over_by_whoever_holds_its_bank(
+    unclaimed: Household, clock: FakeClock
+) -> None:
+    """The card's connection is Avery's, but the account hearth keeps it as is Blake's alone:
+    Avery may not move it, and give Blake a history, any more than take one."""
+    card = unclaimed.ids["ins_zq_bank/card"]
+    keep(unclaimed, "ins_zq_bank/card", "Liabilities:Blake:Zq:Card", "blake")
+    door = bridge(unclaimed, clock, "avery")
+
+    one = _accounts(ask(door, "matching"))[card]
+
+    assert "Liabilities:Zq:Card" not in [c["account"] for c in one["choices"]]
+    assert one["proposed"] is None
+    assert match(door, {card: "Liabilities:Zq:Card"}) is Acted.MISSING
+    assert "Liabilities:Zq:Card" not in owners_of(unclaimed)
+
+
+@pytest.mark.parametrize("short", ["too few", "too long ago"])
+def test_ids_too_few_or_too_old_hand_nothing_over(
+    unclaimed: Household, clock: FakeClock, monkeypatch: pytest.MonkeyPatch, short: str
+) -> None:
+    """Four instalments of the mortgage by their ids are fewer than content alone needs; the
+    card's charges, held to end within a day of its last entry, stop three weeks short."""
+    if short == "too few":
+        key, kept, base_account = (
+            "ins_zq_bank/loan",
+            "Liabilities:Avery:Zq:Loan",
+            "Liabilities:Zq:Mortgage",
         )
-        is Acted.MATCHED
-    )
-    conn = matched.fresh.connect()
-    try:
-        owned = {a.ledger_account: a.owners for a in accounts.all_accounts(conn)}
-    finally:
-        conn.close()
-    assert owned["Liabilities:Zq:Mortgage"] == frozenset({avery_id})
-    assert "Liabilities:Avery:Zq:Mortgage" not in owned
+    else:
+        monkeypatch.setattr(matching, "RECENT", timedelta(days=1))
+        key, kept, base_account = (
+            "ins_zq_bank/card",
+            "Liabilities:Avery:Zq:Card",
+            "Liabilities:Zq:Card",
+        )
+    keep(unclaimed, key, kept, "avery")
+    door = bridge(unclaimed, clock, "avery")
+
+    one = _accounts(ask(door, "matching"))[unclaimed.ids[key]]
+
+    assert base_account not in [c["account"] for c in one["choices"]]
+    assert match(door, {unclaimed.ids[key]: base_account}) is Acted.MISSING
+    assert base_account not in owners_of(unclaimed)
 
 
 def test_a_refusal_is_told_ahead_by_the_check_that_makes_it(
@@ -656,9 +1039,7 @@ def test_a_refusal_is_told_ahead_by_the_check_that_makes_it(
     carries."""
     door = bridge(matched, clock, "avery")
     ids = matched.ids
-    assert door.act(
-        "match_account", {"account": ids["ins_zq_union/chk"], "to": "Assets:Zq:Union"}
-    ) is (Acted.MATCHED)
+    assert match(door, {ids["ins_zq_union/chk"]: "Assets:Zq:Union"}) is Acted.MATCHED
 
     chk = _accounts(ask(door, "matching"))[ids["ins_zq_bank/chk"]]
     refused = {c["account"]: c["refused"] for c in chk["choices"]}
@@ -682,6 +1063,22 @@ def test_without_an_imported_ledger_there_is_nothing_to_match(
         "accounts": [],
         "totals": {"matched": 0, "of": 0, "in_ledger": 0, "booked": 0},
     }
+
+
+def test_how_many_accounts_nobody_sees_is_told_to_an_admin_alone(
+    unclaimed: Household, clock: FakeClock
+) -> None:
+    told = {who: ask(bridge(unclaimed, clock, who), "ledger")["imported"] for who in USERS}
+
+    assert isinstance(told["avery"]["unclaimed"], int)
+    assert told["avery"]["unclaimed"] > 0
+    assert told["blake"]["unclaimed"] is None
+    assert {k: v for k, v in told["blake"].items() if k != "unclaimed"} == {
+        k: v for k, v in told["avery"].items() if k != "unclaimed"
+    }
+
+
+USERS = ("avery", "blake")
 
 
 # What a member learns.
@@ -708,7 +1105,7 @@ def test_no_ledger_screen_or_act_tells_avery_what_is_blakes(
     answers.append(check(door, kept))
     for account in [*blakes, *matched.ids.values()]:
         for to in ("Assets:Zq:Blake:Checking", "Assets:Zq:Joint", "Liabilities:Zq:Blake:Card"):
-            answers.append(str(door.act("match_account", {"account": account, "to": to})))
+            answers.append(str(match(door, {account: to})))
     seen = Seen("\n".join(json.dumps(a) for a in answers))
 
     leaked = [text for text in [*_secrets_of_blake(), *blakes] if text in seen]

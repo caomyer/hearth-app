@@ -19,7 +19,7 @@ to be theirs, or nobody's yet, and never named.
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -41,6 +41,19 @@ _log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
+class Said:
+    """Why something cannot be done: the engine's word for it, and a plain sentence for the
+    app, which names no path, no command and no setting (``ledger_import.ImportRefused``)."""
+
+    why: str
+    plain: str
+
+    @classmethod
+    def of(cls, refused: ledger_import.ImportRefused) -> Said:
+        return cls(refused.why.value, refused.plain)
+
+
+@dataclass(frozen=True, slots=True)
 class LedgerStanding:
     """Where the household's ledger stands, for one member."""
 
@@ -55,7 +68,7 @@ class LedgerStanding:
     """Whether a ledger is inherited where it is (``HEARTH_LEDGER``)."""
     may_bring_in: bool
     """Whether this member may bring a ledger in now."""
-    why_not: str | None
+    why_not: Said | None
     """Why not, to a member who may bring one in but for where the household stands."""
 
 
@@ -101,7 +114,7 @@ class LedgerCheck:
     """What a ledger file holds, if it loads, and why it would not be brought in, if not."""
 
     found: LedgerFound | None
-    refused: str | None
+    refused: Said | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +123,7 @@ class BroughtIn:
     already), `refused`, with the sentence saying why, or `failed`, on an unexpected error."""
 
     outcome: str
-    refused: str | None = None
+    refused: Said | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,7 +275,7 @@ class LedgerDesk:
             try:
                 ledger_import.household_allows(self._settings, self._clock(), once=True)
             except ledger_import.ImportRefused as refused:
-                why_not = str(refused)
+                why_not = Said.of(refused)
         return LedgerStanding(
             imported_on=kept.imported_at.astimezone().date() if kept else None,
             files=len(kept.base.files) if kept else None,
@@ -282,7 +295,8 @@ class LedgerDesk:
         if not self._gate.may_bring_in_ledger():
             raise Concealed
         checked = ledger_import.check_ledger(self._settings, path, now=self._clock())
-        return LedgerCheck(_found(checked), checked.refused)
+        refused = checked.refused
+        return LedgerCheck(_found(checked), Said.of(refused) if refused is not None else None)
 
     def bring_in(self, path: Path) -> BroughtIn:
         """Bring the ledger at `path` in as the household's base, once, exactly as
@@ -292,7 +306,7 @@ class LedgerDesk:
         try:
             done = ledger_import.import_ledger(self._settings, path, now=self._clock(), once=True)
         except ledger_import.ImportRefused as refused:
-            return BroughtIn("refused", str(refused))
+            return BroughtIn("refused", Said.of(refused))
         except Exception:
             # Nothing is written unless the import commits whole (``hearth.base``).
             _log.exception("bringing a ledger in stopped on an unexpected error")
@@ -331,25 +345,31 @@ class LedgerDesk:
         )
         return Matching(imported=True, unsure=weighing.survey.unsure, accounts=found)
 
-    def match(self, account_id: str, chosen: str) -> bool:
-        """Match the viewer's connected account `account_id` to `chosen`, one of the accounts
-        `matching` offers it, through ``matching.confirm``. True when it was recorded, False when
-        the check refused it since it was offered; Concealed for a connected account that is not
-        the viewer's, or an account not offered, as there is nothing to match without a ledger
-        imported that hearth can read."""
+    def match(self, chosen: Mapping[str, str]) -> bool:
+        """Match each of the viewer's connected accounts `chosen` names, by its Plaid id, to the
+        account it names, one of those `matching` offers it, all at once through
+        ``matching.confirm``: every one is checked before any is written. True when they were
+        recorded, False when the check refused one since they were offered, and nothing was
+        written; Concealed for a connected account that is not the viewer's, or an account not
+        offered, as there is nothing to match without a ledger imported that hearth can read."""
         try:
             weighing = matches.weigh(self._settings, self._today())
         except matches.MatchRefused as refused:
             raise Concealed from refused
-        one = weighing.survey.find(account_id)
-        if one is None or not self._gate.may_use_connection(one.proposal.connected.holder.id):
-            raise Concealed
         claimed = {a.ledger_account: a for a in self._accounts}
-        if chosen not in {account for account, _ in self._offered(weighing, one, claimed)}:
-            raise Concealed
+        for account_id, to in chosen.items():
+            one = weighing.survey.find(account_id)
+            if one is None or not self._gate.may_use_connection(one.proposal.connected.holder.id):
+                raise Concealed
+            if to not in {account for account, _ in self._offered(weighing, one, claimed)}:
+                raise Concealed
         try:
             matches.confirm(
-                self._settings, [(account_id, chosen)], now=self._clock(), by=self._viewer.id
+                self._settings,
+                list(chosen.items()),
+                now=self._clock(),
+                by=self._viewer.id,
+                weighing=weighing,
             )
         except matches.MatchRefused:
             return False
@@ -360,22 +380,30 @@ class LedgerDesk:
     ) -> ConnectedAccount:
         proposal = one.proposal
         linked = proposal.connected.account
-        nameable = self._nameable(proposal, claimed)
+        offered = self._offered(weighing, one, claimed)
+        named = {account for account, _ in offered}
         proposed = None
-        if proposal.account is not None and nameable and proposal.how is not None:
+        if proposal.account is not None and self._nameable(proposal.account, claimed, named):
             ids = proposal.ids
             on = ids.on.get(proposal.account)
             content = next(
                 (c.matched for c in proposal.content if c.account == proposal.account), 0
             )
+            by_id = proposal.how is matches.How.ID
             proposed = Proposed(
                 proposal.account,
-                "id" if proposal.how is matches.How.ID else "content",
-                on.count if on is not None and proposal.how is matches.How.ID else content,
-                ids.dissent if proposal.how is matches.How.ID else 0,
+                "id" if by_id else "content",
+                on.count if on is not None and by_id else content,
+                # Ids on other accounts are counted only on accounts the viewer may name.
+                sum(
+                    stretch.count
+                    for account, stretch in ids.on.items()
+                    if account != proposal.account and self._nameable(account, claimed, named)
+                )
+                if by_id
+                else 0,
                 len([r for r in proposal.connected.rows if not r.pending]),
             )
-        offered = self._offered(weighing, one, claimed)
         choices = tuple(
             Choice(
                 account,
@@ -399,21 +427,48 @@ class LedgerDesk:
             fixed=one.begun,
             kept=one.filed,
             proposed=proposed,
-            why_not=_why_not(proposal, claimed, offered),
+            why_not=self._why_not(proposal, claimed, named, proposed),
             choices=choices,
             facing=_facing(one.facing) if matched and one.facing else None,
             reconciling=bool(matched and books is not None and matched in books.reconciling),
         )
 
-    def _nameable(self, proposal: matches.Proposal, claimed: dict[str, Account]) -> bool:
-        """Whether the account the evidence points at may be named to the viewer: one they own,
-        or one nobody owns that the ledger records their connection's own ids on."""
-        if proposal.account is None:
-            return False
-        held = claimed.get(proposal.account)
+    def _nameable(self, account: str, claimed: dict[str, Account], offered: set[str]) -> bool:
+        """Whether an account of the ledger may be named to the viewer: one they own, or one it
+        is offered to them to move onto, which nobody owns, only where ``access.may_carry_on``
+        holds. Nobody sees an account the ledger opens until it is claimed, so no other one
+        nobody owns is ever named, nor anyone else's."""
+        held = claimed.get(account)
         if held is None:
-            return proposal.how is matches.How.ID
+            return account in offered
         return self._gate.may_feed(held.owners)
+
+    def _why_not(
+        self,
+        proposal: matches.Proposal,
+        claimed: dict[str, Account],
+        offered: set[str],
+        proposed: Proposed | None,
+    ) -> str | None:
+        """Why nothing is proposed for one of the viewer's connected accounts, in the words of
+        ``matching.Unproposed``, but only from what the viewer may see: evidence that points at
+        an account they may not name, someone else's or one nobody owns, reads exactly as no
+        evidence at all, `unclear`, so nothing changes when somebody else claims it."""
+        why = proposal.unproposed
+        if why is matches.Unproposed.IDS_DISAGREE:
+            seen = all(self._nameable(a, claimed, offered) for a in proposal.ids.on)
+            return "ids_disagree" if seen else "unclear"
+        if why is matches.Unproposed.NOT_THEIRS:
+            return "unclear"
+        if why in (matches.Unproposed.WRONG_SIDE, matches.Unproposed.TAKEN):
+            account = proposal.account
+            if account is None or not self._nameable(account, claimed, offered):
+                return "unclear"
+        if why is not None:
+            return why.value.replace("-", "_")
+        if proposed is None:
+            return "unclear"
+        return None
 
     def _offered(
         self, weighing: matches.Weighing, one: matches.Surveyed, claimed: dict[str, Account]
@@ -445,7 +500,9 @@ class LedgerDesk:
             and proposal not in claimed
             and kept is not None
             and opens(proposal)
-            and self._gate.may_carry_on(kept.owners, recorded=one.proposal.how is matches.How.ID)
+            and self._gate.may_carry_on(
+                kept.owners, recorded=matches.recorded(weighing.held, one.proposal)
+            )
         ):
             mine.append(proposal)
         first = [a for a in (one.matched, proposal) if a is not None and a in mine]
@@ -454,21 +511,6 @@ class LedgerDesk:
 
     def _today(self) -> date:
         return self._clock().astimezone().date()
-
-
-def _why_not(
-    proposal: matches.Proposal, claimed: dict[str, Account], offered: list[tuple[str, bool]]
-) -> str | None:
-    """Why nothing is proposed for a connected account the viewer may have, in the words of
-    ``matching.Unproposed``: never naming whose an account is that is not the viewer's."""
-    why = proposal.unproposed
-    if why is matches.Unproposed.NOT_THEIRS:
-        return "not_yours"
-    if why is not None:
-        return why.value.replace("-", "_")
-    if proposal.account not in claimed and not any(is_proposed for _, is_proposed in offered):
-        return "unclaimed"
-    return None
 
 
 def _found(checked: ledger_import.Checked) -> LedgerFound | None:

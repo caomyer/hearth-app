@@ -16,8 +16,9 @@ from typing import Any
 
 import pytest
 
-from hearth import books
+from hearth import books, ledger_import
 from hearth.books import LedgerError
+from hearth.disclosure import may_learn, rulings_in
 from hearth.native import doorway as asks
 from hearth.native.bridge import Acted, Bridge, Outcome
 from hearth.native.common import Decided
@@ -217,11 +218,10 @@ def ledger_paths(world: World) -> list[Path]:
     folder.mkdir(exist_ok=True)
     (folder / "kept.beancount").write_text(KEPT_LEDGER)
     (folder / "notes.txt").write_text(NOT_A_LEDGER)
-    assert world.settings.ledger is not None
     return [
         folder / "kept.beancount",
         folder / "notes.txt",
-        world.settings.ledger,
+        world.ledger,
         folder,
         folder / "nowhere.beancount",
     ]
@@ -341,9 +341,7 @@ def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]
         ("bring_in_ledger", frozenset({household.ADMIN}), {"path": str(path)})
         for path in ledger_paths(world)[:1]
     ]
-    found += [
-        ("match_account", frozenset(), {"account": i, "to": "Assets:Zq:AverySolo"}) for i in ids
-    ]
+    found += [("match_accounts", frozenset(), {"matches": {i: "Assets:Zq:AverySolo"}}) for i in ids]
     return found
 
 
@@ -643,3 +641,57 @@ def test_no_answer_carries_a_category_a_suggestion_could_have_carried(
             if entry["review"] is not None:
                 assert entry["reason"] == said[entry["review"]], entry
     assert (mine[viewer] in said.values()) if viewer in mine else said == {}
+
+
+def based(world: World) -> World:
+    """The household with its ledger brought in as a base rather than inherited where it is,
+    as the app leaves one, recomputed: so matching has a ledger to weigh every member's
+    connections against, with every member's base accounts and one nobody owns in it."""
+    settings = replace(world.settings, ledger=None)
+    ledger_import.import_ledger(settings, world.ledger, now=world.clock())
+    keeper = books.Bookkeeper(
+        books.from_household(settings, rulings=rulings_in, learns=may_learn), world.clock
+    )
+    keeper.recompute(wait=True)
+    assert keeper.status.failure is None, keeper.status.failure
+    return replace(world, settings=settings, bookkeeper=keeper)
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS)
+@pytest.mark.parametrize("viewer", household.USERNAMES)
+def test_no_ledger_answer_over_an_imported_base_holds_what_its_viewer_may_not_see(
+    world: World, scenario: str, viewer: str
+) -> None:
+    """The ledger's screens and acts over the household's ledger brought in as a base, under
+    every sharing scenario: matching weighs every member's connections against every member's
+    base accounts and the one nobody owns, and no answer holds a datum its viewer may not see,
+    nor names an account of the base they do not own."""
+    choices = dict.fromkeys(household.USERNAMES, DEFAULT_SHARED)
+    choices.update(SCENARIOS[scenario])
+    for username, shared in choices.items():
+        world.choose(username, shared)
+    over = based(world)
+    door = Bridge(over.settings, over.bookkeeper, over.clock, importer=None, worker=None)
+    assert door.sign_in(viewer, password_of(viewer)) is Outcome.SIGNED_IN
+    answers: list[object] = [door.answer(ask) for ask in ("ledger", "matching")]
+    answers += [door.answer("ledger_check", {"path": str(p)}) for p in ledger_paths(over)]
+    names = [a.ledger_account for a in household.ACCOUNTS] + ["Assets:Zq:Nowhere"]
+    listed: Any = door.answer("matching")["accounts"]
+    connected = [a["id"] for a in listed]
+    for account in [*connected, *over.account_ids.values(), "no-such-account"]:
+        for to in names:
+            answers.append(str(door.act("match_accounts", {"matches": {account: to}})))
+    seen = household.Seen("\n".join(json.dumps(answer) for answer in answers))
+
+    leaked = [
+        f"{secret.what}: {text!r}"
+        for secret in [*household.secrets(over.account_ids), *ledger_secrets()]
+        if not secret.visible(viewer, choices)
+        for text in secret.texts
+        if text.replace(",", "") in seen
+    ]
+    assert not leaked, f"{viewer} could see private data: {leaked}"
+    matching = json.dumps(answers[1])
+    owned = {a.ledger_account for a in household.ACCOUNTS if viewer in a.owners}
+    named = [a.ledger_account for a in household.ACCOUNTS if a.ledger_account in matching]
+    assert set(named) <= owned, f"{viewer} was named accounts of the base not theirs: {named}"

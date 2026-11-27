@@ -6,7 +6,7 @@
     "unsure": null,
     "accounts": [
       {
-        "id": "item-demo-06b69d6cba1c-chk",
+        "id": "item-demo-d8fa2cb3aed4-chk",
         "institution": "Zq Credit Union",
         "name": "SHARE DRAFT",
         "mask": "0606",
@@ -146,7 +146,7 @@
         "reconciling": false
       },
       {
-        "id": "item-demo-0e410ae625fc-card",
+        "id": "item-demo-ca16fab0dc08-card",
         "institution": "Zq Bank",
         "name": "ZQ CARD",
         "mask": "0202",
@@ -229,7 +229,7 @@
         "reconciling": false
       },
       {
-        "id": "item-demo-0e410ae625fc-blakes",
+        "id": "item-demo-ca16fab0dc08-blakes",
         "institution": "Zq Bank",
         "name": "ZQ SAVINGS FOR BLAKE",
         "mask": "1010",
@@ -239,7 +239,7 @@
         "fixed": false,
         "kept": null,
         "proposed": null,
-        "why_not": "not_yours",
+        "why_not": "unclear",
         "choices": [
           {
             "account": "Assets:Zq:Checking",

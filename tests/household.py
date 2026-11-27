@@ -630,9 +630,14 @@ only where a test says so (`tax_text`), as every other figure here is without it
 thousands, so each is looked for in whole dollars as well as to the cent (`secret`), and of
 figures no other sum here comes to."""
 
+BLAKE_TAX_WAITING = ("2026-10-11", "1,348.27")
+"""More of Blake's tax this month, waiting in Blake's review: how much of a total rests on
+rows nobody has checked is Blake's review state, told only to whoever may know it."""
+
 
 def tax_text() -> str:
-    """Blake's tax, as beancount reads it, to append to the household's books."""
+    """Blake's tax, as beancount reads it, to append to the household's books, with this
+    month's last row waiting in Blake's review, so what rests on it is crawled too."""
     lines = [f"{OPENED} open Expenses:Taxes", ""]
     for day, amount in BLAKE_TAX:
         lines += [
@@ -641,12 +646,28 @@ def tax_text() -> str:
             "  Expenses:Taxes",
             "",
         ]
+    day, amount = BLAKE_TAX_WAITING
+    lines += [
+        f'{day} ! "Payee Bittern Revenue" ""',
+        '  review-id: "blake-tax-1"',
+        '  review-group: "Bittern Revenue"',
+        f"  Assets:Zq:BlakeSolo  -{amount.replace(',', '')} USD",
+        "  Expenses:Taxes",
+        "",
+    ]
     return "\n".join(lines)
 
 
 def tax_secrets() -> Iterator[Secret]:
     """Blake's tax is never spending, and is its own figure only to whoever may see Blake's
     categories or transactions: anyone else is told Blake's spending without it, and nothing
-    of it."""
+    of it. How much of it waits in Blake's review is Blake's review state: only Blake, and
+    whoever Blake's transactions are shared with, may be told it (``access.may_see_review_state``),
+    so a page that says "of it not yet reviewed" beside Blake's tax to anyone else is a leak."""
     for _, amount in BLAKE_TAX:
         yield secret(amount, "blake tax", _detail("blake_solo"))
+    yield secret(
+        BLAKE_TAX_WAITING[1],
+        "blake tax waiting in review",
+        shared(Facet.TRANSACTIONS, owners_of("blake_solo")),
+    )

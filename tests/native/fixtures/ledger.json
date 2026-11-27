@@ -8,8 +8,12 @@
       "unclaimed": 12
     },
     "inherited": false,
+    "importing": false,
     "may_bring_in": false,
-    "why_not": "Your ledger was brought in on Nov 22, 2026, and a ledger is brought in once: hearth's books are the truth from then on.",
+    "why_not": {
+      "why": "once",
+      "said": "Your ledger was brought in on Nov 22, 2026. A ledger is brought in once, and Hearth's books are the truth from then on."
+    },
     "bringing_in": {
       "running": false,
       "outcome": "imported",

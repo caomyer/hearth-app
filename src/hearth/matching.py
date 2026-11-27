@@ -56,11 +56,13 @@ accounts, never a payee or an amount.
 """
 
 import sqlite3
+import threading
 from collections import Counter, defaultdict
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import StrEnum
+from pathlib import Path
 
 from beancount.core.data import Transaction
 
@@ -446,6 +448,9 @@ class Refusal(StrEnum):
     WOULD_LOSE = "would_lose"
     """Moving it would take `count` of the rows hearth booked on it, dated before `day`, out
     of the books."""
+    UNRECORDED = "unrecorded"
+    """Nobody has claimed the account, and the ledger does not record that it is this
+    connection's firmly enough to hand its history over (`recorded`)."""
     BOOKING = "booking"
     """The bank's rows cannot be taken once, so hearth cannot tell what moving it would meet."""
 
@@ -653,27 +658,73 @@ class Weighing:
         return facing(self.held, account, connected.rows, connected.account.type, self.today)
 
 
+_weighed: dict[Path, tuple[Hashable, Weighing]] = {}
+_weighing = threading.Lock()
+
+
 def weigh(settings: Settings, today: date | None = None) -> Weighing:
     """The household's connected accounts, as `survey` finds them, ready to be weighed. Raises
-    `MatchRefused` as `survey` does."""
+    `MatchRefused` as `survey` does.
+
+    A survey reads the whole base and works the household's books out twice over, so one is
+    kept for each data directory and handed out again while everything a recompute reads
+    stands where it stood (``books.standing``), on the same day: anything that could change
+    what it says changes that, so a survey handed out again is never stale."""
     today = today or datetime.now().astimezone().date()
+    key = (books.standing(settings), today, settings.ledger)
+    with _weighing:
+        kept = _weighed.get(settings.data_dir)
+        if kept is not None and kept[0] == key:
+            return kept[1]
     found, held = _survey(settings, today)
-    return Weighing(found, held, today)
+    weighed = Weighing(found, held, today)
+    with _weighing:
+        _weighed[settings.data_dir] = (key, weighed)
+    return weighed
 
 
 def refusal(
-    settings: Settings, weighing: Weighing, account_id: str, chosen: str | None
+    settings: Settings,
+    weighing: Weighing,
+    account_id: str,
+    chosen: str | None,
+    *,
+    claim: bool = False,
 ) -> MatchRefused | None:
     """Why matching `account_id` to `chosen`, or to what is proposed for it, would be refused
     as things stand, or None when `confirm` would record it."""
     conn = db.connect(settings.database)
     try:
-        _planned(conn, settings, weighing, [(account_id, chosen)])
+        _planned(conn, settings, weighing, [(account_id, chosen)], claim=claim)
     except MatchRefused as refused:
         return refused
     finally:
         conn.close()
     return None
+
+
+RECENT = timedelta(days=31)
+"""How near the end of the base's history on an account its Plaid ids must reach for the
+ledger to vouch that it is still that connection's account."""
+
+
+def recorded(held: Held, proposal: Proposal) -> bool:
+    """Whether the ledger itself records that `proposal`'s connected account is the base
+    account proposed, firmly enough to hand that account's whole history to the connection's
+    owners when nobody has claimed it (``access.may_carry_on``).
+
+    Proposed by its Plaid ids, which only that bank account's rows carry; at least `MINIMUM` of
+    them agreeing on the account, as many as content alone needs to propose anything; and
+    reaching the base's latest month on it (`RECENT`), so an account that was this bank's
+    once, years ago, and is something else since, does not pass on everything after."""
+    account = proposal.proposed
+    if proposal.how is not How.ID or account is None:
+        return False
+    on = proposal.ids.on.get(account)
+    if on is None or on.count < MINIMUM or on.last is None:
+        return False
+    last = held.last_entry.get(account)
+    return last is None or on.last >= last - RECENT
 
 
 def confirm(
@@ -682,25 +733,31 @@ def confirm(
     *,
     now: datetime,
     by: MemberId | None = None,
-) -> Survey:
+    claim: bool = False,
+    weighing: Weighing | None = None,
+) -> None:
     """Record each match in `wanted`, a connected account's Plaid id with the base account it
-    is, or None for the one proposed, as the mapping a member confirms on the Connect page;
-    then the survey as it stands. Every one is checked before any is written, and one hearth
-    refuses raises `MatchRefused` having written nothing.
+    is, or None for the one proposed, as the mapping a member confirms on the Connect page.
+    Every one is checked before any is written, and one hearth refuses raises `MatchRefused`
+    having written nothing.
 
     `by` is the member who confirms it, as the Connect page records one, or None for whoever
-    runs hearth on its machine (``hearth match-accounts``).
+    runs hearth on its machine (``hearth match-accounts``). `weighing` is the survey the
+    matches were chosen from, when the caller has one (`weigh`), which is weighed again only
+    if it is no longer as things stand.
 
     A match changes nothing about who owns the base account: it must be claimed already, and
     owned by the connection's holder among others. A match may be changed until carrying it
     on begins (``books.begun``); one confirmed again as it stands keeps the day it was first
     confirmed. A connected account filed as an account hearth keeps itself is moved onto the
-    base's account only as `_moving` allows."""
+    base's account only as `_moving` allows: onto one nobody has claimed only where the ledger
+    records it is that account (`recorded`), unless `claim`, the operator's word on the
+    command line that it is."""
     today = now.astimezone().date()
-    weighing = weigh(settings, today)
+    weighing = weigh(settings, today) if weighing is None else weighing
     conn = db.connect(settings.database)
     try:
-        taking, moving = _planned(conn, settings, weighing, wanted)
+        taking, moving = _planned(conn, settings, weighing, wanted, claim=claim)
         registry = Registry(conn)
         for account_id, account in taking.items():
             one = weighing.survey.find(account_id)
@@ -710,7 +767,6 @@ def confirm(
             _move(conn, move, now=now, by=by)
     finally:
         conn.close()
-    return survey(settings, today)
 
 
 def _planned(
@@ -718,6 +774,8 @@ def _planned(
     settings: Settings,
     weighing: Weighing,
     wanted: Sequence[tuple[str, str | None]],
+    *,
+    claim: bool = False,
 ) -> tuple[dict[str, Account], dict[str, Moving]]:
     """What `confirm` would write for `wanted`: each match to record, and each account hearth
     keeps itself to move onto the base's, every one checked; or raise `MatchRefused`."""
@@ -731,7 +789,9 @@ def _planned(
         one = found.find(account_id)
         if one is not None and one.filed is not None:
             with Feed.open(settings.feed_database) as fed:
-                moving[account_id] = _moving(conn, fed, found, held, claimed, one, chosen)
+                moving[account_id] = _moving(
+                    conn, fed, found, held, claimed, one, chosen, claim=claim
+                )
         else:
             taking[account_id] = _checked(found, held, claimed, account_id, chosen)
     targets = Counter(
@@ -875,6 +935,8 @@ def _moving(
     claimed: Mapping[str, Account],
     one: Surveyed,
     chosen: str | None,
+    *,
+    claim: bool = False,
 ) -> Moving:
     """How `one`, filed as an account hearth keeps itself whose rows the base also holds, is
     moved onto the base's account, or raise `MatchRefused` saying why it is not.
@@ -911,6 +973,19 @@ def _moving(
             Refusal.RULED_ONTO,
         )
     into = claimed.get(target)
+    if (
+        into is None
+        and not claim
+        and not (one.proposal.proposed == target and recorded(held, one.proposal))
+    ):
+        raise MatchRefused(
+            f"Nobody has claimed {target}, and the imported ledger does not record that it is"
+            f" {account_id}: at least {MINIMUM} of its Plaid ids agreeing on it, reaching the"
+            " base's last month there. Moving onto it would give its whole history to"
+            f" {kept.ledger_account}'s owners. Claim it with hearth add-account, or move it"
+            " anyway with --claim.",
+            Refusal.UNRECORDED,
+        )
     if into is not None and into.owners != kept.owners:
         raise MatchRefused(
             f"{target} is claimed with other owners than {kept.ledger_account}, so moving it"

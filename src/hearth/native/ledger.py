@@ -9,7 +9,8 @@ Three screens and two actions, each written from the member's own view of the le
 - ``matching``: each of the member's own connected accounts, and which of the imported ledger's
   accounts it is.
 - ``bring_in_ledger``: bring a ledger in, once, in the background; ``ledger`` follows it.
-- ``match_account``: match one connected account to one of the accounts ``matching`` offered.
+- ``match_accounts``: match connected accounts, each to one of the accounts ``matching``
+  offered it, all at once.
 
 None of them is of the books, so each is answered before the first recompute ends. What the
 app sends is read strictly (``hearth.native.common``), and anything the member may not see or
@@ -25,17 +26,16 @@ from hearth.disclosure.ledger import (
     Facing,
     LedgerFound,
     Proposed,
+    Said,
 )
 from hearth.native.common import (
-    LONGEST_ID,
-    LONGEST_TEXT,
     Acted,
     Answer,
     Around,
     Given,
     Malformed,
     path_in,
-    text_in,
+    table_in,
 )
 from hearth.native.common import day as _day
 from hearth.native.common import moment as _moment
@@ -68,15 +68,20 @@ def ledger_screen(view: Disclosure, _asked: object, around: Around) -> Answer:
             }
         ),
         "inherited": standing.inherited,
+        # Whether a ledger is being brought in on this engine now, by whoever: told to anyone
+        # who may bring one in, so they wait on it, and never whose it is.
+        "importing": bool(standing.may_bring_in or standing.why_not is not None)
+        and around.importer is not None
+        and around.importer.running,
         "may_bring_in": standing.may_bring_in,
-        "why_not": standing.why_not,
+        "why_not": _said(standing.why_not),
         "bringing_in": (
             None
             if importing is None
             else {
                 "running": importing.running,
                 "outcome": done.outcome if done is not None else None,
-                "refused": done.refused if done is not None else None,
+                "refused": _said(done.refused) if done is not None else None,
                 "finished_at": (
                     _moment(importing.finished_at) if importing.finished_at is not None else None
                 ),
@@ -93,7 +98,7 @@ def check_screen(view: Disclosure, asked: object, around: Around) -> Answer:
     checked = view.ledger_desk(around.settings, around.clock).check(asked)
     return {
         "found": None if checked.found is None else _found(checked.found),
-        "refused": checked.refused,
+        "refused": _said(checked.refused),
     }
 
 
@@ -126,15 +131,18 @@ def bring_in(view: Disclosure, given: Given, around: Around) -> Acted:
 
 
 def match(view: Disclosure, given: Given, around: Around) -> Acted:
-    """Match one of the viewer's connected accounts to one of the accounts it is offered."""
-    if given.keys() != {"account", "to"}:
+    """Match the viewer's connected accounts to the accounts each is offered, all at once:
+    `matches` holds each connected account's Plaid id with the account it is to be."""
+    if given.keys() != {"matches"}:
         raise Malformed
-    account = text_in(given, "account", LONGEST_ID)
-    chosen = text_in(given, "to", LONGEST_TEXT)
-    if account is None or chosen is None:
-        raise Malformed
+    chosen = table_in(given, "matches")
     desk = view.ledger_desk(around.settings, around.clock)
-    return Acted.MATCHED if desk.match(account, chosen) else Acted.REFUSED
+    return Acted.MATCHED if desk.match(chosen) else Acted.REFUSED
+
+
+def _said(said: Said | None) -> Answer | None:
+    """Why something cannot be done: the engine's word, and a plain sentence for the app."""
+    return None if said is None else {"why": said.why, "said": said.plain}
 
 
 def _found(found: LedgerFound) -> Answer:

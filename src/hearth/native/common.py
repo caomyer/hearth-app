@@ -66,6 +66,9 @@ class Screen:
     write: Callable[[Disclosure, object, Around], Answer]
     of_books: bool = True
     """Whether it is written from the books, so waits for them and says which they are."""
+    slow: bool = False
+    """Whether it may take seconds, so it is worked out off the wire (``hearth.native.worker``)
+    and asked again until it is there."""
 
 
 class Acted(StrEnum):
