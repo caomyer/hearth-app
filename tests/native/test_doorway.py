@@ -382,7 +382,8 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     assert syncs.start() is Begun.STARTED
     syncs.wait()
     importer = Importer(world.bookkeeper, world.clock)
-    door = Bridge(world.settings, world.bookkeeper, world.clock, syncs, importer)
+    # Every answer worked out at once: a slow screen off the wire is `worker`'s test.
+    door = Bridge(world.settings, world.bookkeeper, world.clock, syncs, importer, worker=None)
     assert door.sign_in(viewer, password_of(viewer)) is Outcome.SIGNED_IN
     answers = [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
     assert all(answer["state"] == "ready" for answer in answers)
