@@ -307,6 +307,36 @@ def secret(text: str, what: str, visible: Rule) -> Secret:
     return Secret(tuple(forms), what, visible)
 
 
+def appears(text: str, seen: str) -> bool:
+    """Whether `text` is in `seen` as itself, not as part of another word, figure or id.
+
+    hearth and the stand-in Plaid make up random ids: Plaid's request, Item and transaction
+    ids, the review ids drawn from them, account ids. A short secret, a card's four mask digits,
+    a ticker or a whole-dollar figure, turns up inside one of them now and then by chance, which
+    is nobody's datum. So an end of `text` that is a letter or a digit counts only where no
+    letter or digit runs into it, nor a point into the start of a figure: "5528" is not found
+    in "demo3e5528fa", "15528" or "0.5528", and is in "mask=5528", "(5528)" and "-5528.00". An
+    end that is neither, as in "&nbsp;5528" or '"10"', is found as it stands.
+    """
+    pattern = re.escape(text)
+    if text[:1].isalnum():
+        pattern = ("(?<![0-9A-Za-z.])" if text[0].isdigit() else "(?<![0-9A-Za-z])") + pattern
+    if text[-1:].isalnum():
+        pattern += "(?![0-9A-Za-z])"
+    return re.search(pattern, seen) is not None
+
+
+class Seen:
+    """Everything a member was shown, or hearth wrote, searched for secrets with ``in`` as
+    ``appears`` finds them."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def __contains__(self, text: str) -> bool:
+        return appears(text, self.text)
+
+
 def owners_of(key: str) -> frozenset[str]:
     return next(a.owners for a in ACCOUNTS if a.key == key)
 
