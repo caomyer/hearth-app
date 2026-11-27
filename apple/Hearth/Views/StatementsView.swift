@@ -188,6 +188,8 @@ private struct SummaryTab: View {
     private var currency: String { summary.currency }
     /// Spending, the savings rate and the lines, as the person counts tax: the engine's own.
     private var shown: StatementSummary.Counted { summary.counted(withTax: withTax) }
+    /// Whether tax is counted as spending here: the person chose so and the books hold any.
+    private var counted: Bool { withTax && summary.scope.taxed }
 
     var body: some View {
         ScrollView {
@@ -217,7 +219,7 @@ private struct SummaryTab: View {
                     }
                 }
                 .padding(.top, 26)
-                Notes(lines: StatementWords.valuing(summary.valuing) + StatementWords.unreviewed(summary.unreviewed, currency: currency))
+                Notes(lines: StatementWords.valuing(summary.valuing) + StatementWords.unreviewed(summary.unreviewed, withTax: counted, currency: currency))
                     .padding(.top, 22)
                     .accessibilityIdentifier("statements.notes")
             }
@@ -535,6 +537,8 @@ private struct TreeRow<Node: Identifiable>: Identifiable {
 private struct IncomeTab: View {
     let statement: IncomeStatement
     let withTax: Bool
+    /// Whether tax is counted as spending here: the person chose so and the books hold any.
+    private var counted: Bool { withTax && statement.scope.taxed }
     @Environment(Navigator.self) private var navigator
     @State private var closed: Set<String> = []
 
@@ -661,7 +665,7 @@ private struct IncomeTab: View {
             Text(found.rows == 0 ? "" : found.rows.formatted())
                 .monospacedDigit()
                 .foregroundStyle(Palette.warning)
-                .help(StatementWords.unreviewed(found, currency: statement.currency).joined(separator: " "))
+                .help(StatementWords.unreviewed(found, withTax: counted, currency: statement.currency).joined(separator: " "))
         } else {
             figureCell(row, index: index)
         }
@@ -689,7 +693,7 @@ private struct IncomeTab: View {
 
     /// What of each column rests on rows not reviewed or placed yet.
     private var footer: [String] {
-        StatementWords.unreviewed(statement.unreviewed, currency: statement.currency)
+        StatementWords.unreviewed(statement.unreviewed, withTax: counted, currency: statement.currency)
             + [StatementWords.later(statement.later)].compactMap(\.self)
     }
 }
@@ -851,7 +855,7 @@ private struct YearsTab: View {
     private var taxed: Bool { years.scope.taxed }
     private var counted: Bool { taxed && withTax }
     private var spendingTitle: String { StatementWords.spending(withTax: counted) }
-    private var payTitle: String { StatementWords.pay(taxed: taxed) }
+    private var payTitle: String { years.payLabel }
     private var rateTitle: String { StatementWords.savingsRate(taxed: taxed, withTax: withTax) }
 
     var body: some View {

@@ -20,6 +20,7 @@
       "awaiting": 0,
       "taxed": true
     },
+    "pay_label": "Pay before tax",
     "years": [
       {
         "year": 2026,

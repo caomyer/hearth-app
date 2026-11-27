@@ -632,11 +632,15 @@ figures no other sum here comes to."""
 
 
 def tax_text() -> str:
-    """Blake's tax, as beancount reads it, to append to the household's books."""
+    """Blake's tax, as beancount reads it, to append to the household's books: this month's
+    waits in Blake's review, so what rests on rows nobody has checked is crawled too."""
     lines = [f"{OPENED} open Expenses:Taxes", ""]
-    for day, amount in BLAKE_TAX:
+    for i, (day, amount) in enumerate(BLAKE_TAX):
+        waits = i == len(BLAKE_TAX) - 1
+        meta = ['  review-id: "blake-tax-1"', '  review-group: "Bittern Revenue"']
         lines += [
-            f'{day} * "Payee Bittern Revenue" ""',
+            f'{day} {"!" if waits else "*"} "Payee Bittern Revenue" ""',
+            *(meta if waits else []),
             f"  Assets:Zq:BlakeSolo  -{amount.replace(',', '')} USD",
             "  Expenses:Taxes",
             "",

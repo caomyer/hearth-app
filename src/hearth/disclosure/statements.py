@@ -96,9 +96,9 @@ with tax counted in it, which the app may show instead (`WithTax`)."""
 
 PAY = "Take-home pay"
 PAY_BEFORE_TAX = "Pay before tax"
-"""Pay as the books hold it is called what it is: where the scope holds tax, pay is booked
-before it, so "take-home" would not be true; where it holds none, pay is what reached the
-bank."""
+"""Pay as the books hold it is called what it is: where the scope books pay before what was
+withheld from it (`pay_label`), "take-home" would not be true; anywhere else, pay is what
+reached the bank, whatever tax was paid apart from it."""
 
 SAVINGS_RATE = "Savings rate"
 SAVINGS_RATE_AFTER_TAX = "Savings rate, after tax"
@@ -292,6 +292,17 @@ def taxed(h: Household, s: Scope) -> bool:
     return any(h.books.kind(a) is Kind.TAX for a in ledger(h).books_to(s.ledger))
 
 
+def pays_gross(h: Household, s: Scope) -> bool:
+    """Whether the scope's books ever book pay before tax: a tax posting in the same entry as a
+    pay posting, as a payslip that books what was withheld beside pay does. Over all their
+    history, so pay is called one thing in every period and column of the scope's statements."""
+    return ledger(h).pays_gross(s.ledger, h.books.kind)
+
+
+def pay_label(h: Household, s: Scope) -> str:
+    return PAY_BEFORE_TAX if pays_gross(h, s) else PAY
+
+
 def _months(period: Period) -> list[Month]:
     found = [Month.of(period.start)]
     while found[-1] < Month.of(period.end):
@@ -436,18 +447,18 @@ def summary(h: Household, period: Period, *, market: bool) -> Summary:
             "spending", SPENDING, n.spending, t.spending, Better.LESS, both.of_kind(Kind.SPENDING)
         ),
         market=movement(start, end, n) if s.known else None,
-        lines=_lines(both, with_tax=False, rate=rate, pay=PAY_BEFORE_TAX if has_tax else PAY),
+        lines=_lines(both, with_tax=False, rate=rate, pay=pay_label(h, s)),
         bridge=bridge(start, end, n, market=market) if s.known else None,
         valuing=replace(_valuing([start, whole], market, whole), later=n.later),
         unreviewed=n.unreviewed,
         late=now.late,
         floor=market and whole.is_floor,
         taxed=has_tax,
-        with_tax=_with_tax(both) if has_tax else None,
+        with_tax=_with_tax(both, pay_label(h, s)) if has_tax else None,
     )
 
 
-def _with_tax(both: _Compared) -> WithTax:
+def _with_tax(both: _Compared, pay: str) -> WithTax:
     n, t = both.now.flows, both.then.flows
     return WithTax(
         spending=both.line(
@@ -465,7 +476,7 @@ def _with_tax(both: _Compared) -> WithTax:
             t.savings_rate_with_tax,
             Better.NEITHER,
         ),
-        lines=_lines(both, with_tax=True, rate=SAVINGS_RATE_WITH_TAX, pay=PAY_BEFORE_TAX),
+        lines=_lines(both, with_tax=True, rate=SAVINGS_RATE_WITH_TAX, pay=pay),
     )
 
 
@@ -952,6 +963,8 @@ class Years:
     years: tuple[Year, ...]
     taxed: bool = False
     """Whether the scope's books hold any tax (`taxed`)."""
+    pay_label: str = PAY
+    """What pay is called in every year (`pay_label`)."""
 
 
 def years(h: Household, *, market: bool) -> Years:
@@ -998,7 +1011,7 @@ def years(h: Household, *, market: bool) -> Years:
                 savings_rate_with_tax=moved.savings_rate_with_tax,
             )
         )
-    return Years(s, market, tuple(found), taxed=taxed(h, s))
+    return Years(s, market, tuple(found), taxed=taxed(h, s), pay_label=pay_label(h, s))
 
 
 def within(h: Household) -> frozenset[str]:

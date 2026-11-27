@@ -61,8 +61,6 @@ struct AnswerTests {
         #expect(
             ReviewWords.tax(refunded, withTax: false, currency: "USD", locale: unitedStates)
                 == "A tax refund of $300 is not counted as spending.")
-        #expect(StatementWords.pay(taxed: true) == "Pay before tax")
-        #expect(StatementWords.pay(taxed: false) == "Take-home pay")
     }
 
     @Test("an engine older than the money nobody has placed yet is read as saying none")

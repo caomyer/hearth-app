@@ -216,11 +216,16 @@ struct StatementsTests {
     @Test("rows waiting are said with what they move")
     func unreviewed() {
         let found = StatementUnreviewed(
-            rows: 2, income: money("0"), expenses: money("1120"), unplaced: 2, unplacedOut: money("79"), unplacedIn: money("0"))
+            rows: 2, income: money("0"), expenses: money("1120"), unplaced: 2, unplacedOut: money("79"),
+            unplacedIn: money("0"), spending: money("820"), tax: money("300"), spendingWithTax: money("1120"),
+            notSpending: money("0"))
         #expect(StatementWords.unreviewed(found, currency: "USD", locale: unitedStates) == [
-            "2 transactions not reviewed yet, $1,120 of expenses.",
+            "2 transactions not reviewed yet, $820 of spending and $300 of tax.",
             "2 not placed in any category yet, $79 out, counted in no total.",
         ])
+        #expect(
+            StatementWords.unreviewed(found, withTax: true, currency: "USD", locale: unitedStates).first
+                == "2 transactions not reviewed yet, $1,120 of spending and tax.")
     }
 
     @Test("every tab is asked for its days and how it values them, the defaults left to the engine")

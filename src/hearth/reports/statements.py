@@ -285,6 +285,10 @@ class Unreviewed:
     unplaced: int = 0
     unplaced_out: Decimal = ZERO
     unplaced_in: Decimal = ZERO
+    spending: Decimal = ZERO
+    """Of `expenses`, what is of kind spending."""
+    tax: Decimal = ZERO
+    """Of `expenses`, what is of kind tax, which is never spending."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -355,9 +359,10 @@ class Flows:
 
     @property
     def savings_rate(self) -> Decimal | None:
-        """Saved from work over pay after tax; None without any, since a rate would be invented."""
+        """Saved from work over pay after tax; None without pay, or with none left after tax,
+        since a rate would be invented: a refund with no pay is no pay to save from."""
         after_tax = self.pay - self.tax
-        return self.saved / after_tax if after_tax > 0 else None
+        return self.saved / after_tax if self.pay > 0 and after_tax > 0 else None
 
     @property
     def spending_with_tax(self) -> Decimal:
@@ -772,6 +777,17 @@ class Ledger:
             spent = [w for a, w in event.others if w is not None and root(a) == "Expenses"]
             add(("unreviewed-in",), day, -sum(income, ZERO))
             add(("unreviewed-out",), day, sum(spent, ZERO))
+            # By account too, so what rests on them is said by kind, which a recompute decides.
+            for account, weighs in event.others:
+                if weighs is not None and root(account) == "Expenses":
+                    add(("unreviewed-o", account), day, weighs)
+        # Pay booked before tax: a pay account and an expense account in one entry, which a
+        # payslip is; whether they are pay and tax is a recompute's to say (`pays_gross`).
+        earned = {a for a, _ in event.others if root(a) == "Income"}
+        paid = {a for a, _ in event.others if root(a) == "Expenses"}
+        for income_account in earned:
+            for expense_account in paid:
+                add(("together", income_account, expense_account), day, Decimal(1))
         waiting = [w for a, w in event.others if a in WAITING and w is not None]
         if waiting:
             add(("prow",), day, Decimal(1))
@@ -779,6 +795,18 @@ class Ledger:
             add(("unplaced-in",), day, -sum((w for w in waiting if w < 0), ZERO))
 
     # Asking it.
+
+    def pays_gross(self, scope: Collection[str], kind: Callable[[str], Kind]) -> bool:
+        """Whether any entry read in full over `scope` books pay and tax together, as a
+        payslip that books pay before what was withheld from it does: at any time, so every
+        period and column of the scope's statements calls pay the same."""
+        inside = frozenset(scope)
+        return any(
+            key[0] == "together" and kind(key[1]) is Kind.PAY and kind(key[2]) is Kind.TAX
+            for accounts, signature in self._signatures.items()
+            if accounts and accounts <= inside
+            for key in signature.sums
+        )
 
     def books_to(self, scope: Collection[str]) -> frozenset[str]:
         """Every income and expense account that an entry read in full over `scope` posts to,
@@ -889,6 +917,12 @@ class Ledger:
                 "unplaced-in",
             ):
                 counts[key] += over(key)
+            for other in others:
+                waits = over("unreviewed-o", other)
+                if waits and kind(other) is Kind.SPENDING:
+                    counts["unreviewed-spending"] += waits
+                elif waits and kind(other) is Kind.TAX:
+                    counts["unreviewed-tax"] += waits
         priced = self._priced(period, inside_scope)
         market[Other.UNPRICED] += priced
         kept = {a: n for a, n in sorted(by_account.items()) if n != 0}
@@ -908,6 +942,8 @@ class Ledger:
                 int(counts["prow"]),
                 counts["unplaced-out"],
                 counts["unplaced-in"],
+                counts["unreviewed-spending"],
+                counts["unreviewed-tax"],
             ),
             unconverted=int(counts["unconverted"]),
             later=int(counts["later"]),
