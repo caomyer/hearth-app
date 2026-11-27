@@ -540,19 +540,19 @@ private struct IncomeTab: View {
                         open: !closed.contains(row.node.name)
                     ) { toggle(row.node.name) }
                 }
-                .width(min: 120, ideal: 170)
+                .width(min: FigureWidth.names)
                 TableColumnForEach(refs) { ref in
                     let title = StatementWords.column(ref.column, by: statement.columnsBy, withYear: spansYears)
                     TableColumn(title) { row in
                         cell(row, index: ref.id)
                     }
-                    .width(min: width(ref.id, title), ideal: width(ref.id, title))
+                    .width(width(ref.id, title))
                     .alignment(.trailing)
                 }
                 TableColumn(totalTitle) { row in
                     cell(row, index: nil)
                 }
-                .width(min: width(nil, totalTitle), ideal: width(nil, totalTitle))
+                .width(width(nil, totalTitle))
                 .alignment(.trailing)
             }
             // Its columns scroll within it; they never widen the window.
@@ -718,21 +718,21 @@ private struct SheetTab: View {
                         ) { toggle(row.node.id) }
                     }
                 }
-                .width(min: 130, ideal: 180)
+                .width(min: FigureWidth.names)
                 TableColumn(startTitle) { row in cell(row, .start) }
-                    .width(min: width(.start, startTitle), ideal: width(.start, startTitle))
+                    .width(width(.start, startTitle))
                     .alignment(.trailing)
                 TableColumn(endTitle) { row in cell(row, .end) }
-                    .width(min: width(.end, endTitle), ideal: width(.end, endTitle))
+                    .width(width(.end, endTitle))
                     .alignment(.trailing)
                 TableColumn("Change") { row in cell(row, .change) }
-                    .width(min: width(.change, "Change"), ideal: width(.change, "Change"))
+                    .width(width(.change, "Change"))
                     .alignment(.trailing)
                 TableColumn("Cost") { row in cell(row, .cost) }
-                    .width(min: width(.cost, "Cost"), ideal: width(.cost, "Cost"))
+                    .width(width(.cost, "Cost"))
                     .alignment(.trailing)
                 TableColumn(Self.gainTitle) { row in cell(row, .gain) }
-                    .width(min: width(.gain, Self.gainTitle), ideal: width(.gain, Self.gainTitle))
+                    .width(width(.gain, Self.gainTitle))
                     .alignment(.trailing)
             }
             // Its columns scroll within it; they never widen the window.
@@ -826,16 +826,16 @@ private struct YearsTab: View {
                         }
                     }
                     TableColumn("Net worth") { year in money(year.netWorth) }
-                        .width(min: width(\.netWorth, "Net worth"), ideal: width(\.netWorth, "Net worth"))
+                        .width(width(\.netWorth, "Net worth"))
                         .alignment(.trailing)
                     TableColumn("Take-home pay") { year in money(year.pay) }
-                        .width(min: width(\.pay, "Take-home pay"), ideal: width(\.pay, "Take-home pay"))
+                        .width(width(\.pay, "Take-home pay"))
                         .alignment(.trailing)
                     TableColumn("Spending") { year in money(year.spending) }
-                        .width(min: width(\.spending, "Spending"), ideal: width(\.spending, "Spending"))
+                        .width(width(\.spending, "Spending"))
                         .alignment(.trailing)
                     TableColumn("Saved from work") { year in money(year.saved) }
-                        .width(min: width(\.saved, "Saved from work"), ideal: width(\.saved, "Saved from work"))
+                        .width(width(\.saved, "Saved from work"))
                         .alignment(.trailing)
                     TableColumn("Savings rate") { year in
                         Text(StatementWords.figure(year.savingsRate, rate: true, currency: years.currency)).monospacedDigit()
@@ -865,8 +865,13 @@ private struct YearsTab: View {
 /// bold as a total is drawn, and its heading: a column is never narrower, so no figure is cut;
 /// when the columns are wider than the window, the table scrolls sideways.
 enum FigureWidth {
-    /// The padding a table cell keeps on either side of what it draws.
-    static let padding: CGFloat = 16
+    /// What a cell keeps beside what it draws: its own inset. The table puts its intercell
+    /// spacing between columns as well, so the gap between two figures is that spacing and
+    /// this, never this twice.
+    static let padding: CGFloat = 6
+    /// The narrowest the name column goes, readable, before the table scrolls sideways: it
+    /// takes all the width the figures leave, and is never squeezed to give them more.
+    static let names: CGFloat = 180
 
     static func holding(_ texts: [String], title: String) -> CGFloat {
         let figures = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
