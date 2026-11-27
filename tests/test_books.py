@@ -5,6 +5,7 @@ import threading
 import time
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -12,10 +13,12 @@ from beancount import loader
 from beancount.core.data import Directive
 from beancount.parser import parser
 
-from hearth import books
+from hearth import books, db
 from hearth.books import Bookkeeper, Books
 from hearth.months import Month
 from hearth.valuation.networth import NetWorth
+from hearth.valuation.pricestore import PriceStore
+from hearth.valuation.quotes import Quote
 from tests import household
 from tests.conftest import FakeClock
 
@@ -212,3 +215,35 @@ def test_waiting_returns_only_once_books_after_the_call_are_in_place() -> None:
     assert len(runs) == 2
     assert keeper.status.books is not None
     assert not keeper.status.recomputing
+
+
+def test_the_books_hold_the_prices_they_were_valued_at_by_the_rule_the_store_has(
+    tmp_path: Path,
+) -> None:
+    """A statement values any day after the database is closed, so the books hold every price
+    the recompute read, and look each up as the store would: the newest day wins, then the
+    latest fetched, whichever source it came from, and a correction stands in for its day."""
+    database = tmp_path / "hearth.sqlite3"
+    db.initialise(database)
+    conn = db.connect(database)
+    try:
+        store = PriceStore(conn)
+        early, late = datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 9, 2, tzinfo=UTC)
+        for symbol, day, price, source, fetched in [
+            ("ZQAA", date(2026, 9, 10), "10.00", "eodhd", early),
+            ("ZQAA", date(2026, 9, 10), "11.00", "plaid", late),
+            ("ZQAA", date(2026, 9, 12), "12.00", "hand", early),
+            ("ZQAA", date(2026, 9, 12), "12.50", "hand", late),
+            ("ZQBB", date(2026, 9, 11), "20.00", "eodhd", early),
+        ]:
+            store.record(Quote(symbol, day, Decimal(price), "USD", source, symbol, fetched))
+        stored = books.stored_prices(store)
+        remembered = books.remembered_prices(store, ["ZQAA", "ZQBB", "ZQCC"])
+        for symbol in ("ZQAA", "ZQBB", "ZQCC"):
+            for n in range(8, 15):
+                asked = date(2026, 9, n)
+                assert remembered(symbol, asked) == stored(symbol, asked), (symbol, asked)
+    finally:
+        conn.close()
+    assert remembered("ZQAA", date(2026, 9, 12)).price == Decimal("12.50")  # type: ignore[union-attr]
+    assert remembered("ZQAA", date(2026, 9, 11)).price == Decimal("11.00")  # type: ignore[union-attr]

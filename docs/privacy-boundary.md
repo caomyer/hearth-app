@@ -125,11 +125,22 @@ The import adds two more (`docs/books.md`, `docs/pairing.md`):
 - That transfer says only "Card payment".
   It is one entry on both accounts, so it repeats neither bank's own description, which is that account's transaction detail.
 
+### Statements
+
+The Mac app's statements read the books the way a business reads its own: by account and by category, day by day, with what each account holds, what is not reviewed yet, and the rows behind every figure.
+So a part is in a viewer's statements only in full, when the viewer may see every facet of it (`access.may_read_statements`): their own accounts, joint accounts with their co-owners, and another member's only when that member shares every facet, or a joint account when every owner does.
+Every other part is out of every statement, and each says it is "without" it, by name, whatever is shared of it; it is never added in at a coarser grain.
+The scope is decided once, before any figure is worked out (`hearth.disclosure.statements`), and every figure of every tab, for every period and at cost or at market value, is a figure of that scope alone.
+So no figure, no difference of two periods or tabs, and no figure at cost set against one at market value, holds anything of a part left out.
+A move between an account in the statement and one outside it, another member's or one hearth does not see, is one amount of the account inside, and none of its categories is counted, as nothing says whose they were.
+`tests/native/test_statements.py` changes the joint account and another member's account under a viewer who may see neither in full, and requires every statement the viewer can ask for to be the same, byte for byte.
+It also holds back each facet in turn from members who share every other, and requires them out of every statement, named, and every statement unchanged; the doorway's crawl asks every statement under the same scenarios.
+
 ## Where it is enforced
 
 - `src/hearth/access.py` holds the rules.
 - `src/hearth/disclosure/gate.py` is the only module that imports `hearth.access`: every decision in the application is asked there.
-- The rest of the `hearth.disclosure` package (`household`, `people`, `worth`) is the only code that reads the books and ownership for a page.
+- The rest of the `hearth.disclosure` package (`household`, `people`, `worth`, `statements`) is the only code that reads the books and ownership for a page.
   Each module receives the gate and asks it before computing anything, so a figure the viewer may not see is never computed into a view.
   Withheld figures are the value-less `WITHHELD` sentinel.
 - Pages under `src/hearth/web/` render only the views `Disclosure` returns, and never touch the books' raw data.
@@ -151,6 +162,7 @@ There is no JSON API, and `/docs` and `/openapi.json` are disabled.
 - `tests/test_concealment.py` requires private and missing things to produce byte-identical responses, covers redirects to and after sign-in, open redirects, sign-in error messages and throttling.
 - `tests/test_tampering.py` attempts to change another member's sharing, to act as an admin, and to forge requests, and checks nothing changed.
 - `tests/plaid/test_connect_pages.py` attacks connections: another member's Item, forged mappings, a full allowance and unapproved calls.
+- `tests/native/test_doorway.py` signs in to the Mac app's bridge as every member under every scenario and asks every screen, every statement among them, every way it is narrowed.
 - `tests/test_disclosure.py` and `tests/test_dashboard_boundary.py` attack what the dashboards add: the default dashboard showing every total, a joint balance recovered by subtraction, failure details, connection names, hand-entered prices, other members' review rows and unpriced floors.
 
 These behavioural suites are the enforcement of the boundary.

@@ -21,7 +21,7 @@ fail one are not books (``books.compute``).
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -116,6 +116,9 @@ class Entry:
     """A check of its bank's balance that the books meet only by an entry reconciling the
     imported ledger with the bank, which nobody has confirmed yet (``books.reconciling``): it
     is not shown as matching its bank."""
+    part: Decimal | None = None
+    """For a journal narrowed to `Filter.categories`, the part of `amount` that is theirs, in
+    its sign: of an entry split across categories, only what a statement's line adds up."""
 
     @property
     def suggested(self) -> bool:
@@ -139,6 +142,12 @@ class Filter:
     text: str | None = None
     """Words to find in a payee or a description, in any case."""
     show: Show = Show.EVERYTHING
+    categories: tuple[str, ...] = ()
+    """Categories by their ledger names, each exactly: an entry booked to any of them is kept,
+    as a statement's line adds up the rows of every category in it."""
+    statement: bool = False
+    """Only the rows the viewer's statements read: entries every account of which is in them
+    (``hearth.disclosure.statements``), so a figure opens onto exactly the rows it adds up."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,9 +179,11 @@ def journal(
     offset: int,
     limit: int,
     account: Account | None,
+    within: frozenset[str] | None = None,
 ) -> Journal:
     """The entries `narrowed` leaves, newest first, `limit` of them from `offset`. `account`
-    is the one `narrowed` names, which the caller has made sure the viewer may see into."""
+    is the one `narrowed` names, which the caller has made sure the viewer may see into;
+    `within`, for a journal narrowed to a statement's rows, the accounts the statement reads."""
     books = h.books
     start = narrowed.start or date(books.as_of.year, 1, 1)
     end = narrowed.end or books.as_of
@@ -180,13 +191,15 @@ def journal(
     found: list[tuple[tuple[date, int, int], Entry]] = []
     for index, entry in enumerate(books.entries):
         if isinstance(entry, Transaction) and start <= entry.date <= end and not _opening(entry):
+            if within is not None and not _read_by(entry, within):
+                continue
             found.extend(((entry.date, 0, index), e) for e in reader.entries(entry))
-        elif isinstance(entry, Balance):
+        elif isinstance(entry, Balance) and within is None:
             check = reader.check(entry)
             if check is not None and start <= check.date <= end:
                 found.append(((check.date, 1, index), check))
     found.sort(key=lambda pair: pair[0], reverse=True)
-    kept = [e for _, e in found if _keeps(e, narrowed, account)]
+    kept = [_part(e, narrowed) for _, e in found if _keeps(e, narrowed, account)]
     counts = Counts(
         everything=len(kept),
         unreviewed=sum(1 for e in kept if e.unreviewed),
@@ -213,8 +226,27 @@ def _opening(entry: Transaction) -> bool:
     )
 
 
+def _part(entry: Entry, narrowed: Filter) -> Entry:
+    """The entry, with the part of it the categories asked for are, in the sign of what it did
+    to the viewer's accounts."""
+    if not narrowed.categories:
+        return entry
+    wanted = set(narrowed.categories)
+    mine = sum((s.amount for s in entry.sides if s.category in wanted), Decimal(0))
+    return replace(entry, part=-mine)
+
+
+def _read_by(entry: Transaction, within: frozenset[str]) -> bool:
+    """Whether a statement over `within` reads every side of `entry`: it moves an account in
+    it, and none outside it."""
+    legs = [p.account for p in entry.postings if is_balance_sheet(p.account)]
+    return bool(legs) and all(leg in within for leg in legs)
+
+
 def _keeps(entry: Entry, narrowed: Filter, account: Account | None) -> bool:
     if account is not None and account.id not in {a.id for a in entry.accounts}:
+        return False
+    if narrowed.categories and not set(entry.categories()) & set(narrowed.categories):
         return False
     if narrowed.category is not None:
         wanted = narrowed.category

@@ -21,6 +21,7 @@ from hearth.accounts import Account, all_accounts
 from hearth.audit import EventKind
 from hearth.books import Books, Failure, Status
 from hearth.connections import Answered, Connection, Connections, State
+from hearth.disclosure import statements
 from hearth.disclosure.balances import AccountGroup, AccountStanding, Failed, standing, standings
 from hearth.disclosure.balances import visible as _visible
 from hearth.disclosure.common import (
@@ -62,6 +63,7 @@ from hearth.members import Member, MemberId
 from hearth.months import Month
 from hearth.reports.balances import AssertionCheck
 from hearth.reports.coverage import Span
+from hearth.reports.statements import Columns
 from hearth.sharing import Facet, SharingChoices
 from hearth.valuation.networth import Freshness
 
@@ -385,7 +387,33 @@ class Disclosure:
             account = next((a for a in self._accounts if a.id == narrowed.account), None)
             if account is None or not self._gate.may(Facet.TRANSACTIONS, account.owners):
                 raise Concealed
-        return journal(h, self._accounts, narrowed, offset=offset, limit=limit, account=account)
+        within = statements.within(h) if narrowed.statement else None
+        return journal(
+            h, self._accounts, narrowed, offset=offset, limit=limit, account=account, within=within
+        )
+
+    def statement_summary(
+        self, start: date | None, end: date | None, *, market: bool
+    ) -> statements.Summary:
+        """This period, this year so far unless told, against the same days a year before, over
+        the parts the viewer may see in full (``hearth.disclosure.statements``)."""
+        h = self._household()
+        return statements.summary(h, _period(h, start, end), market=market)
+
+    def income_statement(
+        self, start: date | None, end: date | None, by: Columns
+    ) -> statements.IncomeStatement:
+        h = self._household()
+        return statements.income_statement(h, _period(h, start, end), by)
+
+    def balance_sheet(
+        self, start: date | None, end: date | None, *, market: bool
+    ) -> statements.BalanceSheet:
+        h = self._household()
+        return statements.balance_sheet(h, _period(h, start, end), market=market)
+
+    def years(self, *, market: bool) -> statements.Years:
+        return statements.years(self._household(), market=market)
 
     def _failed(self) -> tuple[str, Failed] | None:
         """The account whose balance check the latest recompute failed, when the viewer may be
@@ -679,6 +707,11 @@ class Disclosure:
             return None
         member = self._members[index]
         return MemberRef(member.username, member.display_name, index % IDENTITY_HUES + 1)
+
+
+def _period(h: Household, start: date | None, end: date | None) -> statements.Period:
+    """The days a statement is asked for, floored on what the viewer's statements read."""
+    return statements.period_of(h, statements.scope(h), start, end)
 
 
 def review_decisions(

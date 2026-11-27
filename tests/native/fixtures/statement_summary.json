@@ -1,0 +1,318 @@
+{
+  "id": 30,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "period": {
+      "from": "2026-08-01",
+      "to": "2026-10-15"
+    },
+    "against": {
+      "from": "2025-08-01",
+      "to": "2025-10-15"
+    },
+    "valuation": "market",
+    "covered": true,
+    "against_covered": false,
+    "scope": {
+      "parts": [
+        "Avery",
+        "Blake",
+        "Joint accounts"
+      ],
+      "without": [
+        "Casey"
+      ],
+      "leaves_out": "1 of the joint accounts hearth does not see",
+      "awaiting": 0
+    },
+    "net_worth": {
+      "key": "net_worth",
+      "label": "Net worth",
+      "now": "158206.46",
+      "before": "0",
+      "change": "158206.46",
+      "share": null,
+      "tone": "favourable",
+      "categories": [],
+      "total": false,
+      "depth": 0
+    },
+    "savings_rate": {
+      "key": "savings_rate",
+      "label": "Savings rate",
+      "now": null,
+      "before": null,
+      "change": null,
+      "share": null,
+      "tone": "quiet",
+      "categories": [],
+      "total": false,
+      "depth": 0
+    },
+    "spending": {
+      "key": "spending",
+      "label": "Spending",
+      "now": "5701.81",
+      "before": null,
+      "change": null,
+      "share": null,
+      "tone": "quiet",
+      "categories": [
+        "Expenses:Avocados",
+        "Expenses:Bonsai",
+        "Expenses:Bunting",
+        "Expenses:Jointery",
+        "Expenses:Junipers",
+        "Expenses:Umbrellas"
+      ],
+      "total": false,
+      "depth": 0
+    },
+    "market": "0.00",
+    "lines": [
+      {
+        "key": "pay",
+        "label": "Take-home pay",
+        "now": "0",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [],
+        "total": false,
+        "depth": 0
+      },
+      {
+        "key": "spending",
+        "label": "Spending",
+        "now": "5701.81",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [
+          "Expenses:Avocados",
+          "Expenses:Bonsai",
+          "Expenses:Bunting",
+          "Expenses:Jointery",
+          "Expenses:Junipers",
+          "Expenses:Umbrellas"
+        ],
+        "total": true,
+        "depth": 0
+      },
+      {
+        "key": "spending:Expenses:Bonsai",
+        "label": "Bonsai",
+        "now": "1927.53",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [
+          "Expenses:Bonsai"
+        ],
+        "total": false,
+        "depth": 1
+      },
+      {
+        "key": "spending:Expenses:Jointery",
+        "label": "Jointery",
+        "now": "1640.84",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [
+          "Expenses:Jointery"
+        ],
+        "total": false,
+        "depth": 1
+      },
+      {
+        "key": "spending:Expenses:Avocados",
+        "label": "Avocados",
+        "now": "1399.90",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [
+          "Expenses:Avocados"
+        ],
+        "total": false,
+        "depth": 1
+      },
+      {
+        "key": "spending:Expenses:Junipers",
+        "label": "Junipers",
+        "now": "468.35",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [
+          "Expenses:Junipers"
+        ],
+        "total": false,
+        "depth": 1
+      },
+      {
+        "key": "spending:Expenses:Bunting",
+        "label": "Bunting",
+        "now": "246.13",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [
+          "Expenses:Bunting"
+        ],
+        "total": false,
+        "depth": 1
+      },
+      {
+        "key": "spending:Expenses:Umbrellas",
+        "label": "Umbrellas",
+        "now": "19.06",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [
+          "Expenses:Umbrellas"
+        ],
+        "total": false,
+        "depth": 1
+      },
+      {
+        "key": "saved",
+        "label": "Saved from work",
+        "now": "-5701.81",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [],
+        "total": true,
+        "depth": 0
+      },
+      {
+        "key": "savings_rate",
+        "label": "Savings rate",
+        "now": null,
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [],
+        "total": false,
+        "depth": 0
+      },
+      {
+        "key": "investment_income",
+        "label": "Investment income",
+        "now": "0",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [],
+        "total": false,
+        "depth": 0
+      },
+      {
+        "key": "other_income",
+        "label": "Other income",
+        "now": "7940.48",
+        "before": null,
+        "change": null,
+        "share": null,
+        "tone": "quiet",
+        "categories": [
+          "Income:Aardwork",
+          "Income:Bittern"
+        ],
+        "total": false,
+        "depth": 0
+      }
+    ],
+    "why": {
+      "start": "0",
+      "saved": "-5701.81",
+      "investment_income": "0",
+      "market": "0.00",
+      "other": "163908.27",
+      "others": [
+        {
+          "key": "other_income",
+          "label": "Other income",
+          "amount": "7940.48"
+        },
+        {
+          "key": "not_spending",
+          "label": "Not counted as spending",
+          "amount": "0"
+        },
+        {
+          "key": "opening",
+          "label": "Opening balances and adjustments",
+          "amount": "156745.10"
+        },
+        {
+          "key": "unplaced",
+          "label": "Not placed yet",
+          "amount": "0"
+        },
+        {
+          "key": "outside",
+          "label": "Moved to or from accounts outside the statement",
+          "amount": "-777.31"
+        },
+        {
+          "key": "taken",
+          "label": "Gains already counted in value, booked as income",
+          "amount": "0"
+        },
+        {
+          "key": "unpriced",
+          "label": "Holdings with no price, not valued",
+          "amount": "0.00"
+        },
+        {
+          "key": "realised",
+          "label": "Gains not booked as income",
+          "amount": "0"
+        },
+        {
+          "key": "rounding",
+          "label": "Rounding the books allow",
+          "amount": "0"
+        }
+      ],
+      "end": "158206.46",
+      "difference": "0.00"
+    },
+    "valuing": {
+      "priced_on": "2026-10-14",
+      "unpriced": [],
+      "unvalued": [],
+      "stale": 0,
+      "later": 0
+    },
+    "unreviewed": {
+      "rows": 0,
+      "income": "0",
+      "expenses": "0",
+      "unplaced": 0,
+      "unplaced_out": "0",
+      "unplaced_in": "0"
+    },
+    "is_floor": false,
+    "late": []
+  }
+}
