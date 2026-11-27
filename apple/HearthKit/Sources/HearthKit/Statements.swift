@@ -95,6 +95,9 @@ public struct Valuing: Decodable, Sendable, Equatable {
     public let unvalued: [String]
     /// How many positions are valued at an old price.
     public let stale: Int
+    /// How many amounts were booked before anything priced them, and converted on their own
+    /// day at the first price there was.
+    public let later: Int
 }
 
 /// The Statements Summary: this period against the same days a year before
@@ -165,6 +168,8 @@ public struct IncomeStatement: Screen {
     public let expenses: Node
     public let net: Net
     public let unreviewed: StatementUnreviewed
+    /// Amounts converted on their own day at a later first price, over the whole period.
+    public let later: Int
 
     public struct Column: Decodable, Sendable, Equatable {
         public let from: Day

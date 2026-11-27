@@ -640,6 +640,7 @@ private struct IncomeTab: View {
     /// What of each column rests on rows not reviewed or placed yet.
     private var footer: [String] {
         StatementWords.unreviewed(statement.unreviewed, currency: statement.currency)
+            + [StatementWords.later(statement.later)].compactMap(\.self)
     }
 }
 

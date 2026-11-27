@@ -109,6 +109,9 @@ public enum StatementWords {
                     ? "\(named) has no price, so it is not valued: each figure it is in is at least what it says."
                     : "\(named) have no price, so they are not valued: each figure they are in is at least what it says.")
         }
+        if let line = later(valuing.later) {
+            lines.append(line)
+        }
         if valuing.stale > 0 {
             lines.append(valuing.stale == 1 ? "One price is older." : "\(valuing.stale.formatted()) prices are older.")
         }
@@ -117,6 +120,14 @@ public enum StatementWords {
             lines.append("\(named) can be valued neither at a price nor at a cost, so it is left out.")
         }
         return lines
+    }
+
+    /// What a figure says of amounts booked before anything priced them: "2 amounts were
+    /// booked before anything priced them, and are at the first price there was."
+    public static func later(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        let what = count == 1 ? "1 amount was" : "\(count.formatted()) amounts were"
+        return "\(what) booked before anything priced \(count == 1 ? "it" : "them"), and \(count == 1 ? "is" : "are") at the first price there was."
     }
 
     /// A column of the income statement as its heading: "Aug", "Q3", "2026", each with its

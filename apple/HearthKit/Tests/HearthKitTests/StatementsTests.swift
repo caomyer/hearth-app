@@ -71,6 +71,13 @@ struct StatementsTests {
         #expect(year.savingsRate == nil)
     }
 
+    @Test("an amount converted at a later first price is said, as a stale price is")
+    func later() {
+        #expect(StatementWords.later(0) == nil)
+        #expect(StatementWords.later(2) == "2 amounts were booked before anything priced them, and are at the first price there was.")
+        #expect(StatementWords.later(1) == "1 amount was booked before anything priced it, and is at the first price there was.")
+    }
+
     @Test("a debug build opens a tab by an obvious name")
     func tabNames() {
         #expect(StatementsModel.Tab.allCases.map(\.rawValue) == ["summary", "income", "balance", "years"])
