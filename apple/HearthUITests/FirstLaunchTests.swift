@@ -629,6 +629,58 @@ final class FirstLaunchTests: XCTestCase {
         secret.typeText(password + "\r")
     }
 
+    /// An admin of a household with no ledger is asked once whether they keep one, checks its
+    /// file, brings it in, matches each connected account to the ledger's, and lands on the
+    /// Overview with the books the ledger and the banks make together.
+    ///
+    /// The household is a second copy of the one `tests/native/on_disk.py` writes, with the
+    /// ledger it writes beside it from what its bank sent (`--ledger`), which CI names to the
+    /// test runner (`TEST_RUNNER_HEARTH_FIXTURE_LEDGER_DATA_DIR`, `..._LEDGER`). The file is
+    /// handed over by `-ledgerFile` in place of the open panel.
+    @MainActor
+    func testALedgerIsBroughtInAndItsAccountsMatched() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let household = environment["HEARTH_FIXTURE_LEDGER_DATA_DIR"],
+            let ledger = environment["HEARTH_FIXTURE_LEDGER"],
+            let password = environment["HEARTH_FIXTURE_PASSWORD"]
+        else {
+            throw XCTSkip("no fixture household with a ledger was made for this run")
+        }
+        let app = XCUIApplication()
+        app.launchEnvironment["HEARTH_DATA_DIR"] = household
+        app.launchEnvironment["HEARTH_SIGN_IN_PASSWORD"] = password
+        app.launchArguments += [
+            "-openBooks", "own", "-signInAs", "avery", "-ledgerFile", ledger, "-windowSize", "1180x740",
+        ]
+        app.launch()
+
+        let element = { (identifier: String) in app.descendants(matching: .any)[identifier].firstMatch }
+        XCTAssertTrue(element("ledger.yes").waitForExistence(timeout: 90), "nobody was asked about a ledger")
+        element("ledger.continue").click()
+
+        let summary = element("ledger.summary")
+        XCTAssertTrue(summary.waitForExistence(timeout: 60), "the ledger's check did not appear")
+        XCTAssertTrue(text(of: summary).contains("entries"), "\(text(of: summary)) does not count its entries")
+        XCTAssertTrue(element("ledger.unused").exists, "the lines Hearth does not use were not said")
+        element("ledger.continue").click()
+
+        XCTAssertTrue(element("ledger.once").waitForExistence(timeout: 20), "bringing it in was not confirmed first")
+        element("ledger.bringIn").click()
+
+        let match = element("ledger.match")
+        XCTAssertTrue(match.waitForExistence(timeout: 120), "matching did not follow the import")
+        XCTAssertTrue(element("ledger.account.Everyday checking").exists)
+        match.click()
+
+        let matched = element("ledger.matched")
+        XCTAssertTrue(matched.waitForExistence(timeout: 120), "what was matched was not said")
+        XCTAssertTrue(text(of: matched).contains("3 of 3 accounts matched"), "it says \(text(of: matched))")
+        element("ledger.openBooks").click()
+
+        XCTAssertTrue(element("ledger.sheet").waitForNonExistence(timeout: 20), "the sheet stayed up")
+        assertNetWorth(in: app)
+    }
+
     /// The household's own net worth: the fixture's, in whole dollars, with no sample banner.
     @MainActor
     private func assertNetWorth(in app: XCUIApplication) {

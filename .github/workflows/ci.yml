@@ -75,11 +75,18 @@ jobs:
           echo "HEARTH_FIXTURE_PASSWORD=$password" >> "$GITHUB_ENV"
           echo "HEARTH_FIXTURE_DATA_DIR=$RUNNER_TEMP/household" >> "$GITHUB_ENV"
       - run: uv run python -m tests.native.on_disk "$HEARTH_FIXTURE_DATA_DIR"
+      - name: Another, with the ledger it kept before hearth beside it, for the app to bring in
+        run: |
+          echo "HEARTH_FIXTURE_LEDGER_DATA_DIR=$RUNNER_TEMP/ledger-household" >> "$GITHUB_ENV"
+          ledger=$(uv run python -m tests.native.on_disk "$RUNNER_TEMP/ledger-household" --ledger "$RUNNER_TEMP/kept-ledger")
+          echo "HEARTH_FIXTURE_LEDGER=$ledger" >> "$GITHUB_ENV"
       - name: The app shows net worth from the engine it carries, for the sample and a household
         # xcodebuild hands a TEST_RUNNER_ variable to the tests without its prefix.
         env:
           TEST_RUNNER_HEARTH_FIXTURE_DATA_DIR: ${{ env.HEARTH_FIXTURE_DATA_DIR }}
           TEST_RUNNER_HEARTH_FIXTURE_PASSWORD: ${{ env.HEARTH_FIXTURE_PASSWORD }}
+          TEST_RUNNER_HEARTH_FIXTURE_LEDGER_DATA_DIR: ${{ env.HEARTH_FIXTURE_LEDGER_DATA_DIR }}
+          TEST_RUNNER_HEARTH_FIXTURE_LEDGER: ${{ env.HEARTH_FIXTURE_LEDGER }}
         run: >
           xcodebuild test -project apple/Hearth.xcodeproj -scheme HearthUI
           -derivedDataPath "$RUNNER_TEMP/derived" CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=

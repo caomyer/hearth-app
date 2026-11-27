@@ -22,14 +22,19 @@ public final class Desk {
     /// The books read the way a business reads its own: Summary, the income statement, the
     /// balance sheet and year by year.
     public let statements: StatementsModel
+    /// Bringing the household's ledger in, and matching accounts to it.
+    public let ledger: LedgerFlow
 
     private let engine: any Asking
     private let signedOut: @MainActor () -> Void
     @ObservationIgnored private var journals: [() -> JournalModel?] = []
 
+    /// `ledgerAsked` says whether this member was asked on this Mac if they keep a ledger,
+    /// and `rememberLedgerAsked` keeps that they were.
     public init(
         engine: any Acting, signedOut: @escaping @MainActor () -> Void = {},
-        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        ledgerAsked: @escaping () -> Bool = { true }, rememberLedgerAsked: @escaping () -> Void = {}
     ) {
         self.engine = engine
         self.signedOut = signedOut
@@ -42,6 +47,9 @@ public final class Desk {
         whereItWent = ScreenModel(engine: engine, screen: "where", pause: pause, signedOut: signedOut)
         holdings = ScreenModel(engine: engine, screen: "holdings", pause: pause, signedOut: signedOut)
         statements = StatementsModel(engine: engine, pause: pause, signedOut: signedOut)
+        ledger = LedgerFlow(
+            engine: engine, asked: ledgerAsked, remember: rememberLedgerAsked, pause: pause,
+            signedOut: signedOut)
         let transactions = transactions
         journals = [{ transactions }]
         decisions.whenDecided { [weak self] in await self?.decided(pause: pause) }

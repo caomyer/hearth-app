@@ -45,6 +45,17 @@ It shows the Overview, the journal (Transactions), Holdings, Statements, the acc
 - Rows whose other side Hearth does not see are counted apart and answered a group at a time under "Where did it go?", or a row alone; naming a new account for them stays in Hearth in the browser.
 - There is no auto-accept, and no Split or note: the engine cannot split a row yet, and the review pages write no note.
 
+## Bringing in a ledger
+
+- After signing in, an admin of a household that holds no ledger yet is asked once, on this Mac, "Do you keep a beancount ledger?" (`HearthKit.LedgerFlow`).
+  Settings, Ledger, says where the household's ledger stands and offers Bring In a Ledger while one may be brought in, and Match Accounts once one is.
+- The file is chosen in an open panel; the engine reads it where it is and writes nothing (`ledger_check`), and the sheet says what it holds: its entries, accounts and months, its balance checks and net worth at its own prices, and the lines Hearth keeps but does not use; or why it cannot be brought in, in the engine's words.
+- A confirmation says plainly that it happens once and that Hearth's books are the truth afterwards; then the engine brings it in (`bring_in_ledger`), while the sheet says so.
+- Then each of the member's own connected accounts is offered the ledger's account the ledger itself proposes, the others they may choose, and what matching it there meets: the day Hearth adds the bank's transactions from, and how many the ledger holds already (`matching`, `match_account`).
+  "Not Now" leaves every account as it is.
+- Last, what is matched, and Open My Books, which lands on the Overview.
+- Who may do what, and every refusal, is the engine's (`docs/native.md`, "The household's ledger"); a non-admin is never asked, and the sample never is.
+
 ## Holdings
 
 - Holdings lists what the investment accounts the member may see hold, by account: each holding's units, the price it is valued at with that price's close, its value, what it cost and what it has gained and not realised, with totals for each account and for all of them, at market value or at cost.
@@ -68,7 +79,7 @@ It shows the Overview, the journal (Transactions), Holdings, Statements, the acc
 
 ## How it fits together
 
-- `HearthKit/` is everything that is not a view: which books are open, who is signed in and what the engine may ask the banks (`Session`, `Setup`, `Consent`), starting the engine, signing in to it, asking it for a screen and asking it to sync (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Banks`, `Review`, `Holdings`, `PriceHistory`, `Statements`, `Money`, `Quantity`, `Day`), each screen's state (`Desk`, `ScreenModel`, `SyncModel`, `JournalModel` with its `JournalFilter`, `ReviewModel` with its `ReviewQuery`, and `StatementsModel`), the review decisions and the one an Undo takes back (`Decisions`), and how figures, balances, holdings and decisions are written for a person (`Figures`, `AccountWords`, `HoldingsWords`, `StatementWords`, `SyncWords`, `ReviewWords`).
+- `HearthKit/` is everything that is not a view: which books are open, who is signed in and what the engine may ask the banks (`Session`, `Setup`, `Consent`), starting the engine, signing in to it, asking it for a screen and asking it to sync (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Banks`, `Review`, `Holdings`, `PriceHistory`, `Statements`, `Money`, `Quantity`, `Day`), each screen's state (`Desk`, `ScreenModel`, `SyncModel`, `JournalModel` with its `JournalFilter`, `ReviewModel` with its `ReviewQuery`, and `StatementsModel`), the review decisions and the one an Undo takes back (`Decisions`), bringing in a ledger and matching accounts to it (`LedgerFlow`, with `Ledger` and `LedgerWords`), and how figures, balances, holdings and decisions are written for a person (`Figures`, `AccountWords`, `HoldingsWords`, `StatementWords`, `SyncWords`, `ReviewWords`).
   It is a Swift package, so it builds and tests without the app.
 - `Hearth/` is the app: one window, with the start screen, signing in, and the books, with the sync control in the toolbar: a sidebar of Overview, Review, Transactions, Holdings, Statements, Accounts and every account the member may see, and the screen chosen.
   An account's name anywhere opens the account; a category opens Transactions narrowed to it.
@@ -118,6 +129,14 @@ TEST_RUNNER_HEARTH_FIXTURE_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR TEST_RUNNER_HEARTH_
 ```
 
 Without the fixture variables the household's test is skipped.
+The test that brings in a ledger needs a second household, with the ledger `on_disk` writes beside it from what its bank sent:
+
+```sh
+export HEARTH_FIXTURE_LEDGER_DATA_DIR=$(mktemp -d)/household
+export HEARTH_FIXTURE_LEDGER=$(uv run python -m tests.native.on_disk "$HEARTH_FIXTURE_LEDGER_DATA_DIR" --ledger "$(mktemp -d)/kept")
+```
+
+and those two names given to the test runner with the `TEST_RUNNER_` prefix as well.
 
 A debug build opens straight onto a screen and a state, so each can be looked at without a click, as when the Mac's screen is locked but can still be captured; a Release build reads none of these:
 
@@ -148,6 +167,9 @@ HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR "$APP" -openBooks own -signInProblem th
 - `-windowSize <width>x<height>` draws the window at that size, such as `1000x560` for the smallest the window allows, and holds it there, as a screen too small for it to grow would; the size is that run's alone and is not saved.
 - `-firstReview YES` opens the sample as a first import leaves it: two years, over a thousand rows, none reviewed (`hearth demo --first-review`).
 - `-sampleAsOf YYYY-MM-DD` opens the sample as it stood on that day (`hearth demo --as-of`).
+- `-ledgerFile <path>` is the ledger the open panel would ask for, so bringing one in can be looked at, and tested, without the panel.
+- `-ledgerSheet <step>` opens the books with the ledger's sheet on that step, each reached through the engine with the file `-ledgerFile` names: `question`, `check` (what the file holds, or its refusal), `confirm`, `bringingIn` (the progress, drawn without starting an import), `refused` (an import's refusal), `bringIn` (checked, confirmed and brought in for real, then matching), `matching` and `done`.
+  For example, `HEARTH_DATA_DIR=$HEARTH_FIXTURE_LEDGER_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE_PASSWORD "$APP" -openBooks own -signInAs avery -ledgerSheet check -ledgerFile "$HEARTH_FIXTURE_LEDGER" -windowSize 1000x560`.
   The sample is drawn back from the day it is opened, so what waits in its Review changes from day to day; the UI tests that work Review pin it this way.
 - `-signInAs <username>` hands the engine that member with the password in `HEARTH_SIGN_IN_PASSWORD`, in place of the Keychain, which it leaves alone.
 - `-appearance light|dark` draws the app that way whatever the Mac is set to, to look at each screen both ways.

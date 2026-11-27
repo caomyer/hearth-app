@@ -100,6 +100,19 @@ struct BooksView: View {
             }
         }
         .environment(navigator)
+        .sheet(isPresented: ledgerShown) {
+            LedgerSheet(flow: navigator.desk.ledger) { navigator.place = .overview }
+                .interactiveDismissDisabled()
+        }
+        .task {
+            // Asked once, after signing in, of someone who may bring a ledger in; a debug build
+            // asked to open on one of the ledger's sheets opens it instead.
+            if let sheet = LedgerLaunch.requested {
+                await LedgerLaunch.open(sheet, flow: navigator.desk.ledger)
+            } else if !isSample {
+                await navigator.desk.ledger.askOnce()
+            }
+        }
         .task { await navigator.desk.overview.watch() }
         .task { await navigator.desk.accounts.watch() }
         .task { await navigator.desk.sync.watch() }
@@ -130,6 +143,12 @@ struct BooksView: View {
             Task { @MainActor in await decisions.undo() }
         }
         undoManager.setActionName("Review Decision")
+    }
+
+    /// Whether the ledger's sheet is up: while its flow has a step.
+    private var ledgerShown: Binding<Bool> {
+        let flow = navigator.desk.ledger
+        return Binding(get: { flow.step != nil }, set: { shown in if !shown { flow.close() } })
     }
 
     @ViewBuilder

@@ -9,7 +9,8 @@ import os
 /// `-appearance light|dark`, `-firstReview YES` for a sample none of whose two years is
 /// reviewed yet, `-sampleAsOf YYYY-MM-DD` for the sample as it stood that day, and, for a
 /// household's own books, `-signInAs <username>` with the password in the environment's
-/// `HEARTH_SIGN_IN_PASSWORD`. A Release build reads none of them.
+/// `HEARTH_SIGN_IN_PASSWORD`; `-ledgerSheet <step>` with `-ledgerFile <path>` (see
+/// `LedgerLaunch`). A Release build reads none of them.
 enum DebugLaunch {
     /// Draws the app light or dark whatever the Mac is set to, so each screen can be looked at
     /// both ways.
@@ -60,6 +61,16 @@ enum DebugLaunch {
                 let password = ProcessInfo.processInfo.environment["HEARTH_SIGN_IN_PASSWORD"]
             else { return nil }
             return GivenSignIn(Credential(username: username, password: password))
+        #else
+            nil
+        #endif
+    }
+
+    /// A ledger file to read in place of the one the open panel would ask for, so its sheets
+    /// can be looked at, and tested, without a panel.
+    static var ledgerFile: URL? {
+        #if DEBUG
+            UserDefaults.standard.string(forKey: "ledgerFile").map { URL(fileURLWithPath: $0) }
         #else
             nil
         #endif
@@ -229,3 +240,60 @@ enum StartScreen {
         func forget(for household: String) async throws { kept = nil }
     }
 #endif
+
+/// The ledger's sheet to open the books on, from `-ledgerSheet`, each reached through the engine
+/// as a person reaches it, with the file `-ledgerFile` names:
+///
+/// - `question`, "Do you keep a beancount ledger?";
+/// - `check`, what the file holds, or why it cannot be brought in;
+/// - `confirm`, the confirmation after the check;
+/// - `bringingIn`, the import's progress, drawn without starting one;
+/// - `refused`, the file's refusal as an import that was refused says it;
+/// - `bringIn`, the file checked, confirmed and brought in for real, then matching;
+/// - `matching`, matching the accounts connected to the ledger brought in;
+/// - `done`, what matching leaves matched.
+enum LedgerLaunch {
+    enum Sheet: String {
+        case question, check, confirm, bringingIn, refused, bringIn, matching, done
+    }
+
+    static var requested: Sheet? {
+        #if DEBUG
+            UserDefaults.standard.string(forKey: "ledgerSheet").flatMap(Sheet.init(rawValue:))
+        #else
+            nil
+        #endif
+    }
+
+    @MainActor
+    static func open(_ sheet: Sheet, flow: LedgerFlow) async {
+        let file = DebugLaunch.ledgerFile ?? URL(fileURLWithPath: "/nowhere/household.beancount")
+        switch sheet {
+        case .question:
+            flow.begin(at: .question)
+        case .check:
+            await flow.check(file)
+        case .confirm:
+            await flow.check(file)
+            flow.confirm()
+        case .bringingIn:
+            flow.begin(at: .bringingIn(file))
+        case .refused:
+            await flow.check(file)
+            if case .checked(_, let check) = flow.step {
+                flow.begin(at: .notBroughtIn(check.refused))
+            }
+        case .bringIn:
+            await flow.check(file)
+            flow.confirm()
+            await flow.bringIn()
+        case .matching:
+            await flow.openMatching()
+        case .done:
+            await flow.openMatching()
+            if case .matching(let found) = flow.step {
+                flow.begin(at: .done(found))
+            }
+        }
+    }
+}
