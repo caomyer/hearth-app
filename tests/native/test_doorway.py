@@ -152,7 +152,16 @@ def differences(told: object, example: object, at: str = "answer") -> list[str]:
     return [] if type(told) is type(example) else [f"{at}: {type(told).__name__}"]
 
 
-NARROWED = {"account": "id", "transactions": "with", "review": "with", "review_row": "id"}
+NARROWED = {
+    "account": "id",
+    "transactions": "with",
+    "review": "with",
+    "review_row": "id",
+    "statement_summary": "with",
+    "income_statement": "with",
+    "balance_sheet": "with",
+    "year_by_year": "with",
+}
 """Screens that are asked with what narrows them, which the crawl asks every way
 `narrowings` names. A screen added to `SCREENS` is asked plainly unless it is named here."""
 
@@ -163,6 +172,17 @@ REVIEW_ROWS = [(p[4], p[2], p[0], p[3], p[5]) for p in household.PILE] + [
 
 OWNER = {"Assets:Zq:CaseyChecking": "casey", "Assets:Zq:AverySolo": "avery"}
 """Whose desk each review row is on: its account's one owner."""
+
+
+STATEMENTS = ("statement_summary", "income_statement", "balance_sheet", "year_by_year")
+
+STATEMENT_PERIODS: list[dict[str, object]] = [
+    {},
+    {"from": "2026-08-01", "to": "2026-08-31"},
+    {"from": "2026-09-01", "to": "2026-10-15"},
+    {"from": "2026-10-03", "to": "2026-10-03"},
+    {"from": "2025-10-16", "to": "2026-10-15"},
+]
 
 
 def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
@@ -184,6 +204,22 @@ def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
         ("transactions", {"from": "2026-09-01", "to": "2026-09-30", "show": "unreviewed"}),
     ]
     asked += [("transactions", {"offset": n, "limit": 1}) for n in range(0, 12, 3)]
+    # The rows of the viewer's statements, by every category and all of them at once.
+    asked += [("transactions", {"within": "statements", "limit": 200})]
+    asked += [("transactions", {"within": "statements", "categories": [c]}) for c in categories]
+    asked += [("transactions", {"categories": categories, "limit": 200})]
+    # Every statement, for periods that cut months, a single day, a year back, and none, at
+    # market value and at cost, split every way.
+    for period in STATEMENT_PERIODS:
+        for valuation in ("market", "cost"):
+            asked += [
+                ("statement_summary", {**period, "valuation": valuation}),
+                ("balance_sheet", {**period, "valuation": valuation}),
+            ]
+        asked += [
+            ("income_statement", {**period, "columns": c}) for c in ("month", "quarter", "year")
+        ]
+    asked += [("year_by_year", {"valuation": v}) for v in ("market", "cost")]
     groups = [*sorted({row[4] for row in REVIEW_ROWS}), "Kites", "zz-nothing"]
     asked += [("review", {})]
     asked += [("review", {"order": o}) for o in ("confidence", "amount", "date", "account")]
@@ -274,6 +310,8 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     for ask, given in narrowings(world):
         answer = door.answer(ask, given)
         answers.append(answer)
+        # Every statement is there for every viewer: one of nothing but their own, if need be.
+        assert answer["state"] == "ready" or ask not in STATEMENTS, (ask, given)
         if ask == "transactions" and answer["state"] == "ready":
             # Narrowing the journal only ever leaves out: it never finds what the whole of it
             # did not hold, whatever it is asked to look for.

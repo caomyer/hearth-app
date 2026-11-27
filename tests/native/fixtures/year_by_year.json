@@ -1,0 +1,35 @@
+{
+  "id": 33,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "valuation": "market",
+    "scope": {
+      "parts": [
+        "Avery",
+        "Blake",
+        "Joint accounts"
+      ],
+      "without": [
+        "Casey"
+      ],
+      "leaves_out": "1 of the joint accounts hearth does not see",
+      "awaiting": 0
+    },
+    "years": [
+      {
+        "year": 2026,
+        "partial": true,
+        "sparse": true,
+        "net_worth": "158206.46",
+        "pay": "0",
+        "spending": "5701.81",
+        "saved": "-5701.81",
+        "savings_rate": null
+      }
+    ]
+  }
+}

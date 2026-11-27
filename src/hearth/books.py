@@ -24,7 +24,8 @@ import logging
 import os
 import sqlite3
 import threading
-from collections.abc import Callable, Collection, Hashable, Iterator, Mapping, Sequence
+from bisect import bisect_right
+from collections.abc import Callable, Collection, Hashable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -171,6 +172,10 @@ class Books:
     kinds: Mapping[str, Kind] = field(default_factory=dict)
     """Each income and expense account the books name, with what kind of money it is: as a
     person said, or as its name says (``hearth.categories``)."""
+    prices: PriceLookup = field(default=lambda symbol, day: None)
+    """The prices the books were valued at, for valuing them on any other day: a statement's
+    start and end (``hearth.reports.statements``). Held in memory, as the recompute read them,
+    so a page never reads the price table itself."""
 
     def kind(self, account: str) -> Kind:
         """What kind of money an income or expense account is (``hearth.categories``)."""
@@ -444,6 +449,7 @@ def compute(
         reconciling=reconciling(entries),
         begun=begun(ledger, carried, {r for r, d in decided.items() if d.ruling is not None}),
         kinds=categories.kinds(_categories(entries), kinds or {}),
+        prices=lookup,
     )
 
 
@@ -1011,6 +1017,47 @@ def stored_prices(store: PriceStore, sources: Sequence[str] = PRICE_SOURCES) -> 
     return lookup
 
 
+def remembered_prices(
+    store: PriceStore, symbols: Iterable[str], sources: Sequence[str] = PRICE_SOURCES
+) -> PriceLookup:
+    """`stored_prices` for `symbols`, read once and held in memory: the books keep it, so any
+    day can be valued after the database is closed, by the same rule."""
+    by_symbol: dict[str, tuple[list[date], list[Quote]]] = {}
+    for symbol in set(symbols):
+        quotes = sorted(
+            (quote for source in sources for quote in store.history(symbol, source)),
+            key=lambda quote: (quote.as_of, quote.fetched_at),
+        )
+        if quotes:
+            by_symbol[symbol] = ([quote.as_of for quote in quotes], quotes)
+
+    def lookup(symbol: str, on_or_before: date) -> Quote | None:
+        found = by_symbol.get(symbol)
+        if found is None:
+            return None
+        days, quotes = found
+        index = bisect_right(days, on_or_before)
+        return quotes[index - 1] if index else None
+
+    return lookup
+
+
+def commodities(entries: Iterable[Directive]) -> frozenset[str]:
+    """Every commodity a posting holds or is valued in: what the books may need a price of."""
+    found: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, Transaction):
+            continue
+        for posting in entry.postings:
+            if posting.units is not None and isinstance(posting.units.currency, str):
+                found.add(posting.units.currency)
+            for amount in (posting.cost, posting.price):
+                currency = getattr(amount, "currency", None)
+                if isinstance(currency, str):
+                    found.add(currency)
+    return frozenset(found - {CURRENCY})
+
+
 type Establish = Callable[[datetime], Books]
 
 type Standing = Callable[[], Hashable]
@@ -1054,7 +1101,7 @@ def from_household(
             synced = vouched_over_base(synced, household.frozen, household.carried)
         conn = db.connect(settings.database)
         try:
-            prices = stored_prices(PriceStore(conn), sources)
+            prices = remembered_prices(PriceStore(conn), commodities(household.entries), sources)
             books = compute(
                 household.entries,
                 prices,

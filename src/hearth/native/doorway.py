@@ -44,7 +44,7 @@ from hearth.disclosure import (
 from hearth.disclosure.balances import Standing
 from hearth.disclosure.journal import Entry, Show, Side
 from hearth.names import readable
-from hearth.native import review
+from hearth.native import review, statements
 from hearth.native.common import (
     CATEGORY,
     DAY,
@@ -236,7 +236,26 @@ def account(view: Disclosure, asked: object, around: Around) -> Answer:
     }
 
 
-_TRANSACTIONS = frozenset({"from", "to", "account", "category", "text", "show", "offset", "limit"})
+_TRANSACTIONS = frozenset(
+    {
+        "from",
+        "to",
+        "account",
+        "category",
+        "categories",
+        "text",
+        "show",
+        "within",
+        "offset",
+        "limit",
+    }
+)
+
+MOST_CATEGORIES = 500
+"""The most categories one ask of the journal may name: more than any household books to."""
+
+WITHIN = "statements"
+"""What a journal may be narrowed to the rows of: the viewer's statements."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,6 +282,9 @@ def window(given: Given) -> Window:
     if show is not None and show not in {s.value for s in Show}:
         raise Malformed
     text = text_in(given, "text", LONGEST_TEXT)
+    within = text_in(given, "within", LONGEST_TEXT)
+    if within is not None and within != WITHIN:
+        raise Malformed
     return Window(
         Filter(
             start=start,
@@ -271,10 +293,25 @@ def window(given: Given) -> Window:
             category=category,
             text=(text.strip() or None) if text is not None else None,
             show=Show(show) if show is not None else Show.EVERYTHING,
+            categories=_categories(given),
+            statement=within is not None,
         ),
         offset=count_in(given, "offset", 0, FURTHEST, default=0),
         limit=count_in(given, "limit", 1, MOST, default=PAGE),
     )
+
+
+def _categories(given: Given) -> tuple[str, ...]:
+    """A list of categories by their ledger names, never empty when given."""
+    if "categories" not in given:
+        return ()
+    value = given["categories"]
+    if not isinstance(value, list) or not 0 < len(value) <= MOST_CATEGORIES:
+        raise Malformed
+    for name in value:
+        if not isinstance(name, str) or len(name) > LONGEST_TEXT or not CATEGORY.fullmatch(name):
+            raise Malformed
+    return tuple(value)
 
 
 def _day_in(given: Given, key: str) -> date | None:
@@ -340,6 +377,10 @@ SCREENS: Mapping[str, Screen] = {
     "review": Screen(review.read_queue, review.queue_screen),
     "review_row": Screen(_one, review.row_screen),
     "where": Screen(_nothing, review.where_screen),
+    "statement_summary": Screen(statements.read_valued, statements.summary_screen),
+    "income_statement": Screen(statements.read_columns, statements.income_statement_screen),
+    "balance_sheet": Screen(statements.read_valued, statements.balance_sheet_screen),
+    "year_by_year": Screen(statements.read_years, statements.years_screen),
 }
 """Every screen the app may ask for, by the name it asks with."""
 

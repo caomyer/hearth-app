@@ -160,11 +160,15 @@ Every ready answer says what its books are: `computed_at`, `as_of`, `currency` a
 | `overview` | nothing | The household's net worth and its history (`Disclosure.household`). |
 | `accounts` | nothing | Every account the viewer may see, in groups: theirs by kind (Cash, Credit, Investments), then those hearth does not see, then others' they may see into, by whose (`Disclosure.accounts`). |
 | `account` | `id` | One of those accounts, and the days its history covers (`Disclosure.standing`). |
-| `transactions` | `from`, `to`, `account`, `category`, `text`, `show`, `offset`, `limit` | A window onto the journal (`Disclosure.journal`). |
+| `transactions` | `from`, `to`, `account`, `category`, `categories`, `text`, `show`, `within`, `offset`, `limit` | A window onto the journal (`Disclosure.journal`). |
 | `banks` | nothing | How fresh the viewer's own connections are, and where the bridge's syncs stand (`Disclosure.banks`). |
 | `review` | `order`, `account`, `category`, `group`, `text` | The viewer's own review queue, counted as the desk counts it, in the order asked (`hearth.review.queue`). |
 | `review_row` | `id` | One row on the viewer's desk: where it stands, what it may be booked against, and the rows from the same merchant before it. |
 | `where` | nothing | The viewer's rows whose other side hearth does not see, grouped so that one answer settles each (`hearth.review.where`). |
+| `statement_summary` | `from`, `to`, `valuation` | This period against the same days a year before: headline figures, the compact income statement and why net worth changed (`Disclosure.statement_summary`). |
+| `income_statement` | `from`, `to`, `columns` | The income and expense account tree, a cell per month, quarter or year (`Disclosure.income_statement`). |
+| `balance_sheet` | `from`, `to`, `valuation` | Every account at the start of the period beside its end (`Disclosure.balance_sheet`). |
+| `year_by_year` | `valuation` | Every year the books hold (`Disclosure.years`). |
 
 What an ask takes is read strictly in `hearth.native.doorway`, and anything else is answered `missing`, as a screen that is not there is:
 
@@ -175,7 +179,9 @@ What an ask takes is read strictly in `hearth.native.doorway`, and anything else
 - `text` that is not text of 1 to 200 characters;
 - `show` that is not `everything`, `unreviewed`, `transfers` or `balance_checks`;
 - `offset` that is not a whole number from 0 to 1,000,000, and `limit` that is not one from 1 to 200;
-- `order` that is not one of `review.queue`'s orders, and a review `category` that is not an account name or `-`, for nothing suggested.
+- `order` that is not one of `review.queue`'s orders, and a review `category` that is not an account name or `-`, for nothing suggested;
+- `categories` that is not a list of 1 to 500 names each as `category` takes them, and `within` that is not `statements`;
+- `valuation` that is not `market` or `cost`, and `columns` that is not `month`, `quarter` or `year`.
 
 Whether the viewer may see what an ask names is for `hearth.disclosure` to decide, never the doorway.
 An account they may not see, or for `transactions` one whose transactions they may not see, is answered `missing`, exactly like an id that names nothing.
@@ -256,6 +262,28 @@ An entry is one of `transaction`, `transfer` or `balance` (`hearth.disclosure.jo
   It is told only on a row that names its `review`, one the viewer reviews, and is null on everything else, as it says what the row's owners decided before; an app that does not know it ignores it, and one that does reads it as none when an older engine leaves it out.
 - `position` is where it stands in what the filter leaves, which is how the app tells entries apart; it says nothing of the household's ledger.
 
+`categories` keeps the entries booked to any of the categories it names, each exactly, as a statement's line adds up the rows of every category in it.
+`within: "statements"` keeps only the rows the viewer's statements read: entries every account of which is in them, so no move to an account outside them, and no balance check.
+A statement's figure opens onto exactly its rows by asking for both, with its period.
+
+### Statements
+
+The four statement screens read the parts of the household the viewer may see in full, and nothing else (`docs/privacy-boundary.md`, "Statements"): their own accounts, joint accounts with their co-owners, and another member's only when that member shares every facet.
+Every answer says so in `scope`: whose accounts it reads (`parts`), whose it leaves out (`without`), what it is without of accounts hearth does not see (`leaves_out`, in the words a total uses), and how many of its balances are not known yet (`awaiting`), while which nothing that adds up balances is a figure.
+Without `from` and `to`, a statement is this year so far; a `to` past the books' own day ends on it, and a `from` after it is missing.
+`valuation` is `market` unless asked for `cost`, and `columns` is `month` unless asked otherwise; an income statement of more than 36 columns is missing (`statements.MOST_COLUMNS`).
+How every figure is defined, and how the change in net worth adds up, is in `docs/reports.md`, "Statements".
+
+- A line (`net_worth`, `savings_rate`, `spending` and each of `lines`) has `now`, `before`, `change` and `share`, a `tone` of `favourable`, `unfavourable` or `quiet`, the `categories` whose rows it adds up, for the journal, and whether it is a `total`, at a `depth`.
+  `before` is the same days a year before, or for `net_worth` the start of the period, and is null where the books do not hold that period in full (`covered`, `against_covered`).
+  A savings rate is a ratio, written as a decimal string like money.
+- `why` is null while a balance is not known; otherwise `start`, `saved`, `investment_income`, `market` (null at cost), `other` and each of `others` by `key` and `label`, `end`, and `difference`, which is shown, never hidden.
+- `valuing` says the day of the newest price (`priced_on`), the holdings valued at cost for want of a price (`at_cost`), those whose cost is not known (`cost_unknown`) and those with neither, left out (`unvalued`).
+- `unreviewed` says how many rows nobody has checked yet (`rows`), what of income and expenses rests on them, and how many nothing has placed yet (`unplaced`), with the money they moved each way.
+- The income statement's `income` and `expenses` are trees of `name` (the ledger name, which narrows the journal to it and everything beneath it), `label`, `kind`, `cells`, `total` and `children`, largest first; `columns` says each column's days, whether the period cuts it short (`partial`) and its `unreviewed`; `net` is income less expenses.
+- The balance sheet's `assets`, `liabilities` and `net_worth` are rows of `label`, `account` (its id and name, which opens its page, for an account), `since` (the day an account's history begins, when that is inside the period), `start` and `end` (each `value`, `cost`, `gain` and whether it holds `securities`, null while not known), `change`, and `children`.
+- `year_by_year` has a row a year: `year`, whether it is in progress (`partial`) or `sparse`, `net_worth`, `pay`, `spending`, `saved` and `savings_rate`.
+
 ## The boundary
 
 The doorway is a page by another name, and is held to everything a page is.
@@ -267,6 +295,7 @@ The doorway is a page by another name, and is held to everything a page is.
 - `tests/native/test_doorway.py` signs in to a bridge as every member under every sharing scenario the page crawl uses, asks every screen, and fails if an answer holds a datum its viewer may not see.
   A new screen is covered the moment it is added to `SCREENS`; one that takes something to narrow it must be named in the crawl's `NARROWED`, or its plain ask is missing and the crawl fails.
   Narrowed screens are asked for every account in the household by id, every member's and the one nobody owns, every category and payee in it, each chip, periods and windows, and a narrowed journal must hold nothing the whole of it did not.
+  Every statement is asked for periods that cut months, a single day, a year back and none, at market value and at cost, split every way, and so is the journal of a statement's rows, by every category.
   It makes every review decision on every review row in the household and on rows in nobody's books, against every account, as the row said and as it did not, under forged groups, and takes back every ruling: one on anything not on the viewer's desk must answer `missing` and record nothing, and no review screen or decision may name a row on anyone else's desk.
 - Anything private answers exactly like something missing.
 
@@ -275,7 +304,7 @@ It is not an HTTP endpoint and must not become one: a bridge that listened on a 
 
 ## One shape, checked from both sides
 
-`tests/native/fixtures/overview.json`, `accounts.json`, `account.json`, `transactions.json`, `banks.json`, `review.json`, `review_row.json`, `where.json` and `decided.json` are example replies, `tests/native/fixtures/outcomes.json` lists every outcome of signing in, and `acted.json` every outcome of an action.
+`tests/native/fixtures/overview.json`, `accounts.json`, `account.json`, `transactions.json`, `banks.json`, `review.json`, `review_row.json`, `where.json`, `statement_summary.json`, `income_statement.json`, `balance_sheet.json`, `year_by_year.json` and `decided.json` are example replies, `tests/native/fixtures/outcomes.json` lists every outcome of signing in, and `acted.json` every outcome of an action.
 The Python tests check that the bridge still answers in their shape; the Swift tests (`apple/HearthKit`) decode the same files.
 A change of shape that only one side has been taught fails that side's tests.
 

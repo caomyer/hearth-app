@@ -1,0 +1,207 @@
+{
+  "id": 31,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "period": {
+      "from": "2026-08-01",
+      "to": "2026-10-15"
+    },
+    "columns_by": "month",
+    "covered": true,
+    "scope": {
+      "parts": [
+        "Avery",
+        "Blake",
+        "Joint accounts"
+      ],
+      "without": [
+        "Casey"
+      ],
+      "leaves_out": "1 of the joint accounts hearth does not see",
+      "awaiting": 0
+    },
+    "columns": [
+      {
+        "from": "2026-08-01",
+        "to": "2026-08-31",
+        "partial": false,
+        "unreviewed": {
+          "rows": 0,
+          "income": "0",
+          "expenses": "0",
+          "unplaced": 0,
+          "unplaced_out": "0",
+          "unplaced_in": "0"
+        }
+      },
+      {
+        "from": "2026-09-01",
+        "to": "2026-09-30",
+        "partial": false,
+        "unreviewed": {
+          "rows": 0,
+          "income": "0",
+          "expenses": "0",
+          "unplaced": 0,
+          "unplaced_out": "0",
+          "unplaced_in": "0"
+        }
+      },
+      {
+        "from": "2026-10-01",
+        "to": "2026-10-15",
+        "partial": true,
+        "unreviewed": {
+          "rows": 0,
+          "income": "0",
+          "expenses": "0",
+          "unplaced": 0,
+          "unplaced_out": "0",
+          "unplaced_in": "0"
+        }
+      }
+    ],
+    "income": {
+      "name": "Income",
+      "label": "Income",
+      "kind": null,
+      "cells": [
+        "0",
+        "2222.71",
+        "5717.77"
+      ],
+      "total": "7940.48",
+      "children": [
+        {
+          "name": "Income:Bittern",
+          "label": "Bittern",
+          "kind": "other-income",
+          "cells": [
+            "0",
+            "2222.71",
+            "2604.19"
+          ],
+          "total": "4826.90",
+          "children": []
+        },
+        {
+          "name": "Income:Aardwork",
+          "label": "Aardwork",
+          "kind": "other-income",
+          "cells": [
+            "0",
+            "0",
+            "3113.58"
+          ],
+          "total": "3113.58",
+          "children": []
+        }
+      ]
+    },
+    "expenses": {
+      "name": "Expenses",
+      "label": "Expenses",
+      "kind": null,
+      "cells": [
+        "0",
+        "822.37",
+        "4879.44"
+      ],
+      "total": "5701.81",
+      "children": [
+        {
+          "name": "Expenses:Bonsai",
+          "label": "Bonsai",
+          "kind": "spending",
+          "cells": [
+            "0",
+            "0",
+            "1927.53"
+          ],
+          "total": "1927.53",
+          "children": []
+        },
+        {
+          "name": "Expenses:Jointery",
+          "label": "Jointery",
+          "kind": "spending",
+          "cells": [
+            "0",
+            "0",
+            "1640.84"
+          ],
+          "total": "1640.84",
+          "children": []
+        },
+        {
+          "name": "Expenses:Avocados",
+          "label": "Avocados",
+          "kind": "spending",
+          "cells": [
+            "0",
+            "88.83",
+            "1311.07"
+          ],
+          "total": "1399.90",
+          "children": []
+        },
+        {
+          "name": "Expenses:Junipers",
+          "label": "Junipers",
+          "kind": "spending",
+          "cells": [
+            "0",
+            "468.35",
+            "0"
+          ],
+          "total": "468.35",
+          "children": []
+        },
+        {
+          "name": "Expenses:Bunting",
+          "label": "Bunting",
+          "kind": "spending",
+          "cells": [
+            "0",
+            "246.13",
+            "0"
+          ],
+          "total": "246.13",
+          "children": []
+        },
+        {
+          "name": "Expenses:Umbrellas",
+          "label": "Umbrellas",
+          "kind": "spending",
+          "cells": [
+            "0",
+            "19.06",
+            "0"
+          ],
+          "total": "19.06",
+          "children": []
+        }
+      ]
+    },
+    "net": {
+      "cells": [
+        "0",
+        "1400.34",
+        "838.33"
+      ],
+      "total": "2238.67"
+    },
+    "unreviewed": {
+      "rows": 0,
+      "income": "0",
+      "expenses": "0",
+      "unplaced": 0,
+      "unplaced_out": "0",
+      "unplaced_in": "0"
+    }
+  }
+}

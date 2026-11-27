@@ -30,6 +30,26 @@ def may_see(
     return all(facet in sharing.get(owner, frozenset()) for owner in owners)
 
 
+STATEMENT_FACETS = frozenset(Facet)
+"""What a part must show a viewer to be in their statements: every facet. A statement reads the
+books the way a business reads its own, by account and by category, day by day, with what is
+unreviewed and what each holds, so it needs everything a member can share."""
+
+
+def may_read_statements(
+    viewer: Member, owners: Collection[MemberId], sharing: SharingChoices
+) -> bool:
+    """Whether the accounts ``owners`` own are in ``viewer``'s statements.
+
+    Only in full: when the viewer may see every one of `STATEMENT_FACETS` of them, which an
+    owner always may. A part seen only in total is left out of every statement, named, never
+    added in at a coarser grain, so no figure of one statement, nor the difference of two, nor
+    a figure at cost against one at market value, holds anything of it. What nobody owns is in
+    nobody's statements.
+    """
+    return all(may_see(viewer, facet, owners, sharing) for facet in STATEMENT_FACETS)
+
+
 def may_review(member: MemberId, owners: Collection[MemberId]) -> bool:
     """Whether ``member`` may review, and rule on, set-aside rows of an account ``owners`` own.
 
