@@ -279,7 +279,7 @@ class LedgerDesk:
         return LedgerStanding(
             imported_on=kept.imported_at.astimezone().date() if kept else None,
             files=len(kept.base.files) if kept else None,
-            unclaimed=self._unclaimed() if may else None,
+            unclaimed=self._unclaimed(kept) if may else None,
             inherited=inherited,
             may_bring_in=may and why_not is None,
             why_not=why_not,
@@ -315,15 +315,21 @@ class LedgerDesk:
             return BroughtIn("failed" if failed else "refused", Said.of(done.refused))
         return BroughtIn(done.outcome)
 
-    def _unclaimed(self) -> int | None:
-        if self._books is None:
+    def _unclaimed(self, kept: base.Imported | None) -> int | None:
+        """How many Assets and Liabilities accounts the imported ledger opens that nobody has
+        claimed: the base's own, by the file each is opened in, never an account hearth keeps
+        itself, which books computed before a match moved its claim would still open."""
+        if self._books is None or kept is None:
             return None
+        folder = str(kept.base.directory)
         claimed = {a.ledger_account for a in self._accounts}
         return len(
             {
                 e.account
                 for e in self._books.entries
-                if isinstance(e, Open) and is_balance_sheet(e.account)
+                if isinstance(e, Open)
+                and is_balance_sheet(e.account)
+                and str((e.meta or {}).get("filename", "")).startswith(folder)
             }
             - claimed
         )

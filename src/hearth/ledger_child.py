@@ -37,7 +37,10 @@ LIMIT = 120.0
 """How many seconds a check or an import of a ledger may take before it is stopped: many times
 what a household's ledger of ten years takes."""
 
-_KEPT_ENVIRONMENT = ("HOME", "TMPDIR", "LANG", "LC_ALL")
+_KEPT_ENVIRONMENT = ("HOME", "TMPDIR", "LANG", "LC_ALL", "TZ")
+"""What the child is given of the bridge's environment: where it may write a temporary file,
+how text is read, and the zone, so the household's own day is the same in both ("today" is the
+local day, ``hearth.clock``)."""
 
 _START = (
     "import json, sys\n"
