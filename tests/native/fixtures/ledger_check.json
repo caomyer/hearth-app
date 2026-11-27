@@ -1,0 +1,125 @@
+{
+  "id": 2,
+  "answer": {
+    "state": "ready",
+    "found": {
+      "files": 5,
+      "entries": 20,
+      "first": "2026-01-01",
+      "last": "2026-07-02",
+      "accounts": [
+        {
+          "name": "Assets:Zq:Brokerage",
+          "kind": "Assets",
+          "opened": "2026-01-01",
+          "closed": null
+        },
+        {
+          "name": "Assets:Zq:Checking",
+          "kind": "Assets",
+          "opened": "2026-01-01",
+          "closed": null
+        },
+        {
+          "name": "Liabilities:Zq:Card",
+          "kind": "Liabilities",
+          "opened": "2026-01-01",
+          "closed": null
+        },
+        {
+          "name": "Equity:Zq:Opening",
+          "kind": "Equity",
+          "opened": "2026-01-01",
+          "closed": null
+        },
+        {
+          "name": "Income:Zq:Wages",
+          "kind": "Income",
+          "opened": "2026-01-01",
+          "closed": null
+        },
+        {
+          "name": "Expenses:Zq:Food",
+          "kind": "Expenses",
+          "opened": "2026-01-01",
+          "closed": null
+        }
+      ],
+      "kinds": [
+        {
+          "kind": "Assets",
+          "count": 2
+        },
+        {
+          "kind": "Liabilities",
+          "count": 1
+        },
+        {
+          "kind": "Equity",
+          "count": 1
+        },
+        {
+          "kind": "Income",
+          "count": 1
+        },
+        {
+          "kind": "Expenses",
+          "count": 1
+        }
+      ],
+      "assertions": {
+        "count": 4,
+        "failing": 0
+      },
+      "currencies": [
+        "USD"
+      ],
+      "commodities": [
+        "ZQX"
+      ],
+      "worth": {
+        "value": "3054.50",
+        "currency": "USD",
+        "as_of": "2026-11-22",
+        "is_floor": false,
+        "unpriced": []
+      },
+      "runs": [
+        "beancount.plugins.implicit_prices"
+      ],
+      "unused": [
+        {
+          "file": "main.beancount",
+          "line": 5,
+          "what": "plugin \"zq_meddler\", which is not beancount's own, so hearth never runs it"
+        },
+        {
+          "file": "main.beancount",
+          "line": 9,
+          "what": "custom \"fava-option\""
+        },
+        {
+          "file": "accounts.beancount",
+          "line": 1,
+          "what": "plugin \"beancount.plugins.auto_accounts\", in an included file, where beancount itself does not read plugins"
+        },
+        {
+          "file": "years/2026-1.beancount",
+          "line": 17,
+          "what": "custom \"budget\""
+        },
+        {
+          "file": "years/2026-1.beancount",
+          "line": 18,
+          "what": "document: hearth neither copies nor opens the file it names"
+        }
+      ],
+      "unused_kinds": {
+        "plugins": 2,
+        "custom": 2,
+        "documents": 1
+      }
+    },
+    "refused": null
+  }
+}

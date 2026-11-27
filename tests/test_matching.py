@@ -528,7 +528,16 @@ def test_an_account_filed_as_one_hearth_keeps_is_moved_onto_the_base_only_as_ask
         "  Feeds Assets:Avery:Zq:Savings, an account the base does not open"
         in capsys.readouterr().out
     )
-    main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
+    # The ledger records nothing that says Elsewhere is the savings account: refused, unless
+    # whoever runs hearth says so with --claim, the one rule the app's matching follows too.
+    with pytest.raises(SystemExit) as refused:
+        main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
+    assert "Nobody has claimed Assets:Zq:Elsewhere, and the imported ledger does not record" in (
+        str(refused.value.code)
+    )
+    assert str(refused.value.code).endswith("move it anyway with --claim. Nothing was matched.")
+    assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Avery:Zq:Savings"
+    main(["match-accounts", "--claim", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
 
     assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Zq:Elsewhere"
     assert ("Assets:Zq:Elsewhere", frozenset({avery})) in _ownership(shell)
@@ -564,9 +573,40 @@ def test_an_accept_naming_an_account_does_not_hold_it_back_from_being_moved(
     finally:
         conn.close()
 
-    main(["match-accounts", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
+    main(["match-accounts", "--claim", "--confirm", f"{sav}=Assets:Zq:Elsewhere"])
 
     assert _mapping(shell)["ins_zq_bank/sav"] == "Assets:Zq:Elsewhere"
+    capsys.readouterr()
+
+
+def test_the_ledgers_own_ids_move_a_kept_account_onto_one_nobody_claimed_without_claim(
+    tmp_path: Path,
+    clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The card, kept by hearth, whose six charges the ledger records by their Plaid ids on its
+    card account nobody claimed, up to its last month there: the command line moves it as the
+    app does, without --claim."""
+    household = build(tmp_path, clock, claims={})
+    monkeypatch.setenv(DATA_DIR_VARIABLE, str(household.settings.data_dir))
+    monkeypatch.delenv(LEDGER_VARIABLE, raising=False)
+    monkeypatch.setattr(cli, "system_clock", lambda: NOW)
+    card = household.ids["ins_zq_bank/card"]
+    conn = household.fresh.connect()
+    try:
+        avery = household.fresh.member_ids["avery"]
+        kept = accounts.register(
+            conn, ledger_account="Liabilities:Avery:Zq:Card", name="Card", owners=[avery]
+        )
+        Registry(conn).confirm(card, kept.id, by=avery, now=NOW)
+    finally:
+        conn.close()
+
+    main(["match-accounts", "--confirm", f"{card}=Liabilities:Zq:Card"])
+
+    assert _mapping(household)["ins_zq_bank/card"] == "Liabilities:Zq:Card"
+    assert ("Liabilities:Zq:Card", frozenset({avery})) in _ownership(household)
     capsys.readouterr()
 
 
@@ -894,3 +934,42 @@ def test_a_live_ledger_hearth_inherits_is_vouched_for_through_the_last_sync(
     synced = min(item.last_synced_at.astimezone().date(), TODAY)
     assert synced > BASE_ENDS
     assert found.synced == {"Assets:Zq:Checking": synced}
+
+
+def _pot(days: int, ours: int) -> tuple[carrying.Held, matching.Proposal]:
+    """An account of `days` entries, one a day, the last `ours` of them the connection's rows by
+    their ids, proposed by those ids."""
+    text = "2010-01-01 open Assets:Zq:Pot USD\n2010-01-01 open Income:Zq:X USD\n"
+    first = date(2010, 1, 2)
+    for n in range(days):
+        text += f'{first + timedelta(days=n)} * "zq"\n  Assets:Zq:Pot  1.00 USD\n  Income:Zq:X\n'
+    entries, errors, _ = loader.load_string(text)
+    assert not errors
+    held = read(tuple(entries))
+    last = held.last_entry["Assets:Zq:Pot"]
+    ids = matching.ById({"Assets:Zq:Pot": Stretch(ours, last - timedelta(days=ours - 1), last)})
+    return held, matching.Proposal(None, "Assets:Zq:Pot", How.ID, ids, (), None)  # type: ignore[arg-type]
+
+
+def test_ids_that_hold_only_the_end_of_an_accounts_history_vouch_for_none_of_it() -> None:
+    """The reviewer's case: five of the bank's ids in the last weeks of an account the base
+    holds three thousand days of, recent and enough of them, but over the days they span most
+    of the account's entries are something else's: its history is not handed over by them.
+    Every entry over those days being the bank's, it is."""
+    held, _ = _pot(3000, 5)
+    last = held.last_entry["Assets:Zq:Pot"]
+    partial = matching.Proposal(
+        None,  # type: ignore[arg-type]
+        "Assets:Zq:Pot",
+        How.ID,
+        matching.ById({"Assets:Zq:Pot": Stretch(5, last - timedelta(days=10), last)}),
+        (),
+        None,
+    )
+    assert not matching.recorded(held, partial)
+    spread = matching.ById(
+        {"Assets:Zq:Pot": Stretch(5, date(2010, 1, 2), date(2010, 1, 2) + timedelta(days=2999))}
+    )
+    assert not matching.recorded(held, replace(partial, ids=spread)), "five ids over 3,000 days"
+    held, whole = _pot(40, 40)
+    assert matching.recorded(held, whole)

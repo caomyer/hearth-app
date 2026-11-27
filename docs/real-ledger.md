@@ -17,6 +17,11 @@ Importing `ledger.beancount` alone leaves the review queue empty and every balan
 
 The import reads the ledger where it is, through the same path every ledger is read by (`books.load_ledger`), and writes nothing unless it loads cleanly and every balance assertion in it passes.
 If it does not, it says why, by file and line and never by amount, and nothing is written.
+Each file the ledger reads is read once, and what is loaded is a copy of those bytes, never the files again.
+Before any include is followed, every file is held to what a base may hold: a regular file, never a folder, a pipe or a device; one iCloud has downloaded; at most 1,000 files and 64 MB in all, and no line over 1 MB; never named by an absolute path, nor by one starting with `~`, which beancount reads as a folder named `~` beside the file and not the home folder; never by an include that matches nothing, nor by one that climbs above the folder holding every file the ledger reads, even to come back into it; and nothing hearth keeps in its data directory, by whatever path, link or hard link.
+The copy is loaded from inside the data directory, so an include that could leave the copy would find hearth's own books there: its shape alone keeps it inside, and the copy's includes are checked again before it is loaded.
+These are changes: before them, a ledger inside `HEARTH_DATA_DIR` was imported, a pipe a glob found made the import wait for ever, and an include starting with `~` was called an absolute path.
+Every import holds the base's lock from asking whether the household may import through naming the new base, so two at once, from two shells or the app and a shell, take turns; one that waits two minutes on another gives up, in a sentence, and a data directory on a file system that cannot lock refuses to import at all.
 It then prints the check to hold against the ledger's own figures, in fava or by hand, before trusting the copy:
 
 ```text
@@ -86,6 +91,24 @@ From the first ruling made after the import on, rulings rest on the base as it i
 So it is once a member has ruled on a row hearth carries on from the base, or on a reconciling entry (`books.begun`): that row begins at a cut-over the base decides, and another base would move it under the ruling.
 Where matched accounts are carried on from the base being imported, the check says from which day each is, and how many of the bank's transactions before then the base does not hold, which hearth never brings in.
 Importing a ledger exactly as the base already holds it writes nothing.
+
+### From the Mac app
+
+The Mac app brings a ledger in, and matches accounts to it, through the very functions the two commands call (`docs/native.md`, "The household's ledger"):
+
+- `ledger_import.examine` reads a ledger where it is and works out its check, writing nothing; `hearth import-ledger`, the app's check (`check_ledger`) and the app's import all go through it, so they refuse alike, in the same sentences.
+- `matching.weigh` is the survey with what it was worked out from, `matching.refusal` tries one match against it without writing, and `matching.confirm` writes only what that same check allows, recording which member confirmed it when a member did.
+
+Where the app's path differs, it is narrower:
+
+- Only an admin checks a file or brings a ledger in (`access.may_bring_in_ledger`), as the base becomes every member's books; the command line is whoever runs hearth on its machine.
+- The app brings a ledger in once: it refuses where a base is in already, saying so, rather than replace it as the command line may until a ruling rests on it.
+- A household that holds a base or inherits a ledger is told why it may not bring one in, and nothing of any file, as its own ledger, read again, holds every member's accounts.
+- Nothing in hearth's own data directory, its books or the base it froze, is ever read as a ledger to import, by either path.
+- Every file a ledger reads is read once and held to what a base may hold, as above (`ledger_import._gathered`), and the check loads a private copy of those bytes.
+- A member matches their own connections alone, onto accounts they own, as the Connect page files them; the command line matches every member's.
+  An account hearth keeps itself may move onto a base account nobody has claimed, its claim going with it, only where the ledger records that it is that bank account (`matching.recorded`, `access.may_carry_on`); see "An account hearth kept itself" below.
+- Claiming the base's other accounts stays `hearth add-account`; the app says how many nobody has claimed yet.
 
 ### Inheriting the ledger where it is, for now
 
@@ -187,6 +210,10 @@ Rulings are bound to what a row said, account and all, so the move is recorded (
 A name may be moved more than once, as when an account filed later takes a name moved before, and a name moved onto one that was itself moved: every name a row was booked under before still binds its rulings (`RulingStore.formerly`), as a ruling names its row by its review id, one transaction's, so two accounts that once shared a name are never confused.
 An account rows were moved into in Review is never matched or moved onto, as carried on it would hold them beside its bank's own rows and its balance could never agree with its bank's.
 Who sees the account never changes: the base's account must be unclaimed, and the claim of hearth's own account becomes its claim, or be claimed by exactly the same members, and hearth's own account is then removed.
+An account nobody has claimed is taken only where the ledger itself records that it is that bank account (`matching.recorded`): proposed by the connection's Plaid ids, at least five of them, as many as content alone needs to propose anything, agreeing on it, reaching the base's last month on it, so an account that was this bank's years ago and is something else since passes nothing on, and holding a strict majority of the account's entries from the first of them to its last entry, so a few of the bank's rows amid an account's other history do not hand all of it over.
+A move hands the account's whole history to the owners of the account hearth kept, every one of a joint account's, so rows alone, which could be anyone's, never do it.
+The command line holds to the same rule, and `--claim` is the operator's word that the account is that one anyway: `hearth match-accounts --claim --confirm <plaid account>=<ledger account>`.
+This is a change: before it, the command line moved onto any account nobody had claimed.
 It is refused for a brokerage, which is not carried yet, and for an account rows were moved into in Review.
 The Connect page never makes this move; it sends the member to the command.
 

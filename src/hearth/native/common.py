@@ -13,8 +13,10 @@ from decimal import Decimal
 from enum import StrEnum
 
 from hearth.clock import Clock
+from hearth.config import Settings
 from hearth.connections import Connections
 from hearth.disclosure import Disclosure
+from hearth.native.importer import Importer
 from hearth.refresh import Syncing
 from hearth.review.rulings import RulingStore
 from hearth.valuation.pricestore import PriceStore
@@ -27,6 +29,8 @@ MISSING: Mapping[str, object] = {"state": "missing"}
 
 LONGEST_TEXT = 200
 LONGEST_ID = 64
+LONGEST_PATH = 1024
+"""The longest path to a file the app may name: longer than any the Mac's own panels give."""
 MOST_ROWS = 5000
 """The most rows one decision may name: more than any first import's largest group."""
 
@@ -39,14 +43,19 @@ class Malformed(Exception):  # noqa: N818 - it names an outcome, not a fault
 class Around:
     """What a screen is written from beside the viewer's view: the connections hearth holds,
     every member's, which only disclosure narrows to the viewer's, where this engine's syncs
-    stand, the rulings the viewer's review desk is built over, and the stored prices, which only
-    disclosure reads a security's history from."""
+    stand, the rulings the viewer's review desk is built over, the stored prices, which only
+    disclosure reads a security's history from, the household's settings, which say where its
+    ledger is kept, and where this engine's imports of a ledger stand."""
 
     connections: Connections
     syncing: Syncing
     rulings: RulingStore
     clock: Clock
     prices: PriceStore
+    settings: Settings
+    importer: Importer | None
+    viewer: str
+    """The username of the member signed in."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +66,9 @@ class Screen:
     write: Callable[[Disclosure, object, Around], Answer]
     of_books: bool = True
     """Whether it is written from the books, so waits for them and says which they are."""
+    slow: bool = False
+    """Whether it may take seconds, so it is worked out off the wire (``hearth.native.worker``)
+    and asked again until it is there."""
 
 
 class Acted(StrEnum):
@@ -99,6 +111,10 @@ class Acted(StrEnum):
     NOT_OPEN = "not_open"
     """The books hold that category, but close it before a row's day or keep it for another
     currency, so no row may be booked there (``desk.NotOpen``)."""
+    MATCHED = "matched"
+    """The connected account is matched to the imported ledger's account chosen."""
+    REFUSED = "refused"
+    """The match was refused since it was offered, as things changed: ask again."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +173,15 @@ def table_in(given: Given, key: str) -> dict[str, str]:
             raise Malformed
         found[name] = said
     return found
+
+
+def path_in(given: Given, key: str) -> str:
+    """An absolute path to a file, as the Mac's open panel gives one: never relative, which
+    would be read against wherever the engine was started, and never with a NUL in it."""
+    value = text_in(given, key, LONGEST_PATH)
+    if value is None or not value.startswith("/") or "\0" in value:
+        raise Malformed
+    return value
 
 
 def only(given: Given, keys: frozenset[str]) -> None:

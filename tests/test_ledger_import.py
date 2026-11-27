@@ -17,7 +17,7 @@ from beancount import loader
 from beancount.core.data import Custom, Directive, Document, Price
 from beancount.parser import printer
 
-from hearth import base, books, cli, db, members
+from hearth import base, books, cli, db, ledger_import, members
 from hearth.cli import main
 from hearth.config import DATA_DIR_VARIABLE, LEDGER_VARIABLE, Settings
 from hearth.disclosure import may_learn, rulings_in
@@ -472,7 +472,7 @@ def test_the_same_ledger_imported_again_writes_nothing(
     [
         (
             {"accounts.beancount": ledgers.ACCOUNTS.replace("prices/zqx", "prices/zqy")},
-            "The ledger does not load cleanly. The ledger has 1 error hearth cannot read past.",
+            "accounts.beancount, line 9, includes prices/zqy.beancount, which matches no file.",
         ),
         (
             {
@@ -540,7 +540,62 @@ def test_an_include_by_absolute_path_is_refused_as_one_a_copy_would_still_read(
         " frozen copy would still read from where it is. Make it relative to the file that"
         " includes it, and import again. Nothing was imported."
     )
-    assert sorted(p.name for p in (shell / "ledger-base").iterdir()) == []
+    # Refused before anything is staged, or the file it names is followed.
+    assert not (shell / "ledger-base").exists()
+
+
+def test_nothing_in_hearths_own_data_directory_is_imported(
+    shell: Path, source: Path, tmp_path: Path
+) -> None:
+    """A copy of the ledger kept in the data directory, as its books or a base are, is what
+    hearth keeps, never a ledger to import."""
+    inside = shell / "copied"
+    inside.mkdir(parents=True)
+    copied = ledgers.write(inside)
+
+    with pytest.raises(SystemExit) as refused:
+        main(["import-ledger", str(copied)])
+
+    assert refused.value.code == (
+        f"hearth: {copied} is in hearth's own data directory, where it keeps its books, so it"
+        " is not a ledger to import. Choose the ledger the household kept itself. Nothing was"
+        " imported."
+    )
+    assert not (shell / "ledger-base").exists()
+
+
+def test_an_include_from_the_home_folder_is_said_as_what_beancount_reads(
+    shell: Path, tmp_path: Path
+) -> None:
+    """Beancount reads `~/x` relative to the file, as a folder named ~, never the home folder,
+    so the import says so rather than call it an absolute path, which it is not."""
+    folder = tmp_path / "tilde"
+    folder.mkdir()
+    ledger = folder / "main.beancount"
+    ledger.write_text('option "operating_currency" "USD"\ninclude "~/zq-nope.beancount"\n')
+
+    with pytest.raises(SystemExit) as refused:
+        main(["import-ledger", str(ledger)])
+
+    assert refused.value.code == (
+        "hearth: main.beancount, line 2, includes ~/zq-nope.beancount, which beancount reads as a"
+        " folder named ~ beside the file, not the home folder. Make it relative to the file that"
+        " includes it, and import again. Nothing was imported."
+    )
+
+
+def test_a_pipe_a_glob_finds_is_refused_unopened(shell: Path, tmp_path: Path) -> None:
+    folder = tmp_path / "piped"
+    ledger = ledgers.write(folder)
+    pipe = folder / "years" / "2026-3.beancount"
+    os.mkfifo(pipe)
+
+    with pytest.raises(SystemExit) as refused:
+        main(["import-ledger", str(ledger)])
+
+    assert refused.value.code == (
+        f"hearth: {pipe} is not a file, so it is not a ledger. Nothing was imported."
+    )
 
 
 def test_a_ledger_that_is_not_there_is_refused(shell: Path, tmp_path: Path) -> None:
@@ -697,3 +752,52 @@ def test_the_import_dates_everything_by_the_households_own_day_in_every_zone(
     assert f"It replaces the base imported on {_said(day)}, which stays in" in again
     manifest = json.loads((shell / "ledger-base" / "manifest.json").read_text())
     assert datetime.fromisoformat(manifest["imported_at"]) == NOW
+
+
+# The two walls a ledger's copy is held inside, each on its own: either alone keeps it in.
+
+
+def _gathered_with(includes: dict[str, tuple[tuple[int, str], ...]]) -> ledger_import.Gathered:
+    contents = dict.fromkeys(includes, b"")
+    return ledger_import.Gathered(
+        Path("/zq/x/a/main.beancount"), "a/main.beancount", contents, includes, ()
+    )
+
+
+@pytest.mark.parametrize(
+    "include",
+    [
+        "../../x/b/y.beancount",
+        "../../../q.beancount",
+        "*/../../../q.beancount",
+        "b/../../../q.beancount",
+    ],
+)
+def test_an_include_whose_shape_leaves_the_ledgers_folder_is_refused(include: str) -> None:
+    """Walked a part at a time from the file that names it, the pattern climbs above the folder
+    that holds every file, even on its way back in, or climbs after a wildcard."""
+    with pytest.raises(ledger_import.ImportRefused) as refused:
+        ledger_import._contained(_gathered_with({"a/main.beancount": ((3, include),)}))
+
+    assert refused.value.why is ledger_import.Refusal.INCLUDE_OUTSIDE
+
+
+@pytest.mark.parametrize("include", ["b/y.beancount", "../b/*.beancount", "./c/../d/*.beancount"])
+def test_an_include_whose_shape_stays_inside_passes(include: str) -> None:
+    ledger_import._contained(_gathered_with({"a/main.beancount": ((3, include),)}))
+
+
+def test_a_copy_whose_include_would_find_a_file_beside_it_is_refused_before_it_loads(
+    tmp_path: Path,
+) -> None:
+    """The second wall, on its own: whatever the first let through, a copy's include that
+    finds anything but the copy's own files is refused before beancount reads it."""
+    gathered = _gathered_with({"main.beancount": ((3, "../*.beancount"),)})
+    contents = {"main.beancount": b'include "../*.beancount"\n'}
+    with base.staged(tmp_path, "main.beancount", contents) as staged:
+        beside = staged.directory.parent / "books.beancount"
+        beside.write_text("2020-01-01 open Assets:Zq:Hidden USD\n")
+        with pytest.raises(ledger_import.ImportRefused) as refused:
+            ledger_import._staged_holds(staged, replace(gathered, contents=contents))
+
+    assert refused.value.why is ledger_import.Refusal.INCLUDE_OUTSIDE

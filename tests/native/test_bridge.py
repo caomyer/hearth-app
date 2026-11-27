@@ -6,6 +6,7 @@ changed in the pages before the app may use it.
 """
 
 import json
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -52,7 +53,12 @@ def test_a_member_who_signs_in_is_answered_with_their_own_view(world: World) -> 
 
     own = Doorway(world.settings, world.bookkeeper, "avery")
     for ask in [*asks.SCREENS, "nothing-here"]:
-        assert door.answer(ask) == own.answer(ask)
+        # A slow screen is worked out off the wire, and answered once it is (`worker`).
+        told = door.answer(ask)
+        while told == {"state": "loading"} and asks.SCREENS[ask].slow:
+            time.sleep(0.01)
+            told = door.answer(ask)
+        assert told == own.answer(ask)
     assert door.answer("overview")["state"] == "ready"
 
 

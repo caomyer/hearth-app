@@ -1,0 +1,25 @@
+{
+  "id": 1,
+  "answer": {
+    "state": "ready",
+    "imported": {
+      "on": "2026-11-22",
+      "files": 1,
+      "unclaimed": 12
+    },
+    "inherited": false,
+    "importing": false,
+    "may_bring_in": false,
+    "why_not": {
+      "why": "once",
+      "said": "Your ledger was brought in on Nov 22, 2026. A ledger is brought in once, and Hearth's books are the truth from then on."
+    },
+    "bringing_in": {
+      "running": false,
+      "outcome": "imported",
+      "refused": null,
+      "finished_at": "2026-11-22T20:00:00Z",
+      "books_failed": false
+    }
+  }
+}

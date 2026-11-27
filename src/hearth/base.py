@@ -31,11 +31,13 @@ This module only keeps the base. Reading it is ``hearth.books``'s, through the s
 any ledger (``books.load_ledger``).
 """
 
+import fcntl
 import hashlib
 import json
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -161,12 +163,25 @@ def layout(paths: Sequence[Path], root: Path) -> tuple[Path, dict[str, Path]]:
     return common, names
 
 
+IMPORTING = ".importing-"
+"""How a folder an import stages a base in is named, in the data directory beside the base's
+own."""
+CHECKING = ".checking-"
+"""How a folder a check of a ledger stages its copy in is named, inside the data directory."""
+STALE = 600
+"""How many seconds old a check's folder is before a sweep takes it for one left behind."""
+
+
 @contextmanager
-def staged(directory: Path, root: str, files: Mapping[str, bytes]) -> Iterator[Base]:
+def staged(
+    directory: Path, root: str, files: Mapping[str, bytes], *, prefix: str = IMPORTING
+) -> Iterator[Base]:
     """`files` written as a base in a folder of their own inside `directory`, for the import to
-    load before it commits to them (`commit`); gone when the block ends unless committed."""
+    load before it commits to them (`commit`), or a check to load and let go; gone when the
+    block ends unless committed. A process that dies inside it leaves the folder, which no
+    manifest names, for `sweep` to take away."""
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".importing-", dir=directory))
+    staging = Path(tempfile.mkdtemp(prefix=prefix, dir=directory))
     name = digest(root, files)
     try:
         folder = staging / name
@@ -181,11 +196,89 @@ def staged(directory: Path, root: str, files: Mapping[str, bytes]) -> Iterator[B
         shutil.rmtree(staging, ignore_errors=True)
 
 
+WAIT = 120.0
+"""How many seconds an import waits for another to let the base's lock go before it gives up:
+longer than any import of a household's ledger takes."""
+
+
+class LockTimedOut(Exception):  # noqa: N818 - it names an outcome
+    """Another import held the base's lock for longer than `WAIT`."""
+
+
+class LockUnavailable(Exception):  # noqa: N818 - it names an outcome
+    """The file system cannot lock a file, so imports cannot be kept from racing."""
+
+
+@contextmanager
+def locked(directory: Path, wait: float | None = None) -> Iterator[None]:
+    """Hold the base's lock: every import holds it from asking whether the household may import
+    through naming the new base, in this process or another, so imports take turns. The lock is
+    the system's (`flock`), let go when the block ends or the process dies. Raises
+    `LockTimedOut` when another holds it longer than `wait` seconds (`WAIT`), and
+    `LockUnavailable` when the file system cannot lock at all."""
+    directory.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = os.open(_lock(directory), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        deadline = time.monotonic() + (WAIT if wait is None else wait)
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise LockTimedOut from None
+                time.sleep(0.05)
+            except OSError as error:
+                raise LockUnavailable(error.strerror) from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def _lock(directory: Path) -> Path:
+    """The file the base's lock is held on: beside its directory, so asking for the lock
+    makes no base directory where there is none."""
+    return directory.with_name(f".{directory.name}.lock")
+
+
+def sweep(directory: Path) -> None:
+    """Take away what an import that died left in `directory`, the data directory: its staging
+    folders, which no manifest names. Called holding the lock (`locked`), so no import is
+    staging meanwhile."""
+    if not directory.is_dir():
+        return
+    for left in directory.glob(f"{IMPORTING}*"):
+        shutil.rmtree(left, ignore_errors=True)
+
+
+def sweep_at_start(data_dir: Path, ledger_base: Path, now: float) -> None:
+    """At start-up: sweep the base's directory if no import holds its lock, and take away a
+    check's folder left in the data directory once it is older than any check takes."""
+    if data_dir.is_dir():
+        descriptor = os.open(_lock(ledger_base), os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            sweep(data_dir)
+        except BlockingIOError:
+            pass
+        finally:
+            os.close(descriptor)
+    if data_dir.is_dir():
+        for left in data_dir.glob(f"{CHECKING}*"):
+            try:
+                old = now - left.stat().st_mtime > STALE
+            except OSError:
+                continue
+            if old:
+                shutil.rmtree(left, ignore_errors=True)
+
+
 def commit(
     directory: Path, base: Base, *, source: Path, now: datetime, rulings_through: int
 ) -> Imported:
     """Keep the staged `base` in `directory` and name it in the manifest, in place of any
     base named before, which stays in its own folder. Returns what the manifest now says."""
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     kept = Base(directory / base.digest, base.root, base.files, base.digest)
     if kept.directory.exists():
         # The same contents imported before: the folder is that base already, if intact.

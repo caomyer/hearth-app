@@ -103,6 +103,10 @@ public enum ActOutcome: String, Sendable, CaseIterable {
     /// The books hold that category, but close it before a row's day or keep it for another
     /// currency, so no row may be booked there.
     case notOpen = "not_open"
+    /// The connected account is matched to the ledger's account chosen.
+    case matched
+    /// The match was refused by the check that offered it, as something changed since.
+    case refused
     /// An outcome this app does not know yet, from a newer engine: nothing is assumed of it.
     case unknown
 }

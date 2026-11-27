@@ -79,6 +79,12 @@ class Gate:
     def may_feed(self, owners: Collection[MemberId]) -> bool:
         return access.may_feed(self.viewer, owners)
 
+    def may_bring_in_ledger(self) -> bool:
+        return access.may_bring_in_ledger(self.viewer)
+
+    def may_carry_on(self, owners: Collection[MemberId], *, recorded: bool) -> bool:
+        return access.may_carry_on(self.viewer, owners, recorded=recorded)
+
     def may_name_other_side(self, owners: Collection[MemberId]) -> bool:
         return access.may_name_other_side(self.viewer, owners)
 

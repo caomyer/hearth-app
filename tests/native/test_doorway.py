@@ -16,12 +16,14 @@ from typing import Any
 
 import pytest
 
-from hearth import books
+from hearth import books, ledger_import
 from hearth.books import LedgerError
+from hearth.disclosure import may_learn, rulings_in
 from hearth.native import doorway as asks
 from hearth.native.bridge import Acted, Bridge, Outcome
 from hearth.native.common import Decided
 from hearth.native.doorway import Doorway
+from hearth.native.importer import Importer
 from hearth.plaid.approval import Approval
 from hearth.refresh import ASKING, Begun, Refresher
 from hearth.review.ids import says
@@ -163,6 +165,7 @@ NARROWED = {
     "balance_sheet": "with",
     "year_by_year": "with",
     "price_history": "symbol",
+    "ledger_check": "path",
 }
 """Screens that are asked with what narrows them, which the crawl asks every way
 `narrowings` names. A screen added to `SCREENS` is asked plainly unless it is named here."""
@@ -185,6 +188,43 @@ STATEMENT_PERIODS: list[dict[str, object]] = [
     {"from": "2026-10-03", "to": "2026-10-03"},
     {"from": "2026-07-01", "to": "2026-09-30"},
 ]
+
+
+KEPT_LEDGER = """\
+option "operating_currency" "USD"
+2026-01-01 open Assets:Zq:KeptOnlyHereChecking USD
+2026-01-01 open Expenses:Zq:KeptOnlyHereHobby USD
+2026-01-01 open Equity:Zq:KeptOnlyHereOpening USD
+2026-01-01 pad Assets:Zq:KeptOnlyHereChecking Equity:Zq:KeptOnlyHereOpening
+2026-01-02 balance Assets:Zq:KeptOnlyHereChecking 4321.09 USD
+2026-02-01 * "Zq Kept Only Here Atelier" "Easels"
+  Expenses:Zq:KeptOnlyHereHobby 87.65 USD
+  Assets:Zq:KeptOnlyHereChecking
+"""
+"""A ledger file nobody imported, read only when the app asks what it holds."""
+
+KEPT_SECRETS = ("Assets:Zq:KeptOnlyHereChecking", "Expenses:Zq:KeptOnlyHereHobby", "4233.44")
+"""What only that ledger says: its accounts, and its net worth today, which only the admin who
+may bring a ledger in, and so asks what one holds, is told. The payee is in no answer at all."""
+
+NOT_A_LEDGER = "Zq-never-echoed 6,543.21 at Zq Kept Only Here Atelier\n"
+"""A file that is not a ledger, whose words are never told anyone."""
+
+
+def ledger_paths(world: World) -> list[Path]:
+    """Files the crawl asks what a ledger holds of: a ledger nobody imported, a file that is not
+    a ledger, the household's own ledger where it is inherited, a folder, and nothing at all."""
+    folder = world.settings.data_dir.parent / "elsewhere"
+    folder.mkdir(exist_ok=True)
+    (folder / "kept.beancount").write_text(KEPT_LEDGER)
+    (folder / "notes.txt").write_text(NOT_A_LEDGER)
+    return [
+        folder / "kept.beancount",
+        folder / "notes.txt",
+        world.ledger,
+        folder,
+        folder / "nowhere.beancount",
+    ]
 
 
 def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
@@ -235,6 +275,8 @@ def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
     # holding's, so one the viewer may not see is missing, whoever holds it.
     symbols = [*household.SECURITIES, "USD", "ZQZZ"]
     asked += [("price_history", {"symbol": s}) for s in symbols]
+    asked += [("ledger_check", {"path": str(path)}) for path in ledger_paths(world)]
+    asked += [("ledger_check", {"path": "relative.beancount"})]
     return asked
 
 
@@ -247,6 +289,15 @@ def positions() -> Iterator[household.Secret]:
         visible = household.shared(Facet.ACCOUNT_BALANCES, owners)
         yield household.secret(f'"units": "{units}"', f"{symbol} units", visible)
         yield household.secret(f'"{price}"', f"{symbol} price", visible)
+
+
+def ledger_secrets() -> Iterator[household.Secret]:
+    """What lives only in a ledger file the app asks about, which only an admin is told, and
+    what is in a file that is not a ledger, or a payee of a ledger's, which nobody is."""
+    for text in KEPT_SECRETS:
+        yield household.secret(text, "a ledger file's", lambda v, _: v == household.ADMIN)
+    for text in ("Zq-never-echoed", "6,543.21", "Kept Only Here Atelier"):
+        yield household.secret(text, "a file's words", lambda _v, _c: False)
 
 
 def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]]]:
@@ -284,6 +335,13 @@ def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]
         ]
     # Whose each ruling is, the crawl's own decisions among them, is the desk's to say.
     found += [("undo", frozenset(USERNAMES), {"ruling": n}) for n in range(1, 40)]
+    # No ledger is imported to match to, and none is brought in while HEARTH_LEDGER is set: an
+    # admin's import starts and is refused, and anyone else's is missing.
+    found += [
+        ("bring_in_ledger", frozenset({household.ADMIN}), {"path": str(path)})
+        for path in ledger_paths(world)[:1]
+    ]
+    found += [("match_accounts", frozenset(), {"matches": {i: "Assets:Zq:AverySolo"}}) for i in ids]
     return found
 
 
@@ -323,7 +381,9 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     )
     assert syncs.start() is Begun.STARTED
     syncs.wait()
-    door = Bridge(world.settings, world.bookkeeper, world.clock, syncs)
+    importer = Importer(world.bookkeeper, world.clock)
+    # Every answer worked out at once: a slow screen off the wire is `worker`'s test.
+    door = Bridge(world.settings, world.bookkeeper, world.clock, syncs, importer, worker=None)
     assert door.sign_in(viewer, password_of(viewer)) is Outcome.SIGNED_IN
     answers = [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
     assert all(answer["state"] == "ready" for answer in answers)
@@ -350,8 +410,10 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
             if viewer not in desks:
                 assert done is Acted.MISSING, (action, given, done)
                 assert rulings.newest() == before
+            importer.wait()
     finally:
         conn.close()
+    assert not world.settings.ledger_base.exists(), "a ledger was brought in"
     world.recompute()
     answers += [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
     answers += [door.answer(ask, given) for ask, given in narrowings(world) if "review" in ask]
@@ -360,7 +422,7 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
 
     leaked = [
         f"{secret.what}: {text!r}"
-        for secret in [*household.secrets(world.account_ids), *positions()]
+        for secret in [*household.secrets(world.account_ids), *positions(), *ledger_secrets()]
         if not secret.visible(viewer, choices)
         for text in secret.texts
         if text.replace(",", "") in seen
@@ -580,3 +642,57 @@ def test_no_answer_carries_a_category_a_suggestion_could_have_carried(
             if entry["review"] is not None:
                 assert entry["reason"] == said[entry["review"]], entry
     assert (mine[viewer] in said.values()) if viewer in mine else said == {}
+
+
+def based(world: World) -> World:
+    """The household with its ledger brought in as a base rather than inherited where it is,
+    as the app leaves one, recomputed: so matching has a ledger to weigh every member's
+    connections against, with every member's base accounts and one nobody owns in it."""
+    settings = replace(world.settings, ledger=None)
+    ledger_import.import_ledger(settings, world.ledger, now=world.clock())
+    keeper = books.Bookkeeper(
+        books.from_household(settings, rulings=rulings_in, learns=may_learn), world.clock
+    )
+    keeper.recompute(wait=True)
+    assert keeper.status.failure is None, keeper.status.failure
+    return replace(world, settings=settings, bookkeeper=keeper)
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS)
+@pytest.mark.parametrize("viewer", household.USERNAMES)
+def test_no_ledger_answer_over_an_imported_base_holds_what_its_viewer_may_not_see(
+    world: World, scenario: str, viewer: str
+) -> None:
+    """The ledger's screens and acts over the household's ledger brought in as a base, under
+    every sharing scenario: matching weighs every member's connections against every member's
+    base accounts and the one nobody owns, and no answer holds a datum its viewer may not see,
+    nor names an account of the base they do not own."""
+    choices = dict.fromkeys(household.USERNAMES, DEFAULT_SHARED)
+    choices.update(SCENARIOS[scenario])
+    for username, shared in choices.items():
+        world.choose(username, shared)
+    over = based(world)
+    door = Bridge(over.settings, over.bookkeeper, over.clock, importer=None, worker=None)
+    assert door.sign_in(viewer, password_of(viewer)) is Outcome.SIGNED_IN
+    answers: list[object] = [door.answer(ask) for ask in ("ledger", "matching")]
+    answers += [door.answer("ledger_check", {"path": str(p)}) for p in ledger_paths(over)]
+    names = [a.ledger_account for a in household.ACCOUNTS] + ["Assets:Zq:Nowhere"]
+    listed: Any = door.answer("matching")["accounts"]
+    connected = [a["id"] for a in listed]
+    for account in [*connected, *over.account_ids.values(), "no-such-account"]:
+        for to in names:
+            answers.append(str(door.act("match_accounts", {"matches": {account: to}})))
+    seen = household.Seen("\n".join(json.dumps(answer) for answer in answers))
+
+    leaked = [
+        f"{secret.what}: {text!r}"
+        for secret in [*household.secrets(over.account_ids), *ledger_secrets()]
+        if not secret.visible(viewer, choices)
+        for text in secret.texts
+        if text.replace(",", "") in seen
+    ]
+    assert not leaked, f"{viewer} could see private data: {leaked}"
+    matching = json.dumps(answers[1])
+    owned = {a.ledger_account for a in household.ACCOUNTS if viewer in a.owners}
+    named = [a.ledger_account for a in household.ACCOUNTS if a.ledger_account in matching]
+    assert set(named) <= owned, f"{viewer} was named accounts of the base not theirs: {named}"

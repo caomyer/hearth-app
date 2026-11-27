@@ -32,6 +32,7 @@ from beancount.core.data import Open, Transaction
 from hearth import (
     accounts,
     auth,
+    base,
     books,
     categories,
     comparison,
@@ -50,6 +51,7 @@ from hearth.disclosure import may_learn, rulings_in
 from hearth.members import MemberRejectedError, normalise_username
 from hearth.native import stdio
 from hearth.native.bridge import Bridge, Outcome
+from hearth.native.importer import Importer
 from hearth.plaid import booking, export, feed
 from hearth.plaid import cli as plaid_cli
 from hearth.plaid.approval import DESCRIPTIONS, Approval, Operation
@@ -193,6 +195,13 @@ def main(argv: list[str] | None = None) -> None:
         help="match a connected account to the account proposed for it, or to the imported"
         " ledger's account named; give it once per account",
     )
+    match.add_argument(
+        "--claim",
+        action="store_true",
+        help="move an account hearth keeps itself onto an account of the imported ledger nobody"
+        " has claimed even where the ledger does not record that it is that account, giving"
+        " its owners the account's whole history",
+    )
 
     against = commands.add_parser(
         "compare",
@@ -302,7 +311,7 @@ def main(argv: list[str] | None = None) -> None:
         case "import-ledger":
             _import_ledger(arguments.ledger)
         case "match-accounts":
-            _match_accounts(arguments.confirm)
+            _match_accounts(arguments.confirm, claim=arguments.claim)
         case "compare":
             _compare(
                 arguments.ledger,
@@ -574,7 +583,7 @@ def _import_ledger(ledger: Path) -> None:
         print(line)
 
 
-def _match_accounts(confirmations: list[str]) -> None:
+def _match_accounts(confirmations: list[str], *, claim: bool = False) -> None:
     """Print which of the imported ledger's accounts each connected account is, recording
     each match `confirmations` names first (``hearth.matching``), or say why nothing was
     matched."""
@@ -585,9 +594,8 @@ def _match_accounts(confirmations: list[str]) -> None:
         wanted.append((account_id.strip(), ledger_account.strip() or None))
     try:
         if wanted:
-            found = matching.confirm(settings, wanted, now=system_clock())
-        else:
-            found = matching.survey(settings, system_clock().astimezone().date())
+            matching.confirm(settings, wanted, now=system_clock(), claim=claim)
+        found = matching.survey(settings, system_clock().astimezone().date())
     except matching.MatchRefused as refused:
         sys.exit(f"hearth: {refused} Nothing was matched." if wanted else f"hearth: {refused}")
     for line in matching.describe(found):
@@ -791,13 +799,15 @@ def _answer_the_app(
     The bridge is signed out until the app signs in over the wire, unless `signed_in_as` names
     a member and their password, which the demo's bridge does for its invented household."""
     runlog.configure(settings.data_dir)
+    # What an import or a check that died left behind, which nothing names.
+    base.sweep_at_start(settings.data_dir, settings.ledger_base, datetime.now().timestamp())
     approved = ", ".join(sorted(op.value for op in plaid.approval.operations)) or "none"
     print(f"Live Plaid calls approved for this run: {approved}.", file=sys.stderr, flush=True)
     bookkeeper = books.Bookkeeper(establish, clock, standing=lambda: books.standing(settings))
     bookkeeper.recompute_daily()
     watching = bookkeeper.recompute_on_change()
     refresher = Refresher(settings, plaid, bookkeeper, clock)
-    bridge = Bridge(settings, bookkeeper, clock, refresher)
+    bridge = Bridge(settings, bookkeeper, clock, refresher, Importer(bookkeeper, clock))
     syncing = refresher.daily()
     try:
         if signed_in_as is not None and bridge.sign_in(*signed_in_as) is not Outcome.SIGNED_IN:
