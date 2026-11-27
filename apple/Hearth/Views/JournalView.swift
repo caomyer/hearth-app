@@ -177,7 +177,7 @@ private struct EntryList: View {
         .task { filled = true }
         .environment(\.journalFit, JournalFit(width: width, pinned: model.pinned != nil))
         // The width the window gives the list, never what the list would like to be.
-        .frame(minWidth: JournalFit.narrowest, idealWidth: JournalFit.narrowest, maxWidth: .infinity)
+        .frame(minWidth: 0, idealWidth: JournalFit.narrowest, maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }

@@ -131,17 +131,19 @@ private struct HoldingsList: View {
 
     var body: some View {
         // The width the window gives the list, never what the list would like to be: it is
-        // measured on a space of its own, which takes only the narrowest fit as its least, and
-        // the list is laid over it, so no column drawn at an earlier width can ask for more.
-        // Measured on the list itself, the fixed columns of the widest fit held the list at that
-        // width wherever a scroll view passes its content's least width up, and on a screen too
-        // small for the window to grow, the window's content was laid out wider than the window
-        // and centred over both edges, the sidebar off the leading one (a test runner's
-        // 1024-point screen).
+        // measured on a space of its own and the list is laid over it, so no column drawn at an
+        // earlier width can ask for more. That space asks for no least width either. The
+        // window's own least width (`HearthApp`) leaves the list its narrowest fit beside the
+        // sidebar and the price. A least width here is what the price's split view adds the
+        // price's own to, and the sidebar's width that the list runs under with it: 976 and 240
+        // asked for 1216 points, and on a screen too small for the window to grow its content
+        // was laid out that wide and centred over both edges, the sidebar off the leading one
+        // (a test runner's 1024-point screen).
         Color.clear
-            .frame(minWidth: Fit.narrowest, idealWidth: Fit.narrowest, maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minWidth: 0, idealWidth: Fit.narrowest, maxWidth: .infinity, maxHeight: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .overlay { list }
+            .clipped()
     }
 
     private var list: some View {

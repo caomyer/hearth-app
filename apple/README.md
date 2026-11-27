@@ -170,7 +170,8 @@ If `xcodebuild` says it needs Xcode, point it at one: `export DEVELOPER_DIR=/App
 - Every screen, with whatever it opens beside it, fits the smallest window, 1000 by 560 points of content: the sidebar's narrowest, a list's narrowest fit (`Fit.narrowest` in Holdings, `JournalFit.narrowest` in the journal) and an inspector's ideal width together must stay under it.
   An inspector opened wider than what is left takes the difference from the sidebar, which is then cut at its leading edge.
   Narrower than its widest, each list moves a column under its rows' names rather than cut anything.
-  Holdings measures the width it is given on a space of its own and lays its list over it: measured on the list, the fixed columns of a wider fit held it at that width, and a window that cannot grow, on a small screen, laid its content out wider than itself and centred it over both edges.
+  A list beside an inspector asks for no least width of its own: the inspector's split view adds the inspector's least width to the list's, and to the sidebar's width that the list runs under, and a window that cannot grow, on a small screen, then lays its content out wider than itself and centres it over both edges (Holdings once asked for 1216 points).
+  `-windowSize` holds the window at its size, as such a screen does, so this shows on any Mac.
 - A background reaches into the safe area unless told not to, and on the Mac that runs under the sidebar's glass, which then takes its colour; the sample's banner keeps to its own bounds.
 - A list is first drawn with at most a page of rows, and the rest follow on the next update (`FirstFill`).
   AppKit measures a table's rows 200 at a time, and a table filled with more than that on its first update re-enters its own measuring, which it logs as "a reentrant operation in its NSTableView delegate" and means to make an assert.

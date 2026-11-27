@@ -507,8 +507,9 @@ final class FirstLaunchTests: XCTestCase {
         let shown = statements.windows.firstMatch.frame
         let itsSidebar = statements.outlines.firstMatch.frame
         let sheetFrames = "window \(shown), sidebar \(itsSidebar), the sheet \(sheet.frame)"
-        XCTAssertGreaterThanOrEqual(itsSidebar.minX, shown.minX, "the sidebar was cut: \(sheetFrames)")
-        XCTAssertLessThanOrEqual(sheet.frame.maxX, shown.maxX, "the sheet runs past the window: \(sheetFrames)")
+        // A table's frame reaches a point past the view that holds it on either side.
+        XCTAssertGreaterThanOrEqual(itsSidebar.minX, shown.minX - 1, "the sidebar was cut: \(sheetFrames)")
+        XCTAssertLessThanOrEqual(sheet.frame.maxX, shown.maxX + 1, "the sheet runs past the window: \(sheetFrames)")
         statements.terminate()
 
         let holdings = sample(startingOn: "holding:BIDX", size: "1000x560")
@@ -525,13 +526,13 @@ final class FirstLaunchTests: XCTestCase {
         let frames =
             "screen \(screen), window \(window), sidebar \(sidebar), its Overview \(overview), "
             + "the banner \(banner), the list's total \(total), the panel's title \(panel)"
-        if sidebar.minX < window.minX || panel.maxX > window.maxX {
+        if sidebar.minX < window.minX - 1 || panel.maxX > window.maxX {
             // Every element and its frame, to say which one is wider than the window.
             print(holdings.windows.firstMatch.debugDescription)
         }
         XCTAssertTrue(
             window.minX >= 0 && window.maxX <= screen.width, "the window is not wholly on its screen: \(frames)")
-        XCTAssertGreaterThanOrEqual(sidebar.minX, window.minX, "the sidebar was cut at its leading edge: \(frames)")
+        XCTAssertGreaterThanOrEqual(sidebar.minX, window.minX - 1, "the sidebar was cut at its leading edge: \(frames)")
         XCTAssertGreaterThan(overview.minX, sidebar.minX, "the sidebar's rows were cut: \(frames)")
         XCTAssertGreaterThan(total.minX, overview.maxX, "the list is under the sidebar: \(frames)")
         XCTAssertGreaterThan(panel.minX, total.minX, "the panel is not beside the list: \(frames)")
