@@ -167,8 +167,12 @@ private struct HoldingsList: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         // The width the window gives the list, never what the list would like to be: the list
-        // asks for no more than its narrowest fit, and its columns follow what it is given.
-        .frame(minWidth: Fit.narrowest, maxWidth: .infinity)
+        // asks for no more than its narrowest fit, as its least and as its ideal, and its columns
+        // follow what it is given. Asked its ideal, fixed columns would answer with the widest
+        // fit they were last drawn at; on a screen too small for the window to grow, the
+        // window's content was then laid out wider than the window and centred over both edges,
+        // the sidebar off the leading one (a test runner's 1024-point screen).
+        .frame(minWidth: Fit.narrowest, idealWidth: Fit.narrowest, maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 
