@@ -23,7 +23,7 @@ struct JournalView: View {
     var body: some View {
         VStack(spacing: 0) {
             JournalHead(model: model)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 28)
                 .padding(.top, 16)
                 .padding(.bottom, 12)

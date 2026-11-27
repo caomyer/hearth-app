@@ -68,7 +68,9 @@ struct BooksView: View {
     var body: some View {
         NavigationSplitView {
             Sidebar(navigator: navigator)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 270, max: 340)
+                // Opened at its narrowest, which every screen's narrowest fit and its panel are
+                // measured against at the smallest window; it can be drawn wider.
+                .navigationSplitViewColumnWidth(min: 240, ideal: 240, max: 340)
         } detail: {
             VStack(spacing: 0) {
                 if isSample {
