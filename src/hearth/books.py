@@ -191,10 +191,21 @@ class Books:
         return self.kinds.get(account) or categories.guess(account)
 
     def spends(self, account: str) -> bool:
-        """Whether money booked to `account` is spending: an expense account of any kind but
-        "not spending", such as a retirement contribution booked as an expense, which is money
-        kept somewhere else. What it leaves out of spending is in what was left over."""
-        return root(account) == "Expenses" and self.kind(account) is not Kind.NOT_SPENDING
+        """Whether money booked to `account` is spending: an expense account of kind spending.
+        Tax is its own figure beside spending (`taxes`), and "not spending", such as a
+        retirement contribution booked as an expense, is money kept somewhere else, in what
+        was left over."""
+        return root(account) == "Expenses" and self.kind(account) is Kind.SPENDING
+
+    def taxes(self, account: str) -> bool:
+        """Whether money booked to `account` is tax: an expense account of kind tax, never in
+        spending, and never in what was left over."""
+        return root(account) == "Expenses" and self.kind(account) is Kind.TAX
+
+    def keeps(self, account: str) -> bool:
+        """Whether money booked to `account` was kept, not spent: an expense account of kind
+        not spending, in what was left over."""
+        return root(account) == "Expenses" and self.kind(account) is Kind.NOT_SPENDING
 
     @property
     def balance_unknown(self) -> frozenset[str]:

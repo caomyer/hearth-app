@@ -14,7 +14,7 @@ from hearth.disclosure.gate import Disclosed, Gate, Withheld
 from hearth.figures import Part, Unplaced
 from hearth.members import Member, MemberId
 from hearth.months import Month
-from hearth.reports.flows import OwnersOf
+from hearth.reports.flows import Owners, OwnersOf
 from hearth.sharing import Facet
 from hearth.valuation.networth import Freshness, NetWorth
 
@@ -130,6 +130,15 @@ class Unreviewed:
     left over instead. Which categories a part books to is its detail, so for any other part
     it is not said."""
 
+    tax: Decimal = Decimal(0)
+    """Of the same parts as `kept`, what was booked to expense accounts of kind tax: left out
+    of the total, which says so, as tax is its own figure, never spending. For any other part
+    it is not said, for the same reason."""
+
+    tax_unreviewed: Decimal = Decimal(0)
+    """Of `tax`, what rests on rows nobody has checked yet, of the parts whose review state the
+    viewer may know as well."""
+
     @property
     def leans(self) -> bool:
         """Whether the total is known to rest on unreviewed rows, at their suggested category."""
@@ -149,15 +158,17 @@ def unreviewed(
     rows: Callable[[Part], int],
     unplaced: Callable[[Part], Unplaced] | None = None,
     kept: Callable[[Part], Decimal] | None = None,
+    taxed: Callable[[Part], tuple[Decimal, Decimal]] | None = None,
 ) -> Unreviewed:
     """What of a total over `parts` is unreviewed, as far as the viewer may know it.
 
     The caller has already decided the viewer may see each part's share of the total; this
     decides, part by part, whether they may also know how much of that share is unreviewed.
+    `taxed` gives a part's tax and how much of it is unreviewed.
     """
     known = [part for part in parts if gate.may_see_review_state(part.owners)]
-    # Which categories a part books money to is its detail, so what it booked as not spending is
-    # said only to whoever may see its categories or its transactions.
+    # Which categories a part books money to is its detail, so what it booked as not spending,
+    # or as tax, is said only to whoever may see its categories or its transactions.
     detail = [
         part
         for part in parts
@@ -167,12 +178,15 @@ def unreviewed(
     placed = Unplaced()
     for part in known:
         placed += unplaced(part) if unplaced is not None else Unplaced()
+    told = [(part, *taxed(part)) for part in detail] if taxed is not None else []
     return Unreviewed(
         amount=sum((amount(part) for part in known), Decimal(0)),
         rows=sum(rows(part) for part in known),
         unknown=tuple(ref(part) for part in parts if part not in known),
         unplaced=placed,
         kept=sum((kept(part) for part in detail), Decimal(0)) if kept is not None else Decimal(0),
+        tax=sum((tax for _, tax, _ in told), Decimal(0)),
+        tax_unreviewed=sum((waits for part, _, waits in told if part in known), Decimal(0)),
     )
 
 
@@ -321,6 +335,22 @@ class Household:
     def seen(self, part: Part) -> tuple[Account, ...]:
         """The part's accounts hearth sees: every one but those it holds by name alone."""
         return tuple(a for a in part.accounts if a.ledger_account not in self.books.unseen)
+
+    def tells_tax(self, owners: Owners) -> bool:
+        """Whether the viewer may be told a part's tax apart from its spending: only with its
+        categories or its transactions, as which categories a part books to is its detail."""
+        return self.gate.may(Facet.CATEGORY_BREAKDOWN, owners) or self.gate.may(
+            Facet.TRANSACTIONS, owners
+        )
+
+    def spent(self, flows: figures.MonthFlows, owners: Owners) -> Decimal:
+        """A part's spending as the viewer is told it: without its tax where they may be told
+        its tax apart (`tells_tax`), and with it, as one number, where they may not, as every
+        spending total was before tax was its own figure. So money out less tax told apart is
+        the same whoever looks, and nothing about the part's categories is told."""
+        if self.tells_tax(owners):
+            return flows.spent(owners)
+        return flows.spent(owners) + flows.taxed_out(owners)
 
     def spends(self, part: Part) -> tuple[Account, ...]:
         """The part's accounts that could show what it spent or earned: every one hearth sees

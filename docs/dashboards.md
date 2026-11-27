@@ -74,6 +74,9 @@ The calls the plan and its mock did not settle:
 
 - Money in, money out and left over, and the chart of each month beside them, cover the parts whose spending and income totals the viewer may both see; the twelve months are drawn over the same parts as the month that leads, so the chart never mixes in a part the figures leave out.
   A part sharing only its spending is named once as "without", and its spending is under "Where October went".
+  Money out is spending; tax is never spending, and is its own figure between money in and money out, of the parts whose categories or transactions the viewer may see.
+  Any other part's tax stays inside its money out, unlabelled, as before tax was its own figure, so money out, what was left and its share of money in are the same whoever looks; the panel says, naming nobody, that any tax of those whose categories are not shared is in money out.
+  The chart's bar of money out is then tax and spending together, so its three still add up.
 - A typical left over, and a typical whole month for a category, is the median of the covered months among the six before the month that leads, as everywhere else, with "above a typical month" at the same thresholds as the month in progress ($50 and a quarter).
   The "Other" row, everything past the eighth category, has a typical of its own, the median of what those categories added up to.
 - A whole month has no fixed-bill line: a bill paid once is an ordinary row of the whole month, and its paid day is transaction detail.

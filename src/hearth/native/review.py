@@ -76,17 +76,25 @@ def waiting(view: Disclosure, around: Around) -> Answer:
     """What waits for the viewer in Review, for the Overview to say: how many of their rows
     nobody has checked, those waiting to be told where their money went among them, as the
     pages count them; how much of their own spending this month rests on such rows, at their
-    suggested category; the rows nobody has said what they were yet, which are in no spending
-    or income total until placed; and what they booked as not spending, which no spending
-    figure counts. All of it as their own page says it (``disclosure.common.Unreviewed``)."""
+    suggested category, without tax and with it; the rows nobody has said what they were yet,
+    which are in no spending or income total until placed; what they booked as not spending,
+    which no spending figure counts; and their tax, which is never spending, and how much of
+    it is unreviewed. All of it as their own page says it (``disclosure.common.Unreviewed``)."""
     desk = _desk(view, around)
     totals = view.you().totals
     spent = totals.spent_unreviewed if totals.covered else None
     earned = totals.earned_unreviewed if totals.covered else None
     out = spent if isinstance(spent, Unreviewed) else None
+    with_tax = abs(out.amount + out.tax_unreviewed) if out is not None else None
     return {
         "waiting": sum(1 for item in desk.items() if item.unreviewed),
         "spending": money(abs(out.amount)) if out is not None and out.leans else None,
+        "spending_with_tax": money(with_tax) if with_tax else None,
+        # Signed: negative when more tax was refunded than paid this month.
+        "tax": money(out.tax) if out is not None and out.tax else None,
+        "tax_unreviewed": (
+            money(out.tax_unreviewed) if out is not None and out.tax_unreviewed else None
+        ),
         "unplaced_spending": _unplaced(spent),
         "unplaced_income": _unplaced(earned),
         "not_spending": money(abs(out.kept)) if out is not None and out.kept else None,

@@ -71,6 +71,13 @@ public final class StatementsModel {
             ?? balanceSheet.content?.asOf
     }
 
+    /// Whether the books every tab reads hold any tax, from whichever tab has answered: the
+    /// switch to count tax as spending is offered only then.
+    public var taxed: Bool {
+        (summary.content?.scope ?? years.content?.scope ?? incomeStatement.content?.scope
+            ?? balanceSheet.content?.scope)?.taxed ?? false
+    }
+
     /// The years a period may be: the year in progress so far, then each whole year the
     /// books hold, newest first.
     public var periods: [JournalFilter.Period] {

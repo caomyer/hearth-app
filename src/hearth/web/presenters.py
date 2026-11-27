@@ -95,11 +95,12 @@ def household_charts(view: HouseholdView) -> dict[str, Markup]:
             charts.InOutPoint(
                 axis_label=f"{date(m.month.year, m.month.month, 1):%b}",
                 money_in=m.money_in,
-                money_out=m.money_out,
+                # The bar is all that went out, tax with spending, so the three still add up.
+                money_out=m.money_out + m.tax,
                 tip=f"{dollars(m.left_over)} left" if m.covered else "Not known yet",
                 tip_label=m.month.label
                 + (
-                    f": in {dollars(m.money_in)}, out {dollars(m.money_out)}"
+                    f": in {dollars(m.money_in)}, {_out(m.money_out, m.tax)}"
                     if m.covered
                     else ": hearth does not have the whole month"
                 ),
@@ -111,6 +112,15 @@ def household_charts(view: HouseholdView) -> dict[str, Markup]:
             points, labelled_by="io-t", ticks=_ticks(len(points)), selected=len(points) - 1
         )
     return out
+
+
+def _out(spent: Decimal, tax: Decimal) -> str:
+    """What went out in a month, tax said apart from spending where there was any."""
+    if not tax:
+        return f"out {dollars(spent)}"
+    if tax < 0:
+        return f"tax refunded {dollars(-tax)}, spending {dollars(spent)}"
+    return f"tax {dollars(tax)}, spending {dollars(spent)}"
 
 
 def _month_end_line(view: HouseholdView, labelled_by: str) -> Markup:

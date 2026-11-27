@@ -359,6 +359,16 @@ class Flows:
         after_tax = self.pay - self.tax
         return self.saved / after_tax if after_tax > 0 else None
 
+    @property
+    def spending_with_tax(self) -> Decimal:
+        """Spending with tax counted in it, for whoever reads tax as money spent."""
+        return self.spending + self.tax
+
+    @property
+    def savings_rate_with_tax(self) -> Decimal | None:
+        """Saved from work over pay, tax counted as spending; None without pay."""
+        return self.saved / self.pay if self.pay > 0 else None
+
     def others(self, market: bool) -> dict[Other, Decimal]:
         """Each part of "Other", at cost or at market value."""
         found = {
@@ -769,6 +779,18 @@ class Ledger:
             add(("unplaced-in",), day, -sum((w for w in waiting if w < 0), ZERO))
 
     # Asking it.
+
+    def books_to(self, scope: Collection[str]) -> frozenset[str]:
+        """Every income and expense account that an entry read in full over `scope` posts to,
+        at any time and whatever it comes to: one refunded to nothing is still booked to."""
+        inside = frozenset(scope)
+        return frozenset(
+            other
+            for accounts, signature in self._signatures.items()
+            if accounts and accounts <= inside
+            for other in signature.others
+            if root(other) in ("Income", "Expenses")
+        )
 
     def first_day(self, scope: Collection[str] | None) -> date | None:
         """The first day any account in `scope` moved, or any account at all."""

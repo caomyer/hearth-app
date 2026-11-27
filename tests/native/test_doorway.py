@@ -33,7 +33,7 @@ from tests import learned as learned_household
 from tests.conftest import World, password_of
 from tests.household import USERNAMES
 from tests.learned import Learned
-from tests.test_privacy_boundary import LEARNED_SCENARIOS, SCENARIOS
+from tests.test_privacy_boundary import LEARNED_SCENARIOS, SCENARIOS, TAX_SCENARIOS
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -415,6 +415,56 @@ def test_no_statement_holds_what_a_part_shared_in_all_but_one_facet_keeps(
     mine = {"avery": ["Avery", "Joint accounts"], "blake": ["Blake", "Joint accounts"]}
     parts = [a["scope"]["parts"] for a in answers if isinstance(a.get("scope"), dict)]  # type: ignore[index]
     assert all(p == mine.get(viewer, ["Casey"]) for p in parts), parts
+
+
+def every_answer(door: Doorway, world: World) -> list[dict[str, Any]]:
+    """Every screen the viewer can ask for, plainly and every way the crawl narrows it."""
+    found = [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
+    return found + [door.answer(ask, given) for ask, given in narrowings(world)]
+
+
+def taxed_flags(answers: list[dict[str, Any]]) -> list[object]:
+    """Whatever every answer says of whether the viewer's statements hold any tax."""
+    return [
+        flag
+        for answer in answers
+        for flag in (answer.get("taxed"), (answer.get("scope") or {}).get("taxed"))
+        if flag is not None
+    ]
+
+
+@pytest.mark.parametrize("scenario", TAX_SCENARIOS)
+@pytest.mark.parametrize("viewer", household.USERNAMES)
+def test_a_members_tax_reaches_no_answer_its_viewer_may_not_see(
+    world: World, scenario: str, viewer: str
+) -> None:
+    """Blake pays tax in a month that is over and in this one. No answer holds it for anyone
+    who may not see Blake's categories or transactions; and whether a viewer's statements hold
+    any tax, which the app's switch goes by, is judged on their statements alone: it is what
+    it was before Blake paid any, unless Blake is in them."""
+    choices = dict.fromkeys(household.USERNAMES, DEFAULT_SHARED)
+    choices.update(SCENARIOS[scenario])
+    for username, shared in choices.items():
+        world.choose(username, shared)
+    door = Doorway(world.settings, world.bookkeeper, viewer)
+    before = taxed_flags(every_answer(door, world))
+    assert before, "every statement and the overview say it"
+    assert not any(before), "nobody's books hold tax yet"
+
+    with world.ledger.open("a") as ledger:
+        ledger.write("\n" + household.tax_text())
+    world.recompute()
+    assert world.bookkeeper.status.failure is None, world.bookkeeper.status.failure
+    answers = every_answer(door, world)
+    seen = household.Seen("\n".join(json.dumps(answer) for answer in answers))
+
+    for secret in household.tax_secrets():
+        present = [text for text in secret.texts if text.replace(",", "") in seen]
+        if not secret.visible(viewer, choices):
+            assert not present, f"{viewer} could see {secret.what}: {present!r}"
+    in_statements = viewer == "blake" or choices["blake"] == frozenset(Facet)
+    after = taxed_flags(answers)
+    assert after == [in_statements] * len(after), (viewer, scenario)
 
 
 @pytest.mark.parametrize("scenario", LEARNED_SCENARIOS)

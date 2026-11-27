@@ -59,6 +59,11 @@ SET_ASIDE_DAYS = 7
 FIRST_REVIEW_DAYS = 730
 """A first import's backfill: two years, none of it reviewed yet."""
 
+AVERY_TAKE_HOME = Decimal("5500.00")
+AVERY_WITHHELD = Decimal("1700.00")
+"""Avery's pay each month as the payslip books it: what reached the bank, and what was withheld
+as tax, so the demo shows tax as its own figure beside spending."""
+
 CARD_EXPIRED_DAYS_AGO = 12
 """Avery's card connection stopped updating this long ago, so the demo shows that state: more
 than a week (`books.BEHIND_AFTER`), so Avery's own figures say the day its data stops."""
@@ -128,8 +133,8 @@ SPENDING = (
     ("Assets:Blake:Checking", "Dining", ("Greenleaf Bistro",), 44, 4),
     ("Assets:Blake:Checking", "Health", ("Riverside Clinic",), 95, 1),
     ("Assets:Blake:Checking", "Shopping", ("Paper Lantern Goods",), 60, 2),
-    ("Assets:Casey:Checking", "Education", ("Campus Bookstore",), 48, 1),
-    ("Liabilities:Casey:Card", "Dining", ("Hilltop Cafe",), 14, 4),
+    ("Assets:Casey:Checking", "Education", ("Campus Bookstore",), 260, 1),
+    ("Liabilities:Casey:Card", "Dining", ("Hilltop Cafe",), 32, 4),
     ("Assets:Joint:Checking", "Groceries", ("Greenleaf Market",), 118, 4),
     ("Assets:Joint:Checking", "Utilities", ("City Power & Light",), 160, 1),
 )
@@ -239,7 +244,7 @@ def _ledger(
     for fund, name in FUND_NAMES.items():
         out += [f"{start} commodity {fund}", f'  name: "{name}"']
     out += [f"{start} open {account.ledger}" for account in ACCOUNTS]
-    categories = sorted({category for _, category, *_ in SPENDING} | {"Housing"})
+    categories = sorted({category for _, category, *_ in SPENDING} | {"Housing", "Taxes"})
     out += [f"{start} open Expenses:{category}" for category in categories]
     out += [
         f"{start} open Income:{name}" for name in ("Salary:Avery", "Salary:Blake", "Wages:Casey")
@@ -323,8 +328,19 @@ class _Writer:
                     ("Assets:Avery:Checking", f"-{cost} USD"),
                 ],
             )
+        if day.day == 15:
+            # Avery books the payslip: pay before tax, and what was withheld as tax beside the
+            # take-home pay that reached the bank, as a household's own ledger often does.
+            lines += self._entry(
+                day,
+                "Example Employer",
+                [
+                    ("Assets:Avery:Checking", f"{AVERY_TAKE_HOME} USD"),
+                    ("Expenses:Taxes", f"{AVERY_WITHHELD} USD"),
+                    ("Income:Salary:Avery", f"-{AVERY_TAKE_HOME + AVERY_WITHHELD} USD"),
+                ],
+            )
         for payee, income, account, amount, on in (
-            ("Example Employer", "Salary:Avery", "Assets:Avery:Checking", "3380.00", 15),
             ("Example Studio", "Salary:Blake", "Assets:Blake:Checking", "5200.00", 28),
             ("Campus Library", "Wages:Casey", "Assets:Casey:Checking", "720.00", 20),
         ):

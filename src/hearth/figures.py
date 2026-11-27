@@ -136,8 +136,13 @@ class MonthFlows:
     kept: Flows | None = None
     """What was booked to expense accounts that are not spending (``hearth.categories``), such
     as a retirement contribution: left out of `spending`, and so part of what was left over,
-    as money kept somewhere else rather than spent. `spending` and `kept` together are every
-    expense."""
+    as money kept somewhere else rather than spent. `spending`, `taxed` and `kept` together
+    are every expense."""
+    taxed: Flows | None = None
+    """What was booked to expense accounts of kind tax: never spending, and never left over,
+    but its own figure beside spending."""
+    unreviewed_tax: Flows | None = None
+    """Of `taxed`, what rests on rows nobody has checked yet, at their suggested category."""
     unplaced_out: Mapping[Owners, Unplaced] = field(default_factory=dict)
     """Each part's rows taking money out that wait for a member to say what they were
     (``books.uncategorised``), such as a new merchant's: in no spending total until placed."""
@@ -147,6 +152,16 @@ class MonthFlows:
     def kept_out(self, owners: Owners) -> Decimal:
         """What the part booked to expense accounts that are not spending."""
         found = self.kept.by_owners.get(owners, {}) if self.kept is not None else {}
+        return sum(found.values(), Decimal(0))
+
+    def taxed_out(self, owners: Owners) -> Decimal:
+        """What the part booked to expense accounts of kind tax."""
+        found = self.taxed.by_owners.get(owners, {}) if self.taxed is not None else {}
+        return sum(found.values(), Decimal(0))
+
+    def taxed_unreviewed(self, owners: Owners) -> Decimal:
+        """Of `taxed_out`, what rests on rows nobody has checked yet."""
+        found = self.unreviewed_tax.by_owners.get(owners, {}) if self.unreviewed_tax else {}
         return sum(found.values(), Decimal(0))
 
     def spent_unplaced(self, owners: Owners) -> Unplaced:
@@ -229,7 +244,13 @@ def month_flows(
             start=start,
             end=end,
             currency=currency,
-            counts=lambda account: not books.spends(account),
+            counts=books.keeps,
+        ),
+        taxed=spending_by_category(
+            books.entries, ownership, start=start, end=end, currency=currency, counts=books.taxes
+        ),
+        unreviewed_tax=spending_by_category(
+            flagged, ownership, start=start, end=end, currency=currency, counts=books.taxes
         ),
     )
 

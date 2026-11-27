@@ -61,6 +61,9 @@ It shows the Overview, the journal (Transactions), Holdings, Statements, the acc
 - A change is coloured only when it is both over $1,000 and over 10%, and the colour says good or bad for the household, never up or down; every change has its arrow and its word as well.
 - Income statement is the income and expense account tree, a column a month, quarter or year, with net income and how many rows of each column nobody has reviewed yet; Balance sheet is every account at the start of the period beside its end, with cost and gain not yet realised for investments, at market value or at cost; Year by year is every year the books hold, a year with too little of it in the books marked sparse.
 - The period and the valuation are chosen at the top and apply to every tab.
+- Spending is without tax, which is its own line.
+  Where the books hold any tax, "Include tax in spending" beside the valuation counts it as spending instead, on Summary, Income statement, Year by year and the Overview alike; it is off until turned on and remembered across launches, and tax stays its own line under spending.
+  Every figure it changes is sent both ways by the engine, so the app adds nothing up.
   A figure that adds up rows opens Transactions narrowed to exactly those rows, and an account opens its page.
 
 ## How it fits together

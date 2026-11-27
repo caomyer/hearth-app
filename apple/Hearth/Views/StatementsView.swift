@@ -10,6 +10,8 @@ import SwiftUI
 struct StatementsView: View {
     let model: StatementsModel
     @State private var openedStart = false
+    /// Whether tax is counted as spending, as the person chose; off unless they turn it on.
+    @AppStorage(TaxInSpending.key) private var withTax = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,20 +46,28 @@ struct StatementsView: View {
     private var tab: some View {
         switch model.tab {
         case .summary:
-            Answered(model: model.summary, loading: "statements.loading") { SummaryTab(summary: $0) }
+            Answered(model: model.summary, loading: "statements.loading") { SummaryTab(summary: $0, withTax: withTax) }
         case .incomeStatement:
-            Answered(model: model.incomeStatement, loading: "statements.loading") { IncomeTab(statement: $0) }
+            Answered(model: model.incomeStatement, loading: "statements.loading") { IncomeTab(statement: $0, withTax: withTax) }
         case .balanceSheet:
             Answered(model: model.balanceSheet, loading: "statements.loading") { SheetTab(sheet: $0) }
         case .years:
-            Answered(model: model.years, loading: "statements.loading") { YearsTab(years: $0) }
+            Answered(model: model.years, loading: "statements.loading") { YearsTab(years: $0, withTax: withTax) }
         }
     }
+}
+
+/// Where the app keeps whether tax is counted as spending: one choice, remembered across
+/// launches, for Statements and the Overview alike. The engine never hears it; it sends every
+/// figure that changes with it both ways.
+enum TaxInSpending {
+    static let key = "spending.includesTax"
 }
 
 /// The page's title, its tabs, and what every tab is asked for.
 private struct StatementsHead: View {
     let model: StatementsModel
+    @AppStorage(TaxInSpending.key) private var withTax = false
 
     /// The engine's own day, never the Mac's: "2026 so far" is the books' year.
     private var asOf: Day? { model.asOf }
@@ -117,6 +127,14 @@ private struct StatementsHead: View {
             .fixedSize()
             .accessibilityIdentifier("statements.valuation")
         }
+        // Only where the books hold tax, and on the tabs whose figures it changes.
+        if model.taxed, model.tab != .balanceSheet {
+            Toggle("Include tax in spending", isOn: $withTax)
+                .toggleStyle(.checkbox)
+                .fixedSize()
+                .help("Count tax as spending in every figure here and on the Overview")
+                .accessibilityIdentifier("statements.withTax")
+        }
     }
 
     private var tab: Binding<StatementsModel.Tab> {
@@ -164,9 +182,12 @@ private struct Answered<Content: Screen, Shown: View>: View {
 
 private struct SummaryTab: View {
     let summary: StatementSummary
+    let withTax: Bool
     @Environment(Navigator.self) private var navigator
 
     private var currency: String { summary.currency }
+    /// Spending, the savings rate and the lines, as the person counts tax: the engine's own.
+    private var shown: StatementSummary.Counted { summary.counted(withTax: withTax) }
 
     var body: some View {
         ScrollView {
@@ -187,11 +208,11 @@ private struct SummaryTab: View {
                 // Side by side where the window is wide enough, one under the other where not.
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 36) {
-                        StatementLines(summary: summary).fixedSize()
+                        StatementLines(summary: summary, lines: shown.lines).fixedSize()
                         WhyPanel(summary: summary).fixedSize()
                     }
                     VStack(alignment: .leading, spacing: 28) {
-                        StatementLines(summary: summary).fixedSize()
+                        StatementLines(summary: summary, lines: shown.lines).fixedSize()
                         WhyPanel(summary: summary).fixedSize()
                     }
                 }
@@ -234,17 +255,17 @@ private struct SummaryTab: View {
                 tone: summary.netWorth.tone, identifier: "statements.netWorth",
                 note: summary.netWorth.change == nil ? nil : "since \(Figures.day(summary.period.from))")
             Tile(
-                label: "Savings rate",
-                figure: StatementWords.figure(summary.savingsRate.now, rate: true, currency: currency),
-                detail: summary.savingsRate.before.map { "\(StatementWords.rate($0)) a year before" },
+                label: shown.savingsRate.label,
+                figure: StatementWords.figure(shown.savingsRate.now, rate: true, currency: currency),
+                detail: shown.savingsRate.before.map { "\(StatementWords.rate($0)) a year before" },
                 tone: .quiet, identifier: "statements.savingsRate")
             Tile(
-                label: "Spending",
-                figure: StatementWords.figure(summary.spending.now, rate: false, currency: currency),
-                detail: StatementWords.change(summary.spending, currency: currency),
-                tone: summary.spending.tone, identifier: "statements.spending",
-                note: summary.spending.change == nil ? nil : "against the same days a year before",
-                open: rows(summary.spending))
+                label: shown.spending.label,
+                figure: StatementWords.figure(shown.spending.now, rate: false, currency: currency),
+                detail: StatementWords.change(shown.spending, currency: currency),
+                tone: shown.spending.tone, identifier: "statements.spending",
+                note: shown.spending.change == nil ? nil : "against the same days a year before",
+                open: rows(shown.spending))
             Tile(
                 label: (summary.market?.amount ?? 0) < 0 ? "Market took away" : "Market added",
                 figure: summary.market.map { Figures.total(Money(abs($0.amount)), currency: currency) } ?? "\u{2013}",
@@ -328,6 +349,8 @@ enum ToneColour {
 /// The compact income statement, this period beside the same days a year before.
 private struct StatementLines: View {
     let summary: StatementSummary
+    /// The lines as the person counts tax (`StatementSummary.counted`).
+    let lines: [StatementLine]
     @Environment(Navigator.self) private var navigator
 
     var body: some View {
@@ -345,7 +368,7 @@ private struct StatementLines: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Palette.ink3)
                 Divider().gridCellUnsizedAxes(.horizontal)
-                ForEach(summary.lines) { line in
+                ForEach(lines) { line in
                     GridRow {
                         Text(line.label)
                             .fontWeight(line.total ? .semibold : .regular)
@@ -511,6 +534,7 @@ private struct TreeRow<Node: Identifiable>: Identifiable {
 
 private struct IncomeTab: View {
     let statement: IncomeStatement
+    let withTax: Bool
     @Environment(Navigator.self) private var navigator
     @State private var closed: Set<String> = []
 
@@ -596,6 +620,15 @@ private struct IncomeTab: View {
             name: "net", label: "Net income", kind: nil, cells: statement.net.cells,
             total: statement.net.total, children: [])
         found.append(TreeRow(node: net, depth: 0, branch: false, total: true))
+        // Spending and tax by kind, as the person counts tax, where the books hold any: tax is
+        // its own line, under spending when it is counted in it.
+        for total in statement.totalsShown(withTax: withTax) {
+            let node = IncomeStatement.Node(
+                name: Self.byKind + total.key, label: total.label, kind: nil, cells: total.cells,
+                total: total.total, children: [])
+            let under = withTax && total.key == "tax"
+            found.append(TreeRow(node: node, depth: under ? 1 : 0, branch: false, total: !under))
+        }
         if statement.unreviewed.rows > 0 {
             // How many rows each column rests on that nobody has reviewed yet.
             let waiting = IncomeStatement.Node(
@@ -610,6 +643,16 @@ private struct IncomeTab: View {
     }
 
     private static let waiting = "unreviewed"
+    /// What a figure by kind's row is named, before its key: no ledger name starts so.
+    private static let byKind = "kind:"
+
+    /// The categories whose rows a row adds up: a figure by kind's, as the engine names them,
+    /// or every category in a node.
+    private func categories(_ node: IncomeStatement.Node) -> [String] {
+        guard node.name.hasPrefix(Self.byKind) else { return node.categories }
+        let key = String(node.name.dropFirst(Self.byKind.count))
+        return statement.totals.first { $0.key == key }?.categories ?? []
+    }
 
     @ViewBuilder
     private func cell(_ row: TreeRow<IncomeStatement.Node>, index: Int?) -> some View {
@@ -627,7 +670,7 @@ private struct IncomeTab: View {
     @ViewBuilder
     private func figureCell(_ row: TreeRow<IncomeStatement.Node>, index: Int?) -> some View {
         let text = IncomeStatement.text(row.node, at: index)
-        let categories = row.node.categories
+        let categories = categories(row.node)
         if row.node.name == "net" || categories.isEmpty {
             Text(text).fontWeight(row.total ? .semibold : .regular).monospacedDigit().lineLimit(1)
         } else {
@@ -802,6 +845,14 @@ private struct SheetTab: View {
 
 private struct YearsTab: View {
     let years: YearByYear
+    let withTax: Bool
+
+    /// Whether the years hold any tax, so it is a column of its own and the switch applies.
+    private var taxed: Bool { years.scope.taxed }
+    private var counted: Bool { taxed && withTax }
+    private var spendingTitle: String { StatementWords.spending(withTax: counted) }
+    private var payTitle: String { StatementWords.pay(taxed: taxed) }
+    private var rateTitle: String { StatementWords.savingsRate(taxed: taxed, withTax: withTax) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -828,18 +879,25 @@ private struct YearsTab: View {
                     TableColumn("Net worth") { year in money(year.netWorth) }
                         .width(width(\.netWorth, "Net worth"))
                         .alignment(.trailing)
-                    TableColumn("Take-home pay") { year in money(year.pay) }
-                        .width(width(\.pay, "Take-home pay"))
+                    TableColumn(payTitle) { year in money(year.pay) }
+                        .width(width(\.pay, payTitle))
                         .alignment(.trailing)
-                    TableColumn("Spending") { year in money(year.spending) }
-                        .width(width(\.spending, "Spending"))
+                    if taxed {
+                        TableColumn("Tax") { year in money(year.tax) }
+                            .width(width(\.tax, "Tax"))
+                            .alignment(.trailing)
+                    }
+                    TableColumn(spendingTitle) { year in money(year.spending(withTax: counted)) }
+                        .width(width({ $0.spending(withTax: counted) }, spendingTitle))
                         .alignment(.trailing)
                     TableColumn("Saved from work") { year in money(year.saved) }
                         .width(width(\.saved, "Saved from work"))
                         .alignment(.trailing)
-                    TableColumn("Savings rate") { year in
-                        Text(StatementWords.figure(year.savingsRate, rate: true, currency: years.currency)).monospacedDigit()
+                    TableColumn(rateTitle) { year in
+                        Text(rate(year)).monospacedDigit()
                     }
+                    // As wide as its heading, which says how tax is counted, and its widest rate.
+                    .width(FigureWidth.holding(years.years.map(rate), title: rateTitle))
                     .alignment(.trailing)
                 }
                 // A few years, never a page of them: stripes would run on down the empty table.
@@ -854,12 +912,20 @@ private struct YearsTab: View {
         Text(StatementWords.figure(value, rate: false, currency: years.currency)).monospacedDigit().lineLimit(1)
     }
 
+    private func rate(_ year: YearByYear.Year) -> String {
+        StatementWords.figure(year.savingsRate(withTax: counted), rate: true, currency: years.currency)
+    }
+
     private func width(_ value: KeyPath<YearByYear.Year, Money?>, _ title: String) -> CGFloat {
         FigureWidth.holding(years.texts({ $0[keyPath: value] }, currency: years.currency), title: title)
     }
 
     private func width(_ value: KeyPath<YearByYear.Year, Money>, _ title: String) -> CGFloat {
         FigureWidth.holding(years.texts({ $0[keyPath: value] }, currency: years.currency), title: title)
+    }
+
+    private func width(_ value: @escaping (YearByYear.Year) -> Money, _ title: String) -> CGFloat {
+        FigureWidth.holding(years.texts({ value($0) }, currency: years.currency), title: title)
     }
 }
 

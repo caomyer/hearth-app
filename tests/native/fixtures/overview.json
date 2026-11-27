@@ -26,9 +26,13 @@
     "review": {
       "waiting": 14,
       "spending": "1120.37",
+      "spending_with_tax": "1420.37",
+      "tax": "910.00",
+      "tax_unreviewed": "300.00",
       "unplaced_spending": {"rows": 3, "moved": "41.20"},
       "unplaced_income": null,
       "not_spending": "500.00"
-    }
+    },
+    "taxed": true
   }
 }

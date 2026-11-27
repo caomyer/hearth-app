@@ -622,3 +622,31 @@ def secrets(account_ids: Mapping[str, str]) -> Iterator[Secret]:
         (HOUSEHOLD_INCOME, Facet.MONTHLY_INCOME_TOTAL, "household income"),
     ):
         yield secret(text, what, all_of(*(shared(facet, part) for part in PARTS)))
+
+
+BLAKE_TAX = (("2026-09-12", "1,613.29"), ("2026-10-09", "1,527.46"))
+"""Tax Blake paid from their own account, in a month that is over and in this one: booked
+only where a test says so (`tax_text`), as every other figure here is without it. In the
+thousands, so each is looked for in whole dollars as well as to the cent (`secret`), and of
+figures no other sum here comes to."""
+
+
+def tax_text() -> str:
+    """Blake's tax, as beancount reads it, to append to the household's books."""
+    lines = [f"{OPENED} open Expenses:Taxes", ""]
+    for day, amount in BLAKE_TAX:
+        lines += [
+            f'{day} * "Payee Bittern Revenue" ""',
+            f"  Assets:Zq:BlakeSolo  -{amount.replace(',', '')} USD",
+            "  Expenses:Taxes",
+            "",
+        ]
+    return "\n".join(lines)
+
+
+def tax_secrets() -> Iterator[Secret]:
+    """Blake's tax is never spending, and is its own figure only to whoever may see Blake's
+    categories or transactions: anyone else is told Blake's spending without it, and nothing
+    of it."""
+    for _, amount in BLAKE_TAX:
+        yield secret(amount, "blake tax", _detail("blake_solo"))

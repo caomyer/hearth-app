@@ -65,8 +65,10 @@ __all__ = [
     "Scope",
     "SheetRow",
     "Summary",
+    "Total",
     "Unreviewed",
     "Valuing",
+    "WithTax",
     "Years",
     "balance_sheet",
     "income_statement",
@@ -86,6 +88,24 @@ SPARSE_SHARE = Decimal("0.5")
 it has had so far, for the year in progress): too little history to set against another."""
 
 OTHER_SPENDING = "Other spending"
+
+SPENDING = "Spending"
+SPENDING_WITH_TAX = "Spending and tax"
+"""Spending as the summary, Year by year and the income statement name it: without tax, and
+with tax counted in it, which the app may show instead (`WithTax`)."""
+
+PAY = "Take-home pay"
+PAY_BEFORE_TAX = "Pay before tax"
+"""Pay as the books hold it is called what it is: where the scope holds tax, pay is booked
+before it, so "take-home" would not be true; where it holds none, pay is what reached the
+bank."""
+
+SAVINGS_RATE = "Savings rate"
+SAVINGS_RATE_AFTER_TAX = "Savings rate, after tax"
+SAVINGS_RATE_WITH_TAX = "Savings rate, with tax"
+"""The savings rate's name says how tax is counted, wherever the scope holds any: saved from
+work over pay after tax, or over pay with tax counted as spending. Without tax in the scope
+there is one rate, and it needs no saying."""
 
 FLOOR = date(1900, 1, 1)
 """No statement starts before this, whatever the books hold: a day of a year with no year
@@ -264,6 +284,14 @@ def covered(h: Household, s: Scope, period: Period) -> bool:
     )
 
 
+def taxed(h: Household, s: Scope) -> bool:
+    """Whether the scope's books hold any tax, over all their history: whether a figure with
+    tax counted in it would ever differ from one without. Judged on the scope's own accounts
+    alone, by what moved them, so it says nothing of any account or category outside it. A
+    posting is enough: tax refunded to nothing over the years was still tax."""
+    return any(h.books.kind(a) is Kind.TAX for a in ledger(h).books_to(s.ledger))
+
+
 def _months(period: Period) -> list[Month]:
     found = [Month.of(period.start)]
     while found[-1] < Month.of(period.end):
@@ -300,6 +328,18 @@ class Line:
 
 
 @dataclass(frozen=True, slots=True)
+class WithTax:
+    """The figures that change when tax is counted as spending, each worked out here so that
+    nothing is added up again to show them: spending with tax in it, the savings rate over pay
+    with tax counted as spending, and the compact income statement with tax under spending,
+    still its own line."""
+
+    spending: Line
+    savings_rate: Line
+    lines: tuple[Line, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Summary:
     period: Period
     against: Period
@@ -309,7 +349,9 @@ class Summary:
     net_worth: Line
     """What the statement's accounts hold at the end, set against the start of the period."""
     savings_rate: Line
+    """Saved from work over pay after tax."""
     spending: Line
+    """Spending, without tax, which is its own line."""
     market: Decimal | None
     """What the market added or took away over the period, at market value; None while a
     balance is not known."""
@@ -323,6 +365,11 @@ class Summary:
     and why it changed, are without them, and say so."""
     floor: bool = False
     """Whether net worth leaves out holdings with no price, so is at least what it says."""
+    taxed: bool = False
+    """Whether the scope's books hold any tax (`taxed`)."""
+    with_tax: WithTax | None = None
+    """The same figures with tax counted as spending; None when the scope holds no tax, as
+    they would be these."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,10 +397,13 @@ class _Compared:
         heard = tone(mine, earlier, better) if self.now.covered else Tone.QUIET
         return Line(key, label, mine, earlier, heard, tuple(categories), total, depth)
 
-    def of_kind(self, kind: Kind) -> tuple[str, ...]:
-        """Every category of `kind` either period books to."""
+    def of_kind(self, *kinds: Kind) -> tuple[str, ...]:
+        """Every category of any of `kinds` either period books to."""
         found = {
-            a for f in (self.now.flows, self.then.flows) for a in f.by_account if f.kinds[a] is kind
+            a
+            for f in (self.now.flows, self.then.flows)
+            for a in f.by_account
+            if f.kinds[a] in kinds
         }
         return tuple(sorted(found))
 
@@ -367,6 +417,8 @@ def summary(h: Household, period: Period, *, market: bool) -> Summary:
     n, t = now.flows, both.then.flows
     start, end = now.start, now.end
     whole = total(ledger(h).held(period.end, s.ledger).values())
+    has_tax = taxed(h, s)
+    rate = SAVINGS_RATE_AFTER_TAX if has_tax else SAVINGS_RATE
     return Summary(
         period=period,
         against=against,
@@ -378,18 +430,42 @@ def summary(h: Household, period: Period, *, market: bool) -> Summary:
             start.value(market) if s.known and now.covered and not now.late else None,
         ),
         savings_rate=both.line(
-            "savings_rate", "Savings rate", n.savings_rate, t.savings_rate, Better.NEITHER
+            "savings_rate", rate, n.savings_rate, t.savings_rate, Better.NEITHER
         ),
         spending=both.line(
-            "spending", "Spending", n.spending, t.spending, Better.LESS, both.of_kind(Kind.SPENDING)
+            "spending", SPENDING, n.spending, t.spending, Better.LESS, both.of_kind(Kind.SPENDING)
         ),
         market=movement(start, end, n) if s.known else None,
-        lines=_lines(both),
+        lines=_lines(both, with_tax=False, rate=rate, pay=PAY_BEFORE_TAX if has_tax else PAY),
         bridge=bridge(start, end, n, market=market) if s.known else None,
         valuing=replace(_valuing([start, whole], market, whole), later=n.later),
         unreviewed=n.unreviewed,
         late=now.late,
         floor=market and whole.is_floor,
+        taxed=has_tax,
+        with_tax=_with_tax(both) if has_tax else None,
+    )
+
+
+def _with_tax(both: _Compared) -> WithTax:
+    n, t = both.now.flows, both.then.flows
+    return WithTax(
+        spending=both.line(
+            "spending",
+            SPENDING_WITH_TAX,
+            n.spending_with_tax,
+            t.spending_with_tax,
+            Better.LESS,
+            both.of_kind(Kind.SPENDING, Kind.TAX),
+        ),
+        savings_rate=both.line(
+            "savings_rate",
+            SAVINGS_RATE_WITH_TAX,
+            n.savings_rate_with_tax,
+            t.savings_rate_with_tax,
+            Better.NEITHER,
+        ),
+        lines=_lines(both, with_tax=True, rate=SAVINGS_RATE_WITH_TAX, pay=PAY_BEFORE_TAX),
     )
 
 
@@ -405,33 +481,53 @@ def _since_start(end: Decimal | None, start: Decimal | None) -> Line:
     return Line("net_worth", "Net worth", end, start, tone(end, start, Better.MORE))
 
 
-def _lines(both: _Compared) -> tuple[Line, ...]:
+def _lines(both: _Compared, *, with_tax: bool, rate: str, pay: str) -> tuple[Line, ...]:
     """The compact income statement: take-home pay, tax, spending by its largest branches,
     saved from work, its rate, what was not counted as spending, investment income and other
-    income, each set against the same days a year before."""
+    income, each set against the same days a year before.
+
+    `with_tax` counts tax as spending: spending with tax in it, and tax the first line under
+    it, so tax is still its own line and saved from work is the same either way."""
     n, t = both.now.flows, both.then.flows
     line = both.line
-    found = [line("pay", "Take-home pay", n.pay, t.pay, Better.MORE, both.of_kind(Kind.PAY))]
-    if n.tax or t.tax:
-        found.append(line("tax", "Tax", n.tax, t.tax, Better.LESS, both.of_kind(Kind.TAX)))
+    found = [line("pay", pay, n.pay, t.pay, Better.MORE, both.of_kind(Kind.PAY))]
+    tax = line(
+        "tax",
+        _tax_label(n.tax, t.tax),
+        n.tax,
+        t.tax,
+        Better.LESS,
+        both.of_kind(Kind.TAX),
+        depth=int(with_tax),
+    )
+    if (n.tax or t.tax) and not with_tax:
+        found.append(tax)
     found.append(
         line(
             "spending",
-            "Spending",
-            n.spending,
-            t.spending,
+            SPENDING_WITH_TAX if with_tax else SPENDING,
+            n.spending_with_tax if with_tax else n.spending,
+            t.spending_with_tax if with_tax else t.spending,
             Better.LESS,
-            both.of_kind(Kind.SPENDING),
+            both.of_kind(Kind.SPENDING, Kind.TAX) if with_tax else both.of_kind(Kind.SPENDING),
             total=True,
         )
     )
+    if (n.tax or t.tax) and with_tax:
+        found.append(tax)
     found += [
         line(key, label, a, b, Better.LESS, cats, depth=1)
         for key, label, a, b, cats in _branches(both.now, both.then)
     ]
     found.append(line("saved", "Saved from work", n.saved, t.saved, Better.MORE, total=True))
     found.append(
-        line("savings_rate", "Savings rate", n.savings_rate, t.savings_rate, Better.NEITHER)
+        line(
+            "savings_rate",
+            rate,
+            n.savings_rate_with_tax if with_tax else n.savings_rate,
+            t.savings_rate_with_tax if with_tax else t.savings_rate,
+            Better.NEITHER,
+        )
     )
     if n.not_spending or t.not_spending:
         found.append(
@@ -466,6 +562,12 @@ def _lines(both: _Compared) -> tuple[Line, ...]:
             )
         )
     return tuple(found)
+
+
+def _tax_label(*amounts: Decimal) -> str:
+    """Tax, called what it is where any of `amounts` refunded more than was paid: a negative
+    figure under "Tax, less refunds" is tax that came back."""
+    return "Tax, less refunds" if any(a < 0 for a in amounts) else "Tax"
 
 
 def _branches(
@@ -528,6 +630,18 @@ class Column:
 
 
 @dataclass(frozen=True, slots=True)
+class Total:
+    """A figure the income statement adds up by kind, not by the account tree: a cell per
+    column, the period's total, and the categories whose rows it adds up."""
+
+    key: str
+    label: str
+    cells: tuple[Decimal, ...]
+    total: Decimal
+    categories: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class IncomeStatement:
     period: Period
     scope: Scope
@@ -542,6 +656,10 @@ class IncomeStatement:
     """Of the whole period."""
     later: int = 0
     """Amounts converted on their own day at a later first price (`Flows.later`)."""
+    taxed: bool = False
+    """Whether the scope's books hold any tax (`taxed`)."""
+    totals: tuple[Total, ...] = ()
+    """Spending without tax, tax, and spending with tax, each column worked out here."""
 
 
 def income_statement(h: Household, period: Period, by: Columns) -> IncomeStatement:
@@ -570,6 +688,41 @@ def income_statement(h: Household, period: Period, by: Columns) -> IncomeStateme
         net_total=income.total - expenses.total,
         unreviewed=whole.unreviewed,
         later=whole.later,
+        taxed=taxed(h, s),
+        totals=_totals(per, whole),
+    )
+
+
+def _totals(per: Sequence[Flows], whole: Flows) -> tuple[Total, ...]:
+    """Spending, tax, and spending with tax in it, by column: each worked out here, so a page
+    shows whichever it is asked for and adds nothing up."""
+
+    def categories(*kinds: Kind) -> tuple[str, ...]:
+        found = {a for f in (*per, whole) for a in f.by_account if f.kinds[a] in kinds}
+        return tuple(sorted(found))
+
+    return (
+        Total(
+            "spending",
+            SPENDING,
+            tuple(f.spending for f in per),
+            whole.spending,
+            categories(Kind.SPENDING),
+        ),
+        Total(
+            "tax",
+            _tax_label(whole.tax, *(f.tax for f in per)),
+            tuple(f.tax for f in per),
+            whole.tax,
+            categories(Kind.TAX),
+        ),
+        Total(
+            "spending_with_tax",
+            SPENDING_WITH_TAX,
+            tuple(f.spending_with_tax for f in per),
+            whole.spending_with_tax,
+            categories(Kind.SPENDING, Kind.TAX),
+        ),
     )
 
 
@@ -635,6 +788,9 @@ class BalanceSheet:
     liabilities: SheetRow
     net_worth: SheetRow
     valuing: Valuing
+    taxed: bool = False
+    """Whether the scope's books hold any tax (`taxed`): nothing here changes with it, but every
+    statement says it of its scope alike."""
 
 
 def balance_sheet(h: Household, period: Period, *, market: bool) -> BalanceSheet:
@@ -707,6 +863,7 @@ def balance_sheet(h: Household, period: Period, *, market: bool) -> BalanceSheet
             paid=_paid_sum([assets, liabilities]),
         ),
         valuing=_valuing([*opening.values(), *closing.values()], market, total(closing.values())),
+        taxed=taxed(h, s),
     )
 
 
@@ -778,8 +935,14 @@ class Year:
     """At its end, or the books' own day; None while a balance is not known."""
     pay: Decimal
     spending: Decimal
+    """Without tax, which is its own figure."""
     saved: Decimal
     savings_rate: Decimal | None
+    """Saved from work over pay after tax."""
+    tax: Decimal = Decimal(0)
+    spending_with_tax: Decimal = Decimal(0)
+    savings_rate_with_tax: Decimal | None = None
+    """Saved from work over pay, tax counted as spending."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -787,6 +950,8 @@ class Years:
     scope: Scope
     market: bool
     years: tuple[Year, ...]
+    taxed: bool = False
+    """Whether the scope's books hold any tax (`taxed`)."""
 
 
 def years(h: Household, *, market: bool) -> Years:
@@ -828,9 +993,12 @@ def years(h: Household, *, market: bool) -> Years:
                 spending=moved.spending,
                 saved=moved.saved,
                 savings_rate=moved.savings_rate,
+                tax=moved.tax,
+                spending_with_tax=moved.spending_with_tax,
+                savings_rate_with_tax=moved.savings_rate_with_tax,
             )
         )
-    return Years(s, market, tuple(found))
+    return Years(s, market, tuple(found), taxed=taxed(h, s))
 
 
 def within(h: Household) -> frozenset[str]:

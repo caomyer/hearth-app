@@ -224,6 +224,9 @@ def test_the_overview_says_how_much_waits_for_the_viewer(kites: World) -> None:
     assert review == {
         "waiting": 5,
         "spending": "33.00",
+        "spending_with_tax": "33.00",
+        "tax": None,
+        "tax_unreviewed": None,
         "unplaced_spending": {"rows": 1, "moved": "23.45"},
         "unplaced_income": None,
         "not_spending": None,
@@ -231,6 +234,9 @@ def test_the_overview_says_how_much_waits_for_the_viewer(kites: World) -> None:
     assert ready(bridge(kites, "avery").answer("overview"))["review"] == {
         "waiting": 0,
         "spending": None,
+        "spending_with_tax": None,
+        "tax": None,
+        "tax_unreviewed": None,
         "unplaced_spending": None,
         "unplaced_income": None,
         "not_spending": None,
@@ -262,6 +268,34 @@ def test_the_overview_says_of_this_months_totals_what_the_viewers_own_page_says(
     for other in ("avery", "blake"):
         told = ready(bridge(kites, other).answer("overview"))["review"]
         assert (told["not_spending"], told["unplaced_spending"]) == (None, None), other
+
+
+def test_the_overview_says_tax_apart_from_spending_and_with_it_as_the_own_page_does(
+    kites: World,
+) -> None:
+    """Kites booked as tax: no spending figure counts them, so none of this month's spending
+    waits in Review; the tax does, and the banner says how much of it waits, and both together
+    for whoever counts tax as spending, each worked out by the engine. Casey's own page says the
+    same; nobody else is told any of it, whatever Casey shares."""
+    conn = kites.connect()
+    try:
+        categories.set_kind(conn, KITES, Kind.TAX, now=kites.clock())
+    finally:
+        conn.close()
+    kites.choose("casey", frozenset(Facet))
+    kites.recompute()
+
+    review = ready(bridge(kites, "casey").answer("overview"))["review"]
+
+    assert review["spending"] is None
+    assert review["spending_with_tax"] == "33.00"
+    # Every kite this month, the one already reviewed among them, as the page counts it.
+    assert (review["tax"], review["tax_unreviewed"]) == ("45.34", "33.00")
+    page = kites.signed_in("casey").get("/you").text
+    assert "of tax is not counted here" in page
+    for other in ("avery", "blake"):
+        told = ready(bridge(kites, other).answer("overview"))["review"]
+        assert (told["tax"], told["tax_unreviewed"], told["spending_with_tax"]) == (None,) * 3
 
 
 def test_an_unreviewed_journal_entry_names_the_review_it_waits_on_to_its_reviewer(

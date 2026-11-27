@@ -110,8 +110,8 @@ class Accepted:
     spent: Decimal
 
     def holds(self, after: str) -> None:
-        """The row is still reviewed, booked where it was accepted, and September's spending
-        is what it was."""
+        """The row is still reviewed, booked where it was accepted, and what September's
+        expenses add up to is what it was."""
         found = self.household
         assert found.state(self.row()) is State.REVIEWED, after
         assert booked_to(found, self.item) == self.account, after
@@ -131,7 +131,9 @@ def september(household: Household) -> Decimal:
         )
     finally:
         conn.close()
-    return found.spent(owners)
+    # Every expense, of any kind: saying what kind another category is moves money between
+    # spending and tax, never a row between categories.
+    return found.spent(owners) + found.taxed_out(owners) + found.kept_out(owners)
 
 
 def door(household: Household, viewer: str = "avery") -> Doorway:
