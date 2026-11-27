@@ -466,9 +466,23 @@ final class FirstLaunchTests: XCTestCase {
         let holdings = sample(startingOn: "holding:BIDX", size: "1000x560")
         let source = holdings.descendants(matching: .any)["price.source"].firstMatch
         XCTAssertTrue(source.waitForExistence(timeout: 60), "the holding's price was not shown beside the list")
+        // Every frame here is in the screen's coordinates, as the accessibility tree gives them.
         let window = holdings.windows.firstMatch.frame
+        let sidebar = holdings.outlines.firstMatch.frame
         let overview = holdings.descendants(matching: .any)["sidebar.overview"].firstMatch.frame
-        XCTAssertGreaterThan(overview.minX, window.minX, "the sidebar was cut at its leading edge")
+        let panel = holdings.staticTexts["price.title"].frame
+        let total = holdings.staticTexts["holdings.total"].frame
+        let screen = XCUIScreen.main.screenshot().image.size
+        let frames =
+            "screen \(screen), window \(window), sidebar \(sidebar), its Overview \(overview), "
+            + "the list's total \(total), the panel's title \(panel)"
+        XCTAssertTrue(
+            window.minX >= 0 && window.maxX <= screen.width, "the window is not wholly on its screen: \(frames)")
+        XCTAssertGreaterThanOrEqual(sidebar.minX, window.minX, "the sidebar was cut at its leading edge: \(frames)")
+        XCTAssertGreaterThan(overview.minX, sidebar.minX, "the sidebar's rows were cut: \(frames)")
+        XCTAssertGreaterThan(total.minX, overview.maxX, "the list is under the sidebar: \(frames)")
+        XCTAssertGreaterThan(panel.minX, total.minX, "the panel is not beside the list: \(frames)")
+        XCTAssertLessThanOrEqual(panel.maxX, window.maxX, "the panel runs past the window: \(frames)")
     }
 
     /// The day the sample stands on for the tests that work its Review. The sample is drawn

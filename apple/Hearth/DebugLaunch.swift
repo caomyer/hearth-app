@@ -109,9 +109,18 @@ enum DebugLaunch {
             guard let size = windowSize,
                 let window = NSApplication.shared.windows.first(where: { $0.styleMask.contains(.resizable) && $0.isVisible })
             else { return }
+            // A size asked for is this run's alone: the window's saved frame is left as it was,
+            // so the next launch, and the next test, opens as it would have.
+            window.setFrameAutosaveName("")
             var frame = window.frame
             frame.origin.y = frame.maxY - size.height
             frame.size = size
+            // Wholly on its screen, whatever frame it was restored at: a window hanging off a
+            // small screen's edge is not one whose layout can be looked at.
+            if let visible = window.screen?.visibleFrame {
+                frame.origin.x = max(visible.minX, min(frame.minX, visible.maxX - frame.width))
+                frame.origin.y = max(visible.minY, min(frame.minY, visible.maxY - frame.height))
+            }
             window.setFrame(frame, display: true)
         #endif
     }
