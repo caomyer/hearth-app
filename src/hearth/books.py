@@ -176,6 +176,9 @@ class Books:
     """The prices the books were valued at, for valuing them on any other day: a statement's
     start and end (``hearth.reports.statements``). Held in memory, as the recompute read them,
     so a page never reads the price table itself."""
+    price_sources: tuple[str, ...] = PRICE_SOURCES
+    """The sources the stored prices it was valued at were taken from (`stored_prices`), so
+    that a price's history is read from exactly those."""
 
     def kind(self, account: str) -> Kind:
         """What kind of money an income or expense account is (``hearth.categories``)."""
@@ -371,6 +374,7 @@ def compute(
     unproved: Mapping[str, Unknown] | None = None,
     held_back: Mapping[str, tuple[date, date]] | None = None,
     kinds: Mapping[str, Kind] | None = None,
+    price_sources: Sequence[str] = PRICE_SOURCES,
 ) -> Books:
     """Lay the rulings over the ledger, check it, and value the household today and at each
     recent month end. `synced` is each fed ledger account's connection and its last successful
@@ -378,7 +382,8 @@ def compute(
     derived, with why; `invested`, each account a brokerage account feeds; `unfed`, each the
     household holds that nothing opens; `carried`, each account of the base hearth carries on;
     `unproved`, each of those its bank's balance cannot prove yet, with why; `kinds`, each
-    income or expense account a person said the kind of (``hearth.categories``).
+    income or expense account a person said the kind of (``hearth.categories``); and
+    `price_sources`, the sources `lookup` reads stored prices from.
 
     Raises `LedgerError` when a balance assertion disagrees with the postings, because every
     figure downstream would inherit the error.
@@ -450,6 +455,7 @@ def compute(
         begun=begun(ledger, carried, {r for r, d in decided.items() if d.ruling is not None}),
         kinds=categories.kinds(_categories(entries), kinds or {}),
         prices=lookup,
+        price_sources=tuple(price_sources),
     )
 
 
@@ -1115,6 +1121,7 @@ def from_household(
                 carried=household.carried,
                 held_back=household.held_back,
                 kinds=categories.stored(conn),
+                price_sources=sources,
             )
         finally:
             conn.close()

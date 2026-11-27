@@ -129,6 +129,6 @@ The savings rate, net worth's other parts and other income are never coloured.
 ### The other views
 
 - The income statement is the income and expense account tree for the period, with a cell for each calendar month, quarter or year the period touches, cut to it, and a total; each column says what of it rests on rows nobody has reviewed yet, at their suggested category, and how many nothing has placed.
-- The balance sheet is every account at the start of the period beside its end, grouped Cash, Investments and Other assets, then Credit and Other liabilities, with cost and gain not yet realised; an account whose history begins inside the period says from when.
+- The balance sheet is every account at the start of the period beside its end, grouped Cash, Investments and Other assets, then Credit and Other liabilities, with cost and gain not yet realised as Holdings gives them, from the same lots (`valuation.holdings.Holding.cost`): none where a security is held with no lot, and no gain where it has no price; an account whose history begins inside the period says from when.
 - Year by year is net worth, take-home pay, spending, saved from work and the savings rate for every year the books hold.
   A year is sparse when the books hold fewer than half its months in full, of those it has had so far for the year in progress (`SPARSE_SHARE`).

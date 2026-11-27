@@ -9,6 +9,7 @@ A silently wrong net worth is the worst thing hearth could show, because its who
 | Fact | Lives in | Read by |
 |---|---|---|
 | Units held: cash, card balances, fund shares | The books: a ledger's, or hearth's own | `holdings.holdings_at` |
+| What a position cost, when every lot of it is at cost | The books: a ledger's lots | `holdings.Holding.cost` |
 | Prices, with provenance | The app database, table `price` | `pricestore.PriceStore` |
 | Where prices come from | A `quotes.PriceSource` implementation | `refresh.refresh_prices` |
 | What it is all worth | Computed, never stored as a fact | `networth.value_holdings` |

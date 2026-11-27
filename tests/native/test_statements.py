@@ -198,6 +198,21 @@ def test_the_balance_sheet_groups_accounts_start_beside_end(world: World) -> Non
     assert answer["liabilities"]["children"] == []
 
 
+def test_the_balance_sheet_says_what_holdings_cost_as_holdings_does(world: World) -> None:
+    """Cost and gain come from the same lots Holdings reads, so the two never disagree."""
+    sheet = ask(world, "avery", "balance_sheet")
+    holdings = ask(world, "avery", "holdings")
+
+    (invested,) = [g for g in sheet["assets"]["children"] if g["label"] == "Investments"]
+    for row in invested["children"]:
+        listed = next(a for a in holdings["accounts"] if a["id"] == row["account"]["id"])
+        costs = [D(h["cost"]) for h in listed["held"] if h["cost"] is not None]
+        assert D(row["end"]["cost"]) == sum(costs, D(0))
+        gains = [h["gain"] for h in listed["held"] if not h["is_cash"]]
+        if None not in gains:
+            assert D(row["end"]["gain"]) == sum((D(g) for g in gains), D(0))
+
+
 def test_casey_owes_on_the_card(world: World) -> None:
     answer = ask(world, "casey", "balance_sheet", valuation="cost")
 

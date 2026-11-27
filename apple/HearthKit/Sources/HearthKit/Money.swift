@@ -33,6 +33,20 @@ public struct Money: Decodable, Sendable, Hashable, Comparable {
     }
 }
 
+/// A number of units of a security, exactly as the books hold it: written as money is, as a
+/// decimal string, and never through a binary float.
+public struct Quantity: Decodable, Sendable, Hashable {
+    public let amount: Decimal
+
+    public init(_ amount: Decimal) {
+        self.amount = amount
+    }
+
+    public init(from decoder: any Decoder) throws {
+        amount = try Money(from: decoder).amount
+    }
+}
+
 /// A day on the calendar, with no time and no time zone: the day a balance is as of, or a
 /// price is from.
 public struct Day: Decodable, Sendable, Hashable, Comparable {

@@ -244,7 +244,8 @@ def _held(held: Held | None, paid: Decimal | None, market: bool) -> Answer | Non
     return {
         "value": _money(held.value(market)),
         "cost": _money(paid),
-        "gain": _money(held.market - paid) if paid is not None else None,
+        # A holding with no price has no gain to tell, only its cost, as Holdings says.
+        "gain": _money(held.market - paid) if paid is not None and not held.at_cost else None,
         "securities": held.securities,
     }
 
