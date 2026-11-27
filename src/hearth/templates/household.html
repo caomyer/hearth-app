@@ -199,6 +199,10 @@
 
   <div class="grid grid-2 mt-4">
     {% set went = h.went %}
+    {% set sp = h.so_far %}
+    {# Where the month went and the month so far sit side by side: the words that any hidden
+       tax is in a total are said once, in the first, for both. #}
+    {% set went_untold = went.known and went.untold and went.totals_only %}
     <section class="panel" aria-labelledby="cat-h">
       <div class="panel-head">
         <h2 id="cat-h">Where {{ last_name }} went</h2>
@@ -245,7 +249,7 @@
       </div>
       {% if went.known and (went.rows or went.totals_only) %}
       <div class="panel-foot">
-        <span>{% if went.total is not none %}<span class="tnum">{{ went.total | dollars }}</span> in all{% if went.without %}, without {{ went.without | names("in_prose") }}{% endif %}.{% endif %}{% if went.has_typical %} Typical is the middle of the six months before.{% endif %}{% if went.unreviewed.leans %} Includes <span class="tnum">{{ went.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ kept_sentence(went.unreviewed.kept) }}{{ tax_sentence(went.unreviewed) }}{{ untold_sentence(went.untold and went.totals_only, "a total shown alone") }}{{ unplaced_note(went.unreviewed) }}{{ unreviewed_caveat(went.unreviewed) }}</span>
+        <span>{% if went.total is not none %}<span class="tnum">{{ went.total | dollars }}</span> in all{% if went.without %}, without {{ went.without | names("in_prose") }}{% endif %}.{% endif %}{% if went.has_typical %} Typical is the middle of the six months before.{% endif %}{% if went.unreviewed.leans %} Includes <span class="tnum">{{ went.unreviewed.amount | dollars }}</span> not yet reviewed, at its suggested category.{% endif %}{{ kept_sentence(went.unreviewed.kept) }}{{ tax_sentence(went.unreviewed) }}{{ untold_sentence(went_untold, "a total shown alone" ~ (", and in " ~ month_name ~ " so far" if sp.untold else "")) }}{{ unplaced_note(went.unreviewed) }}{{ unreviewed_caveat(went.unreviewed) }}</span>
         {% if review_count and (went.unreviewed.leans or went.unreviewed.leaves_out) %}<a href="/review">Review yours</a>{% endif %}
       </div>
       {% endif %}
@@ -261,7 +265,7 @@
         <div class="figs">
           <div>
             <p class="fig-label">Spent, {{ month_abbr }} 1{% if sp.to_day > 1 %}&ndash;{{ sp.to_day }}{% endif %}</p>
-            {% if sp.covered and sp.spent_counted %}<p class="fig-value">{{ sp.spent | hero }}</p>{{ unreviewed_sub(sp.spent_unreviewed) }}{% if sp.untold %}<p class="fig-sub">Any tax of those whose categories are not shared with you is in it.</p>{% endif %}{% else %}<p class="fig-value muted">&ndash;</p><p class="fig-sub">Not known{% if sp.spent_counted %} yet{% endif %}</p>{% endif %}
+            {% if sp.covered and sp.spent_counted %}<p class="fig-value">{{ sp.spent | hero }}</p>{{ unreviewed_sub(sp.spent_unreviewed) }}{% if sp.untold and not went_untold %}<p class="fig-sub">Any tax of those whose categories are not shared with you is in it.</p>{% endif %}{% else %}<p class="fig-value muted">&ndash;</p><p class="fig-sub">Not known{% if sp.spent_counted %} yet{% endif %}</p>{% endif %}
             {% if sp.spent_without %}<p class="fig-sub">{{ private("Without " ~ (sp.spent_without | names("in_prose"))) }}</p>{% endif %}
           </div>
           <div>

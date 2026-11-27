@@ -387,6 +387,38 @@ def test_the_tax_crawl_finds_tax_told_without_asking(
     assert leaked, slip
 
 
+def test_the_tax_crawl_finds_whose_tax_waits_in_review(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Blake shares categories and income, not transactions: Avery is told Blake's tax, but
+    not how much of it waits in Blake's review, which is Blake's review state. A slip that
+    says it beside Blake's tax, for every part whose tax is told whatever the viewer may know
+    of its review, is found on Avery's pages."""
+    from hearth.disclosure import common, people
+
+    panels = importlib.import_module("hearth.disclosure.household")
+    scenario = "both joint owners share categories and income, casey shares nothing"
+    book_blakes_tax(world)
+    choices = share(world, scenario)
+    assert not any(tax_told(world, "avery", choices)[0])
+    unreviewed = common.unreviewed
+
+    def slipped(gate: Any, parts: Any, *rest: Any) -> Any:
+        found = unreviewed(gate, parts, *rest)
+        taxed = rest[5] if len(rest) > 5 else None
+        if taxed is None:
+            return found
+        told = [p for p in parts if gate.may(Facet.CATEGORY_BREAKDOWN, p.owners)]
+        return replace(found, tax_unreviewed=sum((taxed(p)[1] for p in told), Decimal(0)))
+
+    for module in (panels, people):
+        monkeypatch.setattr(module, "unreviewed", slipped)
+
+    leaked, _ = tax_told(world, "avery", choices)
+
+    assert any("waiting in review" in found for found in leaked), leaked
+
+
 @pytest.mark.parametrize("scenario", SCENARIOS)
 def test_what_was_left_over_is_the_same_whoever_looks(world: World, scenario: str) -> None:
     """With Blake's tax in the books: for every part, every month's money in, money out and
