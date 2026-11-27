@@ -39,7 +39,7 @@ extension BalanceSheet {
     }
 
     public static let notKnown = "Not known"
-    public static let dash = "\u{2014}"
+    public static let dash = "\u{2013}"
 
     private static func figure(_ money: Money?, known: Bool, locale: Locale) -> String {
         guard known else { return notKnown }

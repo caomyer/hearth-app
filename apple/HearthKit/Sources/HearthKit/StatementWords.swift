@@ -13,9 +13,9 @@ public enum StatementWords {
         return share.amount < 0 && !isZero ? "\u{2212}" + text : text
     }
 
-    /// A line's figure: money in whole units, or a rate as a percentage; "—" when not known.
+    /// A line's figure: money in whole units, or a rate as a percentage; an en dash, as the pages write it, when not known.
     public static func figure(_ value: Money?, rate: Bool, currency: String, locale: Locale = .current) -> String {
-        guard let value else { return "\u{2014}" }
+        guard let value else { return "\u{2013}" }
         return rate ? self.rate(value, locale: locale) : Figures.total(value, currency: currency, locale: locale)
     }
 
