@@ -13,7 +13,7 @@ from fastapi.responses import RedirectResponse
 
 from hearth.disclosure import Concealed
 from hearth.valuation.pricestore import PriceStore
-from hearth.valuation.quotes import Quote
+from hearth.valuation.quotes import Quote, enterable
 from hearth.valuation.refresh import refresh_prices
 from hearth.web.deps import Acting, App, Conn, Viewing
 
@@ -41,6 +41,8 @@ def enter_price(
         return _back("price-not-understood")
     if not amount.is_finite() or amount <= 0 or day > view.books.as_of:
         return _back("price-not-understood")
+    if not enterable(amount):
+        return _back("price-out-of-range")
     PriceStore(conn).record(
         Quote(
             symbol=symbol,

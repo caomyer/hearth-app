@@ -1,6 +1,7 @@
 """Stored prices, each with its provenance, and corrections that never erase what came before."""
 
 import sqlite3
+from collections.abc import Iterator, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -91,6 +92,26 @@ class PriceStore:
             (symbol, source),
         ).fetchall()
         return [_row_to_quote(row) for row in rows]
+
+    def current(self, sources: Sequence[str]) -> Iterator[tuple[str, str, str, str, str, str, str]]:
+        """The current price from each of `sources` for every day it priced any symbol, as
+        the columns of `latest` and `history`, read in one pass: by symbol, source and day, the
+        last revision of a day standing for it, as in `history`."""
+        if not sources:
+            return
+        marks = ", ".join("?" for _ in sources)
+        rows = self._db.execute(
+            f"SELECT {_COLUMNS} FROM price"  # noqa: S608 - constant fragments and placeholders
+            f" WHERE source IN ({marks}) ORDER BY symbol, source, as_of, id",
+            tuple(sources),
+        )
+        held = None
+        for row in rows:
+            if held is not None and (row[0], row[4], row[1]) != (held[0], held[4], held[1]):
+                yield held
+            held = row
+        if held is not None:
+            yield held
 
     def revisions(self, symbol: str, as_of: date, source: str) -> list[Quote]:
         """Every price `source` has given for the day, oldest first; the last one is current."""
