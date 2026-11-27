@@ -414,6 +414,30 @@ class ReviewDesk:
         ruling = self._record(Scope.GROUP, group, Action.ACCOUNT, account, note, bound)
         return Acceptance(ruling, len(bound), changed)
 
+    def book_shown(self, review_id: str, says: str, account: str) -> Ruling | None:
+        """`set_account`, bound to what the row said when it was shown (``PileItem.says``):
+        `None`, leaving the row as it is, once it is no longer waiting or says something else
+        now, so a decision about a row as it was is never recorded about it as it is."""
+        view = self.item(review_id)
+        if not view.unreviewed or view.item.says != says:
+            return None
+        return self.set_account(review_id, account)
+
+    def answer_shown(self, review_id: str, says: str, account: str) -> Ruling | None:
+        """`book_shown` for a row waiting to be told where its money went, answered alone
+        (``hearth.review.where``): `None` once it is not one of those, or says something else."""
+        view = self.item(review_id)
+        if not view.one_sided or view.item.says != says:
+            return None
+        return self.set_account(review_id, account)
+
+    def reject_shown(self, review_id: str, says: str) -> Ruling | None:
+        """`reject`, bound to what the row said when it was shown, as `book_shown` is."""
+        view = self.item(review_id)
+        if not view.unreviewed or view.item.says != says:
+            return None
+        return self.reject(review_id)
+
     def movable(self) -> list[Account]:
         """The member's own accounts a row may be moved onto: open in the books, or named, and
         not one whose balance its bank reports."""
@@ -422,6 +446,18 @@ class ReviewDesk:
             for account in self._accounts
             if account.ledger_account in self._movable and account.ledger_account not in self._banks
         ]
+
+    def own(self, account_id: str, *, unseen: bool = False) -> Account | None:
+        """One of `movable`, by its id, or with `unseen` only one the member named, which hearth
+        does not see; `None` for anything else, whoever's it is."""
+        return next(
+            (
+                account
+                for account in self.movable()
+                if account.id == account_id and (account.named is not None or not unseen)
+            ),
+            None,
+        )
 
     def learned(self, alike: Likeness) -> dict[str, Learned]:
         """For each row waiting to be told where its money went, what the rows like it on the

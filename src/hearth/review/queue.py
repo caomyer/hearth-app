@@ -18,7 +18,14 @@ from enum import StrEnum
 from typing import Any
 
 from hearth.names import readable
-from hearth.review.decision import PROPOSAL_CHANGED, REDESCRIBED, REVISED, State
+from hearth.review.decision import (
+    KEPT_IN,
+    KEPT_OFF,
+    PROPOSAL_CHANGED,
+    REDESCRIBED,
+    REVISED,
+    State,
+)
 from hearth.review.desk import ItemView, one_decision
 from hearth.review.reasons import Why
 
@@ -71,17 +78,46 @@ class Confidence(StrEnum):
     CHANGED = "Suggestion changed since you accepted it"
     REVISED = "Changed by the bank since it was reviewed"
     REDESCRIBED = "The bank changed how it describes it since you accepted it"
+    KEPT_OFF = "Moved onto an account that now takes only its bank's transactions"
+    KEPT_IN = "Excluded, but its bank now counts it in the balance it reports"
+    RECONCILING = "A difference to confirm"
+
+
+_CAME_BACK = {
+    PROPOSAL_CHANGED: Confidence.CHANGED,
+    REVISED: Confidence.REVISED,
+    REDESCRIBED: Confidence.REDESCRIBED,
+    # Decisions the books keep unreviewed, as they would break a carried account's balance.
+    KEPT_OFF: Confidence.KEPT_OFF,
+    KEPT_IN: Confidence.KEPT_IN,
+}
+"""Why a row that was decided waits again, in Review's words (``hearth.review.decision``)."""
+
+RECONCILING_REASON = (
+    "Confirm it once you know why they differ, or put the cause right, such as a transaction"
+    " the ledger or the bank is missing, and it shrinks or goes at the next update."
+)
+"""What a carried account's reconciling entry asks of its owner (``docs/review.md``)."""
+
+
+def explain(view: ItemView) -> str:
+    """Why a row waits, in the words Review gives it beside the row, on the page and in the
+    app alike: what a reconciling entry asks of its owner, and for any other row why it is
+    suggested as it is (`said`)."""
+    if view.item.reconciling and view.decision.reason not in _CAME_BACK:
+        return RECONCILING_REASON
+    return said(view)
 
 
 def confidence(view: ItemView) -> Confidence:
-    """How sure the suggestion is, as a band: a categoriser's score where the import kept one,
-    and otherwise what was suggested, if anything (`said` gives the words a row is shown with)."""
-    if view.decision.reason == PROPOSAL_CHANGED:
-        return Confidence.CHANGED
-    if view.decision.reason == REVISED:
-        return Confidence.REVISED
-    if view.decision.reason == REDESCRIBED:
-        return Confidence.REDESCRIBED
+    """How sure the suggestion is, as a band: why a decided row waits again, first; then a
+    categoriser's score where the import kept one, and otherwise what was suggested, if
+    anything (`said` gives the words a row is shown with)."""
+    came_back = _CAME_BACK.get(view.decision.reason or "")
+    if came_back is not None:
+        return came_back
+    if view.item.reconciling:
+        return Confidence.RECONCILING
     if view.item.proposed is None:
         return Confidence.NONE
     score = view.item.confidence
@@ -105,11 +141,11 @@ any rule."""
 def said(view: ItemView) -> str:
     """Why a row is suggested as it is, or why nothing is, in words: "Dining twice before",
     "As your ledger books it", "Bank says Restaurant", "New merchant", or the band a
-    categoriser's score falls in. That the suggestion changed since it was accepted, or the
-    bank changed the row since it was reviewed, comes first, as what the member must know."""
+    categoriser's score falls in. Why a decided row waits again, such as the suggestion having
+    changed since it was accepted, comes first, as what the member must know."""
     band = confidence(view)
     reason = view.item.reason
-    if band in (Confidence.CHANGED, Confidence.REVISED, Confidence.REDESCRIBED) or reason is None:
+    if band in _CAME_BACK.values() or reason is None:
         return band.value
     if view.item.proposed is None and reason.why not in (Why.NEW, Why.MIXED, Why.ELSEWHERE):
         return band.value
@@ -224,9 +260,12 @@ class QueueGroup:
 
 
 _CONFIDENCE_RANK = [
+    Confidence.KEPT_OFF,
+    Confidence.KEPT_IN,
     Confidence.REVISED,
     Confidence.REDESCRIBED,
     Confidence.CHANGED,
+    Confidence.RECONCILING,
     Confidence.NONE,
     Confidence.LOW,
     Confidence.MEDIUM,
@@ -262,6 +301,9 @@ class Queue:
     """Unreviewed rows that were accepted once and have since changed their suggestion."""
     revised: int
     """Unreviewed rows that were reviewed once and that their bank has since changed."""
+    kept: int
+    """Unreviewed rows whose decision the books do not apply, as it would put a row its bank
+    never sent on a carried account or leave out one it did (``decision.guarded``)."""
     oldest: date | None
     accounts: tuple[Choice, ...]
     categories: tuple[Choice, ...]
@@ -328,6 +370,7 @@ def queue(views: Sequence[ItemView], order: Order, narrow: Filter) -> Queue:
         remaining=Tally.of(waiting),
         changed=sum(1 for v in waiting if v.decision.reason == PROPOSAL_CHANGED),
         revised=sum(1 for v in waiting if v.decision.reason in (REVISED, REDESCRIBED)),
+        kept=sum(1 for v in waiting if v.decision.reason in (KEPT_OFF, KEPT_IN)),
         oldest=min((v.item.date for v in waiting), default=None),
         accounts=_choices(waiting, lambda v: (v.account.id, v.account.name) if v.account else None),
         categories=_choices(waiting, lambda v: (_category_key(v), _category_label(v))),

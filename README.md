@@ -104,3 +104,8 @@ iCloud sets the macOS hidden flag on files inside `.venv`, and Python silently s
 ## Data
 
 No financial data, credentials or personal identifiers belong in this repository. The ledger, statements and the application database live outside it; see `.gitignore`.
+
+## License
+
+Hearth is free software, licensed under the GNU General Public License, version 2 or (at your option) any later version; see [LICENSE](LICENSE).
+It builds on [beancount](https://github.com/beancount/beancount), which is licensed under the GNU General Public License, version 2 only, so a copy of hearth distributed together with beancount, as the Mac app is, is distributed under version 2.

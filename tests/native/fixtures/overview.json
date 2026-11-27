@@ -22,6 +22,7 @@
       {"day": "2026-08-31", "value": "150120.10", "is_floor": false},
       {"day": "2026-09-30", "value": "163916.33", "is_floor": false},
       {"day": "2026-10-15", "value": "162711.83", "is_floor": false}
-    ]
+    ],
+    "review": {"waiting": 14, "spending": "1120.37"}
   }
 }

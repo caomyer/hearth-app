@@ -110,6 +110,9 @@ class Entry:
     sides: tuple[Side, ...]
     waiting: Waiting | None = None
     checked: Checked | None = None
+    review: str | None = None
+    """The review id of an unreviewed row the viewer may review, which decides it from here;
+    None for anyone else, and for every row nobody is waiting on."""
     reconciling: bool = False
     """A check of its bank's balance that the books meet only by an entry reconciling the
     imported ledger with the bank, which nobody has confirmed yet (``books.reconciling``): it
@@ -320,8 +323,17 @@ class _Reader:
             amount=amount,
             sides=tuple(sides),
             waiting=waiting,
+            review=self._review(entry),
             reason=self._reason(entry),
         )
+
+    def _review(self, entry: Transaction) -> str | None:
+        """The row's review id, when it waits on a review the viewer may make: one of their own
+        accounts' rows, nobody else's."""
+        review_id = (entry.meta or {}).get("review-id")
+        if entry.flag != "!" or not isinstance(review_id, str) or not entry.postings:
+            return None
+        return review_id if entry.postings[0].account in self._reviews else None
 
     def _reason(self, entry: Transaction) -> str | None:
         """Why an unreviewed review row is suggested as it is, for a viewer who reviews it."""

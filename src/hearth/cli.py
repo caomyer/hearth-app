@@ -23,6 +23,7 @@ import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import date, datetime, time
 from pathlib import Path
 
 import uvicorn
@@ -246,6 +247,13 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="a household on its first day: members only, no ledger, banks to connect",
     )
+    try_it.add_argument(
+        "--as-of",
+        type=date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        help="the invented household as it stood on that day, so what waits for review is the"
+        " same whichever day it runs, as the Mac app's tests need",
+    )
 
     try_it.add_argument(
         "--bridge",
@@ -306,15 +314,22 @@ def main(argv: list[str] | None = None) -> None:
         case "demo":
             if arguments.bridge and arguments.from_zero:
                 parser.error("--bridge does not go with --from-zero")
+            if arguments.as_of and arguments.from_zero:
+                parser.error("--as-of does not go with --from-zero")
             if arguments.approve_plaid and not arguments.bridge:
                 parser.error("--approve-plaid goes with --bridge")
             if arguments.from_zero:
                 _demo_from_zero(arguments.host, arguments.port)
             elif arguments.bridge:
                 approval = Approval.of(arguments.approve_plaid)
-                _demo_bridge(approval, first_review=arguments.first_review)
+                _demo_bridge(approval, first_review=arguments.first_review, as_of=arguments.as_of)
             else:
-                _demo(arguments.host, arguments.port, first_review=arguments.first_review)
+                _demo(
+                    arguments.host,
+                    arguments.port,
+                    first_review=arguments.first_review,
+                    as_of=arguments.as_of,
+                )
         case "bridge":
             _bridge(Approval.of(arguments.approve_plaid))
 
@@ -691,19 +706,22 @@ class _DemoHousehold:
 
 
 @contextmanager
-def _demo_household(*, first_review: bool) -> Iterator[_DemoHousehold]:
-    """An invented household in a throwaway directory, gone when the block ends."""
+def _demo_household(*, first_review: bool, as_of: date | None) -> Iterator[_DemoHousehold]:
+    """An invented household in a throwaway directory, gone when the block ends: as it stands
+    today, or as it stood on `as_of`, its history and its banks both ending that day."""
     with tempfile.TemporaryDirectory(prefix="hearth-demo-") as directory:
         ledger = Path(directory) / "household.beancount"
         settings = Settings.in_directory(Path(directory), ledger=ledger)
         db.initialise(settings.database)
         conn = db.connect(settings.database)
         try:
-            now = system_clock()
+            now = (
+                system_clock() if as_of is None else datetime.combine(as_of, time(12)).astimezone()
+            )
             passwords = demo.seed(conn, ledger, now=now, first_review=first_review)
         finally:
             conn.close()
-        setup = demo.plaid(lambda: system_clock().astimezone().date(), ledger)
+        setup = demo.plaid(lambda: as_of or system_clock().astimezone().date(), ledger)
         feed.initialise(settings.feed_database)
         demo.connect(settings, setup, now=now)
         establish = books.from_household(
@@ -712,19 +730,21 @@ def _demo_household(*, first_review: bool) -> Iterator[_DemoHousehold]:
         yield _DemoHousehold(settings, establish, setup, passwords)
 
 
-def _demo(host: str, port: int, *, first_review: bool = False) -> None:
-    with _demo_household(first_review=first_review) as household:
+def _demo(host: str, port: int, *, first_review: bool = False, as_of: date | None = None) -> None:
+    with _demo_household(first_review=first_review, as_of=as_of) as household:
         print("An invented household. Sign in as any of them:")
         for username, password in household.passwords.items():
             print(f"  {username:<8} {password}", flush=True)
         _run(household.settings, household.establish, host, port, household.plaid)
 
 
-def _demo_bridge(approval: Approval, *, first_review: bool = False) -> None:
+def _demo_bridge(
+    approval: Approval, *, first_review: bool = False, as_of: date | None = None
+) -> None:
     """The demo's bridge. Its connections are all to hearth's stand-in for Plaid, which reaches
     no bank; `approval` decides only whether the app's syncs ask it, as it would for a real
     household's banks."""
-    with _demo_household(first_review=first_review) as household:
+    with _demo_household(first_review=first_review, as_of=as_of) as household:
         username, password = next(iter(household.passwords.items()))
         _answer_the_app(
             household.settings,

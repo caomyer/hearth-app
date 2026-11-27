@@ -80,14 +80,22 @@ public final class JournalModel {
     }
 
     /// The entries on screen, a day at a time.
-    public var days: [DayGroup] {
+    public var days: [DayGroup] { firstDays(fitting: .max) }
+
+    /// The first entries, a day at a time, in no more than `lines`, counting a line for each
+    /// day's heading and one for each entry.
+    public func firstDays(fitting lines: Int) -> [DayGroup] {
         var groups: [DayGroup] = []
         var current: [Entry] = []
+        var used = 0
         for entry in entries {
-            if let last = current.last, last.date != entry.date {
+            let opens = current.last.map { $0.date != entry.date } ?? true
+            guard used + (opens ? 2 : 1) <= lines else { break }
+            if opens, let last = current.last {
                 groups.append(DayGroup(day: last.date, entries: current))
                 current = []
             }
+            used += opens ? 2 : 1
             current.append(entry)
         }
         if let last = current.last {

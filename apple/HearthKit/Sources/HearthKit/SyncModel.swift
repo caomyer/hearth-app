@@ -109,7 +109,9 @@ public final class SyncModel {
         switch outcome {
         case .started, .running:
             break
-        case .notAllowed, .missing:
+        case .notAllowed, .missing, .accepted, .booked, .moved, .excluded, .undone, .changed,
+            .notOneDecision, .notAnAccount, .notYours, .banksAccount, .banksRow:
+            // A sync is told only a sync's outcomes; anything else is as good as none.
             isAsking = false
             await refresh()
             return

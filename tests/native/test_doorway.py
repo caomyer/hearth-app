@@ -17,14 +17,17 @@ import pytest
 from hearth import books
 from hearth.books import LedgerError
 from hearth.native import doorway as asks
-from hearth.native.bridge import Bridge, Outcome
+from hearth.native.bridge import Acted, Bridge, Outcome
 from hearth.native.doorway import Doorway
 from hearth.plaid.approval import Approval
 from hearth.refresh import ASKING, Begun, Refresher
+from hearth.review.ids import says
+from hearth.review.rulings import RulingStore
 from hearth.sharing import DEFAULT_SHARED, Facet
 from tests import household
 from tests import learned as learned_household
 from tests.conftest import World, password_of
+from tests.household import USERNAMES
 from tests.learned import Learned
 from tests.test_privacy_boundary import LEARNED_SCENARIOS, SCENARIOS
 
@@ -146,9 +149,17 @@ def differences(told: object, example: object, at: str = "answer") -> list[str]:
     return [] if type(told) is type(example) else [f"{at}: {type(told).__name__}"]
 
 
-NARROWED = {"account": "id", "transactions": "with"}
+NARROWED = {"account": "id", "transactions": "with", "review": "with", "review_row": "id"}
 """Screens that are asked with what narrows them, which the crawl asks every way
 `narrowings` names. A screen added to `SCREENS` is asked plainly unless it is named here."""
+
+REVIEW_ROWS = [(p[4], p[2], p[0], p[3], p[5]) for p in household.PILE] + [
+    (m[4], m[2], m[0], m[3], m[5]) for m in household.MOVED
+]
+"""Every review row in the household: its id, account, day, amount and group."""
+
+OWNER = {"Assets:Zq:CaseyChecking": "casey", "Assets:Zq:AverySolo": "avery"}
+"""Whose desk each review row is on: its account's one owner."""
 
 
 def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
@@ -170,7 +181,54 @@ def narrowings(world: World) -> list[tuple[str, dict[str, object]]]:
         ("transactions", {"from": "2026-09-01", "to": "2026-09-30", "show": "unreviewed"}),
     ]
     asked += [("transactions", {"offset": n, "limit": 1}) for n in range(0, 12, 3)]
+    groups = [*sorted({row[4] for row in REVIEW_ROWS}), "Kites", "zz-nothing"]
+    asked += [("review", {})]
+    asked += [("review", {"order": o}) for o in ("confidence", "amount", "date", "account")]
+    asked += [("review", {"account": i}) for i in ids]
+    asked += [("review", {"category": c}) for c in ["-", *categories]]
+    asked += [("review", {"group": g}) for g in groups]
+    asked += [("review", {"text": w}) for w in words]
+    asked += [("review_row", {"id": row[0]}) for row in REVIEW_ROWS]
+    asked += [("review_row", {"id": "no-such-row"})]
     return asked
+
+
+def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]]]:
+    """Every review decision, on every row in the household and on rows that are in nobody's
+    books, against every account and the categories, each with whose desk holds what it names
+    (nobody's, for what is not there): as the row said, as it did not, and as a forged group
+    would have it."""
+    ids = [*world.account_ids.values(), "no-such-account"]
+    found: list[tuple[str, frozenset[str], dict[str, object]]] = []
+    for review_id, account, day, amount, group in [
+        *REVIEW_ROWS,
+        ("no-such-row", "Assets:Zq:CaseyChecking", household.OCT, "-1.00", "Unsure"),
+    ]:
+        mine = frozenset({OWNER[account]}) if review_id != "no-such-row" else frozenset()
+        # A group is on the desk of everyone with a row in it, whichever row is named.
+        grouped = frozenset(OWNER[row[1]] for row in REVIEW_ROWS if row[4] == group)
+        said = says(account, day, Decimal(amount), "USD")
+        stale = says(account, day, Decimal(amount) * 2, "USD")
+        found += [
+            ("accept", mine, {"row": review_id, "shown": "Expenses:Kites"}),
+            ("exclude", mine, {"row": review_id, "says": stale}),
+            ("book", mine, {"row": review_id, "says": stale, "category": "Expenses:Kites"}),
+            ("accept_group", grouped, {"group": group, "rows": {review_id: "Expenses:Kites"}}),
+            ("accept_group", frozenset(), {"group": "zz-forged", "rows": {review_id: "x"}}),
+        ]
+        found += [("book", mine, {"row": review_id, "says": said, "account": i}) for i in ids]
+        found += [("move_row", mine, {"row": review_id, "says": said, "account": i}) for i in ids]
+        found += [
+            ("move_group", mine, {"title": group, "rows": {review_id: said}, "account": i})
+            for i in ids
+        ]
+        found += [
+            ("book", mine, {"row": review_id, "says": said, "category": "Expenses:Kites"}),
+            ("exclude", mine, {"row": review_id, "says": said}),
+        ]
+    # Whose each ruling is, the crawl's own decisions among them, is the desk's to say.
+    found += [("undo", frozenset(USERNAMES), {"ruling": n}) for n in range(1, 40)]
+    return found
 
 
 def assert_within(narrowed: dict[str, object], whole: dict[str, object]) -> None:
@@ -217,6 +275,24 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
             # Narrowing the journal only ever leaves out: it never finds what the whole of it
             # did not hold, whatever it is asked to look for.
             assert_within(answer, whole)
+    # Every decision there is, on every row: one on a row on nobody's desk, or anyone else's,
+    # changes nothing and is told what a row that does not exist is told.
+    conn = world.connect()
+    try:
+        rulings = RulingStore(conn)
+        for action, desks, given in decisions(world):
+            before = rulings.newest()
+            done = door.act(action, given)
+            told = done.value if isinstance(done, Acted) else done.wire()
+            answers.append({"action": action, "told": told})
+            if viewer not in desks:
+                assert done is Acted.MISSING, (action, given, done)
+                assert rulings.newest() == before
+    finally:
+        conn.close()
+    world.recompute()
+    answers += [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
+    answers += [door.answer(ask, given) for ask, given in narrowings(world) if "review" in ask]
     # The doorway writes money without the thousands separators a page shows it with.
     seen = "\n".join(json.dumps(answer) for answer in answers)
 
@@ -228,6 +304,17 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
         if text.replace(",", "") in seen
     ]
     assert not leaked, f"{viewer} could see private data: {leaked}"
+
+    # Whatever anyone shares, nobody's queue is anyone else's: no row another member reviews,
+    # not its id nor its payee, is in any review screen or any decision's reply.
+    reviewing = "\n".join(
+        json.dumps(door.answer(ask, given))
+        for ask, given in [("where", {}), *narrowings(world)]
+        if "review" in ask or ask == "where"
+    ) + json.dumps([a for a in answers if "action" in a])
+    others = [row for row in household.PILE + household.MOVED if OWNER[row[2]] != viewer]
+    found = [text for row in others for text in (row[1], row[4]) if text in reviewing]
+    assert not found, f"{viewer} was shown another member's review rows: {found}"
 
 
 @pytest.mark.parametrize("scenario", LEARNED_SCENARIOS)

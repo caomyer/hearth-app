@@ -35,10 +35,10 @@ private actor ScriptedSyncs: Acting {
         return try decode(answers.removeFirst())
     }
 
-    func act(_ action: String) async throws -> ActOutcome {
+    func act(_ action: String, with given: Given) async throws -> ActResult {
         acted.append(action)
         guard !outcomes.isEmpty else { throw Engine.Failure.stopped }
-        return outcomes.removeFirst()
+        return ActResult(outcome: outcomes.removeFirst())
     }
 }
 

@@ -3,6 +3,8 @@ name = "hearth"
 version = "0.1.0"
 description = "Local-first household finance over a beancount ledger, with a server-enforced privacy boundary between members."
 requires-python = ">=3.14"
+license = "GPL-2.0-or-later"
+license-files = ["LICENSE"]
 dependencies = [
     "argon2-cffi>=25.1.0",
     "beancount>=3.2.0",

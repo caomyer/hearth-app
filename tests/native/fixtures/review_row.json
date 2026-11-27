@@ -1,0 +1,43 @@
+{
+  "id": 8,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "row": {
+      "id": "7a1c9e04b2",
+      "kind": "transaction",
+      "group": "Food and drink: groceries",
+      "date": "2026-10-12",
+      "payee": "Cobble Street Market",
+      "narration": "COBBLE ST MKT 0412",
+      "account": {"id": "eDUVDA9IScyfzS3o", "name": "Rewards card"},
+      "amount": "-84.12",
+      "suggested": {"name": "Expenses:FoodAndDrink:Groceries", "label": "Groceries"},
+      "reason": "Suggested by a rule",
+      "excludable": false,
+      "says": "9f4b67c004"
+    },
+    "decision": "waiting",
+    "booked": {"name": "Expenses:FoodAndDrink:Groceries", "label": "Groceries"},
+    "categories": [
+      {"name": "Expenses:FoodAndDrink:Groceries", "label": "Groceries"},
+      {"name": "Expenses:Home", "label": "Home"},
+      {"name": "Income:Wages", "label": "Wages"}
+    ],
+    "accounts": [
+      {"id": "Wl0Ab2aPzewBps0x", "name": "Harbor savings"}
+    ],
+    "earlier": [
+      {
+        "date": "2026-09-14",
+        "amount": "-38.20",
+        "decision": "reviewed",
+        "category": {"name": "Expenses:FoodAndDrink:Groceries", "label": "Groceries"}
+      },
+      {"date": "2026-08-30", "amount": "-12.00", "decision": "excluded", "category": null}
+    ]
+  }
+}

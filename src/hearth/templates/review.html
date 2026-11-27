@@ -8,7 +8,7 @@
 <input type="hidden" name="focus" value="{{ next_id }}">
 {% endmacro %}
 {% macro row_day(d) %}{{ d | day if d.year == today.year else d | year_day }}{% endmacro %}
-{% macro reason(row) %}{% if row.item.reconciling %}<span class="second">Confirm it once you know why they differ, or put the cause right, such as a transaction the ledger or the bank is missing, and it shrinks or goes at the next update.</span>{% else %}<span class="second">{{ said(row) }}{% if not where.filter.group %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}</span>{% endif %}{% endmacro %}
+{% macro reason(row) %}<span class="second">{{ explain(row) }}{% if not row.item.reconciling %}{% if not where.filter.group %} &middot; {{ row.item.group }}{% endif %}{% if row.account %} &middot; {{ row.account.name }}{% endif %}{% endif %}</span>{% endmacro %}
 {# One row and its decision: the suggestion is already in the box, so Accept keeps it and
    typing another account books that instead. The page sends back what it showed. #}
 {% macro decide_row(row, next_id) %}
@@ -103,6 +103,9 @@
         {% endif %}
         {% if q.revised %}
         <p class="xs faint">{{ plural(q.revised, "row") }} came back because the bank changed {{ "it" if q.revised == 1 else "them" }} after {{ "it was" if q.revised == 1 else "they were" }} reviewed.</p>
+        {% endif %}
+        {% if q.kept %}
+        <p class="xs faint">{{ plural(q.kept, "row") }} came back because the decision on {{ "it" if q.kept == 1 else "them" }} would change an account whose balance its bank decides now.</p>
         {% endif %}
       </div>
     </div>

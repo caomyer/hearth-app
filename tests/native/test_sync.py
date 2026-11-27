@@ -265,7 +265,8 @@ def test_asked_again_while_a_sync_runs_it_says_so_and_still_answers(
 def test_an_act_beside_anything_else_is_not_a_request(world: World) -> None:
     written: list[str] = []
     lines = [
-        '{"id": 1, "act": "sync", "with": {}}\n',
+        '{"id": 1, "act": "sync", "with": []}\n',
+        '{"id": 1, "act": "sync", "with": "now"}\n',
         '{"id": 1, "act": 5}\n',
         '{"id": 1, "act": "sync", "ask": "banks"}\n',
         '{"id": 1, "act": true}\n',
@@ -276,7 +277,7 @@ def test_an_act_beside_anything_else_is_not_a_request(world: World) -> None:
 
     stdio.serve(signed_in(world, "avery", syncs), lines, written.append)
 
-    assert [json.loads(line) for line in written] == [{"id": None, "error": "bad request"}] * 4
+    assert [json.loads(line) for line in written] == [{"id": None, "error": "bad request"}] * 5
     assert not syncs.status.running
     assert len(world.plaid.calls) == calls_before
 

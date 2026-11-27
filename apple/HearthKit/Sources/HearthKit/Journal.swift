@@ -101,6 +101,9 @@ public struct Entry: Decodable, Sendable, Equatable, Identifiable {
     /// What it did to the accounts it names; for a transfer between two of them, what moved.
     public let amount: Money
     public let sides: [Side]
+    /// The review it waits on, when it is one of the viewer's own rows nobody has checked:
+    /// decided from here as from Review.
+    public let review: String?
 
     public var id: Int { position }
 

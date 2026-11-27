@@ -14,16 +14,20 @@ public struct EngineCommand: Sendable, Equatable {
     }
 }
 
-/// What an ask is given to narrow it, as the engine reads it (`hearth.native.doorway`): an
-/// account's id, a day, a number of entries. Only text and whole numbers ever cross.
+/// What an ask is given to narrow it, or an action what it is done to, as the engine reads it
+/// (`hearth.native.doorway`): an account's id, a day, a number of entries, or the rows a
+/// decision showed, each with what it showed of it. Only text and whole numbers ever cross.
 public enum Asked: Sendable, Hashable {
     case text(String)
     case number(Int)
+    /// Ids, each with text: the rows a decision showed.
+    case table([String: String])
 
     var json: Any {
         switch self {
         case .text(let text): text
         case .number(let number): number
+        case .table(let table): table
         }
     }
 }
@@ -50,8 +54,16 @@ extension Asking {
 /// Something the app can ask to do something, not only to show something: the engine, or a
 /// stand-in for it in tests.
 public protocol Acting: Asking {
-    /// Asks hearth to do `action`, which it does in the background; how it goes is a screen.
-    func act(_ action: String) async throws -> ActOutcome
+    /// Asks hearth to do `action` to what `given` names: a sync, which it does in the
+    /// background and a screen follows, or a review decision, which it makes there and then.
+    func act(_ action: String, with given: Given) async throws -> ActResult
+}
+
+extension Acting {
+    /// An action that takes nothing, told only its outcome.
+    public func act(_ action: String) async throws -> ActOutcome {
+        try await act(action, with: [:]).outcome
+    }
 }
 
 /// What the engine says when the app signs in or out (`hearth.native.bridge.Outcome`).
@@ -144,9 +156,13 @@ public actor Engine: Bridging {
         _ = try await send(["sign_out": true])
     }
 
-    public func act(_ action: String) async throws -> ActOutcome {
-        let line = try await send(["act": action])
-        return try replyDecoder().decode(Acted.self, from: line).outcome
+    public func act(_ action: String, with given: Given) async throws -> ActResult {
+        var request: [String: Any] = ["act": action]
+        if !given.isEmpty {
+            request["with"] = given.mapValues(\.json)
+        }
+        let line = try await send(request)
+        return try replyDecoder().decode(ActResult.self, from: line)
     }
 
     /// Closes the app's end, which is how the engine is told to finish.
@@ -233,16 +249,22 @@ extension EngineCommand {
     /// The engine an app carries, over the books `books` names: the invented household,
     /// signed in as its first member, or the household whose data is in `setup`, which says
     /// nothing until the app signs in as one of its members. It may ask the banks for what
-    /// `consent` allows and nothing else, which the engine itself enforces.
+    /// `consent` allows and nothing else, which the engine itself enforces. With
+    /// `firstReview`, the invented household is the one a first import leaves: two years of
+    /// history, none of it reviewed (`hearth demo --first-review`). With `sampleAsOf`, it is
+    /// the invented household as it stood that day, the same whichever day it is opened
+    /// (`hearth demo --as-of`).
     public static func bundled(
-        _ books: Books, setup: Setup, consent: Consent = .nothing, in resources: URL, home: String,
-        temporary: String
+        _ books: Books, setup: Setup, consent: Consent = .nothing, firstReview: Bool = false,
+        sampleAsOf: Day? = nil, in resources: URL, home: String, temporary: String
     ) -> EngineCommand {
         switch books {
         case .sample:
             bundled(
-                in: resources, hearth: ["demo", "--bridge"] + consent.arguments, home: home,
-                temporary: temporary)
+                in: resources,
+                hearth: ["demo", "--bridge"] + (firstReview ? ["--first-review"] : [])
+                    + (sampleAsOf.map { ["--as-of", $0.iso] } ?? []) + consent.arguments,
+                home: home, temporary: temporary)
         case .own:
             bundled(
                 in: resources, hearth: ["bridge"] + consent.arguments, home: home, temporary: temporary,

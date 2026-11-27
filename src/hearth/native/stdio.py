@@ -9,10 +9,14 @@ Each request carries a number and exactly one of four things:
 - ``{"id": 3, "ask": "<screen>"}``, told ``{"id": 3, "answer": {...}}``, the doorway's answer
   (``hearth.native.doorway``), or ``{"state": "signed_out"}`` while nobody is signed in. An ask
   may also carry ``"with": {...}``, what narrows it, which the doorway reads. A ``with`` that
-  is not an object, or one beside anything but an ask, makes the line not a request.
+  is not an object, or one beside anything but an ask or an act, makes the line not a
+  request.
 - ``{"id": 4, "act": "sync"}``, told ``{"id": 4, "outcome": "started"}``, or ``running``,
   ``not_allowed``, ``missing`` or ``signed_out`` (``hearth.native.bridge.Acted``): asking
-  hearth to do something rather than to show something. It takes nothing beside its name.
+  hearth to do something rather than to show something. An act may carry ``"with": {...}``
+  too, what it is done to, as a review decision does; a decision's reply also says which
+  ruling an Undo would take back, and how many rows it decided and left waiting
+  (``hearth.native.common.Decided``).
 
 A line that is not such a request is answered ``{"id": null, "error": "bad request"}`` and the
 bridge carries on: one malformed line must not take the engine down with the books in it. A
@@ -25,7 +29,7 @@ person goes to standard error while a bridge runs.
 import json
 from collections.abc import Callable, Iterable
 
-from hearth.native.bridge import Bridge
+from hearth.native.bridge import Acted, Bridge
 
 BAD_REQUEST = {"id": None, "error": "bad request"}
 
@@ -52,13 +56,16 @@ def reply(bridge: Bridge, line: str) -> dict[str, object]:
     if not isinstance(identity, int) or isinstance(identity, bool):
         return dict(BAD_REQUEST)
     kinds = [kind for kind in _KINDS if kind in request]
-    if len(kinds) != 1 or ("with" in request and kinds[0] != "ask"):
+    if len(kinds) != 1 or ("with" in request and kinds[0] not in {"ask", "act"}):
         return dict(BAD_REQUEST)
     match kinds[0], request[kinds[0]], request.get("with", {}):
         case "ask", str(ask), dict(given):
             return {"id": identity, "answer": bridge.answer(ask, given)}
-        case "act", str(action), _:
-            return {"id": identity, "outcome": bridge.act(action).value}
+        case "act", str(action), dict(given):
+            done = bridge.act(action, given)
+            if isinstance(done, Acted):
+                return {"id": identity, "outcome": done.value}
+            return {"id": identity, **done.wire()}
         case "sign_in", {"username": str(username), "password": str(password)}, _:
             return {"id": identity, "outcome": bridge.sign_in(username, password).value}
         case "sign_out", True, _:

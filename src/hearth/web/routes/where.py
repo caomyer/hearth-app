@@ -168,7 +168,7 @@ def move(
     if answer == "account" and account == NEW:
         return RedirectResponse(f"/review/where/account?{urlencode({'group': group})}", 303)
     if answer == "account":
-        found = next((a for a in desk.movable() if a.id == account and a.named), None)
+        found = desk.own(account, unseen=True)
         target = found.ledger_account if found else ""
     else:
         target = category.strip()
@@ -256,7 +256,7 @@ def answer_row(
         return RedirectResponse(f"/review/where/account?{query}", status_code=303)
     kind, _, value = to.partition(":")
     if kind == "account":
-        found = next((a for a in desk.movable() if a.id == value and a.named), None)
+        found = desk.own(value, unseen=True)
         target = found.ledger_account if found else ""
     else:
         target = value.strip() if kind == "category" else ""
@@ -278,10 +278,7 @@ def _set_one(desk: ReviewDesk, shown: Mapping[str, str], target: str) -> Ruling 
     """One row's own ruling onto `target`, while it still waits to be told where it went and
     says what the page showed; `None` when it changed since."""
     ((review_id, says),) = shown.items()
-    current = desk.item(review_id)
-    if not current.one_sided or current.item.says != says:
-        return None
-    return desk.set_account(review_id, target)
+    return desk.answer_shown(review_id, says, target)
 
 
 @router.post("/undo")
