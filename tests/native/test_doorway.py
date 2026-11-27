@@ -7,6 +7,7 @@ signed in to the bridge.
 """
 
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -256,6 +257,15 @@ def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]
     return found
 
 
+def holds(seen: str, text: str) -> bool:
+    """Whether `text` is in what the app was told. A figure is found as a figure, never as
+    digits inside another figure or inside an id: a review id is hex drawn from a random Plaid
+    id, and one that happened to hold "9135" is not Ocelot Orphan's balance of $9,135."""
+    if not text[:1].isdigit():
+        return text in seen
+    return re.search(rf"(?<![0-9A-Za-z.]){re.escape(text)}(?![0-9])", seen) is not None
+
+
 def assert_within(narrowed: dict[str, object], whole: dict[str, object]) -> None:
     def rows(answer: dict[str, object]) -> list[str]:
         entries = answer["entries"]
@@ -326,7 +336,7 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
         for secret in [*household.secrets(world.account_ids), *positions()]
         if not secret.visible(viewer, choices)
         for text in secret.texts
-        if text.replace(",", "") in seen
+        if holds(seen, text.replace(",", ""))
     ]
     assert not leaked, f"{viewer} could see private data: {leaked}"
 
