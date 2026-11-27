@@ -22,7 +22,7 @@ import io
 import os
 import stat
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -146,7 +146,7 @@ class ImportRefused(Exception):  # noqa: N818 - it names a refusal, as `booking.
 
 
 def import_ledger(
-    settings: Settings, source: Path, *, now: datetime, once: bool = False
+    settings: Settings, source: Path, *, now: datetime, once: bool = False, held: bool = False
 ) -> Outcome:
     """Import the ledger opened from `source` as the household's base, or raise
     `ImportRefused` having written nothing.
@@ -164,9 +164,13 @@ def import_ledger(
     import through naming the new base, so two at once, from the app and the command line or
     two apps, take turns, and the second is refused or replaces the first as it would have
     later, never by racing it. Each file is read once (`_gathered`), and what is loaded is the
-    copy of those bytes, never the files again."""
-    with _locked(settings):
+    copy of those bytes, never the files again. `held` says the caller holds the lock already
+    and handed it to this process (``hearth.ledger_child``), which then does not wait on it.
+
+    What a check or an import that died left in the data directory is swept first."""
+    with nullcontext() if held else locked(settings):
         base.sweep(settings.data_dir)
+        base.sweep_checks(settings.data_dir)
         before = household_allows(settings, now, once=once)
         gathered = _gathered(source, settings.data_dir)
         source, root, contents = gathered.source, gathered.root, gathered.contents
@@ -195,12 +199,13 @@ def import_ledger(
 
 
 @contextmanager
-def _locked(settings: Settings) -> Iterator[None]:
-    """The base's lock (``base.locked``), or a refusal in words: another import held it too
-    long, or the data directory's file system cannot lock a file."""
+def locked(settings: Settings) -> Iterator[int]:
+    """The base's lock (``base.locked``) and the descriptor that holds it, or a refusal in
+    words: another import held it too long, or the data directory's file system cannot lock a
+    file."""
     try:
-        with base.locked(settings.ledger_base):
-            yield
+        with base.locked(settings.ledger_base) as descriptor:
+            yield descriptor
     except base.LockTimedOut as error:
         raise ImportRefused(
             "Another import of a ledger is still running, and did not finish in time. Try again"
@@ -273,9 +278,11 @@ MOST_FILES = 1000
 """The most files a ledger may read: more than any household's ledger includes, and a bound
 on what a glob that matches a folder of photographs costs."""
 
-LONGEST_LINE = 1024 * 1024
-"""The longest line a ledger may have, in bytes: no ledger has one anywhere near it, and
-beancount's parser takes time that grows with the square of a line's length."""
+LONGEST_LINE = 64 * 1024
+"""The longest line a ledger may have, in bytes: a ledger's lines are a few hundred bytes at
+most, and beancount's parser takes time that grows with a line's length for every byte on it,
+so the slowest file within `LARGEST` is one of lines this long, which a check reads in a few
+seconds (``docs/real-ledger.md``)."""
 
 DATALESS = 0x40000000
 """`SF_DATALESS`, the flag macOS sets on a file iCloud keeps in the cloud alone: reading it
@@ -306,12 +313,14 @@ def examine(
     private copy of those bytes in hearth's data directory, gone when the check ends, never the
     files where they are: so a file changed or swapped for a pipe after it was read is never
     opened again, and nothing is written at or beside the ledger. `staging` is the folder the
-    copy is kept in, the data directory unless the caller made one to sweep itself."""
+    copy is kept in, one the caller holds (``base.checking``), else one held here."""
     gathered = _gathered(source, settings.data_dir)
     source, root, contents = gathered.source, gathered.root, gathered.contents
     today = now.astimezone().date()
-    folder = staging or settings.data_dir
-    with base.staged(folder, root, contents, prefix=base.CHECKING) as staged:
+    with ExitStack() as stack:
+        if staging is None:
+            staging, _ = stack.enter_context(base.checking(settings.data_dir))
+        staged = stack.enter_context(base.staged(staging, root, contents, prefix=base.CHECKING))
         _staged_holds(staged, gathered)
         loaded = _load(staged)
         check = _check(loaded, staged, list(gathered.noted), today, now)
@@ -654,18 +663,17 @@ def _staged_holds(staged: Base, gathered: Gathered) -> None:
 
 def _lines_fit(data: bytes, path: Path, name: str) -> None:
     """Refuse a file with a line longer than any ledger has, before it is parsed: beancount's
-    parser takes time that grows with the square of a line's length."""
+    parser takes time that grows with a line's length for every byte on it."""
     start = 0
     while True:
         end = data.find(b"\n", start)
         stop = len(data) if end < 0 else end
         if stop - start > LONGEST_LINE:
             raise ImportRefused(
-                f"{path} has a line longer than {LONGEST_LINE // 1024 // 1024} MB, which no"
-                " ledger has.",
+                f"{path} has a line longer than {LONGEST_LINE // 1024} KB, which no ledger has.",
                 Refusal.LINE_TOO_LONG,
-                f"{name} has a line longer than {LONGEST_LINE // 1024 // 1024} MB, which no"
-                " ledger has, so it is not a ledger.",
+                f"{name} has a line longer than {LONGEST_LINE // 1024} KB, which no ledger has,"
+                " so it is not a ledger.",
             )
         if end < 0:
             return

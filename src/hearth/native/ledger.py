@@ -17,8 +17,11 @@ app sends is read strictly (``hearth.native.common``), and anything the member m
 do is answered as missing.
 """
 
+from collections.abc import Hashable
 from pathlib import Path
 
+from hearth import base
+from hearth.config import Settings
 from hearth.disclosure import Disclosure
 from hearth.disclosure.ledger import (
     Choice,
@@ -47,6 +50,18 @@ def read_path(given: Given) -> Path:
     if given.keys() != {"path"}:
         raise Malformed
     return Path(path_in(given, "path"))
+
+
+def check_stands(settings: Settings) -> Hashable:
+    """Where what a check of a ledger file is told stands, beside the file itself: whether the
+    household inherits its ledger, and the base it holds, which are all of the household a check
+    reads (``ledger_import.household_allows``, asked as the app imports, once). Never the books,
+    which change as a sync runs while the app asks again and again for the same check."""
+    try:
+        held = base.standing(settings.ledger_base)
+    except base.BaseError:
+        held = "unreadable"
+    return (settings.ledger is not None, held)
 
 
 def ledger_screen(view: Disclosure, _asked: object, around: Around) -> Answer:

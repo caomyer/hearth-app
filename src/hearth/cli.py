@@ -379,6 +379,8 @@ def _serve(host: str, port: int, approval: Approval, tls: Tls | None = None) -> 
     settings = Settings.from_environment()
     if tls is not None:
         settings = replace(settings, secure_cookies=True)
+    # What an import or a check that died left behind, which nothing names.
+    base.sweep_at_start(settings.data_dir, settings.ledger_base)
     approved = ", ".join(sorted(op.value for op in approval.operations)) or "none"
     print(f"Live Plaid calls approved for this run: {approved}.", flush=True)
     # Plaid's production returns only to an https address, so only HTTPS offers a way back.
@@ -800,7 +802,7 @@ def _answer_the_app(
     a member and their password, which the demo's bridge does for its invented household."""
     runlog.configure(settings.data_dir)
     # What an import or a check that died left behind, which nothing names.
-    base.sweep_at_start(settings.data_dir, settings.ledger_base, datetime.now().timestamp())
+    base.sweep_at_start(settings.data_dir, settings.ledger_base)
     approved = ", ".join(sorted(op.value for op in plaid.approval.operations)) or "none"
     print(f"Live Plaid calls approved for this run: {approved}.", file=sys.stderr, flush=True)
     bookkeeper = books.Bookkeeper(establish, clock, standing=lambda: books.standing(settings))

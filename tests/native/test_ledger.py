@@ -12,6 +12,8 @@ import fcntl
 import json
 import os
 import stat
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -73,7 +75,12 @@ def in_process(monkeypatch: pytest.MonkeyPatch) -> None:
     as the child process does them (``ledger_child.answer``), told the same, through JSON."""
 
     def here(
-        settings: Settings, asked: dict[str, object], now: datetime, limit: float | None
+        settings: Settings,
+        asked: dict[str, object],
+        now: datetime,
+        limit: float | None,
+        *,
+        handed: tuple[int, ...] = (),
     ) -> dict[str, Any]:
         request = json.loads(json.dumps(ledger_child._request(settings, asked, now)))
         told: dict[str, Any] = json.loads(json.dumps(ledger_child.answer(request)))
@@ -1287,7 +1294,7 @@ def test_a_file_of_one_endless_line_is_refused_promptly_and_holds_nothing_up(
 
     assert told["refused"] == {
         "why": "line_too_long",
-        "said": "one-line.json has a line longer than 1 MB, which no ledger has, so it is not a"
+        "said": "one-line.json has a line longer than 64 KB, which no ledger has, so it is not a"
         " ledger.",
     }
     assert time.perf_counter() - started < 10
@@ -1446,3 +1453,272 @@ def test_any_act_of_the_viewers_lets_go_of_what_was_worked_out_for_them(
     assert match(door, {"no-such-account": "Assets:Zq:Checking"}) is Acted.MISSING
 
     assert door.answer("matching") == {"state": "loading"}
+
+
+# The children a check runs in (the third review).
+
+
+@pytest.fixture
+def slow(tmp_path: Path) -> Path:
+    """A file within every cap that takes a check seconds to read: as many of the longest lines
+    a ledger may have as fit."""
+    line = b";" * (ledger_import.LONGEST_LINE - 1) + b"\n"
+    path = tmp_path / "slow.beancount"
+    head = b'option "operating_currency" "USD"\n2020-01-01 open Assets:Zq:A USD\n'
+    path.write_bytes(head + line * ((ledger_import.LARGEST - len(head)) // len(line)))
+    return path
+
+
+@pytest.fixture
+def children(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Every child process a check or an import starts, as it is started, with what it is
+    given."""
+    started: list[Any] = []
+    real = subprocess.Popen
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        child: Any = real(*args, **kwargs)
+        child.given = kwargs
+        started.append(child)
+        return child
+
+    monkeypatch.setattr(subprocess, "Popen", spy)
+    return started
+
+
+def _running(started: list[Any]) -> int:
+    return sum(1 for child in started if child.poll() is None)
+
+
+def _claim_elsewhere(household: Household, account: str) -> None:
+    """A claim made by another process, as a sync or an admin's shell changes the books."""
+    conn = household.fresh.connect()
+    try:
+        accounts.claim(
+            conn,
+            ledger_account=account,
+            name="Zq",
+            owners=[household.fresh.member_ids["avery"]],
+            now=NOW,
+        )
+    finally:
+        conn.close()
+
+
+def test_asking_again_while_the_books_change_runs_one_check_not_one_an_ask(
+    fresh: Household, clock: FakeClock, slow: Path, children: list[Any]
+) -> None:
+    """The reviewer's case: the app polls a slow check while a sync changes the books between
+    polls. A check reads nothing of the books, so the same check goes on, alone, and answers."""
+    door = bridge(fresh, clock, "avery")
+    given = {"path": str(slow)}
+    most = 0
+    n = 0
+    while (told := door.answer("ledger_check", given))["state"] == "loading":
+        _claim_elsewhere(fresh, f"Assets:Zq:Poll{n}")
+        n += 1
+        most = max(most, _running(children))
+        assert n < 150, "started over at every ask, the check never answered"
+        time.sleep(0.2)
+
+    assert n > 3, "the check was over before the books changed"
+    assert told["state"] == "ready"
+    assert len(children) == 1
+    assert most <= 1
+
+
+def test_a_check_no_longer_wanted_is_killed_and_the_next_waits_for_it(
+    fresh: Household, clock: FakeClock, slow: Path, kept: Path, children: list[Any]
+) -> None:
+    """A check superseded by a check of another file, or let go when the viewer acts, has its
+    child killed, never left to run on: one viewer never has two checks running at once."""
+    door = bridge(fresh, clock, "avery")
+    assert door.answer("ledger_check", {"path": str(slow)}) == {"state": "loading"}
+    _until(lambda: _running(children) == 1)
+
+    most = 0
+    while (told := door.answer("ledger_check", {"path": str(kept)}))["state"] == "loading":
+        most = max(most, _running(children))
+        time.sleep(0.02)
+
+    assert told["found"] is not None, "the check of the other file answered"
+    assert most <= 1
+    assert children[0].returncode == -9, "the superseded check was killed"
+    started = len(children)
+    assert door.answer("ledger_check", {"path": str(slow)}) == {"state": "loading"}
+    _until(lambda: len(children) == started + 1)
+
+    assert match(door, {"no-such-account": "Assets:Zq:Checking"}) is Acted.MISSING
+
+    _until(lambda: _running(children) == 0, within=2.0)
+    assert children[-1].returncode == -9, "the check let go of was killed"
+    assert not list(fresh.settings.data_dir.glob(f"{base.CHECKING}*"))
+
+
+def _until(condition: Callable[[], bool], within: float = 10.0) -> None:
+    deadline = time.monotonic() + within
+    while not condition():
+        assert time.monotonic() < deadline, "it never came about"
+        time.sleep(0.02)
+
+
+def test_a_check_ends_with_the_process_that_asked_for_it_and_leaves_nothing(
+    fresh: Household, slow: Path
+) -> None:
+    """The reviewer's case: the bridge is killed while its check runs. The check's child dies
+    with it, and the copy it was loading in the data directory goes with them."""
+    code = (
+        "import sys\n"
+        "from datetime import UTC, datetime\n"
+        "from pathlib import Path\n"
+        "from hearth import ledger_child\n"
+        "from hearth.config import Settings\n"
+        "real = ledger_child.subprocess.Popen\n"
+        "def told(*args, **kwargs):\n"
+        "    child = real(*args, **kwargs)\n"
+        "    print(child.pid, flush=True)\n"
+        "    return child\n"
+        "ledger_child.subprocess.Popen = told\n"
+        "settings = Settings.in_directory(Path(sys.argv[1]))\n"
+        "ledger_child.check(settings, Path(sys.argv[2]), now=datetime.now(UTC))\n"
+    )
+    asking = subprocess.Popen(  # noqa: S603 - this very Python, running the test's own code
+        [sys.executable, "-c", code, str(fresh.settings.data_dir), str(slow)],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert asking.stdout is not None
+    child = int(asking.stdout.readline())
+    data = fresh.settings.data_dir
+    _until(lambda: any(data.glob(f"{base.CHECKING}*/*/*")), within=10.0)
+
+    asking.kill()
+    asking.wait()
+    asking.stdout.close()
+
+    _until(lambda: not _alive(child), within=3.0)
+    _until(lambda: not list(data.glob(f"{base.CHECKING}*")), within=3.0)
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def test_an_import_waiting_on_another_is_busy_however_long_reading_may_take(
+    fresh: Household, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reviewer's case: another process holds the base's lock past the time an import may
+    wait on it. The wait is the bridge's, before the child starts, and never counted against
+    the time the child may read: so it is refused as busy, not as too slow to read."""
+    holder = subprocess.Popen(  # noqa: S603 - this very Python, running hearth's own code
+        [
+            sys.executable,
+            "-c",
+            "import sys, time\n"
+            "from pathlib import Path\n"
+            "from hearth import base\n"
+            "with base.locked(Path(sys.argv[1])):\n"
+            "    print('held', flush=True)\n"
+            "    time.sleep(60)\n",
+            str(fresh.settings.ledger_base),
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert holder.stdout is not None
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        monkeypatch.setattr(base, "WAIT", 1.0)
+        monkeypatch.setattr(ledger_child, "LIMIT", 0.5)
+        door = bridge(fresh, clock, "avery")
+
+        told = _brought_in(door, fresh.ledger)
+    finally:
+        holder.kill()
+        holder.wait()
+        holder.stdout.close()
+
+    assert told["refused"]["why"] == "busy"
+    assert base.current(fresh.settings.ledger_base) is None
+
+
+def test_a_check_past_its_limit_is_killed_at_once_not_waited_on(
+    fresh: Household,
+    clock: FakeClock,
+    slow: Path,
+    children: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The child, and every process of its session, is killed at its limit: the refusal comes
+    then, not when the reading would have ended."""
+    monkeypatch.setattr(ledger_child, "LIMIT", 0.3)
+    door = bridge(fresh, clock, "avery")
+    started = time.monotonic()
+
+    assert check(door, slow)["refused"]["why"] == "too_slow"
+
+    assert time.monotonic() - started < 1.5
+    assert [child.returncode for child in children] == [-9]
+
+
+def test_the_child_is_given_nothing_of_the_bridges_environment_but_what_it_needs(
+    fresh: Household,
+    clock: FakeClock,
+    kept: Path,
+    children: list[Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No variable of hearth's, the data directory, a ledger, a key, nor anything else the
+    bridge was started with, reaches the child that reads a file."""
+    for name in ("HEARTH_DATA_DIR", "HEARTH_EODHD_API_KEY", "HEARTH_ZQ_APPROVE_PLAID", "ZQ_TOKEN"):
+        monkeypatch.setenv(name, "zq-not-for-the-child")
+    door = bridge(fresh, clock, "avery")
+
+    assert check(door, kept)["found"] is not None
+
+    (given,) = [child.given for child in children]
+    assert set(given["env"]) <= {"HOME", "TMPDIR", "LANG", "LC_ALL", "TZ"}
+    assert "zq-not-for-the-child" not in json.dumps(given["env"])
+
+
+@pytest.mark.parametrize(
+    ("include", "extra"),
+    [
+        ("../../x/b/y.beancount", ("x/b/y.beancount",)),
+        ("*/../../../*.beancount", ("x/a/c/q.beancount", "z.beancount")),
+    ],
+    ids=["climbing out and back", "climbing after a wildcard"],
+)
+@pytest.mark.parametrize("alone", ["_contained", "_staged_holds"])
+def test_either_wall_alone_keeps_a_copy_from_reading_past_itself(
+    fresh: Household,
+    clock: FakeClock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    in_process: None,
+    include: str,
+    extra: tuple[str, ...],
+    alone: str,
+) -> None:
+    """With the other taken down, each of the two walls on its own refuses a ledger whose
+    include would lead its copy out of itself, before beancount reads a file."""
+    other = {"_contained": "_staged_holds", "_staged_holds": "_contained"}[alone]
+    monkeypatch.setattr(ledger_import, other, lambda *_: None)
+    read: list[str] = []
+    real = books._read
+
+    def spy(path: Path) -> Any:
+        found = real(path)
+        read.extend(found[2]["include"])
+        return found
+
+    monkeypatch.setattr(books, "_read", spy)
+    ledger = _escaping(tmp_path, include, *extra)
+    door = bridge(fresh, clock, "avery")
+
+    assert check(door, ledger)["refused"]["why"] == "include_outside"
+    assert read == []

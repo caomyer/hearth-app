@@ -6,7 +6,7 @@ it. Every institution, account and figure is invented (``tests.ledgers``)."""
 import itertools
 import random
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -936,9 +936,8 @@ def test_a_live_ledger_hearth_inherits_is_vouched_for_through_the_last_sync(
     assert found.synced == {"Assets:Zq:Checking": synced}
 
 
-def _pot(days: int, ours: int) -> tuple[carrying.Held, matching.Proposal]:
-    """An account of `days` entries, one a day, the last `ours` of them the connection's rows by
-    their ids, proposed by those ids."""
+def _pot(days: int) -> tuple[carrying.Held, list[carrying.BasePosting]]:
+    """An account of `days` entries, one a day, and its postings in order."""
     text = "2010-01-01 open Assets:Zq:Pot USD\n2010-01-01 open Income:Zq:X USD\n"
     first = date(2010, 1, 2)
     for n in range(days):
@@ -946,30 +945,42 @@ def _pot(days: int, ours: int) -> tuple[carrying.Held, matching.Proposal]:
     entries, errors, _ = loader.load_string(text)
     assert not errors
     held = read(tuple(entries))
-    last = held.last_entry["Assets:Zq:Pot"]
-    ids = matching.ById({"Assets:Zq:Pot": Stretch(ours, last - timedelta(days=ours - 1), last)})
-    return held, matching.Proposal(None, "Assets:Zq:Pot", How.ID, ids, (), None)  # type: ignore[arg-type]
+    return held, sorted(
+        (p for p in held.postings if p.account == "Assets:Zq:Pot"), key=lambda p: p.day
+    )
 
 
-def test_ids_that_hold_only_the_end_of_an_accounts_history_vouch_for_none_of_it() -> None:
-    """The reviewer's case: five of the bank's ids in the last weeks of an account the base
-    holds three thousand days of, recent and enough of them, but over the days they span most
-    of the account's entries are something else's: its history is not handed over by them.
-    Every entry over those days being the bank's, it is."""
-    held, _ = _pot(3000, 5)
-    last = held.last_entry["Assets:Zq:Pot"]
-    partial = matching.Proposal(
-        None,  # type: ignore[arg-type]
-        "Assets:Zq:Pot",
-        How.ID,
-        matching.ById({"Assets:Zq:Pot": Stretch(5, last - timedelta(days=10), last)}),
-        (),
-        None,
+def _ours(postings: Sequence[carrying.BasePosting]) -> matching.Proposal:
+    """The pot proposed by the connection's ids, carried on exactly `postings`' entries."""
+    ids = matching.ById(
+        {"Assets:Zq:Pot": Stretch.of([p.day for p in postings])},
+        entries={"Assets:Zq:Pot": frozenset(p.entry for p in postings)},
     )
-    assert not matching.recorded(held, partial)
-    spread = matching.ById(
-        {"Assets:Zq:Pot": Stretch(5, date(2010, 1, 2), date(2010, 1, 2) + timedelta(days=2999))}
-    )
-    assert not matching.recorded(held, replace(partial, ids=spread)), "five ids over 3,000 days"
-    held, whole = _pot(40, 40)
-    assert matching.recorded(held, whole)
+    return matching.Proposal(None, "Assets:Zq:Pot", How.ID, ids, (), None)  # type: ignore[arg-type]
+
+
+def test_ids_on_only_the_end_of_an_accounts_history_vouch_for_none_of_it() -> None:
+    """The reviewer's cases: five of the bank's ids on the last five entries of an account the
+    base holds three thousand days of, recent and enough of them, and five spread over all of
+    it. Over the two years a bank sends of an account most of its entries are something else's,
+    so its history is not handed over by them."""
+    held, postings = _pot(3000)
+
+    assert not matching.recorded(held, _ours(postings[-5:])), "the last five"
+    assert not matching.recorded(held, _ours(postings[::600])), "five over 3,000 days"
+    assert not matching.recorded(held, _ours(postings[-365:])), "the last of two years' half"
+    old_and_last = postings[:2000] + postings[-5:]
+    assert not matching.recorded(held, _ours(old_and_last)), "years-old ids vouch for no recent"
+
+
+def test_an_account_older_than_the_bank_sends_is_vouched_for_by_its_recent_years() -> None:
+    """Eight years of entries, the bank's ids on every one of the last two years, or on most of
+    them, as a bank connected now sends: the ledger records it as the bank's account. So does
+    an account younger than two years whose every entry is the bank's."""
+    held, postings = _pot(3000)
+
+    assert matching.recorded(held, _ours(postings[-731:]))
+    assert matching.recorded(held, _ours(postings[-731::2] + postings[-730::4]))
+    young, all_of_it = _pot(40)
+    assert matching.recorded(young, _ours(all_of_it))
+    assert not matching.recorded(young, _ours(all_of_it[-20:])), "half is not most"

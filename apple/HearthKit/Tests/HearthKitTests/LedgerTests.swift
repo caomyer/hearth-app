@@ -288,7 +288,30 @@ struct LedgerTests {
             return
         }
         #expect(LedgerWords.cannotMatch(stuck)?.hasPrefix("An account here can be matched only to one of your ledger's accounts that is yours.") == true)
+        #expect(LedgerWords.cannotMatch(stuck)?.hasSuffix("the one with nothing to choose stays as it is. Match it later in Settings, Ledger.") == true)
         #expect(!LedgerFlow.hasChoices(stuck))
+        accounts[1]["choices"] = []
+        found["accounts"] = [accounts[1], accounts[2]]
+        reply["answer"] = found
+        let two = try JSONSerialization.data(withJSONObject: reply)
+        guard case .ready(let both) = try replyDecoder().decode(Reply<Matching>.self, from: two).answer else {
+            Issue.record("not a ready answer")
+            return
+        }
+        #expect(LedgerWords.cannotMatch(both)?.hasSuffix("those with nothing to choose stay as they are. Match them later in Settings, Ledger.") == true)
+    }
+
+    @Test("what nobody sees yet is said of one as of one, and of many as of many")
+    func unclaimedWords() throws {
+        func standing(_ count: Int) throws -> LedgerStanding {
+            let text = #"{"state":"ready","imported":{"on":"2026-11-22","files":1,"unclaimed":\#(count)},"inherited":false,"importing":false,"may_bring_in":false,"why_not":null,"bringing_in":null}"#
+            guard case .ready(let found) = try replyDecoder().decode(Reply<LedgerStanding>.self, from: Data(#"{"id":1,"answer":\#(text)}"#.utf8)).answer
+            else { throw Engine.Failure.refused }
+            return found
+        }
+        #expect(LedgerWords.unclaimed(try standing(1)) == "1 of your books' accounts is nobody's yet, so nobody sees it. Say whose it is with hearth add-account on this Mac.")
+        #expect(LedgerWords.unclaimed(try standing(4), locale: Locale(identifier: "en_US")) == "4 of your books' accounts are nobody's yet, so nobody sees them. Say whose each is with hearth add-account on this Mac.")
+        #expect(LedgerWords.unclaimed(try standing(0)) == nil)
     }
 
     @Test("each refusal is headed by what happened, and the engine's sentence says the rest")
