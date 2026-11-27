@@ -38,7 +38,7 @@ public final class ScreenModel<Content: Screen> {
 
     /// What the screen is asked as, and what narrows it.
     public let screen: String
-    public let given: Given
+    public private(set) var given: Given
 
     private let engine: any Asking
     private let pause: @Sendable (Duration) async throws -> Void
@@ -68,8 +68,12 @@ public final class ScreenModel<Content: Screen> {
     /// when there is no point in asking again.
     @discardableResult
     public func refresh() async -> Duration? {
+        let asked = given
         do {
-            switch try await engine.ask(screen, with: given, as: Content.self) {
+            let answer = try await engine.ask(screen, with: asked, as: Content.self)
+            // An answer to what the screen was asked before it was narrowed again is not its.
+            guard asked == given else { return Self.whileLoading }
+            switch answer {
             case .ready(let content):
                 state = .ready(content)
                 return content.recomputing ? Self.whileLoading : Self.whileReady
@@ -94,6 +98,14 @@ public final class ScreenModel<Content: Screen> {
             state = .stopped
             return nil
         }
+    }
+
+    /// Asks again with `given` from now on, as a screen whose period or valuation a person
+    /// changed: what is on screen stays there until the new answer arrives.
+    public func narrow(to given: Given) async {
+        guard given != self.given else { return }
+        self.given = given
+        await refresh()
     }
 
     /// Keeps the screen current until the task is cancelled or the engine stops.

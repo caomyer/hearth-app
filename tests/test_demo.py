@@ -251,6 +251,23 @@ def test_the_demo_as_of_a_day_waits_on_the_same_rows_whichever_day_it_is_opened(
 
 
 @pytest.mark.parametrize(
+    "opened", [datetime(2026, 11, 26, 18, 0, tzinfo=UTC), datetime(2027, 2, 3, 6, 0, tzinfo=UTC)]
+)
+def test_the_demo_as_of_a_day_has_books_as_of_that_day(
+    monkeypatch: pytest.MonkeyPatch, opened: datetime
+) -> None:
+    """Opened on any day, the demo as of Nov 22 runs on Nov 22's clock: its books, and every
+    screen of the Mac app's sample, are as of the day it stands on, never the day it runs."""
+    from hearth import cli
+
+    monkeypatch.setattr(cli, "system_clock", lambda: opened)
+    with cli._demo_household(first_review=False, as_of=date(2026, 11, 22)) as household:
+        assert household.clock().astimezone().date() == date(2026, 11, 22)
+        found = household.establish(household.clock())
+    assert found.as_of == date(2026, 11, 22)
+
+
+@pytest.mark.parametrize(
     "argv", [["demo", "--as-of", "2026-11-22", "--from-zero"], ["demo", "--as-of", "22/11/2026"]]
 )
 def test_a_demo_as_of_a_day_is_a_day_of_the_invented_household(argv: list[str]) -> None:

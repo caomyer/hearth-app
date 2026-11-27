@@ -104,6 +104,9 @@ public struct Entry: Decodable, Sendable, Equatable, Identifiable {
     /// The review it waits on, when it is one of the viewer's own rows nobody has checked:
     /// decided from here as from Review.
     public let review: String?
+    /// Narrowed to a statement's categories, the part of `amount` booked to them, in its sign:
+    /// of a row split across categories, only what the line that opened it adds up.
+    public var part: Money? = nil
 
     public var id: Int { position }
 
