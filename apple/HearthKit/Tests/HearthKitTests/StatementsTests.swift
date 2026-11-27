@@ -78,6 +78,32 @@ struct StatementsTests {
         #expect(StatementWords.later(1) == "1 amount was booked before anything priced it, and is at the first price there was.")
     }
 
+    @Test("a column of the balance sheet is sized from every text it draws, the totals among them")
+    func sheetColumns() throws {
+        let sheet = try ready("balance_sheet", as: BalanceSheet.self)
+        let ends = sheet.texts(.end, locale: unitedStates)
+        // Every row, the groups and net worth among them, is in what the column must hold.
+        #expect(ends.count == sheet.everyRow.count)
+        #expect(ends.contains("158,206.46"))
+        #expect(BalanceSheet.text(sheet.netWorth, .end, locale: unitedStates) == "158,206.46")
+        // A start nothing was held at is a figure; one not known says so.
+        #expect(BalanceSheet.text(sheet.netWorth, .start, locale: unitedStates) == "0.00")
+        // Cost and gain only where something is invested.
+        let cash = try #require(sheet.assets.children.first)
+        #expect(BalanceSheet.text(cash, .cost) == nil)
+        #expect(sheet.texts(.cost, locale: unitedStates).allSatisfy { !$0.isEmpty })
+    }
+
+    @Test("a column of the income statement is sized from every node, and net income")
+    func incomeColumns() throws {
+        let statement = try ready("income_statement", as: IncomeStatement.self)
+        let total = statement.texts(at: nil, locale: unitedStates)
+        #expect(total.count == statement.everyNode.count + 1)
+        #expect(total.contains("5,701.81"))
+        #expect(total.last == "2,238.67")
+        #expect(statement.texts(at: 0, locale: unitedStates).count == total.count)
+    }
+
     @Test("a debug build opens a tab by an obvious name")
     func tabNames() {
         #expect(StatementsModel.Tab.allCases.map(\.rawValue) == ["summary", "income", "balance", "years"])

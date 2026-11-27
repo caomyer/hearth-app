@@ -64,6 +64,13 @@ public final class StatementsModel {
         await narrow()
     }
 
+    /// The engine's own day, from whichever tab has answered: every label a statement's
+    /// period has is of it, never of the Mac's clock.
+    public var asOf: Day? {
+        summary.content?.asOf ?? years.content?.asOf ?? incomeStatement.content?.asOf
+            ?? balanceSheet.content?.asOf
+    }
+
     /// The years a period may be: the year in progress so far, then each whole year the
     /// books hold, newest first.
     public var periods: [JournalFilter.Period] {

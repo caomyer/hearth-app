@@ -1,3 +1,4 @@
+import AppKit
 import HearthKit
 import SwiftUI
 
@@ -58,7 +59,8 @@ struct StatementsView: View {
 private struct StatementsHead: View {
     let model: StatementsModel
 
-    private var asOf: Day { model.years.content?.asOf ?? Day(Date()) }
+    /// The engine's own day, never the Mac's: "2026 so far" is the books' year.
+    private var asOf: Day? { model.asOf }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -85,7 +87,7 @@ private struct StatementsHead: View {
 
     @ViewBuilder
     private var choices: some View {
-        if model.tab != .years {
+        if model.tab != .years, let asOf {
             Picker("Period", selection: period) {
                 ForEach(model.periods, id: \.self) { period in
                     Text(period.label(asOf: asOf)).tag(period)
@@ -538,18 +540,19 @@ private struct IncomeTab: View {
                         open: !closed.contains(row.node.name)
                     ) { toggle(row.node.name) }
                 }
-                .width(min: 120, ideal: 200)
+                .width(min: 120, ideal: 170)
                 TableColumnForEach(refs) { ref in
-                    TableColumn(StatementWords.column(ref.column, by: statement.columnsBy, withYear: spansYears)) { row in
+                    let title = StatementWords.column(ref.column, by: statement.columnsBy, withYear: spansYears)
+                    TableColumn(title) { row in
                         cell(row, index: ref.id)
                     }
-                    .width(ideal: 92)
+                    .width(min: width(ref.id, title), ideal: width(ref.id, title))
                     .alignment(.trailing)
                 }
                 TableColumn(totalTitle) { row in
                     cell(row, index: nil)
                 }
-                .width(ideal: 110)
+                .width(min: width(nil, totalTitle), ideal: width(nil, totalTitle))
                 .alignment(.trailing)
             }
             // Its columns scroll within it; they never widen the window.
@@ -565,6 +568,11 @@ private struct IncomeTab: View {
         var text = Figures.span(from: statement.period.from, to: statement.period.to)
         text += " · " + StatementWords.scope(statement.scope)
         return text
+    }
+
+    /// A column as wide as the widest figure it shows, so no figure is cut.
+    private func width(_ index: Int?, _ title: String) -> CGFloat {
+        FigureWidth.holding(statement.texts(at: index), title: title)
     }
 
     /// Whether the columns run over more than one year, so each heading needs its year.
@@ -618,11 +626,10 @@ private struct IncomeTab: View {
 
     @ViewBuilder
     private func figureCell(_ row: TreeRow<IncomeStatement.Node>, index: Int?) -> some View {
-        let amount = index.map { row.node.cells[$0] } ?? row.node.total
-        let text = Figures.amount(amount, signed: false)
+        let text = IncomeStatement.text(row.node, at: index)
         let categories = row.node.categories
         if row.node.name == "net" || categories.isEmpty {
-            Text(text).fontWeight(row.total ? .semibold : .regular).monospacedDigit()
+            Text(text).fontWeight(row.total ? .semibold : .regular).monospacedDigit().lineLimit(1)
         } else {
             let span = index.map { statement.columns[$0] }
             Button(text) {
@@ -711,30 +718,22 @@ private struct SheetTab: View {
                         ) { toggle(row.node.id) }
                     }
                 }
-                .width(min: 200, ideal: 240)
-                TableColumn(Figures.day(sheet.period.from, asOf: sheet.asOf)) { row in
-                    figure(row.node.start?.value, row)
-                }
-                .alignment(.trailing)
-                TableColumn(Figures.day(sheet.period.to, asOf: sheet.asOf)) { row in
-                    figure(row.node.end?.value, row)
-                }
-                .alignment(.trailing)
-                TableColumn("Change") { row in
-                    if let change = row.node.change {
-                        Text(Figures.amount(change)).monospacedDigit().foregroundStyle(Palette.ink2)
-                    }
-                }
-                .alignment(.trailing)
-                TableColumn("Cost") { row in
-                    if row.node.invested { figure(row.node.end?.cost, row) }
-                }
-                .alignment(.trailing)
-                TableColumn("Gain not yet realised") { row in
-                    if row.node.invested { figure(row.node.end?.gain, row, signed: true) }
-                }
-                .width(min: 150, ideal: 160)
-                .alignment(.trailing)
+                .width(min: 130, ideal: 180)
+                TableColumn(startTitle) { row in cell(row, .start) }
+                    .width(min: width(.start, startTitle), ideal: width(.start, startTitle))
+                    .alignment(.trailing)
+                TableColumn(endTitle) { row in cell(row, .end) }
+                    .width(min: width(.end, endTitle), ideal: width(.end, endTitle))
+                    .alignment(.trailing)
+                TableColumn("Change") { row in cell(row, .change) }
+                    .width(min: width(.change, "Change"), ideal: width(.change, "Change"))
+                    .alignment(.trailing)
+                TableColumn("Cost") { row in cell(row, .cost) }
+                    .width(min: width(.cost, "Cost"), ideal: width(.cost, "Cost"))
+                    .alignment(.trailing)
+                TableColumn(Self.gainTitle) { row in cell(row, .gain) }
+                    .width(min: width(.gain, Self.gainTitle), ideal: width(.gain, Self.gainTitle))
+                    .alignment(.trailing)
             }
             // Its columns scroll within it; they never widen the window.
             .frame(minWidth: 320, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
@@ -768,20 +767,34 @@ private struct SheetTab: View {
         if closed.contains(id) { closed.remove(id) } else { closed.insert(id) }
     }
 
+    private static let gainTitle = "Gain not yet realised"
+    private var startTitle: String { Figures.day(sheet.period.from, asOf: sheet.asOf) }
+    private var endTitle: String { Figures.day(sheet.period.to, asOf: sheet.asOf) }
+
+    /// A column as wide as the widest text it shows, so no figure is cut.
+    private func width(_ column: SheetColumn, _ title: String) -> CGFloat {
+        FigureWidth.holding(sheet.texts(column), title: title)
+    }
+
     /// A figure to the cent, as a balance sheet reconciles; "Not known" while a balance in it
-    /// has not arrived, and nothing where nothing says what it cost.
+    /// has not arrived, and a dash where nothing says what it cost.
     @ViewBuilder
-    private func figure(_ money: Money?, _ row: TreeRow<BalanceSheet.Row>, signed: Bool = false) -> some View {
-        if let money {
-            Text(Figures.amount(money, signed: signed))
-                .fontWeight(row.total ? .semibold : .regular)
+    private func cell(_ row: TreeRow<BalanceSheet.Row>, _ column: SheetColumn) -> some View {
+        if let text = BalanceSheet.text(row.node, column) {
+            let placeholder = text == BalanceSheet.notKnown || text == BalanceSheet.dash
+            Text(text)
+                .fontWeight(row.total && !placeholder ? .semibold : .regular)
                 .monospacedDigit()
-                .help(row.node.end?.isFloor == true ? "At least this: a holding in it has no price" : "")
-        } else if row.node.end == nil {
-            Text("Not known").foregroundStyle(Palette.ink3)
-        } else {
-            Text("\u{2014}").foregroundStyle(Palette.ink3).help("Nothing says what it cost")
+                .lineLimit(1)
+                .foregroundStyle(placeholder || column == .change ? Palette.ink3 : Palette.ink)
+                .help(help(row, text))
         }
+    }
+
+    private func help(_ row: TreeRow<BalanceSheet.Row>, _ text: String) -> String {
+        if text == BalanceSheet.dash { return "Nothing says what it cost" }
+        if row.node.end?.isFloor == true { return "At least this: a holding in it has no price" }
+        return ""
     }
 }
 
@@ -812,10 +825,18 @@ private struct YearsTab: View {
                             }
                         }
                     }
-                    TableColumn("Net worth") { year in money(year.netWorth) }.alignment(.trailing)
-                    TableColumn("Take-home pay") { year in money(year.pay) }.alignment(.trailing)
-                    TableColumn("Spending") { year in money(year.spending) }.alignment(.trailing)
-                    TableColumn("Saved from work") { year in money(year.saved) }.alignment(.trailing)
+                    TableColumn("Net worth") { year in money(year.netWorth) }
+                        .width(min: width(\.netWorth, "Net worth"), ideal: width(\.netWorth, "Net worth"))
+                        .alignment(.trailing)
+                    TableColumn("Take-home pay") { year in money(year.pay) }
+                        .width(min: width(\.pay, "Take-home pay"), ideal: width(\.pay, "Take-home pay"))
+                        .alignment(.trailing)
+                    TableColumn("Spending") { year in money(year.spending) }
+                        .width(min: width(\.spending, "Spending"), ideal: width(\.spending, "Spending"))
+                        .alignment(.trailing)
+                    TableColumn("Saved from work") { year in money(year.saved) }
+                        .width(min: width(\.saved, "Saved from work"), ideal: width(\.saved, "Saved from work"))
+                        .alignment(.trailing)
                     TableColumn("Savings rate") { year in
                         Text(StatementWords.figure(year.savingsRate, rate: true, currency: years.currency)).monospacedDigit()
                     }
@@ -828,6 +849,33 @@ private struct YearsTab: View {
     }
 
     private func money(_ value: Money?) -> some View {
-        Text(StatementWords.figure(value, rate: false, currency: years.currency)).monospacedDigit()
+        Text(StatementWords.figure(value, rate: false, currency: years.currency)).monospacedDigit().lineLimit(1)
+    }
+
+    private func width(_ value: KeyPath<YearByYear.Year, Money?>, _ title: String) -> CGFloat {
+        FigureWidth.holding(years.texts({ $0[keyPath: value] }, currency: years.currency), title: title)
+    }
+
+    private func width(_ value: KeyPath<YearByYear.Year, Money>, _ title: String) -> CGFloat {
+        FigureWidth.holding(years.texts({ $0[keyPath: value] }, currency: years.currency), title: title)
+    }
+}
+
+/// How wide a column of figures must be to hold the widest of them in the table's own font,
+/// bold as a total is drawn, and its heading: a column is never narrower, so no figure is cut;
+/// when the columns are wider than the window, the table scrolls sideways.
+enum FigureWidth {
+    /// The padding a table cell keeps on either side of what it draws.
+    static let padding: CGFloat = 16
+
+    static func holding(_ texts: [String], title: String) -> CGFloat {
+        let figures = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
+        let heading = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
+        let widths = texts.map { measure($0, figures) } + [measure(title, heading)]
+        return ceil(widths.max() ?? 0) + padding
+    }
+
+    private static func measure(_ text: String, _ font: NSFont) -> CGFloat {
+        (text as NSString).size(withAttributes: [.font: font]).width
     }
 }
