@@ -172,10 +172,11 @@ class Books:
     kinds: Mapping[str, Kind] = field(default_factory=dict)
     """Each income and expense account the books name, with what kind of money it is: as a
     person said, or as its name says (``hearth.categories``)."""
-    prices: PriceLookup = field(default=lambda symbol, day: None)
+    prices: PriceLookup = field(default=lambda symbol, day: None, compare=False)
     """The prices the books were valued at, for valuing them on any other day: a statement's
     start and end (``hearth.reports.statements``). Held in memory, as the recompute read them,
-    so a page never reads the price table itself."""
+    so a page never reads the price table itself. A function, so two books are compared by
+    what they were valued at (`today`, `month_ends`), not by it."""
     price_sources: tuple[str, ...] = PRICE_SOURCES
     """The sources the stored prices it was valued at were taken from (`stored_prices`), so
     that a price's history is read from exactly those."""
