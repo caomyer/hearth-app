@@ -44,7 +44,7 @@ from hearth import (
 )
 from hearth.accounts import AccountRejectedError
 from hearth.app import create_app
-from hearth.clock import system_clock
+from hearth.clock import Clock, system_clock
 from hearth.config import DATABASE_FILE, Settings, data_dir_from_environment
 from hearth.disclosure import may_learn, rulings_in
 from hearth.members import MemberRejectedError, normalise_username
@@ -704,6 +704,9 @@ class _DemoHousehold:
     plaid: PlaidSetup
     passwords: dict[str, str]
     """Each invented member's password, by username, the admin first."""
+    clock: Clock = system_clock
+    """The household's own clock: the day it stands on, with `--as-of`, whatever the day it
+    is opened on, so its books are as of that day and every screen says so."""
 
 
 @contextmanager
@@ -728,7 +731,9 @@ def _demo_household(*, first_review: bool, as_of: date | None) -> Iterator[_Demo
         establish = books.from_household(
             settings, rulings=rulings_in, learns=may_learn, sources=(demo.PRICE_SOURCE,)
         )
-        yield _DemoHousehold(settings, establish, setup, passwords)
+        yield _DemoHousehold(
+            settings, establish, setup, passwords, system_clock if as_of is None else lambda: now
+        )
 
 
 def _demo(host: str, port: int, *, first_review: bool = False, as_of: date | None = None) -> None:
@@ -752,6 +757,7 @@ def _demo_bridge(
             household.establish,
             replace(household.plaid, approval=approval),
             (username, password),
+            household.clock,
         )
 
 
@@ -772,6 +778,7 @@ def _answer_the_app(
     establish: books.Establish,
     plaid: PlaidSetup,
     signed_in_as: tuple[str, str] | None = None,
+    clock: Clock = system_clock,
 ) -> None:
     """Answer the native app until it closes its end, recomputing as ``hearth serve`` does: at
     start-up, every morning, and whenever another process changes what the books are computed
@@ -786,13 +793,11 @@ def _answer_the_app(
     runlog.configure(settings.data_dir)
     approved = ", ".join(sorted(op.value for op in plaid.approval.operations)) or "none"
     print(f"Live Plaid calls approved for this run: {approved}.", file=sys.stderr, flush=True)
-    bookkeeper = books.Bookkeeper(
-        establish, system_clock, standing=lambda: books.standing(settings)
-    )
+    bookkeeper = books.Bookkeeper(establish, clock, standing=lambda: books.standing(settings))
     bookkeeper.recompute_daily()
     watching = bookkeeper.recompute_on_change()
-    refresher = Refresher(settings, plaid, bookkeeper, system_clock)
-    bridge = Bridge(settings, bookkeeper, system_clock, refresher)
+    refresher = Refresher(settings, plaid, bookkeeper, clock)
+    bridge = Bridge(settings, bookkeeper, clock, refresher)
     syncing = refresher.daily()
     try:
         if signed_in_as is not None and bridge.sign_in(*signed_in_as) is not Outcome.SIGNED_IN:

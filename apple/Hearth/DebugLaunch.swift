@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
 import HearthKit
+import os
 
 /// Ways to open a debug build straight onto a screen, so each can be looked at without a
 /// click: `-openBooks sample|own`,
-/// `-startScreen overview|review|transactions|holdings|holding:<symbol>|accounts|account:<name>`,
+/// `-startScreen overview|review|transactions|holdings|holding:<symbol>|statements|statements:<tab>|accounts|account:<name>`,
 /// `-appearance light|dark`,
 /// `-firstReview YES` for a sample none of whose two years is reviewed yet,
 /// `-sampleAsOf YYYY-MM-DD` for the sample as it stood that day, and, for a
@@ -76,10 +77,33 @@ enum StartScreen {
             case "transactions": .transactions
             case "holdings": .holdings
             case let named? where named.hasPrefix("holding:"): .holdings
+            case "statements": .statements
+            case let named? where named.hasPrefix("statements:"): .statements
             case "accounts": .accounts
             case let named? where named.hasPrefix("account:"): .accounts
             default: nil
             }
+        #else
+            nil
+        #endif
+    }
+
+    /// The tab of Statements to open on: `summary`, `income`, `balance` or `years`. Any other
+    /// name opens the Summary and says so in the log.
+    static var statementsTab: StatementsModel.Tab? {
+        #if DEBUG
+            guard let named = UserDefaults.standard.string(forKey: "startScreen"), named.hasPrefix("statements:")
+            else { return nil }
+            let tab = String(named.dropFirst("statements:".count))
+            guard let found = StatementsModel.Tab(rawValue: tab) else {
+                let known = StatementsModel.Tab.allCases.map(\.rawValue).joined(separator: ", ")
+                let said = "-startScreen statements:\(tab) is no tab of Statements; the tabs are \(known)"
+                Logger(subsystem: "dev.hearth.Hearth", category: "launch").error("\(said, privacy: .public)")
+                // And on standard error, where whoever launched the build is looking.
+                FileHandle.standardError.write(Data((said + "\n").utf8))
+                return nil
+            }
+            return found
         #else
             nil
         #endif
