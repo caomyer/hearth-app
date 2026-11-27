@@ -415,6 +415,37 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertTrue(market.waitForExistence(timeout: 30), "the row taken back is not unreviewed again")
     }
 
+    /// Holdings totals what the member may see at market value and at cost; a holding chosen
+    /// shows where its price came from and its history, and an account's name opens it.
+    @MainActor
+    func testHoldingsShowsWhereEachPriceComesFrom() {
+        let app = sample(startingOn: "holdings")
+
+        let total = app.staticTexts["holdings.total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 60), "Holdings did not open")
+        XCTAssertNotNil(
+            text(of: total).firstMatch(of: /\$\d{1,3}(,\d{3})+$/), "\(text(of: total)) is not a total in whole dollars")
+        XCTAssertTrue(text(of: app.staticTexts["holdings.gain"]).hasSuffix(" gain"))
+
+        // The lots the sample bought, at what they cost, whatever the prices did since.
+        app.radioButtons["At cost"].click()
+        waitFor(total, toSay: "$235,860")
+        app.radioButtons["At market value"].click()
+
+        app.descendants(matching: .any)["holdings.row.BIDX"].firstMatch.click()
+        let source = app.descendants(matching: .any)["price.source"].firstMatch
+        XCTAssertTrue(source.waitForExistence(timeout: 30), "the holding's price was not shown beside the list")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["price.chart"].firstMatch.waitForExistence(timeout: 30),
+            "the price's history was not drawn")
+        XCTAssertEqual(text(of: app.staticTexts["price.title"]), "Bond Index")
+
+        app.buttons["holdings.account.Joint brokerage"].click()
+        let name = app.staticTexts["account.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 30), "the account did not open")
+        XCTAssertEqual(text(of: name), "Joint brokerage")
+    }
+
     /// The day the sample stands on for the tests that work its Review. The sample is drawn
     /// back from the day it is opened, so what waits in it changes from day to day; on this day
     /// Avery's queue is Kibble Co, a group of one, and Greenleaf Market, a guess.

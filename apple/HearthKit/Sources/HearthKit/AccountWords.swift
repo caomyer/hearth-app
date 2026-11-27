@@ -55,6 +55,12 @@ extension Account {
             return "Its bank and its imported ledger disagree by an amount nobody has confirmed yet. Confirm it in Review, and its balance matches its bank."
         }
         guard standing == .notKnown, let why else { return nil }
+        return Self.unknown(why)
+    }
+
+    /// Why the books do not know what an account holds, by the engine's word for it
+    /// (`hearth.plaid.opening.Unknown`); nil for a word this app has not been taught.
+    public static func unknown(_ why: String) -> String? {
         switch why {
         case "investment": return "Its brokerage has not said what it holds yet."
         case "kind": return "Its bank reports a balance that does not say plainly what it holds or owes."

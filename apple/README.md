@@ -6,7 +6,7 @@ Nothing is computed twice: every figure on screen is one hearth worked out.
 
 The plan and the screens it is building towards are in `.lavish/hearth-apple.html`.
 For now the app opens a household's existing hearth data on this Mac in place, for a member who signs in, or the invented sample household.
-It shows the Overview, the journal (Transactions), the accounts and each account's own page, lets a member review what their banks sent, and brings the household's connections up to date when the person allows it.
+It shows the Overview, the journal (Transactions), Holdings, the accounts and each account's own page, lets a member review what their banks sent, and brings the household's connections up to date when the person allows it.
 
 ## Opening books
 
@@ -43,11 +43,20 @@ It shows the Overview, the journal (Transactions), the accounts and each account
 - Rows whose other side Hearth does not see are counted apart and answered a group at a time under "Where did it go?", or a row alone; naming a new account for them stays in Hearth in the browser.
 - There is no auto-accept, and no Split or note: the engine cannot split a row yet, and the review pages write no note.
 
+## Holdings
+
+- Holdings lists what the investment accounts the member may see hold, by account: each holding's units, the price it is valued at with that price's close, its value, what it cost and what it has gained and not realised, with totals for each account and for all of them, at market value or at cost.
+- Every absence is said in words: a holding with no price is not counted and makes every total that includes it "at least"; an old price says its day and age and its value "may be off"; a cost the books do not hold has no gain; a brokerage that has not said what it holds says so, and to its owner why; another member's positions are named as private, and inside the household's net worth only where they share their total (`docs/native.md`, "Holdings").
+- Choosing a holding shows beside the list where its price came from (its source, the day it is the close of, when it was fetched) and every close Hearth holds of it, drawn as a line.
+- An account's name opens it.
+  Nothing here changes a price or a lot: a price is entered by hand in Hearth in the browser.
+- The list fits the window it is given: narrower, the units go under each name, then the gain under the value.
+
 ## How it fits together
 
-- `HearthKit/` is everything that is not a view: which books are open, who is signed in and what the engine may ask the banks (`Session`, `Setup`, `Consent`), starting the engine, signing in to it, asking it for a screen and asking it to sync (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Banks`, `Review`, `Money`, `Day`), each screen's state (`Desk`, `ScreenModel`, `SyncModel`, `JournalModel` with its `JournalFilter`, and `ReviewModel` with its `ReviewQuery`), the review decisions and the one an Undo takes back (`Decisions`), and how figures, balances and decisions are written for a person (`Figures`, `AccountWords`, `SyncWords`, `ReviewWords`).
+- `HearthKit/` is everything that is not a view: which books are open, who is signed in and what the engine may ask the banks (`Session`, `Setup`, `Consent`), starting the engine, signing in to it, asking it for a screen and asking it to sync (`Engine`), keeping a sign-in in the Keychain (`Keychain`, behind `CredentialStore`), what the answers hold (`Answer`, `Overview`, `Accounts`, `AccountPage`, `Journal`, `Banks`, `Review`, `Holdings`, `PriceHistory`, `Money`, `Quantity`, `Day`), each screen's state (`Desk`, `ScreenModel`, `SyncModel`, `JournalModel` with its `JournalFilter`, and `ReviewModel` with its `ReviewQuery`), the review decisions and the one an Undo takes back (`Decisions`), and how figures, balances, holdings and decisions are written for a person (`Figures`, `AccountWords`, `HoldingsWords`, `SyncWords`, `ReviewWords`).
   It is a Swift package, so it builds and tests without the app.
-- `Hearth/` is the app: one window, with the start screen, signing in, and the books, with the sync control in the toolbar: a sidebar of Overview, Review, Transactions, Accounts and every account the member may see, and the screen chosen.
+- `Hearth/` is the app: one window, with the start screen, signing in, and the books, with the sync control in the toolbar: a sidebar of Overview, Review, Transactions, Holdings, Accounts and every account the member may see, and the screen chosen.
   An account's name anywhere opens the account; a category opens Transactions narrowed to it.
 - `engine/main.py` and `scripts/bundle-engine.sh` put a pinned Python, everything `uv.lock` names, and `src/hearth` into the app's resources, signed as the app is signed.
 - On the Python side, `hearth.native` is the doorway: `hearth bridge` answers the app over standard input and output, one JSON object a line, with views from `hearth.disclosure` and nothing else (`docs/native.md`).
@@ -107,7 +116,7 @@ HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE
 ```
 
 - `-openBooks sample|own` opens those books at once.
-- `-startScreen overview|review|transactions|accounts|account:<name>` opens that screen; an account is found by its name once the accounts are in.
+- `-startScreen overview|review|transactions|holdings|accounts|account:<name>|holding:<symbol>` opens that screen; an account is found by its name once the accounts are in, and a holding by its symbol, with its price beside Holdings, once Holdings is in.
 - `-firstReview YES` opens the sample as a first import leaves it: two years, over a thousand rows, none reviewed (`hearth demo --first-review`).
 - `-sampleAsOf YYYY-MM-DD` opens the sample as it stood on that day (`hearth demo --as-of`).
   The sample is drawn back from the day it is opened, so what waits in its Review changes from day to day; the UI tests that work Review pin it this way.

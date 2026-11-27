@@ -4,7 +4,8 @@ import HearthKit
 
 /// Ways to open a debug build straight onto a screen, so each can be looked at without a
 /// click: `-openBooks sample|own`,
-/// `-startScreen overview|review|transactions|accounts|account:<name>`, `-appearance light|dark`,
+/// `-startScreen overview|review|transactions|holdings|holding:<symbol>|accounts|account:<name>`,
+/// `-appearance light|dark`,
 /// `-firstReview YES` for a sample none of whose two years is reviewed yet,
 /// `-sampleAsOf YYYY-MM-DD` for the sample as it stood that day, and, for a
 /// household's own books, `-signInAs <username>` with the password in the environment's
@@ -73,10 +74,23 @@ enum StartScreen {
             case "overview": .overview
             case "review": .review
             case "transactions": .transactions
+            case "holdings": .holdings
+            case let named? where named.hasPrefix("holding:"): .holdings
             case "accounts": .accounts
             case let named? where named.hasPrefix("account:"): .accounts
             default: nil
             }
+        #else
+            nil
+        #endif
+    }
+
+    /// The holding to show the price of once Holdings is in, by its symbol.
+    static var holding: String? {
+        #if DEBUG
+            guard let named = UserDefaults.standard.string(forKey: "startScreen"), named.hasPrefix("holding:")
+            else { return nil }
+            return String(named.dropFirst("holding:".count))
         #else
             nil
         #endif
