@@ -5,6 +5,20 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Protocol
 
+MOST_DIGITS = 15
+"""The most digits a price typed by hand may have: more than any close or NAV is quoted to."""
+LEAST_PRICE = Decimal("0.000001")
+MOST_PRICE = Decimal("1000000000")
+"""The range a price typed by hand must be in: wider than anything a household holds trades at,
+narrow enough that a slip of the keyboard is not a price."""
+
+
+def enterable(price: Decimal) -> bool:
+    """Whether a price typed by hand is one to keep: finite, in range, and not too long."""
+    if not price.is_finite() or not LEAST_PRICE <= price <= MOST_PRICE:
+        return False
+    return len(price.normalize().as_tuple().digits) <= MOST_DIGITS
+
 
 @dataclass(frozen=True, slots=True)
 class Quote:

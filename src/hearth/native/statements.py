@@ -138,6 +138,8 @@ def _valuing(valuing: Valuing) -> Answer:
         "unpriced": list(valuing.unpriced),
         "unvalued": list(valuing.unvalued),
         "stale": valuing.stale,
+        # Amounts booked before anything priced them, converted at the first price there was.
+        "later": valuing.later,
     }
 
 
@@ -238,6 +240,7 @@ def _income(found: IncomeStatement) -> Answer:
         "expenses": _node(found.expenses),
         "net": {"cells": [_money(n) for n in found.net], "total": _money(found.net_total)},
         "unreviewed": _unreviewed(found.unreviewed),
+        "later": found.later,
     }
 
 

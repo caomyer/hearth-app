@@ -184,7 +184,7 @@ class Prices(Protocol):
 
     def day(self, symbol: str, on_or_before: date) -> date | None: ...
 
-    def first(self, symbol: str) -> date | None: ...
+    def first(self, symbol: str, currency: str) -> date | None: ...
 
 
 # -- what each account held -----------------------------------------------------------------
@@ -311,6 +311,9 @@ class Flows:
     unreviewed: Unreviewed
     unconverted: int
     """Postings with no price to convert them: left out, and the difference if any."""
+    later: int = 0
+    """Postings booked before anything priced what they are in, converted on their own day at
+    the first price there was: said beside the figure, as a stale price is."""
 
     def of_kind(self, kind: Kind) -> Decimal:
         return sum(
@@ -432,7 +435,10 @@ class _Leg:
     cost: Decimal | None
     """What it moved its position's cost by."""
     mark: Decimal | None
-    """What it is worth at its day's price; None for a lot with no price yet."""
+    """What it is worth at its day's price; None for a holding with no price yet."""
+    lot: bool = False
+    """Whether it reduces a lot: what of its mark is over its cost is a gain the books may
+    book as income, which its value already held."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -447,6 +453,8 @@ class _Event:
     flag: str
     first: bool
     """Whether it is the entry's first part, which counts the entry once."""
+    later: int = 0
+    """How many of its postings were converted at a later day's first price."""
 
     @property
     def opens(self) -> bool:
@@ -490,7 +498,7 @@ class _Signature:
     sums: dict[tuple[str, ...], _Running] = field(default_factory=dict)
 
     def add(self, key: tuple[str, ...], day: int, amount: Decimal) -> None:
-        if amount == 0 and key[0] not in ("rows", "prow"):
+        if amount == 0:
             return
         self.sums.setdefault(key, _Running()).add(day, amount)
 
@@ -557,43 +565,50 @@ class Ledger:
             for posting in entry.postings:
                 groups[_weight(posting, entry).currency].append(posting)
             first = True
-            for currency, postings in groups.items():
-                day = self._booked_on(currency, entry.date)
+            for postings in groups.values():
                 order += 1
-                yield (day, order), (entry, postings, day, first)
+                yield (entry.date, order), (entry, postings, entry.date, first)
                 first = False
 
-    def _booked_on(self, commodity: str, day: date) -> date:
-        """The day what is worth `commodity` can first be valued: its own, unless nothing
-        priced it yet, when it is its first price's day; its own, too, if nothing ever did."""
-        if (
-            commodity == self.currency
-            or self.prices.price(commodity, day, self.currency) is not None
-        ):
-            return day
-        first = self.prices.first(commodity)
-        return max(day, first) if first is not None else day
-
     def _rate(self, commodity: str, day: date) -> Decimal | None:
+        """What one of `commodity` was worth on `day`: its latest price on or before it."""
         if commodity == self.currency:
             return Decimal(1)
         return self.prices.price(commodity, day, self.currency)
 
+    def _converted(self, commodity: str, day: date) -> tuple[Decimal | None, bool]:
+        """The rate an amount in `commodity` is converted at on `day`, and whether it is a
+        later day's: an amount booked before anything priced it is converted at its first
+        price, on its own day, and the figure says so (`Flows.later`)."""
+        rate = self._rate(commodity, day)
+        if rate is not None:
+            return rate, False
+        first = self.prices.first(commodity, self.currency)
+        if first is None:
+            return None, False
+        return self.prices.price(commodity, first, self.currency), True
+
     def _book(self, entry: Transaction, postings: list[Posting], day: date, first: bool) -> None:
         ordinal = day.toordinal()
         legs_in = [p for p in postings if is_balance_sheet(p.account)]
-        weights = {id(p): self._weighs(p, entry, day) for p in postings}
-        if self._splits(entry, postings, legs_in):
+        converted = {id(p): self._weighs(p, entry, day) for p in postings}
+        weights: dict[int, Decimal | None] = {key: w for key, (w, _) in converted.items()}
+        later = sum(1 for _, late in converted.values() if late)
+        splits = self._splits(entry, postings, legs_in)
+        if splits:
             weights = dict.fromkeys(weights, ZERO)
         # What holdings with no lot gave up, by commodity, for holdings moved into others.
         pool: defaultdict[str, list[Decimal]] = defaultdict(lambda: [ZERO, ZERO])
         moved: list[tuple[Posting, _Position, Decimal | None]] = []
         given: Decimal | None
+        lots: set[int] = set()
         for posting in legs_in:
             amount = units(posting, entry)
             held = self._positions.setdefault((posting.account, amount.currency), _Position())
             bare = posting.cost is None and amount.currency != self.currency
             reducing = held.units != 0 and (held.units > 0) != (amount.number > 0)
+            if reducing and posting.cost is not None:
+                lots.add(id(posting))
             if bare and reducing and held.cost is not None:
                 given = held.cost * amount.number / held.units
                 pool[amount.currency][0] += -amount.number
@@ -630,11 +645,20 @@ class Ledger:
                 held.cost = ZERO
             held.note(ordinal)
             rate = self._rate(amount.currency, day)
-            split = weighs == 0 and amount.currency != self.currency and posting.cost is None
-            mark = ZERO if split else (None if rate is None else amount.number * rate)
-            legs.append(_Leg(posting.account, amount.currency, amount.number, weighs, cost, mark))
+            mark = ZERO if splits else (None if rate is None else amount.number * rate)
+            legs.append(
+                _Leg(
+                    posting.account,
+                    amount.currency,
+                    amount.number,
+                    weighs,
+                    cost,
+                    mark,
+                    id(posting) in lots,
+                )
+            )
             if amount.currency != self.currency and amount.currency not in self._first:
-                found = self.prices.first(amount.currency)
+                found = self.prices.first(amount.currency, self.currency)
                 if found is not None:
                     self._first[amount.currency] = found
         others = tuple(
@@ -642,38 +666,41 @@ class Ledger:
         )
         event = _Event(
             day,
-            frozenset(leg.account for leg in legs),
+            # Whether an entry crosses the statement's edge is the whole entry's to say, in
+            # every currency it moves, as the journal of a statement's rows reads it.
+            frozenset(p.account for p in entry.postings if is_balance_sheet(p.account)),
             tuple(legs),
             others,
             entry.flag or "*",
             first,
+            later,
         )
-        if event.accounts:
+        if legs:
             self._file(event)
 
-    def _weighs(self, posting: Posting, entry: Transaction, day: date) -> Decimal | None:
+    def _weighs(
+        self, posting: Posting, entry: Transaction, day: date
+    ) -> tuple[Decimal | None, bool]:
         weighs = _weight(posting, entry)
-        rate = self._rate(weighs.currency, day)
+        rate, late = self._converted(weighs.currency, day)
         if rate is None or weighs.number is None:
-            return None
-        return weighs.number * rate
+            return None, False
+        return weighs.number * rate, late
 
     def _splits(self, entry: Transaction, postings: list[Posting], legs: list[Posting]) -> bool:
-        """Whether a part adds units of a holding already held against equity, with no money,
-        no lot and no price: a split, which changes units and nothing else."""
+        """Whether a part is a split of a holding with no lot: in one commodity, with no lot
+        and no price, it takes the old position out of an account and puts the new one in the
+        same account. Units added against an opening or a reconciling entry alone are never
+        one: they came from somewhere, and are an opening."""
         commodities = {units(p, entry).currency for p in postings}
         if len(commodities) != 1 or self.currency in commodities:
             return False
         if any(p.cost is not None or p.price is not None for p in postings):
             return False
-        if not any(root(p.account) == "Equity" for p in postings):
-            return False
-        (commodity,) = commodities
-        return any(
-            self._positions.get((p.account, commodity), _Position()).units != 0
-            and units(p, entry).number > 0
-            for p in legs
-        )
+        by_account: defaultdict[str, set[bool]] = defaultdict(set)
+        for posting in legs:
+            by_account[posting.account].add(units(posting, entry).number > 0)
+        return any(signs == {True, False} for signs in by_account.values())
 
     def _file(self, event: _Event) -> None:
         signature = self._signatures.setdefault(event.accounts, _Signature(event.accounts))
@@ -684,9 +711,13 @@ class Ledger:
         add(("unconverted",), day, Decimal(len(weights) - len(known)))
         if len(known) == len(weights):
             add(("rounding",), day, sum(known, ZERO))
-        kind = "open" if event.opens else "earn" if event.earns else "beside"
+        add(("later",), day, Decimal(event.later))
         for leg in event.legs:
             a = leg.account
+            # A gap at an opening is the opening's; one on a lot given up for a gain booked as
+            # income is a gain its value already held; any other, a buy off the day's close,
+            # a dividend reinvested, a split of lots, is what the market did.
+            kind = "open" if event.opens else "earn" if leg.lot and event.earns else "beside"
             if leg.weight is not None:
                 add(("w", a), day, leg.weight)
                 if leg.cost is not None:
@@ -772,6 +803,7 @@ class Ledger:
 
             others = signature.others
             counts["unconverted"] += over("unconverted")
+            counts["later"] += over("later")
             rounding = over("rounding")
             cost[Other.ROUNDING] += rounding
             market[Other.ROUNDING] += rounding
@@ -830,6 +862,7 @@ class Ledger:
                 counts["unplaced-in"],
             ),
             unconverted=int(counts["unconverted"]),
+            later=int(counts["later"]),
         )
 
     def _priced(self, period: Period, scope: frozenset[str]) -> Decimal:
