@@ -12,11 +12,13 @@ The session is revoked when the app signs out or closes its end.
 
 The password is used once, to sign in, and never kept, logged or written anywhere.
 
-A signed-in app may also ask hearth to do something (`Bridge.act`). There is one action,
-``sync``: bring the household's connections up to date now, through the same `Refresher` that
-syncs at start-up and every morning, which asks Plaid only for what this bridge was started
-approved to ask (``hearth bridge --approve-plaid``). The app's switches decide that approval by
-deciding how the bridge is started; nothing on the wire can widen it.
+A signed-in app may also ask hearth to do something (`Bridge.act`). ``sync`` brings the
+household's connections up to date now, through the same `Refresher` that syncs at start-up and
+every morning, which asks Plaid only for what this bridge was started approved to ask
+(``hearth bridge --approve-plaid``). The app's switches decide that approval by deciding how the
+bridge is started; nothing on the wire can widen it. Every other action is one of the signed-in
+member's review decisions, which the doorway makes through their own desk
+(``hearth.native.review``).
 """
 
 import sqlite3
@@ -28,8 +30,11 @@ from enum import StrEnum
 from hearth import auth, db, members, sessions
 from hearth.books import Bookkeeper
 from hearth.config import Settings
-from hearth.native.doorway import Answer, Doorway, Given
+from hearth.native.doorway import Acted, Answer, Done, Doorway, Given
+from hearth.native.review import DECISIONS
 from hearth.refresh import NOT_SYNCING, Begun, Refresher, Syncing
+
+__all__ = ["ACTIONS", "CLIENT", "SIGNED_OUT", "Acted", "Bridge", "Done", "Outcome"]
 
 CLIENT = "native app"
 """What the throttle counts the app's failed sign-ins against, as a page's are counted against
@@ -52,22 +57,9 @@ class Outcome(StrEnum):
     SIGNED_OUT = "signed_out"
 
 
-class Acted(StrEnum):
-    """What the app is told when it asks hearth to do something."""
-
-    STARTED = "started"
-    RUNNING = "running"
-    """It was already being done: a sync was running, and what it brings is what was asked."""
-    NOT_ALLOWED = "not_allowed"
-    """This bridge was started approved for nothing the action asks of Plaid."""
-    MISSING = "missing"
-    """There is no such action."""
-    SIGNED_OUT = "signed_out"
-    """Nobody is signed in, so nothing is done and nothing is said of what could be."""
-
-
-ACTIONS = frozenset({"sync"})
-"""Everything the app may ask hearth to do, by the name it asks with."""
+ACTIONS = frozenset({"sync", *DECISIONS})
+"""Everything the app may ask hearth to do, by the name it asks with: sync, and the review
+decisions."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,13 +118,20 @@ class Bridge:
         viewer = self._viewer()
         if viewer is None:
             return dict(SIGNED_OUT)
-        return Doorway(self.settings, self.bookkeeper, viewer, self._syncing).answer(ask, given)
+        return self._doorway(viewer).answer(ask, given)
 
-    def act(self, action: str) -> Acted:
-        """Do what the app asked. Signed out, the outcome is the same whatever is asked."""
-        if self._viewer() is None:
+    def act(self, action: str, given: Given | None = None) -> Done:
+        """Do what the app asked, as the member signed in. Signed out, the outcome is the same
+        whatever is asked and whatever it is given."""
+        viewer = self._viewer()
+        if viewer is None:
             return Acted.SIGNED_OUT
         if action not in ACTIONS:
+            return Acted.MISSING
+        if action != "sync":
+            return self._doorway(viewer).act(action, given)
+        if given:
+            # A sync takes nothing: what it may ask was decided when the bridge started.
             return Acted.MISSING
         if self.refresher is None:
             return Acted.NOT_ALLOWED
@@ -143,6 +142,9 @@ class Bridge:
                 return Acted.RUNNING
             case Begun.NOT_ALLOWED:
                 return Acted.NOT_ALLOWED
+
+    def _doorway(self, viewer: str) -> Doorway:
+        return Doorway(self.settings, self.bookkeeper, viewer, self._syncing, self.clock)
 
     def _syncing(self) -> Syncing:
         return self.refresher.status if self.refresher is not None else NOT_SYNCING

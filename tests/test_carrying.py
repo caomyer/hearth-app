@@ -1429,7 +1429,7 @@ def test_a_ruling_that_would_put_a_row_on_a_carried_account_leaves_it_unreviewed
     """However a ruling comes to decide again, as one superseded once its bank revises the
     row, it never puts a posting on a carried account nor takes one of its bank's rows away:
     the row stays unreviewed and says why, and every recompute passes."""
-    from hearth.review.decision import KEPT_OFF, State
+    from hearth.review.decision import KEPT_IN, KEPT_OFF, State
 
     household = build(tmp_path, clock, match=("card",))
     conn = household.fresh.connect()
@@ -1460,11 +1460,18 @@ def test_a_ruling_that_would_put_a_row_on_a_carried_account_leaves_it_unreviewed
         desk = Disclosure.load(conn, viewer, household.fresh.bookkeeper.status).review_desk(
             RulingStore(conn), household.fresh.clock
         )
-        for review_id in (moved, rejected):
+        for review_id, why in ((moved, KEPT_OFF), (rejected, KEPT_IN)):
             decision = desk.item(review_id).decision
-            assert (decision.state, decision.reason) == (State.UNREVIEWED, KEPT_OFF)
+            assert (decision.state, decision.reason) == (State.UNREVIEWED, why)
     finally:
         conn.close()
+    page = household.fresh.signed_in("avery").get("/review", params={"view": "rows"}).text
+    assert (
+        "2 rows came back because the decision on them would change an account whose balance"
+        " its bank decides now."
+    ) in page
+    assert "Moved onto an account that now takes only its bank&#39;s transactions" in page
+    assert "Excluded, but its bank now counts it in the balance it reports" in page
 
 
 def test_an_account_whose_cut_over_has_not_come_is_its_banks_in_review(

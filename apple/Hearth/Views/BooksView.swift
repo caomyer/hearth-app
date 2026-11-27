@@ -4,6 +4,7 @@ import SwiftUI
 /// A place in the books the sidebar leads to.
 enum Place: Hashable {
     case overview
+    case review
     case transactions
     case accounts
     case account(String)
@@ -55,6 +56,7 @@ struct BooksView: View {
     let isSample: Bool
     @State private var navigator: Navigator
     @State private var openedStart = false
+    @Environment(\.undoManager) private var undoManager
 
     init(desk: Desk, isSample: Bool) {
         self.isSample = isSample
@@ -86,8 +88,12 @@ struct BooksView: View {
             }
         }
         .environment(navigator)
+        .task { await navigator.desk.overview.watch() }
         .task { await navigator.desk.accounts.watch() }
         .task { await navigator.desk.sync.watch() }
+        .onChange(of: navigator.desk.decisions.notice) { _, notice in
+            offerUndo(notice, decisions: navigator.desk.decisions)
+        }
         .onChange(of: navigator.desk.accounts.content?.groups) { _, groups in
             // A debug build asked to open on an account by name opens it once it is listed.
             guard !openedStart, let name = StartScreen.account,
@@ -98,11 +104,26 @@ struct BooksView: View {
         }
     }
 
+    /// Edit > Undo, and Command-Z, take back exactly the last review decision while it is the
+    /// last, as the Undo beside it does; never one before it, and never an Undo.
+    private func offerUndo(_ notice: Notice?, decisions: Decisions) {
+        guard let undoManager else { return }
+        undoManager.removeAllActions(withTarget: decisions)
+        guard notice?.ruling != nil else { return }
+        undoManager.registerUndo(withTarget: decisions) { decisions in
+            Task { @MainActor in await decisions.undo() }
+        }
+        undoManager.setActionName("Review Decision")
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch navigator.place ?? .overview {
         case .overview:
             OverviewView(model: navigator.desk.overview)
+        case .review:
+            ReviewView(desk: navigator.desk)
+                .id("review")
         case .transactions:
             TransactionsView(model: navigator.desk.transactions, accounts: navigator.desk.accounts.content)
                 .id("transactions")
@@ -121,12 +142,20 @@ struct BooksView: View {
 private struct Sidebar: View {
     @Bindable var navigator: Navigator
 
+    /// Everything waiting on the viewer, those waiting to be told where their money went
+    /// among them, as the pages' own count is.
+    private var waiting: Int { navigator.desk.overview.content?.review.waiting ?? 0 }
+
     var body: some View {
         List(selection: $navigator.place) {
             Section {
                 Label("Overview", systemImage: "house")
                     .tag(Place.overview)
                     .accessibilityIdentifier("sidebar.overview")
+                Label("Review", systemImage: "checklist")
+                    .badge(waiting)
+                    .tag(Place.review)
+                    .accessibilityIdentifier("sidebar.review")
                 Label("Transactions", systemImage: "list.bullet.rectangle")
                     .tag(Place.transactions)
                     .accessibilityIdentifier("sidebar.transactions")

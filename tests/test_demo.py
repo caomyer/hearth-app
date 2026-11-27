@@ -217,3 +217,42 @@ def test_the_from_zero_demo_is_a_household_with_members_and_nothing_else(tmp_pat
     stand_in = demo.plaid_from_zero(lambda: now.astimezone().date()).stand_in
     assert stand_in is not None
     assert set(stand_in.institutions) == {i.id for i in DEMO_INSTITUTIONS}
+
+
+@pytest.mark.parametrize(
+    "opened", [datetime(2026, 11, 26, 18, 0, tzinfo=UTC), datetime(2027, 2, 3, 6, 0, tzinfo=UTC)]
+)
+def test_the_demo_as_of_a_day_waits_on_the_same_rows_whichever_day_it_is_opened(
+    monkeypatch: pytest.MonkeyPatch, opened: datetime
+) -> None:
+    """`hearth demo --as-of` is what the Mac app's tests of Review open: drawn back from the
+    day it is given, never the day it runs."""
+    from hearth import cli
+
+    def waiting(household_clock: datetime) -> list[tuple[date, str | None]]:
+        monkeypatch.setattr(cli, "system_clock", lambda: household_clock)
+        with cli._demo_household(first_review=False, as_of=date(2026, 11, 22)) as household:
+            assert household.settings.ledger is not None
+            return sorted(
+                (entry.date, entry.payee)
+                for entry in books.load_entries(household.settings.ledger)
+                if isinstance(entry, Transaction) and entry.flag == "!"
+            )
+
+    rows = waiting(opened)
+
+    assert rows == waiting(datetime(2026, 11, 22, 18, 0, tzinfo=UTC))
+    assert (date(2026, 11, 21), "Kibble Co") in rows
+    assert max(day for day, _ in rows) <= date(2026, 11, 22)
+
+
+@pytest.mark.parametrize(
+    "argv", [["demo", "--as-of", "2026-11-22", "--from-zero"], ["demo", "--as-of", "22/11/2026"]]
+)
+def test_a_demo_as_of_a_day_is_a_day_of_the_invented_household(argv: list[str]) -> None:
+    from hearth import cli
+
+    with pytest.raises(SystemExit) as refused:
+        cli.main(argv)
+
+    assert refused.value.code == 2

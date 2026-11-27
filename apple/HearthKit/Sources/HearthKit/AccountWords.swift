@@ -31,7 +31,7 @@ extension Account {
         case .checked:
             return "Matches its last balance check" + on(checked)
         case .unchecked:
-            return "Not checked against a bank"
+            return reconciling ? "Difference with its bank to confirm" : "Not checked against a bank"
         case .notKnown:
             return "Not known yet"
         case .arriving:
@@ -48,8 +48,12 @@ extension Account {
     }
 
     /// Why a balance is not known yet, to its owners, who alone are told
-    /// (`hearth.plaid.opening.Unknown`); nil for anyone else, or any other balance.
+    /// (`hearth.plaid.opening.Unknown`), or why one is not checked against its bank yet; nil
+    /// for anyone else, or any other balance.
     public var reason: String? {
+        if standing == .unchecked, reconciling {
+            return "Its bank and its imported ledger disagree by an amount nobody has confirmed yet. Confirm it in Review, and its balance matches its bank."
+        }
         guard standing == .notKnown, let why else { return nil }
         switch why {
         case "investment": return "Its brokerage has not said what it holds yet."

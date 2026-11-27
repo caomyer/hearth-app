@@ -55,6 +55,19 @@ public enum Figures {
         return day.date(in: Day.calendar).formatted(style.utc)
     }
 
+    /// A day with its weekday, as one transaction's detail heads it: "Sat, Oct 3", with its
+    /// year when it is not the year of `asOf`: "Fri, Oct 3, 2025".
+    public static func weekday(_ day: Day, asOf: Day, locale: Locale = .current) -> String {
+        var style = Date.FormatStyle(locale: locale).weekday(.abbreviated).month(.abbreviated).day()
+        if day.year != asOf.year { style = style.year() }
+        return day.date(in: Day.calendar).formatted(style.utc)
+    }
+
+    /// The month a day is in, with its year: "Sep 2026".
+    public static func month(_ day: Day, locale: Locale = .current) -> String {
+        day.date(in: Day.calendar).formatted(Date.FormatStyle(locale: locale).month(.abbreviated).year().utc)
+    }
+
     /// Two days as a span: "Jan 1 to Oct 15, 2026", "Dec 3, 2025 to Jan 2, 2026".
     public static func span(from: Day, to: Day, locale: Locale = .current) -> String {
         let end = Date.FormatStyle(locale: locale).month(.abbreviated).day().year()

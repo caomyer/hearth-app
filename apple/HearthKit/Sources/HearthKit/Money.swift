@@ -46,17 +46,23 @@ public struct Day: Decodable, Sendable, Hashable, Comparable {
         self.day = day
     }
 
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let text = try container.decode(String.self)
+    /// The day `text` names as `YYYY-MM-DD`, or nil when it names none.
+    public init?(_ text: String) {
         guard let match = text.wholeMatch(of: /(\d{4})-(\d{2})-(\d{2})/),
             let year = Int(match.1), let month = Int(match.2), let day = Int(match.3),
             (1...12).contains(month), (1...31).contains(day)
-        else {
+        else { return nil }
+        self.init(year: year, month: month, day: day)
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let text = try container.decode(String.self)
+        guard let day = Day(text) else {
             throw DecodingError.dataCorruptedError(
                 in: container, debugDescription: "not a day: \(text)")
         }
-        self.init(year: year, month: month, day: day)
+        self = day
     }
 
     public static func < (lhs: Day, rhs: Day) -> Bool {

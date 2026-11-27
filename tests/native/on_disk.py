@@ -28,12 +28,23 @@ from tests.vault.conftest import MemoryKeyStore
 
 USERNAMES = ("avery", "blake")
 
+GROCERIES = "FOOD_AND_DRINK_GROCERIES"
+
+WAITING = 5
+"""How many of Avery's rows wait in Review's queue: everything the bank sent but the transfer."""
+
+ELSEWHERE = 1
+"""How many wait to be told where their money went: the transfer to savings nobody connected."""
+
 NET_WORTH = Decimal("21038.25")
 """Checking and savings, less what the card owes: what Avery's overview says."""
 
 
 def larkspur(today: date) -> FakeInstitution:
-    days = [today - timedelta(days=n) for n in (20, 12, 5)]
+    """Avery's bank. What it sent waits in Review: two market rows of one kind, which one
+    accept settles, beside rows of a kind each, one Plaid gave no category, and a transfer to
+    an account nobody connected, which waits under "Where did it go?"."""
+    days = [today - timedelta(days=n) for n in (20, 12, 5, 9)]
     return FakeInstitution(
         "ins_larkspur",
         "Larkspur Savings Bank",
@@ -46,8 +57,15 @@ def larkspur(today: date) -> FakeInstitution:
                 "checking",
                 Decimal("3250.40"),
                 transactions=(
-                    FakeTransaction("Cobble Street Market", Decimal("84.12"), days[0]),
-                    FakeTransaction("Payroll", Decimal("-2400.00"), days[1]),
+                    FakeTransaction("Cobble Street Market", Decimal("84.12"), days[0], GROCERIES),
+                    FakeTransaction("Cobble Street Market", Decimal("31.06"), days[3], GROCERIES),
+                    FakeTransaction("Payroll", Decimal("-2400.00"), days[1], "INCOME_WAGES"),
+                    FakeTransaction(
+                        "Online transfer to SAV 0417",
+                        Decimal("250.00"),
+                        days[1],
+                        "TRANSFER_OUT_ACCOUNT_TRANSFER",
+                    ),
                 ),
             ),
             FakeAccount(
@@ -57,7 +75,11 @@ def larkspur(today: date) -> FakeInstitution:
                 "depository",
                 "savings",
                 Decimal("18400.00"),
-                transactions=(FakeTransaction("Interest", Decimal("-12.50"), days[2]),),
+                transactions=(
+                    FakeTransaction(
+                        "Interest", Decimal("-12.50"), days[2], "INCOME_INTEREST_EARNED"
+                    ),
+                ),
             ),
             FakeAccount(
                 "card",

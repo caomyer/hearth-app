@@ -12,6 +12,10 @@ struct JournalView: View {
 
     @Environment(Navigator.self) private var navigator
     @State private var selected: Int?
+    /// The review the inspector is on: the one the entry waited on when it was chosen, kept
+    /// once it is decided, so what was done and its Undo stay beside the journal until
+    /// another entry is chosen.
+    @State private var review: String?
     @State private var text = ""
     @State private var choosingRange = false
 
@@ -49,6 +53,29 @@ struct JournalView: View {
             if model.state == .starting { await model.reload() }
             await model.watch()
         }
+        // An unreviewed row of the viewer's own opens its review beside the journal, decided
+        // there as in Review.
+        .inspector(isPresented: reviewing) {
+            if let id = review {
+                ReviewInspector(desk: navigator.desk, id: id)
+                    .id(id)
+                    .inspectorColumnWidth(min: 300, ideal: 340, max: 420)
+            }
+        }
+        .onChange(of: selected) { _, selected in
+            review = selected.flatMap { id in model.entries.first { $0.id == id }?.review }
+        }
+    }
+
+    private var reviewing: Binding<Bool> {
+        Binding(
+            get: { review != nil },
+            set: { shown in
+                if !shown {
+                    selected = nil
+                    review = nil
+                }
+            })
     }
 
     @ViewBuilder
@@ -78,8 +105,21 @@ struct JournalView: View {
     }
 
     private var entries: some View {
+        EntryList(model: model, selected: $selected, identifier: identifier)
+    }
+}
+
+/// The entries asked for so far, a day at a time, and more asked for at the end. Back on a
+/// journal scrolled a long way, the list is first drawn with a page of them (`FirstFill`).
+private struct EntryList: View {
+    let model: JournalModel
+    @Binding var selected: Int?
+    let identifier: String
+    @State private var filled = false
+
+    var body: some View {
         List(selection: $selected) {
-            ForEach(model.days) { day in
+            ForEach(filled ? model.days : model.firstDays(fitting: FirstFill.rows)) { day in
                 Section {
                     ForEach(day.entries) { entry in
                         EntryRow(
@@ -114,6 +154,7 @@ struct JournalView: View {
         .scrollContentBackground(.hidden)
         .background(Palette.surface)
         .accessibilityIdentifier("\(identifier).list")
+        .task { filled = true }
     }
 }
 
@@ -575,5 +616,18 @@ private struct AccountMenu: View {
         var filter = model.filter
         filter.account = account
         Task { await model.apply(filter) }
+    }
+}
+
+/// A row of the journal nobody has checked, as Review shows it, decided from here.
+private struct ReviewInspector: View {
+    let desk: Desk
+    let id: String
+    @State private var chosen: Destination?
+    @State private var choosing = false
+
+    var body: some View {
+        RowDetail(desk: desk, id: id, shown: nil, chosen: $chosen, choosing: $choosing, inQueue: false)
+            .background(Palette.surface)
     }
 }

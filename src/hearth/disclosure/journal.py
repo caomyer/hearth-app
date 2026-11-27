@@ -31,6 +31,7 @@ from beancount.core.data import Balance, Posting, Transaction
 from hearth.accounts import Account
 from hearth.books import REVIEW_EQUITY
 from hearth.disclosure.common import Household
+from hearth.disclosure.gate import may_review
 from hearth.figures import MOVED_IN, MOVED_OUT
 from hearth.plaid.opening import anchors, held
 from hearth.reports.common import is_balance_sheet, root, units
@@ -109,6 +110,9 @@ class Entry:
     sides: tuple[Side, ...]
     waiting: Waiting | None = None
     checked: Checked | None = None
+    review: str | None = None
+    """The review id of an unreviewed row the viewer may review, which decides it from here;
+    None for anyone else, and for every row nobody is waiting on."""
     reconciling: bool = False
     """A check of its bank's balance that the books meet only by an entry reconciling the
     imported ledger with the bank, which nobody has confirmed yet (``books.reconciling``): it
@@ -250,6 +254,7 @@ class _Reader:
             a.ledger_account for a in accounts if gate.may(Facet.ACCOUNT_BALANCES, a.owners)
         }
         self._owns = {a.ledger_account for a in accounts if gate.may_name_other_side(a.owners)}
+        self._reviews = {a.ledger_account for a in accounts if may_review(gate.viewer.id, a.owners)}
 
     def _ref(self, ledger_account: str) -> AccountRef:
         account = self._by_ledger[ledger_account]
@@ -314,7 +319,16 @@ class _Reader:
             amount=amount,
             sides=tuple(sides),
             waiting=waiting,
+            review=self._review(entry),
         )
+
+    def _review(self, entry: Transaction) -> str | None:
+        """The row's review id, when it waits on a review the viewer may make: one of their own
+        accounts' rows, nobody else's."""
+        review_id = (entry.meta or {}).get("review-id")
+        if entry.flag != "!" or not isinstance(review_id, str) or not entry.postings:
+            return None
+        return review_id if entry.postings[0].account in self._reviews else None
 
     def _moved(self, entry: Transaction, posting: Posting) -> Entry:
         """A side on an account hearth does not see, on its own: which way money moved."""

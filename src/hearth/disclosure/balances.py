@@ -102,11 +102,18 @@ class AccountStanding:
     attention: bool
     """Whether the viewer's own connection that feeds it has to be signed in to again."""
     unseen_kind: str | None = None
+    """What kind of account its owner said one hearth does not see is, in their words."""
     reconciling: bool = False
     """Whether its bank's balance agrees with the books only by an entry reconciling the
     imported ledger with the bank that nobody has confirmed yet (``books.reconciling``): its
     balance is then not shown as matching its bank. Told with its balance."""
-    """What kind of account its owner said one hearth does not see is, in their words."""
+    unseen_between: Disclosed[tuple[date, date] | None] = None
+    """For a carried account, the days from its cut-over that neither the imported ledger nor
+    its bank's history holds (``books.unseen_between``), which go with its transactions."""
+    held_back: Disclosed[tuple[date, date] | None] = None
+    """For a matched account not carried on yet, the last day its imported ledger knows of it
+    today and the day ahead its ledger holds an entry on (``books.held_back``), which go with
+    its transactions."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +215,12 @@ def standing(
         attention=feeding is not None and feeding.state is State.EXPIRED,
         unseen_kind=account.named.kind.label if unseen and account.named else None,
         reconciling=row is not None and ledger in books.reconciling,
+        unseen_between=gate.disclose(
+            Facet.TRANSACTIONS, account.owners, lambda: books.unseen_between.get(ledger)
+        ),
+        held_back=gate.disclose(
+            Facet.TRANSACTIONS, account.owners, lambda: books.held_back.get(ledger)
+        ),
     )
 
 

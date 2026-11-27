@@ -1,0 +1,59 @@
+{
+  "id": 9,
+  "answer": {
+    "state": "ready",
+    "computed_at": "2026-10-15T12:00:00Z",
+    "as_of": "2026-10-15",
+    "currency": "USD",
+    "recomputing": false,
+    "rows": 2,
+    "moved": "600.00",
+    "groups": [
+      {
+        "key": "d4b91ad32257",
+        "title": "Online transfer to SAV ...0417",
+        "question": "went",
+        "total": "-600.00",
+        "moved": "600.00",
+        "since": "2026-09-01",
+        "mask": "0417",
+        "described_once": true,
+        "learned": {"account": {"id": "Wl0Ab2aPzewBps0x", "name": "Harbor savings"}, "like": 22},
+        "accounts": [{"id": "Wl0Ab2aPzewBps0x", "name": "Harbor savings"}],
+        "categories": [{"name": "Expenses:Home", "label": "Home"}],
+        "chosen": "Wl0Ab2aPzewBps0x",
+        "by_account": true,
+        "rows": [
+          {
+            "id": "4be0d1c92f",
+            "kind": "transaction",
+            "group": "Transfer out: savings",
+            "date": "2026-10-01",
+            "payee": null,
+            "narration": "Online transfer to SAV ...0417",
+            "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"},
+            "amount": "-300.00",
+            "suggested": null,
+            "reason": "Nothing suggested",
+            "excludable": false,
+            "says": "a0c33e9d17"
+          },
+          {
+            "id": "f81ad5b3e0",
+            "kind": "transaction",
+            "group": "Transfer out: savings",
+            "date": "2026-09-01",
+            "payee": null,
+            "narration": "Online transfer to SAV ...0417",
+            "account": {"id": "h1LQFxEvalLFwj4a", "name": "Everyday checking"},
+            "amount": "-300.00",
+            "suggested": null,
+            "reason": "Nothing suggested",
+            "excludable": false,
+            "says": "52d9c0be4a"
+          }
+        ]
+      }
+    ]
+  }
+}

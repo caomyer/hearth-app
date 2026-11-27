@@ -50,6 +50,24 @@ struct ScreenFixtureTests {
         }
         #expect(page.account.name == "Everyday checking")
         #expect(page.history == [AccountPage.Span(origin: "plaid", from: Day(year: 2026, month: 9, day: 25), to: Day(year: 2026, month: 10, day: 3))])
+        #expect(page.unseen == AccountPage.Days(from: Day(year: 2026, month: 9, day: 3), to: Day(year: 2026, month: 9, day: 24)))
+        #expect(page.heldBack == nil)
+        #expect(!page.account.reconciling)
+    }
+
+    @Test("an account its imported ledger holds back says how far its data reaches")
+    func heldBack() throws {
+        let json = """
+            {"state":"ready","computed_at":"2026-10-15T12:00:00Z","as_of":"2026-10-15","currency":"USD",
+             "recomputing":false,"account":\(AccountWordsTests.json(.unchecked, reconciling: false)),"history":[],
+             "unseen":null,"held_back":{"through":"2026-09-01","from":"2027-03-01"}}
+            """
+        guard case .ready(let page) = try decode(json, as: AccountPage.self) else {
+            Issue.record("a ready answer")
+            return
+        }
+        #expect(page.heldBack?.through == Day(year: 2026, month: 9, day: 1))
+        #expect(page.heldBack?.from == Day(year: 2027, month: 3, day: 1))
     }
 
     @Test("the journal decodes: a suggested row, a check in line, a transfer once, a row waiting")
@@ -121,16 +139,19 @@ struct CentsTests {
 
 @Suite("What an account's balance rests on, in words")
 struct AccountWordsTests {
-    private func account(_ standing: Account.Standing, why: String? = nil) throws -> Account {
-        let json = """
-            {"id":"a","name":"Savings","owners":["Avery"],"yours":true,"kind":"Cash",
-             "balance":{"value":"1.00","is_known":true,"is_floor":false,"unpriced":[]},
-             "standing":"\(standing.rawValue)","why":\(why.map { "\"\($0)\"" } ?? "null"),"checked":null,
-             "failed":null,"updated":null,"behind":false,"priced":null,"transactions":true,
-             "institution":null,"mask":null,"attention":false,"unseen_kind":null}
-            """
+    static func json(_ standing: Account.Standing, why: String? = nil, reconciling: Bool) -> String {
+        """
+        {"id":"a","name":"Savings","owners":["Avery"],"yours":true,"kind":"Cash",
+         "balance":{"value":"1.00","is_known":true,"is_floor":false,"unpriced":[]},
+         "standing":"\(standing.rawValue)","why":\(why.map { "\"\($0)\"" } ?? "null"),"checked":null,
+         "failed":null,"updated":null,"behind":false,"priced":null,"transactions":true,
+         "institution":null,"mask":null,"attention":false,"unseen_kind":null,"reconciling":\(reconciling)}
+        """
+    }
+
+    private func account(_ standing: Account.Standing, why: String? = nil, reconciling: Bool = false) throws -> Account {
         let decoder = replyDecoder()
-        return try decoder.decode(Account.self, from: Data(json.utf8))
+        return try decoder.decode(Account.self, from: Data(Self.json(standing, why: why, reconciling: reconciling).utf8))
     }
 
     @Test("every standing says something of its own")
@@ -148,6 +169,17 @@ struct AccountWordsTests {
         #expect(try account(.notKnown, why: "gap").reason != nil)
         #expect(try account(.notKnown).reason == nil)
         #expect(try account(.matches, why: "gap").reason == nil)
+    }
+
+    @Test("a balance that meets its bank only by a difference nobody confirmed says so")
+    func reconciling() throws {
+        let asOf = Day(year: 2026, month: 10, day: 15)
+        let differing = try account(.unchecked, reconciling: true)
+        let plain = try account(.unchecked)
+        #expect(differing.status(asOf: asOf, currency: "USD") == "Difference with its bank to confirm")
+        #expect(differing.reason?.contains("Confirm it in Review") == true)
+        #expect(plain.status(asOf: asOf, currency: "USD") == "Not checked against a bank")
+        #expect(plain.reason == nil)
     }
 }
 
@@ -245,6 +277,17 @@ struct JournalModelTests {
 
         #expect(await engine.given.map { $0["offset"] } == [.number(0), .number(2)])
         #expect(await engine.given.allSatisfy { $0["limit"] == .number(2) })
+    }
+
+    @Test("the first entries are laid out a day at a time within so many lines, headings counted")
+    func daysFitting() async {
+        let model = JournalModel(engine: Scripted([journal(offset: 0, count: 4, total: 4)]))
+        await model.reload()
+
+        #expect(model.firstDays(fitting: .max).map(\.entries.count) == [1, 3])
+        #expect(model.firstDays(fitting: 4).map(\.entries.count) == [1, 1])
+        #expect(model.firstDays(fitting: 3).map(\.entries.count) == [1])
+        #expect(model.firstDays(fitting: 1).isEmpty)
     }
 
     @Test("a change of filter asks again from the first page")

@@ -1,7 +1,9 @@
 import HearthKit
 import SwiftUI
 
-/// The Overview screen: one hero, the household's net worth, and how it got here.
+/// The Overview screen: one hero, the household's net worth, and how it got here, and what
+/// waits for the viewer in Review. The books' view keeps it current, as the sidebar's count
+/// reads it on every screen.
 struct OverviewView: View {
     let model: OverviewModel
 
@@ -30,7 +32,6 @@ struct OverviewView: View {
                     title: "Hearth's engine stopped", detail: "Quit Hearth and open it again.")
             }
         }
-        .task { await model.watch() }
     }
 }
 
@@ -49,6 +50,10 @@ private struct Figures: View {
                     .padding(.top, 4)
                 changes
                     .padding(.top, 6)
+                if overview.review.waiting > 0 {
+                    ReviewBanner(waiting: overview.review, currency: overview.currency, asOf: overview.asOf)
+                        .padding(.top, 20)
+                }
                 if overview.history.count > 1 {
                     NetWorthChart(points: overview.history, currency: overview.currency)
                         .padding(.top, 28)
@@ -149,5 +154,51 @@ private struct Change: View {
         case .down: Palette.unfavourable
         case .none: Palette.ink2
         }
+    }
+}
+
+/// What waits in Review, and the way there: how many transactions, and how much of this
+/// month's own spending rests on them.
+private struct ReviewBanner: View {
+    let waiting: Overview.Waiting
+    let currency: String
+    let asOf: Day
+    @Environment(Navigator.self) private var navigator
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Circle()
+                .fill(Palette.warning)
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(count)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .accessibilityIdentifier("overview.review.count")
+                if let spending = waiting.spending {
+                    Text("\(HearthKit.Figures.total(spending, currency: currency)) of \(month)'s spending is not reviewed yet.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.ink2)
+                        .accessibilityIdentifier("overview.review.spending")
+                }
+            }
+            Spacer(minLength: 12)
+            Button("Review") { navigator.place = .review }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("overview.review")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.background))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.line, lineWidth: 1))
+    }
+
+    private var count: String {
+        waiting.waiting == 1 ? "1 transaction to review" : "\(waiting.waiting.formatted()) transactions to review"
+    }
+
+    private var month: String {
+        Day(year: asOf.year, month: asOf.month, day: 1).date().formatted(.dateTime.month(.wide))
     }
 }

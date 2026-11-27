@@ -8,7 +8,7 @@ private let ready = #"""
      "recomputing":false,"connected":true,
      "net_worth":{"value":"21038.25","is_known":true,"is_partial":false,"is_floor":false,"without":[],
                   "since_month_start":null,"over_year":null,"priced_on":null,"stale_prices":0},
-     "history":[{"day":"2026-10-15","value":"21038.25","is_floor":false}]}
+     "history":[{"day":"2026-10-15","value":"21038.25","is_floor":false}],"review":{"waiting":0,"spending":null}}
     """#
 private let signedOut = #"{"state":"signed_out"}"#
 
@@ -45,9 +45,9 @@ private actor ScriptedBridge: Bridging {
         signOuts += 1
     }
 
-    func act(_ action: String) async throws -> ActOutcome {
+    func act(_ action: String, with given: Given) async throws -> ActResult {
         guard !stopped, !failing else { throw Engine.Failure.stopped }
-        return .notAllowed
+        return ActResult(outcome: .notAllowed)
     }
 
     func stop() async { stopped = true }
@@ -452,6 +452,26 @@ struct SetupTests {
         let everything = Consent(transactions: true, holdings: true, activity: true)
         #expect(!everything.arguments.contains("link"))
         #expect(!everything.arguments.contains("remove"))
+    }
+
+    @Test("the sample may be opened as it stood on a day, and a household's books never are")
+    func sampleAsOf() throws {
+        let setup = Setup(dataDirectory: URL(fileURLWithPath: "/Users/someone/.local/share/hearth"))
+        let resources = URL(fileURLWithPath: "/Applications/Hearth.app/Contents/Resources")
+        let day = try #require(Day("2026-11-22"))
+        func hearth(_ books: Books) -> [String] {
+            Array(
+                EngineCommand.bundled(
+                    books, setup: setup, consent: Consent(transactions: true), sampleAsOf: day, in: resources,
+                    home: "/Users/someone", temporary: "/tmp/x"
+                ).arguments.dropFirst(3))
+        }
+
+        #expect(hearth(.sample) == ["demo", "--bridge", "--as-of", "2026-11-22", "--approve-plaid", "read"])
+        #expect(hearth(.own) == ["bridge", "--approve-plaid", "read"])
+        #expect(Day("2026-2-3") == nil)
+        #expect(Day("2026-13-01") == nil)
+        #expect(Day(year: 2026, month: 2, day: 3).iso == "2026-02-03")
     }
 
     @Test("consent is kept per set of books and per household, and starts off")
