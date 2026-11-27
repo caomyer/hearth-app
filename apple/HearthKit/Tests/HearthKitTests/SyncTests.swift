@@ -170,7 +170,61 @@ struct SyncTests {
                 "Wrenfield Brokerage needs you to sign in again. Do that in Hearth in the browser.",
                 "Plaid could not be reached. Hearth tries again in the morning.",
             ])
-        #expect(model.label(now: afternoon, calendar: utc, locale: unitedStates) == "Updated yesterday, 1:00\u{202F}PM")
+        // The control's line says who needs the person, in place of how fresh the banks are.
+        #expect(model.label(now: afternoon, calendar: utc, locale: unitedStates) == "Wrenfield Brokerage needs you")
+    }
+
+    @Test("asking switched off is a choice, said plainly; only what needs the person warns")
+    func offIsNotATrouble() async {
+        let model = SyncModel(engine: ScriptedSyncs([banks(asking: [])]))
+        await model.refresh()
+
+        #expect(model.label() == "Not asking your banks")
+        #expect(!model.needsAttention)
+
+        let stopped = SyncModel(
+            engine: ScriptedSyncs([banks(finishedAt: "2026-10-15T14:30:00Z", stopped: "failed")]))
+        await stopped.refresh()
+        #expect(stopped.needsAttention)
+        #expect(stopped.label() == "Last update went wrong")
+
+        let two = SyncModel(
+            engine: ScriptedSyncs([
+                banks(
+                    asking: [],
+                    banks: #"""
+                        [{"institution":"Larkspur Savings Bank","synced_at":null,"needs_sign_in":true,"added":null,"trouble":null},
+                         {"institution":"Wrenfield Brokerage","synced_at":null,"needs_sign_in":true,"added":null,"trouble":null}]
+                        """#)
+            ]))
+        await two.refresh()
+        #expect(two.needsAttention)
+        #expect(two.label() == "2 banks need you")
+    }
+
+    @Test("the sample's banks are said to be invented, and its sign-in is shown, not asked for")
+    func sample() async {
+        let answer = banks(
+            asking: [],
+            banks: #"""
+                [{"institution":"Northfield Bank","synced_at":"2026-10-15T13:02:00Z","needs_sign_in":false,"added":null,"trouble":null},
+                 {"institution":"Cedar Card","synced_at":"2026-10-12T12:00:00Z","needs_sign_in":true,"added":null,"trouble":null}]
+                """#)
+        let model = SyncModel(engine: ScriptedSyncs([answer]))
+        await model.refresh()
+
+        #expect(model.label(sample: true) == "Invented banks")
+        #expect(!model.needsAttention(sample: true))
+        #expect(
+            model.banks?.notes(sample: true) == [
+                Banks.Note(
+                    text:
+                        "Cedar Card shows a bank that wants you to sign in again. With your own banks, you do that in Hearth in the browser.",
+                    needsYou: false)
+            ])
+        // The same banks in a household's own books need the person.
+        #expect(model.needsAttention)
+        #expect(model.label() == "Cedar Card needs you")
     }
 
     @Test("a sync that stopped, or keys the Keychain would not give, are said as such")

@@ -73,8 +73,8 @@ private struct Option: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.accentBackground))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.accent, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 6).fill(Palette.accentBackground))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.accent, lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isSelected)
     }

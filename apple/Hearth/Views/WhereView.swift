@@ -29,8 +29,10 @@ struct WhereList: View {
                                 WhereCard(desk: desk, group: group, currency: page.currency, asOf: page.asOf)
                             }
                         }
-                        .padding(24)
                         .frame(maxWidth: 760, alignment: .leading)
+                        .padding(.horizontal, 28).padding(.vertical, 20)
+                        // Flush with Review's heading, however wide the window.
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             case .failed(let summary):
@@ -111,7 +113,7 @@ private struct WhereCard: View {
                     }
                 }
                 .padding(.horizontal, 10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Palette.background))
+                .background(RoundedRectangle(cornerRadius: 6).fill(Palette.background))
             }
         }
         .padding(16)
@@ -153,7 +155,7 @@ private struct WhereCard: View {
             .accessibilityIdentifier("where.answer")
             if byAccount {
                 if group.accounts.isEmpty {
-                    Text("Name the account in Hearth in the browser, under Review, Where did it go?, then answer here.")
+                    Text("First name the account in Hearth in the browser, in Review under \u{201C}Where did it go?\u{201D}, then answer here.")
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.ink2)
                         .fixedSize(horizontal: false, vertical: true)

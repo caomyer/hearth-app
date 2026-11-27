@@ -52,12 +52,11 @@ private struct BanksPane: View {
                     .accessibilityIdentifier("settings.activity")
                 } header: {
                     Text("Brokerages")
-                }
-                Section {
+                } footer: {
+                    // What is not done here, said as quietly as the sample's footnote.
                     Text(
                         "Connecting a bank, signing in to one again, and removing a connection are done in Hearth in the browser."
                     )
-                    .foregroundStyle(.secondary)
                 }
             } else {
                 Text("Open your books to choose what Hearth may ask your banks.")
