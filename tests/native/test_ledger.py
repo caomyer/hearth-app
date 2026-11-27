@@ -12,7 +12,7 @@ import os
 import stat
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -432,9 +432,13 @@ def test_a_ledger_of_more_files_than_any_or_kept_in_icloud_is_refused_unread(
     assert check(door, kept)["refused"]["why"] == "too_many"
 
     monkeypatch.setattr(ledger_import, "MOST_FILES", 1000)
-    # Stands in for SF_DATALESS, which only the system sets, by a flag a test may set.
+    # Stands in for SF_DATALESS, which only the system sets, by a flag a test may set; only
+    # the Mac's file systems, where iCloud keeps files, have flags at all.
+    flag: Callable[[Path, int], None] | None = getattr(os, "chflags", None)
+    if flag is None:
+        pytest.skip("this system's files carry no flags, so none is kept in iCloud")
     monkeypatch.setattr(ledger_import, "DATALESS", stat.UF_HIDDEN)
-    os.chflags(kept.parent / "accounts.beancount", stat.UF_HIDDEN)
+    flag(kept.parent / "accounts.beancount", stat.UF_HIDDEN)
     assert check(door, kept)["refused"] == {
         "why": "not_downloaded",
         "said": "accounts.beancount is kept in iCloud and is not downloaded to this Mac. Download"
