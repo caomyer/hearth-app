@@ -473,9 +473,14 @@ final class FirstLaunchTests: XCTestCase {
         let panel = holdings.staticTexts["price.title"].frame
         let total = holdings.staticTexts["holdings.total"].frame
         let screen = XCUIScreen.main.screenshot().image.size
+        let banner = holdings.descendants(matching: .any)["sample.banner"].firstMatch.frame
         let frames =
             "screen \(screen), window \(window), sidebar \(sidebar), its Overview \(overview), "
-            + "the list's total \(total), the panel's title \(panel)"
+            + "the banner \(banner), the list's total \(total), the panel's title \(panel)"
+        if sidebar.minX < window.minX || panel.maxX > window.maxX {
+            // Every element and its frame, to say which one is wider than the window.
+            print(holdings.windows.firstMatch.debugDescription)
+        }
         XCTAssertTrue(
             window.minX >= 0 && window.maxX <= screen.width, "the window is not wholly on its screen: \(frames)")
         XCTAssertGreaterThanOrEqual(sidebar.minX, window.minX, "the sidebar was cut at its leading edge: \(frames)")
