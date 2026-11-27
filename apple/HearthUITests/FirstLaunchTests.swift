@@ -429,8 +429,10 @@ final class FirstLaunchTests: XCTestCase {
 
         // The lots the sample bought, at what they cost, whatever the prices did since.
         app.radioButtons["At cost"].click()
-        waitFor(total, toSay: "$235,860")
+        waitFor(app.staticTexts["holdings.basisLabel"], toSay: "Positions you can see, at cost")
+        XCTAssertEqual(text(of: total), "$235,860")
         app.radioButtons["At market value"].click()
+        waitFor(app.staticTexts["holdings.basisLabel"], toSay: "Positions you can see")
 
         app.descendants(matching: .any)["holdings.row.BIDX"].firstMatch.click()
         let source = app.descendants(matching: .any)["price.source"].firstMatch

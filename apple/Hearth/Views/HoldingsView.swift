@@ -211,13 +211,15 @@ private struct HoldingsHead: View {
                     .font(.callout)
                     .foregroundStyle(Palette.ink3)
                     .padding(.top, 18)
+                    .accessibilityIdentifier("holdings.basisLabel")
                 HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    // Not made selectable, as the Overview's figure is: this one changes with the
+                    // switch above, and must read as what it says now.
                     Text(Holdings.total(totals, atCost: atCost, currency: holdings.currency))
                         .font(.system(size: 34, weight: .semibold))
                         .tracking(-0.5)
                         .monospacedDigit()
                         .foregroundStyle(Palette.ink)
-                        .textSelection(.enabled)
                         .accessibilityIdentifier("holdings.total")
                     GainText(gain: totals.gain, currency: holdings.currency, whole: true)
                         .font(.callout.weight(.semibold))
