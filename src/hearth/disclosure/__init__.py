@@ -661,7 +661,12 @@ class Disclosure:
         from hearth.disclosure.ledger import LedgerDesk
 
         return LedgerDesk(
-            self._gate, accounts=self._accounts, settings=settings, clock=clock, books=self.books
+            self._gate,
+            accounts=self._accounts,
+            settings=settings,
+            clock=clock,
+            books=self.books,
+            household=self._members,
         )
 
     def matched(self) -> int:

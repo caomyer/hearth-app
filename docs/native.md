@@ -139,20 +139,22 @@ There is no auto-accept, and no action accepts more than one group.
 
 ### The household's ledger
 
-Two actions bring a household's own beancount ledger into hearth and match its accounts to the viewer's connected ones, each doing exactly what `hearth import-ledger` and `hearth match-accounts` do, through the same function (`docs/real-ledger.md`, "From the Mac app").
-Both are written from the viewer's own view of the ledger (`Disclosure.ledger_desk`, `hearth.disclosure.ledger`), and neither asks anything of Plaid, so neither needs the bridge approved for anything.
+Three actions bring a household's own beancount ledger into hearth, say whose its accounts are, and match them to the viewer's connected ones, each doing exactly what `hearth import-ledger`, `hearth add-account` and `hearth match-accounts` do, through the same function (`docs/real-ledger.md`, "From the Mac app").
+Each is written from the viewer's own view of the ledger (`Disclosure.ledger_desk`, `hearth.disclosure.ledger`), and neither asks anything of Plaid, so neither needs the bridge approved for anything.
 
 | Action | Takes | Does |
 |---|---|---|
 | `bring_in_ledger` | `path` | Brings the ledger opened from the file at `path` in as the household's base, in the background, then recomputes the books (`hearth.native.importer`); the `ledger` screen follows it. |
 | `match_accounts` | `matches` | Matches the viewer's connected accounts, each by its Plaid id to one of the ledger's accounts the `matching` screen offered it, all at once: every one is checked before any is written (`matching.confirm`); then recomputes the books in the background. |
+| `assign_owners` | `owners` | Says whose each of the ledger's accounts nobody owns is, each by its name in the ledger to the usernames of its owners, all at once (`accounts.claim_all`), for an admin alone; then recomputes the books in the background. |
 
 | Outcome | Meaning |
 |---|---|
 | `started` | The import started, in the background. |
 | `running` | An import was already running; none was started. |
 | `matched` | The account is matched as asked. |
-| `refused` | The matches were refused by the same check that offered them, as something changed since they were shown, and none was written; ask `matching` again. |
+| `refused` | The matches were refused by the same check that offered them, as something changed since they were shown, and none was written; ask `matching` again. Or an account said to be someone's was claimed since it was shown, and nothing was written; ask `ledger_owners` again. |
+| `assigned` | Each account is now owned as said. |
 
 - `path` is an absolute path, text of 1 to 1,024 characters with no NUL, as the Mac's open panel gives one; a relative one, which would be read against wherever the engine started, is `missing`.
 - Bringing a ledger in, and asking what a file holds, are an admin's (`access.may_bring_in_ledger`): the base becomes every member's books, so it is a household act, as entering the household's Plaid account is.
@@ -202,6 +204,7 @@ Every ready answer says what its books are: `computed_at`, `as_of`, `currency` a
 | `ledger` | nothing | Where the household's own ledger stands, and the import this bridge last ran for the viewer. |
 | `ledger_check` | `path` | What a ledger file holds, read where it is and written nowhere, and why it would not be brought in, if it would not. |
 | `matching` | nothing | Each of the viewer's own connected accounts, and which of the imported ledger's accounts it is (`hearth.matching`). |
+| `ledger_owners` | nothing | To an admin alone, each of the imported ledger's accounts nobody owns yet, by name, and every member, to say whose each is. |
 
 What an ask takes is read strictly in `hearth.native.doorway`, and anything else is answered `missing`, as a screen that is not there is:
 
@@ -295,6 +298,10 @@ The bridge's import runs there too, the base's lock waited on by the bridge befo
 The child never outlives the bridge: a guard it forks before reading watches a pipe only the bridge holds the other end of, and when the bridge ends, however it ends, kills the child and takes away the copy it was loading.
 Every check's copy is kept in a folder of the data directory held by the system's lock for as long as any process of the check lives, and the next check, import or start takes away every one nobody holds (`base.checking`, `base.sweep_checks`).
 What `matching` weighs is kept while everything a recompute reads stands where it stood (`books.standing`), so asking again is cheap and never stale.
+
+`ledger_owners`, to an admin alone (`access.may_assign_owners`), and missing to anyone else, says whose the imported ledger's accounts may be said to be: `imported`, whether a base is in; `you`, the viewer's username; `members`, every member, the viewer first, each `username`, `name` and `hue`; `choices`, each set of usernames an account may be said to be, each member alone and then every two or more together for a joint account; and `accounts`, each of the base's Assets and Liabilities accounts nobody has claimed, by `account`, its name in the ledger, with its `kind`, the days the ledger `opened` and `closed` it, and the `name` the household will see it by.
+That is all the ledger's check told an admin before it was brought in, and they hold its file: never a balance or an entry. Income, Expenses and Equity accounts are never anyone's, a row of them seen by whoever owns its other side.
+`assign_owners` takes `owners`, an object of those accounts to the usernames of their owners, and says whose each is, all at once through the path `hearth add-account` claims one by (`accounts.claim_all`), then recomputes: `assigned`; `refused` when one was claimed since it was offered, so nothing was written; `missing` for an account not offered, a member who is not there, or anyone but an admin.
 
 `ledger` says `imported`: the day the household's ledger was brought in (`on`), how many files its base holds, and, to whoever may bring a ledger in, how many of the books' Assets and Liabilities accounts nobody has claimed yet, so nobody sees (`unclaimed`).
 It says `inherited`, whether `HEARTH_LEDGER` names a ledger, which the app's engine is never given; `importing`, whether this engine is bringing a ledger in now, whoever started it, told only to someone who may bring one in, so they wait on it without learning whose it is; `may_bring_in`, whether the viewer may bring one in now; and `why_not`, why not, to someone who may ask but for where the household stands.

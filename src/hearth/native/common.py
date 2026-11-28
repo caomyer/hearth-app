@@ -118,7 +118,10 @@ class Acted(StrEnum):
     MATCHED = "matched"
     """The connected account is matched to the imported ledger's account chosen."""
     REFUSED = "refused"
-    """The match was refused since it was offered, as things changed: ask again."""
+    """The match, or whose an account is, was refused since it was offered, as things changed:
+    ask again."""
+    ASSIGNED = "assigned"
+    """Each of the ledger's accounts named is now owned by the members said."""
 
 
 @dataclass(frozen=True, slots=True)

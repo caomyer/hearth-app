@@ -149,6 +149,10 @@ Bringing a ledger in and matching accounts to it are the command line's, done fo
 - Matching names only accounts the member owns, and one nobody owns only where it is offered them to move onto.
   Evidence that points at any other account, someone else's or one nobody has claimed, reads exactly as no evidence at all, so a member learns neither its name nor, when somebody claims it, that they did.
   How many of the books' accounts nobody has claimed is told to whoever may bring a ledger in, and nobody else.
+- An admin may be told the name of each of the base's Assets and Liabilities accounts nobody has claimed, for the purpose of saying whose each is, and says it (`access.may_assign_owners`).
+  It is no new disclosure: the admin holds the ledger's file, whose every account name, kind and opening and closing day its check showed them before it was brought in, and that is all they are told of each, never a balance, an entry or a count of one.
+  An account someone owns is never named there, and never given another owner; nobody else is told anything of it, and a member learns of an account only once it is theirs or shared with them by the rules above.
+  What an admin can infer is what the count already said: that an account no longer listed has been claimed, never by whom.
 - Matching moves a claim in one case: an account hearth keeps for a member onto a base account nobody has claimed, whose whole history its owners then see.
   It is allowed only to an owner of the account moved, and only where the ledger itself records that the account is that bank account, kept before hearth (`matching.recorded`, `access.may_carry_on`): at least five of the connection's Plaid ids agreeing on it, reaching the base's last month there. An account only its rows point at could be anyone's. The command line holds to the same rule unless its operator says `--claim`.
 

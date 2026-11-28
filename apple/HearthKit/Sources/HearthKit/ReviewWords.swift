@@ -79,7 +79,7 @@ public enum ReviewWords {
         case .unknown:
             return Notice(
                 text: "Hearth could not say what became of that. Here is what is waiting now.", tone: .problem)
-        case .undone, .started, .running, .notAllowed, .signedOut, .matched, .refused:
+        case .undone, .started, .running, .notAllowed, .signedOut, .matched, .refused, .assigned:
             return nil
         }
     }

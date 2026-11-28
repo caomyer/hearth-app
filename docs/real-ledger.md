@@ -108,7 +108,9 @@ Where the app's path differs, it is narrower:
 - Every file a ledger reads is read once and held to what a base may hold, as above (`ledger_import._gathered`), and the check loads a private copy of those bytes.
 - A member matches their own connections alone, onto accounts they own, as the Connect page files them; the command line matches every member's.
   An account hearth keeps itself may move onto a base account nobody has claimed, its claim going with it, only where the ledger records that it is that bank account (`matching.recorded`, `access.may_carry_on`); see "An account hearth kept itself" below.
-- Claiming the base's other accounts stays `hearth add-account`; the app says how many nobody has claimed yet.
+- An admin says whose each of the base's other Assets and Liabilities accounts is, right after bringing the ledger in or later from Settings, Ledger, through the very path `hearth add-account` claims one by (`accounts.claim_all`), every account said in one act or none of them, and only an account nobody has claimed: one claimed since it was shown refuses the act, and nothing is ever given another owner (`access.may_assign_owners`).
+  An account is one member's or several's, joint; one left for later stays nobody's.
+  The household sees it by its name in the ledger without its kind, each part a word (`disclosure.ledger.household_name`); the command line takes the name its operator gives.
 
 ### Inheriting the ledger where it is, for now
 

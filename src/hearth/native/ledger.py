@@ -1,6 +1,6 @@
 """The household's own ledger in the app: bringing it in, and matching accounts to it.
 
-Three screens and two actions, each written from the member's own view of the ledger
+Four screens and three actions, each written from the member's own view of the ledger
 (``Disclosure.ledger_desk``, ``hearth.disclosure.ledger``) and nothing else, as every screen is:
 
 - ``ledger``: where the household's ledger stands, and an import this engine runs.
@@ -11,6 +11,9 @@ Three screens and two actions, each written from the member's own view of the le
 - ``bring_in_ledger``: bring a ledger in, once, in the background; ``ledger`` follows it.
 - ``match_accounts``: match connected accounts, each to one of the accounts ``matching``
   offered it, all at once.
+- ``ledger_owners``: each of the imported ledger's accounts nobody owns yet, by name, and every
+  member, for an admin to say whose each is.
+- ``assign_owners``: say whose each of those accounts is, all at once.
 
 None of them is of the books, so each is answered before the first recompute ends. What the
 app sends is read strictly (``hearth.native.common``), and anything the member may not see or
@@ -32,6 +35,8 @@ from hearth.disclosure.ledger import (
     Said,
 )
 from hearth.native.common import (
+    LONGEST_TEXT,
+    MOST_ROWS,
     Acted,
     Answer,
     Around,
@@ -153,6 +158,63 @@ def match(view: Disclosure, given: Given, around: Around) -> Acted:
     chosen = table_in(given, "matches")
     desk = view.ledger_desk(around.settings, around.clock)
     return Acted.MATCHED if desk.match(chosen) else Acted.REFUSED
+
+
+def owners_screen(view: Disclosure, _asked: object, around: Around) -> Answer:
+    """Every member, and each of the imported ledger's accounts nobody owns yet, by name, for
+    an admin to say whose each is. Missing to anyone else."""
+    found = view.ledger_desk(around.settings, around.clock).owners()
+    return {
+        "imported": found.imported,
+        "you": around.viewer,
+        "members": [
+            {"username": m.username, "name": m.display_name, "hue": m.hue} for m in found.members
+        ],
+        "choices": [list(owners) for owners in found.choices],
+        "accounts": [
+            {
+                "account": one.account,
+                "kind": one.kind,
+                "opened": _day(one.opened),
+                "closed": _day(one.closed),
+                "name": one.name,
+            }
+            for one in found.accounts
+        ],
+    }
+
+
+LONGEST_ACCOUNT = 1024
+"""The longest name of a ledger's account the app may send: far longer than any ledger's."""
+
+
+def read_owners(given: Given) -> dict[str, tuple[str, ...]]:
+    """Whose each account named is: `owners`, an object of the ledger's account names to the
+    usernames of its owners, never empty, each with one owner at least and none twice."""
+    if given.keys() != {"owners"}:
+        raise Malformed
+    value = given["owners"]
+    if not isinstance(value, dict) or not 0 < len(value) <= MOST_ROWS:
+        raise Malformed
+    found: dict[str, tuple[str, ...]] = {}
+    for account, usernames in value.items():
+        if not (isinstance(account, str) and 0 < len(account) <= LONGEST_ACCOUNT):
+            raise Malformed
+        if not isinstance(usernames, list) or not 0 < len(usernames) <= MOST_ROWS:
+            raise Malformed
+        if not all(isinstance(u, str) and 0 < len(u) <= LONGEST_TEXT for u in usernames):
+            raise Malformed
+        if len(set(usernames)) != len(usernames):
+            raise Malformed
+        found[account] = tuple(usernames)
+    return found
+
+
+def assign(view: Disclosure, given: Given, around: Around) -> Acted:
+    """Say whose each of the ledger's accounts named is, all at once."""
+    chosen = read_owners(given)
+    desk = view.ledger_desk(around.settings, around.clock)
+    return Acted.ASSIGNED if desk.assign(chosen) else Acted.REFUSED
 
 
 def _said(said: Said | None) -> Answer | None:

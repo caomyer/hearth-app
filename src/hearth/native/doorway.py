@@ -223,8 +223,9 @@ class Doorway:
                 return Acted.MISSING
         finally:
             conn.close()
-        if done is Acted.MATCHED:
-            # A match changes what the books carry on, so they are recomputed, behind the app.
+        if done in (Acted.MATCHED, Acted.ASSIGNED):
+            # A match changes what the books carry on, and an account's owners who sees it, so
+            # they are recomputed, behind the app.
             self.bookkeeper.recompute_in_background()
         return done
 
@@ -232,6 +233,7 @@ class Doorway:
 LEDGER_ACTIONS: Mapping[str, Callable[[Disclosure, Given, Around], Acted]] = {
     "bring_in_ledger": ledger.bring_in,
     "match_accounts": ledger.match,
+    "assign_owners": ledger.assign,
 }
 """What the app may ask done to the household's ledger, by the name it asks with."""
 
@@ -522,6 +524,7 @@ SCREENS: Mapping[str, Screen] = {
         stands=ledger.check_stands,
     ),
     "matching": Screen(_nothing, ledger.matching_screen, of_books=False, slow=True),
+    "ledger_owners": Screen(_nothing, ledger.owners_screen),
 }
 """Every screen the app may ask for, by the name it asks with."""
 

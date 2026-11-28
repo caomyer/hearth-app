@@ -190,6 +190,20 @@ def may_bring_in_ledger(viewer: Member) -> bool:
     return viewer.is_admin
 
 
+def may_assign_owners(viewer: Member) -> bool:
+    """Saying whose each of the imported ledger's accounts is, where nobody owns it yet, is an
+    admin's, and so is being told the name of each such account to do it.
+
+    Nobody sees an account of the ledger until someone owns it, so somebody must say whose it
+    is: on the command line, whoever runs hearth on its machine (``hearth add-account``);
+    among the members, the nearest to that is an admin, who brings the ledger in
+    (``may_bring_in_ledger``) and holds its file, every name in it shown to them by its check
+    before it was brought in. Only an account nobody owns is named, and nothing of it but its
+    name and the days the ledger opens and closes it, as the check said; an account someone
+    owns is never named, and never given another owner, here or anywhere."""
+    return viewer.is_admin
+
+
 def may_carry_on(viewer: Member, owners: Collection[MemberId], *, recorded: bool) -> bool:
     """Whether ``viewer`` may move an account hearth keeps for ``owners`` onto an account of
     the imported ledger that nobody has claimed yet, whose claim then becomes that account's,
