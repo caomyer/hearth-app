@@ -110,6 +110,8 @@ public enum ActOutcome: String, Sendable, CaseIterable {
     case refused
     /// Each of the ledger's accounts named is now owned by the members said.
     case assigned
+    /// It stopped on an error the engine did not expect, which it does not say.
+    case failed
     /// An outcome this app does not know yet, from a newer engine: nothing is assumed of it.
     case unknown
 }

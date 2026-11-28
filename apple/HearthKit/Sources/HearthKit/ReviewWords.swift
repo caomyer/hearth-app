@@ -76,7 +76,7 @@ public enum ReviewWords {
         case .missing:
             return Notice(
                 text: "That is no longer waiting for you. Here is what is waiting now.", tone: .problem)
-        case .unknown:
+        case .unknown, .failed:
             return Notice(
                 text: "Hearth could not say what became of that. Here is what is waiting now.", tone: .problem)
         case .undone, .started, .running, .notAllowed, .signedOut, .matched, .refused, .assigned:
