@@ -638,8 +638,9 @@ final class FirstLaunchTests: XCTestCase {
     }
 
     /// An admin of a household with no ledger is asked once whether they keep one, checks its
-    /// file, brings it in, matches each connected account to the ledger's, and lands on the
-    /// Overview with the books the ledger and the banks make together.
+    /// file, brings it in, says whose each of its accounts is, one of them held with the other
+    /// member, matches each connected account to the ledger's, and lands on the Overview with
+    /// the books the ledger and the banks make together.
     ///
     /// The household is a second copy of the one `tests/native/on_disk.py` writes, with the
     /// ledger it writes beside it from what its bank sent (`--ledger`), which CI names to the
@@ -675,6 +676,18 @@ final class FirstLaunchTests: XCTestCase {
         XCTAssertTrue(element("ledger.once").waitForExistence(timeout: 20), "bringing it in was not confirmed first")
         element("ledger.bringIn").click()
 
+        // Whose each of the ledger's accounts is: each starts as Avery's, and the holiday
+        // savings, which the ledger alone keeps, is made Avery's and Blake's.
+        let assign = element("ledger.assign")
+        XCTAssertTrue(assign.waitForExistence(timeout: 120), "whose the accounts are was not asked")
+        XCTAssertTrue(element("ledger.setAll.Assets:Larkspur").exists, "a group could not be set at once")
+        let holiday = element("ledger.owner.Assets:Larkspur:Holiday")
+        XCTAssertEqual(holiday.value as? String, "Yours")
+        holiday.click()
+        app.menuItems["Joint, you and Blake"].click()
+        XCTAssertEqual(holiday.value as? String, "Joint, you and Blake")
+        assign.click()
+
         let match = element("ledger.match")
         XCTAssertTrue(match.waitForExistence(timeout: 120), "matching did not follow the import")
         XCTAssertTrue(element("ledger.account.Everyday checking").exists)
@@ -686,7 +699,10 @@ final class FirstLaunchTests: XCTestCase {
         element("ledger.openBooks").click()
 
         XCTAssertTrue(element("ledger.sheet").waitForNonExistence(timeout: 20), "the sheet stayed up")
-        assertNetWorth(in: app)
+        // The household's own, and the holiday savings Avery holds with Blake now.
+        let netWorth = app.staticTexts["overview.netWorth"]
+        XCTAssertTrue(netWorth.waitForExistence(timeout: 60), "no net worth appeared within a minute")
+        XCTAssertEqual(text(of: netWorth), "$21,288")
     }
 
     /// The household's own net worth: the fixture's, in whole dollars, with no sample banner.

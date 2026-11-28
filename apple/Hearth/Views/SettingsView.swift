@@ -5,15 +5,20 @@ import SwiftUI
 /// Hearth's Settings window.
 struct SettingsView: View {
     let session: Session
+    @State private var pane = "banks"
 
     var body: some View {
-        TabView {
+        TabView(selection: $pane) {
             BanksPane(session: session)
                 .tabItem { Label("Banks", systemImage: "building.columns") }
+                .tag("banks")
             LedgerPane(session: session)
                 .tabItem { Label("Ledger", systemImage: "book.closed") }
+                .tag("ledger")
         }
         .frame(width: 520)
+        // As a click on its tab would, once the window is up.
+        .onAppear { if StartScreen.settingsLedger { pane = "ledger" } }
     }
 }
 
@@ -100,9 +105,17 @@ private struct LedgerPane: View {
                             Text(whyNot.said).foregroundStyle(.secondary)
                         }
                     }
-                } footer: {
                     if let unclaimed = LedgerWords.unclaimed(flow.standing) {
-                        Text(unclaimed)
+                        LabeledContent {
+                            Button(LedgerWords.sayWhose(flow.standing)) {
+                                showBooks()
+                                Task { await flow.openOwners() }
+                            }
+                            .accessibilityIdentifier("settings.sayWhose")
+                        } label: {
+                            Text(unclaimed)
+                        }
+                        .accessibilityIdentifier("settings.unclaimed")
                     }
                 }
                 Section {
@@ -125,7 +138,6 @@ private struct LedgerPane: View {
                         Text("Say which of your ledger's accounts each connected account is, such as one connected since.")
                     }
                 }
-                .task { await flow.refresh() }
             } else {
                 Text("Open your books and sign in to bring in a ledger.")
                     .foregroundStyle(.secondary)
@@ -133,6 +145,11 @@ private struct LedgerPane: View {
         }
         .formStyle(.grouped)
         .fixedSize(horizontal: false, vertical: true)
+        // On the form, which is always drawn: a section with nothing in it yet never appears, so
+        // asked from there, where the ledger stands was never asked unless something else had.
+        .task(id: session.desk != nil && session.books == .own) {
+            await session.desk?.ledger.refresh()
+        }
     }
 
     /// The window of the books, in front, where the sheet opens.

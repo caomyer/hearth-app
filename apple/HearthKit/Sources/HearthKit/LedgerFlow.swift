@@ -2,8 +2,8 @@ import Foundation
 import Observation
 
 /// Bringing the household's ledger in, and matching accounts to it, one sheet after another:
-/// the question asked once, the file's check, the confirmation, the import while it runs, the
-/// matching, and what was matched.
+/// the question asked once, the file's check, the confirmation, the import while it runs, whose
+/// each of the ledger's accounts is, the matching, and what was matched.
 ///
 /// It decides nothing. Who may bring a ledger in, what a file holds, why one would be refused,
 /// which account each connected one is and what matching it would meet are all the engine's
@@ -30,6 +30,8 @@ public final class LedgerFlow {
         case notBroughtIn(LedgerRefusal?)
         /// It is in, but the books could not be worked out from it yet.
         case inButBooksFailed
+        /// Whose each of the ledger's accounts nobody owns yet is: an admin's to say.
+        case assigning(LedgerOwners)
         /// Which of the ledger's accounts each connected account is.
         case matching(Matching)
         /// What was matched, and what is in the books now.
@@ -47,6 +49,11 @@ public final class LedgerFlow {
     public var chosen: [String: String] = [:]
     /// Whether the engine refused the last matches asked, since they were offered.
     public private(set) var refusedNow = false
+    /// Whose each of the ledger's accounts is to be, by usernames; an account with nobody is
+    /// left for later.
+    public var owners: [String: [String]] = [:]
+    /// Whether the engine refused the last owners asked, as one was claimed since it was shown.
+    public private(set) var ownersRefusedNow = false
     /// True while the engine is asked to do something.
     public private(set) var isWorking = false
 
@@ -104,6 +111,8 @@ public final class LedgerFlow {
         step = nil
         chosen = [:]
         refusedNow = false
+        owners = [:]
+        ownersRefusedNow = false
     }
 
     /// Reads the file the person chose, writing nothing.
@@ -168,7 +177,7 @@ public final class LedgerFlow {
             }
             if !mine, !found.importing {
                 if found.imported != nil {
-                    await openMatching()
+                    await openOwners()
                 } else {
                     step = .notBroughtIn(nil)
                 }
@@ -189,12 +198,104 @@ public final class LedgerFlow {
             if bringing.booksFailed {
                 step = .inButBooksFailed
             } else {
-                await openMatching()
+                await openOwners()
             }
         case .refused?:
             step = .notBroughtIn(bringing.refused)
         case .failed?, .unknown?, nil:
             step = .notBroughtIn(nil)
+        }
+    }
+
+    /// Asks whose the ledger's accounts are to be, and shows them, each starting as the
+    /// member's own; or goes on to matching when there is none to say, or the member may not.
+    public func openOwners() async {
+        switch await settled("ledger_owners", as: LedgerOwners.self) {
+        case .ready(let found)?:
+            ownersRefusedNow = false
+            guard !found.accounts.isEmpty else {
+                await openMatching()
+                return
+            }
+            owners = Self.owners(in: found)
+            step = .assigning(found)
+        case .missing?:
+            // Only an admin says whose an account is; anyone else goes on to their matching.
+            await openMatching()
+        case .signedOut?, nil:
+            return
+        case .loading?, .failed?:
+            step = .unavailable
+        }
+    }
+
+    /// What each account starts as: the member's own.
+    public nonisolated static func owners(in found: LedgerOwners) -> [String: [String]] {
+        Dictionary(uniqueKeysWithValues: found.accounts.map { ($0.account, [found.you]) })
+    }
+
+    /// Each group of the ledger's accounts, by the first two parts of their names, as the
+    /// ledger itself groups them: `Assets:Harbor`, `Liabilities:Harbor`.
+    public nonisolated static func groups(_ found: LedgerOwners) -> [(name: String, accounts: [LedgerOwners.Unowned])] {
+        var order: [String] = []
+        var grouped: [String: [LedgerOwners.Unowned]] = [:]
+        for account in found.accounts {
+            let name = account.account.split(separator: ":").prefix(2).joined(separator: ":")
+            if grouped[name] == nil { order.append(name) }
+            grouped[name, default: []].append(account)
+        }
+        return order.map { ($0, grouped[$0] ?? []) }
+    }
+
+    /// Says every account of `accounts` is `who`'s, or leaves each for later with nobody.
+    public func setOwners(_ accounts: [LedgerOwners.Unowned], to who: [String]) {
+        for account in accounts {
+            owners[account.account] = who
+        }
+    }
+
+    /// Says whose each account is, all in one act, then goes on to matching; an account left
+    /// for later stays nobody's.
+    public func assign() async {
+        guard case .assigning(let found) = step, !isWorking else { return }
+        let asked = owners.filter { name, who in !who.isEmpty && found.accounts.contains { $0.account == name } }
+        guard !asked.isEmpty else {
+            await openMatching()
+            return
+        }
+        isWorking = true
+        defer { isWorking = false }
+        let outcome: ActOutcome
+        do {
+            outcome = try await engine.act("assign_owners", with: ["owners": .lists(asked)]).outcome
+        } catch {
+            step = .unavailable
+            return
+        }
+        switch outcome {
+        case .assigned:
+            await openMatching()
+        case .signedOut:
+            close()
+            signedOut()
+        case .refused:
+            // One was claimed since it was shown: show what is left, keeping what was chosen.
+            let kept = owners
+            guard case .ready(let after)? = await settled("ledger_owners", as: LedgerOwners.self) else {
+                step = .unavailable
+                return
+            }
+            guard !after.accounts.isEmpty else {
+                await openMatching()
+                return
+            }
+            owners = Self.owners(in: after).merging(kept.filter { name, _ in
+                after.accounts.contains { $0.account == name }
+            }) { _, chosen in chosen }
+            ownersRefusedNow = true
+            step = .assigning(after)
+        default:
+            step = .unavailable
         }
     }
 

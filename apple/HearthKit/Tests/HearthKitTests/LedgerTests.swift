@@ -160,16 +160,17 @@ struct LedgerTests {
         #expect(other.step == nil)
     }
 
-    @Test("a file is checked, confirmed, brought in and its accounts matched, each through the engine")
+    @Test("a file is checked, confirmed, brought in, its accounts said whose and matched, each through the engine")
     func flow() async throws {
         let engine = ScriptedLedger(
             [
                 // Slow screens are worked out off the wire and answered `loading` meanwhile.
                 "ledger_check": [loading, try answer(of: "ledger_check")],
                 "ledger": [standing(running: true), standing(outcome: "imported")],
+                "ledger_owners": [try answer(of: "ledger_owners")],
                 "matching": [loading, try answer(of: "matching")],
             ],
-            outcomes: [.started, .matched])
+            outcomes: [.started, .assigned, .matched])
         let flow = LedgerFlow(engine: engine, pause: noPause)
 
         await flow.check(file)
@@ -184,6 +185,19 @@ struct LedgerTests {
             return
         }
         await flow.bringIn()
+        guard case .assigning(let owners) = flow.step else {
+            Issue.record("whose the accounts are was not asked: \(String(describing: flow.step))")
+            return
+        }
+        // Each starts as the importer's own; one is changed to Blake's, one to joint, one
+        // left for later, two of a group set at once.
+        #expect(Set(flow.owners.values) == [["avery"]])
+        flow.owners["Liabilities:Zq:Mortgage"] = ["blake"]
+        flow.owners["Assets:Zq:Brokerage"] = ["avery", "blake"]
+        flow.owners["Assets:Zq:Elsewhere"] = []
+        let liabilities = try #require(LedgerFlow.groups(owners).first { $0.name == "Liabilities:Zq" })
+        flow.setOwners(liabilities.accounts.filter { $0.account == "Liabilities:Zq:CardB" }, to: ["blake"])
+        await flow.assign()
         guard case .matching(let matching) = flow.step else {
             Issue.record("matching was not shown: \(String(describing: flow.step))")
             return
@@ -194,11 +208,21 @@ struct LedgerTests {
             return
         }
         let acted = await engine.acted
-        #expect(acted.map(\.0) == ["bring_in_ledger", "match_accounts"])
+        #expect(acted.map(\.0) == ["bring_in_ledger", "assign_owners", "match_accounts"])
         #expect(acted[0].1 == ["path": .text(file.path)])
+        // One act for the whole step, and nothing of what was left for later.
+        #expect(
+            acted[1].1 == [
+                "owners": .lists([
+                    "Liabilities:Zq:Mortgage": ["blake"],
+                    "Liabilities:Zq:CardB": ["blake"],
+                    "Assets:Zq:Brokerage": ["avery", "blake"],
+                    "Assets:Zq:Harbor:Joint-Checking": ["avery"],
+                ])
+            ])
         // One act for the whole step: only the card, as the union's is matched already, and
         // Blake's is left as it is.
-        #expect(acted[1].1 == ["matches": .table([matching.accounts[1].id: "Liabilities:Zq:Card"])])
+        #expect(acted[2].1 == ["matches": .table([matching.accounts[1].id: "Liabilities:Zq:Card"])])
     }
 
     @Test("a refusal is said in the engine's words, and a refused file cannot be confirmed")
@@ -236,6 +260,8 @@ struct LedgerTests {
                     standing(importing: true, mine: false),
                     standing(importing: false, imported: true, mine: false),
                 ],
+                // Whose the accounts are is an admin's to say; to anyone else it is not there.
+                "ledger_owners": [#"{"state":"missing"}"#],
                 "matching": [try answer(of: "matching")],
             ],
             outcomes: [.running])
@@ -250,6 +276,85 @@ struct LedgerTests {
             return
         }
         #expect(await engine.acted.map(\.0) == ["bring_in_ledger"])
+    }
+
+    @Test("an account claimed while the admin chose refuses the act, and what is left is shown again")
+    func ownersRefused() async throws {
+        let all = try answer(of: "ledger_owners")
+        var reply = try JSONSerialization.jsonObject(with: Data(all.utf8)) as! [String: Any]
+        reply["accounts"] = (reply["accounts"] as! [[String: Any]]).filter { ($0["account"] as! String) != "Liabilities:Zq:Mortgage" }
+        let left = String(decoding: try JSONSerialization.data(withJSONObject: reply), as: UTF8.self)
+        let engine = ScriptedLedger(
+            [
+                "ledger_check": [try answer(of: "ledger_check")],
+                "ledger": [standing(outcome: "imported")],
+                "ledger_owners": [all, left],
+                "matching": [try answer(of: "matching")],
+            ],
+            outcomes: [.started, .refused, .assigned])
+        let flow = LedgerFlow(engine: engine, pause: noPause)
+        await flow.check(file)
+        flow.confirm()
+        await flow.bringIn()
+        flow.owners["Assets:Zq:Brokerage"] = ["blake"]
+
+        await flow.assign()
+
+        guard case .assigning(let after) = flow.step else {
+            Issue.record("what is left was not shown again: \(String(describing: flow.step))")
+            return
+        }
+        #expect(flow.ownersRefusedNow)
+        #expect(!after.accounts.contains { $0.account == "Liabilities:Zq:Mortgage" })
+        #expect(flow.owners["Assets:Zq:Brokerage"] == ["blake"], "what was chosen is kept")
+        #expect(flow.owners["Liabilities:Zq:Mortgage"] == nil)
+        await flow.assign()
+        guard case .matching = flow.step else {
+            Issue.record("matching was not shown: \(String(describing: flow.step))")
+            return
+        }
+    }
+
+    @Test("with nothing nobody's, or not now, the step goes on to matching")
+    func nothingToAssign() async throws {
+        let none = #"{"state":"ready","computed_at":"2026-11-22T20:00:00Z","as_of":"2026-11-22","currency":"USD","recomputing":false,"imported":true,"you":"avery","members":[{"username":"avery","name":"Avery","hue":1}],"choices":[["avery"]],"accounts":[]}"#
+        let engine = ScriptedLedger(["ledger": [standing(imported: true)], "ledger_owners": [none], "matching": [try answer(of: "matching")]])
+        let flow = LedgerFlow(engine: engine, pause: noPause)
+
+        await flow.openOwners()
+
+        guard case .matching = flow.step else {
+            Issue.record("matching was not shown: \(String(describing: flow.step))")
+            return
+        }
+        #expect(await engine.acted.isEmpty)
+    }
+
+    @Test("whose an account is reads as the member choosing says it")
+    func ownersWords() throws {
+        let owners = try ready("ledger_owners", as: LedgerOwners.self)
+
+        #expect(owners.choices.map { LedgerWords.owners($0, in: owners) } == ["Yours", "Blake's", "Joint, you and Blake"])
+        #expect(LedgerWords.owners([], in: owners) == "Leave for later")
+        #expect(LedgerWords.assignTitle(owners) == "Whose accounts are these?")
+        #expect(LedgerFlow.groups(owners).map(\.name) == ["Assets:Zq", "Liabilities:Zq"])
+        #expect(LedgerWords.unownedDetail(owners.accounts[1], locale: unitedStates) == "Asset, closed Oct 31, 2026")
+        #expect(LedgerWords.unownedDetail(owners.accounts[3]) == "Liability")
+    }
+
+    @Test("a household of one is told in a sentence that its accounts become its own")
+    func ownersAlone() throws {
+        let one = #"{"state":"ready","computed_at":"2026-11-22T20:00:00Z","as_of":"2026-11-22","currency":"USD","recomputing":false,"imported":true,"you":"avery","members":[{"username":"avery","name":"Avery","hue":1}],"choices":[["avery"]],"accounts":[{"account":"Assets:Zq:Pot","kind":"Assets","opened":"2026-01-01","closed":null,"name":"Zq Pot"},{"account":"Assets:Zq:Jar","kind":"Assets","opened":"2026-01-01","closed":null,"name":"Zq Jar"}]}"#
+        guard case .ready(let owners) = try replyDecoder().decode(Reply<LedgerOwners>.self, from: Data(#"{"id":1,"answer":\#(one)}"#.utf8)).answer else {
+            Issue.record("not a ready answer")
+            return
+        }
+
+        #expect(LedgerWords.assignTitle(owners) == "These accounts are yours")
+        #expect(
+            LedgerWords.assignDetail(owners, locale: unitedStates)
+                == "Your ledger has 2 accounts nobody has yet. You are the only one in this household, so they become yours, and only you see them.")
+        #expect(LedgerWords.owners(["avery"], in: owners) == "Yours")
     }
 
     @Test("a ledger in whose books could not be worked out does not go on to matching")
@@ -309,8 +414,10 @@ struct LedgerTests {
             else { throw Engine.Failure.refused }
             return found
         }
-        #expect(LedgerWords.unclaimed(try standing(1)) == "1 of your books' accounts is nobody's yet, so nobody sees it. Say whose it is with hearth add-account on this Mac.")
-        #expect(LedgerWords.unclaimed(try standing(4), locale: Locale(identifier: "en_US")) == "4 of your books' accounts are nobody's yet, so nobody sees them. Say whose each is with hearth add-account on this Mac.")
+        #expect(LedgerWords.unclaimed(try standing(1)) == "1 of your ledger's accounts is nobody's yet, so nobody sees it.")
+        #expect(LedgerWords.sayWhose(try standing(1)) == "Say Whose It Is\u{2026}")
+        #expect(LedgerWords.unclaimed(try standing(4), locale: Locale(identifier: "en_US")) == "4 of your ledger's accounts are nobody's yet, so nobody sees them.")
+        #expect(LedgerWords.sayWhose(try standing(4)) == "Say Whose They Are\u{2026}")
         #expect(LedgerWords.unclaimed(try standing(0)) == nil)
     }
 

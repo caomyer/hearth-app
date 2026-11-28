@@ -30,6 +30,8 @@ struct LedgerSheet: View {
                     title: LedgerWords.notBroughtIn(refused), detail: refused?.said ?? LedgerWords.failed, flow: flow)
             case .inButBooksFailed?:
                 InButBooksFailed(flow: flow, openBooks: openBooks)
+            case .assigning(let owners)?:
+                AssigningStep(flow: flow, owners: owners)
             case .matching(let matching)?:
                 MatchingStep(flow: flow, matching: matching)
             case .done(let matching)?:
@@ -412,10 +414,14 @@ private struct MatchingStep: View {
             ScrollView { rows }
                 .frame(maxHeight: 240)
         }
-        if let cannot = LedgerWords.cannotMatch(matching) {
+        if let cannot = LedgerWords.cannotMatch(matching, canSay: canSay) {
             Said(text: cannot, identifier: "ledger.cannotMatch")
         }
         Foot {
+            if canSay {
+                Button(LedgerWords.sayWhose(flow.standing)) { Task { await flow.openOwners() } }
+                    .accessibilityIdentifier("ledger.sayWhose")
+            }
             Spacer()
             Button(LedgerWords.notNow) { flow.close() }
                 .keyboardShortcut(.cancelAction)
@@ -430,6 +436,9 @@ private struct MatchingStep: View {
 }
 
 extension MatchingStep {
+    /// Whether this member may say whose the ledger's accounts are, and some are nobody's.
+    fileprivate var canSay: Bool { (flow.standing?.imported?.unclaimed ?? 0) > 0 }
+
     fileprivate var rows: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(matching.accounts) { account in
@@ -508,6 +517,122 @@ private struct MatchRow: View {
     }
 }
 
+/// Whose each of the ledger's accounts nobody owns yet is: each starts as the member's own,
+/// grouped as the ledger groups them, each group set at once if need be. A household of one is
+/// asked once, in a sentence.
+private struct AssigningStep: View {
+    @Bindable var flow: LedgerFlow
+    let owners: LedgerOwners
+
+    var body: some View {
+        Heading(text: LedgerWords.assignTitle(owners))
+        Said(text: LedgerWords.assignDetail(owners), identifier: "ledger.assignDetail")
+        if flow.ownersRefusedNow {
+            Refusal(text: LedgerWords.assignRefused)
+        }
+        if owners.members.count > 1 {
+            if owners.accounts.count < 5 {
+                groups
+            } else {
+                // More than fit in the smallest window scroll, the sheet's foot staying in view.
+                ScrollView { groups }
+                    .frame(maxHeight: 280)
+            }
+        }
+        Foot {
+            Spacer()
+            Button(LedgerWords.notNow) { Task { await flow.openMatching() } }
+                .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("ledger.later")
+            Button(primary) { Task { await flow.assign() } }
+                .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .disabled(flow.isWorking)
+                .accessibilityIdentifier("ledger.assign")
+        }
+    }
+
+    private var primary: String {
+        guard owners.members.count == 1 else { return "Continue" }
+        return owners.accounts.count == 1 ? LedgerWords.soloAssignOne : LedgerWords.soloAssign
+    }
+
+    private var groups: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(LedgerFlow.groups(owners), id: \.name) { group in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(group.name)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Palette.ink2)
+                        Spacer()
+                        if group.accounts.count > 1 {
+                            Menu(LedgerWords.setAll) {
+                                ForEach(menu, id: \.self) { who in
+                                    Button(LedgerWords.owners(who, in: owners)) {
+                                        flow.setOwners(group.accounts, to: who)
+                                    }
+                                }
+                            }
+                            .menuStyle(.borderlessButton)
+                            .fixedSize()
+                            .accessibilityIdentifier("ledger.setAll.\(group.name)")
+                        }
+                    }
+                    ForEach(group.accounts) { account in
+                        OwnerRow(flow: flow, owners: owners, account: account, menu: menu)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Every choice, and leaving it for later.
+    private var menu: [[String]] { owners.choices + [[]] }
+}
+
+/// One of the ledger's accounts, and whose it is to be.
+private struct OwnerRow: View {
+    @Bindable var flow: LedgerFlow
+    let owners: LedgerOwners
+    let account: LedgerOwners.Unowned
+    let menu: [[String]]
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.account).fontWeight(.semibold)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(account.account)
+                Text(LedgerWords.unownedDetail(account)).font(.system(size: 12)).foregroundStyle(Palette.ink2)
+            }
+            Spacer(minLength: 8)
+            Picker("", selection: who) {
+                ForEach(menu, id: \.self) { choice in
+                    Text(LedgerWords.owners(choice, in: owners)).tag(choice)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+            .accessibilityIdentifier("ledger.owner.\(account.account)")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Palette.background))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.line, lineWidth: 1))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ledger.unowned.\(account.account)")
+    }
+
+    private var who: Binding<[String]> {
+        Binding(
+            get: { flow.owners[account.account] ?? [] },
+            set: { flow.owners[account.account] = $0 })
+    }
+}
+
 /// The ledger is in, but the books could not be worked out from it yet: matching waits on
 /// them, and the Overview says why.
 private struct InButBooksFailed: View {
@@ -564,7 +689,8 @@ private struct Done: View {
         if flow.standing?.bringingIn?.booksFailed == true {
             Refusal(text: LedgerWords.booksFailed)
         }
-        if let cannot = LedgerWords.cannotMatch(matching) {
+        let canSay = (flow.standing?.imported?.unclaimed ?? 0) > 0
+        if let cannot = LedgerWords.cannotMatch(matching, canSay: canSay) {
             Said(text: cannot, identifier: "ledger.cannotMatch")
         } else if let unclaimed = LedgerWords.unclaimed(flow.standing) {
             Said(text: unclaimed, identifier: "ledger.unclaimed")
@@ -573,6 +699,10 @@ private struct Done: View {
             if matching.accounts.contains(where: { !$0.fixed && !LedgerFlow.open($0).isEmpty }) {
                 Button(LedgerWords.change) { flow.change() }
                     .accessibilityIdentifier("ledger.change")
+            }
+            if canSay {
+                Button(LedgerWords.sayWhose(flow.standing)) { Task { await flow.openOwners() } }
+                    .accessibilityIdentifier("ledger.sayWhose")
             }
             Spacer()
             Button(LedgerWords.openBooks) {
