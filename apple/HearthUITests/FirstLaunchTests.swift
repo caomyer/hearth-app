@@ -707,6 +707,10 @@ final class FirstLaunchTests: XCTestCase {
         while text(of: netWorth) != "$21,288", Date() < deadline {
             RunLoop.current.run(until: Date().addingTimeInterval(1))
         }
+        if text(of: netWorth) != "$21,288" {
+            // What the window says instead, so a failure on CI says why.
+            print("ledger test: the window says", app.staticTexts.allElementsBoundByIndex.map(\.label))
+        }
         XCTAssertEqual(text(of: netWorth), "$21,288")
     }
 
