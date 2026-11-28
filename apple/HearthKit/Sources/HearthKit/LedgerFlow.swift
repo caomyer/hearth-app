@@ -58,6 +58,7 @@ public final class LedgerFlow {
     public private(set) var isWorking = false
 
     private let engine: any Acting
+    @ObservationIgnored private var listeners: [@MainActor () async -> Void] = []
     private let pause: @Sendable (Duration) async throws -> Void
     private let signedOut: @MainActor () -> Void
     private let asked: () -> Bool
@@ -83,6 +84,18 @@ public final class LedgerFlow {
         self.remember = remember
         self.pause = pause
         self.signedOut = signedOut
+    }
+
+    /// Calls `listener` whenever the books change by something done here: a ledger brought in,
+    /// whose its accounts are said, an account matched. The screens of the books ask again then.
+    public func whenChanged(_ listener: @escaping @MainActor () async -> Void) {
+        listeners.append(listener)
+    }
+
+    private func changed() {
+        for listener in listeners {
+            Task { await listener() }
+        }
     }
 
     /// Asks where the household's ledger stands.
@@ -195,6 +208,7 @@ public final class LedgerFlow {
     private func ended(_ bringing: LedgerStanding.BringingIn) async {
         switch bringing.outcome {
         case .imported?, .unchanged?:
+            changed()
             if bringing.booksFailed {
                 step = .inButBooksFailed
             } else {
@@ -274,6 +288,7 @@ public final class LedgerFlow {
         }
         switch outcome {
         case .assigned:
+            changed()
             await openMatching()
         case .signedOut:
             close()
@@ -364,6 +379,7 @@ public final class LedgerFlow {
             switch outcome {
             case .matched:
                 refusedNow = false
+                changed()
             case .signedOut:
                 close()
                 signedOut()

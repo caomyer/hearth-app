@@ -63,6 +63,12 @@ private func standing(
 
 private let loading = #"{"state":"loading"}"#
 
+/// How many times something was told.
+@MainActor
+private final class Counted {
+    var count = 0
+}
+
 private let file = URL(fileURLWithPath: "/Users/zq/Ledger/household.beancount")
 private let noPause: @Sendable (Duration) async throws -> Void = { _ in }
 
@@ -172,6 +178,8 @@ struct LedgerTests {
             ],
             outcomes: [.started, .assigned, .matched])
         let flow = LedgerFlow(engine: engine, pause: noPause)
+        let changes = Counted()
+        flow.whenChanged { changes.count += 1 }
 
         await flow.check(file)
         guard case .checked(_, let check) = flow.step else {
@@ -207,6 +215,9 @@ struct LedgerTests {
             Issue.record("what was matched was not shown: \(String(describing: flow.step))")
             return
         }
+        // The books' screens are told of each change: the import, the owners, the match.
+        for _ in 0..<1000 where changes.count < 3 { await Task.yield() }
+        #expect(changes.count == 3)
         let acted = await engine.acted
         #expect(acted.map(\.0) == ["bring_in_ledger", "assign_owners", "match_accounts"])
         #expect(acted[0].1 == ["path": .text(file.path)])

@@ -53,6 +53,8 @@ public final class Desk {
         let transactions = transactions
         journals = [{ transactions }]
         decisions.whenDecided { [weak self] in await self?.decided(pause: pause) }
+        // What the ledger's steps change is in the books too, once they are worked out again.
+        ledger.whenChanged { [weak self] in await self?.decided(pause: pause) }
     }
 
     /// One account's own page: its balance and what it rests on.
