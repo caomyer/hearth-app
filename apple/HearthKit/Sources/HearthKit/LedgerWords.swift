@@ -219,15 +219,16 @@ public enum LedgerWords {
     }
 
     /// What cannot be done here, said once whenever some account has nothing to match to:
-    /// matching offers only the ledger's accounts that are the member's own, and an account
-    /// becomes someone's only on the command line for now.
-    public static func cannotMatch(_ matching: Matching) -> String? {
+    /// matching offers only the ledger's accounts that are the member's own. `canSay` is
+    /// whether this member may say whose the ledger's accounts are, as an admin may.
+    public static func cannotMatch(_ matching: Matching, canSay: Bool = false) -> String? {
         let stuck = matching.accounts.filter { $0.state != .matched && LedgerFlow.open($0).isEmpty }.count
         guard stuck > 0 else { return nil }
         let staying = stuck == 1
             ? "the one with nothing to choose stays as it is. Match it later in Settings, Ledger."
             : "those with nothing to choose stay as they are. Match them later in Settings, Ledger."
-        return "An account here can be matched only to one of your ledger's accounts that is yours. Until someone says whose your ledger's accounts are, with hearth add-account on this Mac, \(staying)"
+        let who = canSay ? "you say" : "an admin of your household says"
+        return "An account here can be matched only to one of your ledger's accounts that is yours. Until \(who) whose your ledger's accounts are, \(staying)"
     }
 
     public static let waitingForAnother = "A ledger is being brought in"
@@ -241,7 +242,7 @@ public enum LedgerWords {
 
     /// "Your accounts are matched", or that the ledger is in when nothing is connected.
     /// What a done step says when nothing else is to be said: no connected account to match,
-    /// and nothing of the books nobody's.
+    /// and nothing of the ledger nobody's.
     public static func doneBody(_ matching: Matching, standing: LedgerStanding?) -> String? {
         guard matching.accounts.isEmpty, unclaimed(standing) == nil else { return nil }
         return "Its history is in your books now. A bank you connect later, in Hearth in the browser, is matched to its account in Settings, Ledger."
@@ -287,14 +288,70 @@ public enum LedgerWords {
             : "\(number(booked, locale: locale)) from then on are added by Hearth."
     }
 
-    /// What nobody sees yet: "12 of your books' accounts are nobody's yet, so nobody sees them.
-    /// Say whose each is with hearth add-account on this Mac."
+    /// What nobody sees yet: "12 of your ledger's accounts are nobody's yet, so nobody sees them."
+    /// Told to an admin alone, who may say whose they are.
     public static func unclaimed(_ standing: LedgerStanding?, locale: Locale = .current) -> String? {
         guard let count = standing?.imported?.unclaimed, count > 0 else { return nil }
         if count == 1 {
-            return "1 of your books' accounts is nobody's yet, so nobody sees it. Say whose it is with hearth add-account on this Mac."
+            return "1 of your ledger's accounts is nobody's yet, so nobody sees it."
         }
-        return "\(number(count, locale: locale)) of your books' accounts are nobody's yet, so nobody sees them. Say whose each is with hearth add-account on this Mac."
+        return "\(number(count, locale: locale)) of your ledger's accounts are nobody's yet, so nobody sees them."
+    }
+
+    /// The button that says whose they are: "Say Whose It Is", "Say Whose They Are".
+    public static func sayWhose(_ standing: LedgerStanding?) -> String {
+        standing?.imported?.unclaimed == 1 ? "Say Whose It Is\u{2026}" : "Say Whose They Are\u{2026}"
+    }
+
+    // Whose the ledger's accounts are.
+
+    /// The step's heading: a household of one is told the accounts are theirs.
+    public static func assignTitle(_ owners: LedgerOwners) -> String {
+        owners.members.count == 1 ? "These accounts are yours" : "Whose accounts are these?"
+    }
+
+    public static func assignDetail(_ owners: LedgerOwners, locale: Locale = .current) -> String {
+        let count = owners.accounts.count
+        if owners.members.count == 1 {
+            let accounts = count == 1 ? "1 account" : "\(number(count, locale: locale)) accounts"
+            return "Your ledger has \(accounts) nobody has yet. You are the only one in this household, so \(count == 1 ? "it becomes" : "they become") yours, and only you see \(count == 1 ? "it" : "them")."
+        }
+        return "Nobody sees an account of your ledger until it is someone's. Each starts as yours. Change any that is someone else's, or shared, or leave it for later."
+    }
+
+    public static let assignRefused =
+        "Someone said whose some of these are while you were choosing. These are the ones still nobody's."
+    public static let later = "Leave for later"
+    public static let setAll = "Set All"
+    public static let soloAssign = "Make Them Mine"
+    public static let soloAssignOne = "Make It Mine"
+
+    /// What a choice of owners reads as, to the member choosing: "Yours", "Blake's", "Joint,
+    /// you and Blake", "Everyone's".
+    public static func owners(_ who: [String], in found: LedgerOwners) -> String {
+        guard !who.isEmpty else { return later }
+        let names = who.map { username in
+            username == found.you ? "you" : found.members.first { $0.username == username }?.name ?? username
+        }
+        if who.count == 1 {
+            return who[0] == found.you ? "Yours" : "\(names[0])'s"
+        }
+        if who.count == found.members.count, who.count > 2 {
+            return "Everyone's"
+        }
+        let listed = names.count == 2
+            ? "\(names[0]) and \(names[1])"
+            : names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+        return "Joint, \(listed)"
+    }
+
+    /// Under an account's name: its kind, and the day the ledger closes it, if it does.
+    public static func unownedDetail(_ account: LedgerOwners.Unowned, locale: Locale = .current) -> String {
+        let kind = account.kind == "Liabilities" ? "Liability" : account.kind == "Assets" ? "Asset" : account.kind
+        guard let closed = account.closed else { return kind }
+        let day = closed.date(in: Day.calendar).formatted(
+            Date.FormatStyle(locale: locale).month(.abbreviated).day().year().utc)
+        return "\(kind), closed \(day)"
     }
 
     public static let change = "Change"

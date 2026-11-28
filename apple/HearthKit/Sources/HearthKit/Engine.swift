@@ -24,6 +24,8 @@ public enum Asked: Sendable, Hashable {
     case table([String: String])
     /// Several pieces of text: the categories a statement's line adds up.
     case list([String])
+    /// Names, each with several pieces of text: the ledger's accounts, each with its owners.
+    case lists([String: [String]])
 
     var json: Any {
         switch self {
@@ -31,6 +33,7 @@ public enum Asked: Sendable, Hashable {
         case .number(let number): number
         case .table(let table): table
         case .list(let list): list
+        case .lists(let lists): lists
         }
     }
 }

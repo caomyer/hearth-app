@@ -48,9 +48,12 @@ It shows the Overview, the journal (Transactions), Holdings, Statements, the acc
 ## Bringing in a ledger
 
 - After signing in, an admin of a household that holds no ledger yet is asked once, on this Mac, "Do you keep a beancount ledger?" (`HearthKit.LedgerFlow`).
-  Settings, Ledger, says where the household's ledger stands and offers Bring In a Ledger while one may be brought in, and Match Accounts once one is.
+  Settings, Ledger, says where the household's ledger stands and offers Bring In a Ledger while one may be brought in, Match Accounts once one is, and to an admin, while any of the ledger's accounts is nobody's, Say Whose They Are.
 - The file is chosen in an open panel; the engine reads it where it is and writes nothing (`ledger_check`), and the sheet says what it holds: its entries, accounts and months, its balance checks and net worth at its own prices, and the lines Hearth keeps but does not use; or why it cannot be brought in, in the engine's words.
 - A confirmation says plainly that it happens once and that Hearth's books are the truth afterwards; then the engine brings it in (`bring_in_ledger`), while the sheet says so.
+- Then "Whose accounts are these?": each of the ledger's accounts nobody owns yet, grouped as the ledger names them, each starting as the admin's own, changed to another member's, joint, or left for later, a whole group at once if need be; one confirm says all of them (`ledger_owners`, `assign_owners`).
+  A household of one is told in a sentence that the accounts become theirs, and confirms once.
+  "Not Now" leaves them all nobody's, to be said later from Settings.
 - Then each of the member's own connected accounts is offered the ledger's account the ledger itself proposes, the others they may choose, and what matching it there meets: the day Hearth adds the bank's transactions from, and how many the ledger holds already (`matching`, `match_account`).
   "Not Now" leaves every account as it is.
 - Last, what is matched, and Open My Books, which lands on the Overview.
@@ -161,7 +164,7 @@ HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR "$APP" -openBooks own -signInProblem th
   - `holding:<symbol>`, Holdings with that holding's price beside the list;
   - `statements`, and `statements:<tab>` on its `summary`, `income`, `balance` or `years` tab (any other tab opens the Summary and says so in the log);
   - `account:<name>`, that account's own page;
-  - `settings`, the Overview with the Settings window open over it.
+  - `settings`, the Overview with the Settings window open over it, and `settings:ledger` on its Ledger pane.
 - `-showSync YES` opens the sync control's account of how the banks stand, as a click on it does.
 - `-signInProblem rejected|throttled|mustChangePassword|savedSignInFailed` has the sign-in screen say that refusal, whatever the engine said.
 - `-windowSize <width>x<height>` draws the window at that size, such as `1000x560` for the smallest the window allows, and holds it there, as a screen too small for it to grow would; the size is that run's alone and is not saved.
@@ -169,7 +172,7 @@ HEARTH_DATA_DIR=$HEARTH_FIXTURE_DATA_DIR "$APP" -openBooks own -signInProblem th
 - `-sampleAsOf YYYY-MM-DD` opens the sample as it stood on that day (`hearth demo --as-of`).
 - `-askAboutLedger NO` leaves out the question an admin is asked once after signing in, as the UI tests about anything else do.
 - `-ledgerFile <path>` is the ledger the open panel would ask for, so bringing one in can be looked at, and tested, without the panel.
-- `-ledgerSheet <step>` opens the books with the ledger's sheet on that step, each reached through the engine with the file `-ledgerFile` names: `question`, `check` (what the file holds, or its refusal), `confirm`, `bringingIn` (the progress, drawn without starting an import), `waiting` (on a ledger someone else is bringing in, drawn without one), `refused` (an import's refusal), `booksFailed` (a ledger in whose books could not be worked out, drawn without one), `bringIn` (checked, confirmed and brought in for real, then matching), `matching`, and `done` (brought in for real, every account matched as the ledger proposes, then what is matched).
+- `-ledgerSheet <step>` opens the books with the ledger's sheet on that step, each reached through the engine with the file `-ledgerFile` names: `question`, `check` (what the file holds, or its refusal), `confirm`, `bringingIn` (the progress, drawn without starting an import), `waiting` (on a ledger someone else is bringing in, drawn without one), `refused` (an import's refusal), `booksFailed` (a ledger in whose books could not be worked out, drawn without one), `bringIn` and `assign` (checked, confirmed and brought in for real, then whose its accounts are), `matching` (brought in for real, every account said to be the importer's, then matching), and `done` (the same, every account matched as the ledger proposes, then what is matched).
   For example, `HEARTH_DATA_DIR=$HEARTH_FIXTURE_LEDGER_DATA_DIR HEARTH_SIGN_IN_PASSWORD=$HEARTH_FIXTURE_PASSWORD "$APP" -openBooks own -signInAs avery -ledgerSheet check -ledgerFile "$HEARTH_FIXTURE_LEDGER" -windowSize 1000x560`.
   The sample is drawn back from the day it is opened, so what waits in its Review changes from day to day; the UI tests that work Review pin it this way.
 - `-signInAs <username>` hands the engine that member with the password in `HEARTH_SIGN_IN_PASSWORD`, in place of the Keychain, which it leaves alone.

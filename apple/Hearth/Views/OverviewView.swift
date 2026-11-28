@@ -93,6 +93,9 @@ private struct Figures: View {
                 .monospacedDigit()
                 .foregroundStyle(Palette.ink)
                 .textSelection(.enabled)
+                // Drawn anew when it changes: selectable text keeps what accessibility first read
+                // of it, so a figure that changed under it was still read out as the old one.
+                .id(worth.value)
                 .accessibilityIdentifier("overview.netWorth")
         } else {
             Text("Not known yet")

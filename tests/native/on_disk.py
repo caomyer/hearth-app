@@ -40,6 +40,13 @@ ELSEWHERE = 1
 NET_WORTH = Decimal("21038.25")
 """Checking and savings, less what the card owes: what Avery's overview says."""
 
+HOLIDAY_HELD = Decimal("250.00")
+"""What the ledger's holiday savings holds, which Avery's overview counts too once Avery says it
+is Avery's and Blake's (``LEDGER_NET_WORTH``)."""
+
+LEDGER_NET_WORTH = NET_WORTH + HOLIDAY_HELD
+"""What Avery's overview says once the ledger is in, the holiday savings Avery's and Blake's."""
+
 
 EARLIER = 6
 """How many earlier rows each of Avery's accounts has in the household that brings a ledger in:

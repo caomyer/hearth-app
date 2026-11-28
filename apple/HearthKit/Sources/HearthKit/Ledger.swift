@@ -145,6 +145,38 @@ public struct LedgerCheck: Decodable, Sendable, Equatable {
     }
 }
 
+/// Whose the imported ledger's accounts are to be: the `ledger_owners` screen, told to an admin
+/// alone (`hearth.native.ledger`).
+public struct LedgerOwners: Decodable, Sendable, Equatable {
+    public struct Member: Decodable, Sendable, Equatable, Identifiable {
+        public let username: String
+        public let name: String
+        public let hue: Int
+        public var id: String { username }
+    }
+
+    /// One of the ledger's accounts nobody owns yet: its name in the ledger, its kind, the days
+    /// the ledger opens and closes it, and the name the household will see it by.
+    public struct Unowned: Decodable, Sendable, Equatable, Identifiable {
+        public let account: String
+        public let kind: String
+        public let opened: Day
+        public let closed: Day?
+        public let name: String
+        public var id: String { account }
+    }
+
+    /// Whether a ledger is brought in.
+    public let imported: Bool
+    /// The member asking, by username.
+    public let you: String
+    /// Every member, the one asking first.
+    public let members: [Member]
+    /// Whose an account may be said to be, by usernames: each member alone, then together.
+    public let choices: [[String]]
+    public let accounts: [Unowned]
+}
+
 /// Each of the member's own connected accounts, and which of the imported ledger's accounts it
 /// is: the `matching` screen.
 public struct Matching: Decodable, Sendable, Equatable {

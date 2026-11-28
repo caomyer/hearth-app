@@ -167,7 +167,8 @@ enum DebugLaunch {
 /// - `holding:<symbol>`, Holdings with that holding's price beside the list;
 /// - `statements`, and `statements:<tab>` on its `summary`, `income`, `balance` or `years` tab;
 /// - `account:<name>`, that account's page;
-/// - `settings`, the Overview with the Settings window open over it.
+/// - `settings`, the Overview with the Settings window open over it, and `settings:ledger` on
+///   its Ledger pane.
 ///
 /// An account, a holding, a row or an entry is found by its name once its screen is in.
 enum StartScreen {
@@ -187,7 +188,7 @@ enum StartScreen {
 
     static var requested: Place? {
         switch given {
-        case "overview", "settings": .overview
+        case "overview", "settings", "settings:ledger": .overview
         case let named? where named.hasPrefix("review"): .review
         case let named? where named.hasPrefix("transaction"): .transactions
         case let named? where named.hasPrefix("holding"): .holdings
@@ -198,7 +199,10 @@ enum StartScreen {
     }
 
     /// Whether the Settings window opens over the books.
-    static var settings: Bool { given == "settings" }
+    static var settings: Bool { given == "settings" || given == "settings:ledger" }
+
+    /// Whether the Settings window opens on its Ledger pane.
+    static var settingsLedger: Bool { given == "settings:ledger" }
 
     /// Whether Review opens on "Where did it go?".
     static var elsewhere: Bool { given == "review:where" }
@@ -263,13 +267,14 @@ enum StartScreen {
 /// - `waiting`, waiting on a ledger someone else is bringing in, drawn without one;
 /// - `booksFailed`, a ledger in whose books could not be worked out, drawn without one;
 /// - `refused`, the file's refusal as an import that was refused says it;
-/// - `bringIn`, the file checked, confirmed and brought in for real, then matching;
-/// - `matching`, matching the accounts connected to the ledger brought in;
-/// - `done`, the file brought in for real, every account matched as proposed, and what is
-///   matched then.
+/// - `bringIn`, the file checked, confirmed and brought in for real, then whose its accounts are;
+/// - `assign`, the same: whose each of the ledger's accounts is, as an import leaves it;
+/// - `matching`, the file brought in for real, each of its accounts said to be its importer's,
+///   then matching;
+/// - `done`, the same, every account matched as proposed, and what is matched then.
 enum LedgerLaunch {
     enum Sheet: String {
-        case question, check, confirm, bringingIn, waiting, refused, booksFailed, bringIn, matching, done
+        case question, check, confirm, bringingIn, waiting, refused, booksFailed, bringIn, assign, matching, done
     }
 
     static var requested: Sheet? {
@@ -302,21 +307,31 @@ enum LedgerLaunch {
             if case .checked(_, let check) = flow.step {
                 flow.begin(at: .notBroughtIn(check.refused))
             }
-        case .bringIn:
+        case .bringIn, .assign:
             await flow.check(file)
             flow.confirm()
             await flow.bringIn()
         case .matching:
-            await flow.openMatching()
+            await broughtInAndAssigned(file, flow: flow)
         case .done:
-            // Reached for real: the file checked, brought in, every account matched as the
-            // ledger proposes, and then what is matched.
-            await flow.check(file)
-            flow.confirm()
-            await flow.bringIn()
+            // Reached for real: the file checked, brought in, its accounts said to be the
+            // importer's, every account matched as the ledger proposes, and then what is matched.
+            await broughtInAndAssigned(file, flow: flow)
             if case .matching = flow.step {
                 await flow.match()
             }
+        }
+    }
+
+    /// The file checked, confirmed, brought in, and each of its accounts said to be whose it
+    /// starts as, as a person who confirms every step reaches matching.
+    @MainActor
+    private static func broughtInAndAssigned(_ file: URL, flow: LedgerFlow) async {
+        await flow.check(file)
+        flow.confirm()
+        await flow.bringIn()
+        if case .assigning = flow.step {
+            await flow.assign()
         }
     }
 }

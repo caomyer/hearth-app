@@ -1,6 +1,7 @@
 """The household the Mac app's end-to-end test brings a ledger into (``tests.native.on_disk``),
-read as ``hearth bridge`` reads it: its ledger checked, brought in, and every account matched,
-it is worth what the test expects, and nothing waits in Review that did not before."""
+read as ``hearth bridge`` reads it: its ledger checked, brought in, its accounts said to be
+Avery's but the holiday savings, Avery's and Blake's, and every account matched, it is worth
+what the test expects, and nothing waits in Review that did not before."""
 
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ from tests.native import on_disk
 from tests.native.test_ledger import settled
 
 
-def test_the_on_disk_household_brings_its_ledger_in_and_matches_every_account(
+def test_the_on_disk_household_brings_its_ledger_in_says_whose_and_matches_every_account(
     tmp_path: Path, clock: FakeClock
 ) -> None:
     settings = on_disk.build(tmp_path / "data", "fixture-passphrase", now=clock(), history=True)
@@ -35,6 +36,16 @@ def test_the_on_disk_household_brings_its_ledger_in_and_matches_every_account(
     importer.wait()
     standing: dict[str, Any] = door.answer("ledger")
     assert standing["bringing_in"]["outcome"] == "imported"
+
+    owners: dict[str, Any] = door.answer("ledger_owners")
+    assert [a["account"] for a in owners["accounts"]] == sorted(
+        [*on_disk.LEDGER_ACCOUNTS_BEFORE.values(), on_disk.HOLIDAY]
+    )
+    assert owners["choices"] == [["avery"], ["blake"], ["avery", "blake"]]
+    chosen = {a["account"]: ["avery"] for a in owners["accounts"]}
+    chosen[on_disk.HOLIDAY] = ["avery", "blake"]
+    assert door.act("assign_owners", {"owners": chosen}) is Acted.ASSIGNED
+    keeper.recompute(wait=True)
 
     matching = settled(door, "matching")
     proposed = {a["name"]: a["proposed"]["account"] for a in matching["accounts"]}
@@ -59,5 +70,5 @@ def test_the_on_disk_household_brings_its_ledger_in_and_matches_every_account(
     after = settled(door, "matching")
     assert after["totals"]["matched"] == 3
     overview: dict[str, Any] = door.answer("overview")
-    assert overview["net_worth"]["value"] == format(on_disk.NET_WORTH, "f")
-    assert door.answer("ledger")["imported"]["unclaimed"] == 1  # type: ignore[index]
+    assert overview["net_worth"]["value"] == format(on_disk.LEDGER_NET_WORTH, "f")
+    assert door.answer("ledger")["imported"]["unclaimed"] == 0  # type: ignore[index]
