@@ -1126,7 +1126,9 @@ def from_household(
             )
         finally:
             conn.close()
-        written = ownbooks.render(ownbooks.own(books.entries), inherits=household.ledger)
+        written = ownbooks.render(
+            books.entries, inherits=household.ledger, options=household.options
+        )
         ownbooks.write(settings.books_file, written, now=now)
         return books
 
@@ -1201,6 +1203,10 @@ class Entries:
     """Each account of the base matched to a connection whose cut-over has not come, with
     the last day the base knows of it today and the latest day the base holds anything on it
     (``carrying.known_through``, ``carrying.ahead``)."""
+    options: Mapping[str, Any] = field(default_factory=dict)
+    """The beancount options of the ledger the entries go on top of, or beancount's defaults:
+    what the books file needs to say its entries mean what they meant here
+    (``ownbooks.render``)."""
 
 
 def _opens(entries: Sequence[Directive]) -> Opens:
@@ -1320,4 +1326,5 @@ def household_entries(
         derived.carried,
         derived.unproved,
         held_back,
+        options_map,
     )

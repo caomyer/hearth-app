@@ -1,6 +1,7 @@
 # Editing the books
 
-Status: a design for approval, not built.
+Status: approved on 2026-11-28, with every technical decision below.
+Plan item 1, the books file holding the whole books, is built; the rest is not.
 
 A household brings its old beancount ledger in once, and from then on hearth's books are the truth (`docs/real-ledger.md`).
 The ledger kept outside hearth, and the fava workflow around it, can be retired only once a member can do in the Mac app what they did to their books there.
@@ -46,10 +47,10 @@ The first is a courtesy to the member; the second is the guarantee.
 
 The direction for this milestone holds, with six corrections the code makes.
 
-1. **`books.beancount` does not show amended base entries today, and cannot while it includes the base.**
-   Each recompute writes `ownbooks.render(ownbooks.own(books.entries), inherits=...)` (`books.from_household`): only the entries hearth derived, with the base pulled in by an `include` of its frozen files.
-   A ruling on one of the base's own `!` rows, which `review.overlay` lays over it, is in the figures but already missing from the file.
-   An amended base entry would be missing too, so the file must render the whole books as laid over, base entries included, rather than include the base.
+1. **`books.beancount` did not show amended base entries, and could not while it included the base.**
+   Each recompute wrote `ownbooks.render(ownbooks.own(books.entries), inherits=...)` (`books.from_household`): only the entries hearth derived, with the base pulled in by an `include` of its frozen files.
+   A ruling on one of the base's own `!` rows, which `review.overlay` lays over it, was in the figures but already missing from the file.
+   An amended base entry would have been missing too, so the file now renders the whole books as laid over, base entries included, rather than include the base.
    A throwaway experiment on an invented base of 20,006 transactions printed the whole books in 0.23 s, 2.2 MB, and beancount loaded the printed file back with no errors and exactly as many entries (20,473).
 2. **The app database will hold money.**
    `review.rulings` says no amount is ever stored, as "the ledger is the only place money is recorded".
@@ -467,7 +468,34 @@ Engine first, each reviewable on its own; each must pass `uv run ruff check && u
 9. **The app: entries by hand and counts.**
    New Transaction, Count Balance, the standing words, and naming an account hearth does not see in the app, if the owner agrees below.
 
+## Technical decisions
+
+Decided on 2026-11-28, as recommended.
+
+1. **Amendments in `review_rulings`, with side tables, or a table of their own?**
+   Decided: `review_rulings`, for one sequence of ids, one Undo, and `newest`, `standing` and `begun` already seeing them.
+2. **Undo as a withdrawal for every ruling, keeping reopen only for what is on record?**
+   Decided: yes; for every decision the app makes today it gives the same result, and it is right once reviewed rows can be booked again.
+3. **A base entry named by its place in the digest-checked base, or by its content?**
+   Decided: its place; the base cannot change once anything rests on it, and content repeats where a ledger holds two identical entries.
+4. **`books.beancount` rendering the whole books rather than including the base?**
+   Decided: yes, measured at 0.23 s and loading back clean on 20,006 transactions; PR 1 proves it on `tests/ledgers.py`'s lots and `pad`.
+5. **Proof over the latest books in memory, with the recompute's guard, and no worker?**
+   Decided: yes; every act measured in milliseconds, against 1.6 s for a trial recompute; add the worker only if a real base measures an act over 100 ms.
+6. **The split's last part as "the rest", worked out by the engine?**
+   Decided: yes, so the app does no arithmetic and no split can fail to add up; the alternative, a live remainder in the app, breaks the rule that the app computes nothing.
+7. **Reconnect successions in this milestone, before the app's PRs?**
+   Decided: yes, as PR 4; the owner decided decisions come back after a reconnect, and an edit lost at a reconnect would send the household back to the outside ledger.
+8. **Original words kept in the books as `was-payee` and `was-narration`, and `amended: <ruling id>`?**
+   Decided: yes; the file traces every change, and a ruling id names no member.
+9. **Entries made by hand teach nothing in this milestone?**
+   Decided: yes; they have no bank merchant, and teaching a card's row from a wallet's entry is a rule of its own to design.
+10. **At most 20 parts to a split?**
+    Decided: yes; it bounds the act's payload and the queue's words, and no household split seen needs more.
+
 ## Open questions
+
+Each is the owner's to answer; nothing that depends on one is built until it is.
 
 ### For the owner (product)
 
@@ -491,26 +519,3 @@ Engine first, each reviewable on its own; each must pass `uv run ruff check && u
    Recommendation: retire the bank sync and the outside ledger once editing ships anyway, as hearth's books then hold everything the household does day to day, and its brokerages' trades come later.
 9. **Close an account kept by hand, a loan paid off or a wallet emptied?**
    Recommendation: a small change after this milestone; counting it at zero says what it holds meanwhile.
-
-### For the lead (technical)
-
-1. **Amendments in `review_rulings`, with side tables, or a table of their own?**
-   Recommendation: `review_rulings`, for one sequence of ids, one Undo, and `newest`, `standing` and `begun` already seeing them.
-2. **Undo as a withdrawal for every ruling, keeping reopen only for what is on record?**
-   Recommendation: yes; for every decision the app makes today it gives the same result, and it is right once reviewed rows can be booked again.
-3. **A base entry named by its place in the digest-checked base, or by its content?**
-   Recommendation: its place; the base cannot change once anything rests on it, and content repeats where a ledger holds two identical entries.
-4. **`books.beancount` rendering the whole books rather than including the base?**
-   Recommendation: yes, measured at 0.23 s and loading back clean on 20,006 transactions; PR 1 proves it on `tests/ledgers.py`'s lots and `pad`.
-5. **Proof over the latest books in memory, with the recompute's guard, and no worker?**
-   Recommendation: yes; every act measured in milliseconds, against 1.6 s for a trial recompute; add the worker only if a real base measures an act over 100 ms.
-6. **The split's last part as "the rest", worked out by the engine?**
-   Recommendation: yes, so the app does no arithmetic and no split can fail to add up; the alternative, a live remainder in the app, breaks the rule that the app computes nothing.
-7. **Reconnect successions in this milestone, before the app's PRs?**
-   Recommendation: yes, as PR 4; the owner decided decisions come back after a reconnect, and an edit lost at a reconnect would send the household back to the outside ledger.
-8. **Original words kept in the books as `was-payee` and `was-narration`, and `amended: <ruling id>`?**
-   Recommendation: yes; the file traces every change, and a ruling id names no member.
-9. **Entries made by hand teach nothing in this milestone?**
-   Recommendation: yes; they have no bank merchant, and teaching a card's row from a wallet's entry is a rule of its own to design.
-10. **At most 20 parts to a split?**
-    Recommendation: yes; it bounds the act's payload and the queue's words, and no household split seen needs more.

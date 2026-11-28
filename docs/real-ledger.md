@@ -81,7 +81,7 @@ Every recompute checks the files against the digest before reading them, so a ba
 It is written last and whole, so a recompute finds either the old base or the new one, never half of either; a serving hearth notices an import made by another process within seconds, as `books.standing` includes the digest.
 
 `books.beancount`, beside it in the data directory, is something else: an output hearth writes on every recompute and never reads (`docs/books.md`).
-It includes the base by its full path, so the file alone still holds the whole books.
+It holds the base's entries as the books hold them, every ruling laid over them, and names the base by its digest, so the file alone still holds the whole books (`docs/books.md`, "The books file").
 
 ### Importing again
 

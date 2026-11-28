@@ -27,13 +27,14 @@ A brokerage account holds what its brokerage last said it holds, as of the day i
 sends no trades, so no transaction ever moves a security: the books say what is held, never
 how it came to be.
 
-Every recompute also writes these entries to a beancount file, so every figure traces to an
+Every recompute also writes the books to a beancount file, so every figure traces to an
 entry that exists, one a person can open in fava, query, diff and check against a statement.
 The file is an output, never an input: hearth does not read it, and says so at its top. A
 household with a ledger of its own imports it once, and hearth keeps it frozen in its data
 directory (``hearth.base``), or, for now, inherits it where it is (``HEARTH_LEDGER``); hearth
-reads either and never writes it, and the file includes it so that the file alone holds the
-whole books.
+reads either and never writes it. The file holds that ledger's entries too, as the books hold
+them with every ruling laid over them, never an include of it, so the file alone is the whole
+books as hearth computed them (`render`).
 """
 
 import hashlib
@@ -46,8 +47,8 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 
-from beancount.core.data import Commodity, Directive, Open, Transaction, new_metadata
-from beancount.parser import printer
+from beancount.core.data import Booking, Commodity, Directive, Open, Transaction, new_metadata
+from beancount.parser import options, printer
 
 from hearth.accounts import Account, all_accounts
 from hearth.base import Base
@@ -339,24 +340,65 @@ def own(entries: Iterable[Directive]) -> list[Directive]:
     return [e for e in entries if isinstance(e.meta, dict) and e.meta.get("filename") == ORIGIN]
 
 
-def render(entries: Sequence[Directive], *, inherits: Path | Base | None) -> str:
-    """The books file: what it is, the ledger it goes on top of if there is one, the base
-    hearth imported (``hearth.base``) or the household's own, and `entries`."""
-    parts = [HEADER, f'\noption "title" "{TITLE}"\noption "operating_currency" "{CURRENCY}"\n']
+CARRIED_OPTIONS = (
+    "booking_method",
+    "inferred_tolerance_default",
+    "inferred_tolerance_multiplier",
+    "infer_tolerance_from_cost",
+    "tolerance_multiplier",
+    "account_rounding",
+    "name_assets",
+    "name_liabilities",
+    "name_equity",
+    "name_income",
+    "name_expenses",
+)
+"""The options of the household's own ledger that decide what its entries mean when they are
+read again: how lots are booked, how far an amount may round, and what each root is called.
+Each is written only where the ledger sets it otherwise than beancount's default."""
+
+RAN = "beancount.ops.balance"
+"""The one plugin the books file names. Every other plugin the books ran, beancount's own
+`pad` and `implicit_prices` among them, has already made its entries, which the file holds as
+they are: run again, `pad` would fill its gap afresh from entries rulings have changed, and
+the file would no longer be the books hearth computed. The balance check makes a reader of the
+file check every assertion again, as the recompute did."""
+
+
+def render(
+    entries: Sequence[Directive],
+    *,
+    inherits: Path | Base | None,
+    options: Mapping[str, object] | None = None,
+) -> str:
+    """The books file: what it is, every entry of the books exactly as the recompute laid the
+    rulings over them, and nothing it would have to work out again.
+
+    The ledger hearth goes on top of, the base it imported (``hearth.base``) or the
+    household's own, is never included by path: its entries are written as the books hold
+    them, so a ruling on one of its rows is in the file as it is in every figure. `options`
+    are that ledger's, of which those in `CARRIED_OPTIONS` are kept. Plugins are not run again
+    (`RAN`), so the file loads to exactly these entries."""
+    parts = [HEADER, f'\noption "title" "{TITLE}"\n', *_options(options or {})]
+    parts.append(f'option "plugin_processing_mode" "raw"\nplugin "{RAN}"\n')
+    hearths = own(entries)
+    derived = {id(e) for e in hearths}
+    theirs = [e for e in entries if id(e) not in derived]
     if isinstance(inherits, Base):
         parts.append(
-            "\n; Imported: the household's ledger as it was imported, frozen in hearth's data"
-            "\n; directory, which hearth reads and never writes again.\n"
-            f"include {_quoted(str(inherits.root_path.resolve()))}\n"
+            f"\n; Imported: the household's ledger as it was imported, frozen in hearth's data"
+            f"\n; directory (digest {inherits.digest}), which hearth reads and never writes"
+            "\n; again, with every review ruling laid over it.\n"
         )
     elif inherits is not None:
         parts.append(
-            "\n; Inherited: the household's own ledger, which hearth reads and never writes.\n"
-            f"include {_quoted(str(inherits.resolve()))}\n"
+            f"\n; Inherited: the household's own ledger at {inherits.resolve()}, which hearth"
+            "\n; reads and never writes, with every review ruling laid over it.\n"
         )
-    anchors = [entry for entry in entries if opening.anchors(entry)]
-    opens = [e for e in entries if not isinstance(e, Transaction) and not opening.anchors(e)]
-    booked = [e for e in entries if isinstance(e, Transaction) and not opening.anchors(e)]
+    parts.extend(f"\n{printer.format_entry(entry)}" for entry in theirs)
+    anchors = [entry for entry in hearths if opening.anchors(entry)]
+    opens = [e for e in hearths if not isinstance(e, Transaction) and not opening.anchors(e)]
+    booked = [e for e in hearths if isinstance(e, Transaction) and not opening.anchors(e)]
     if opens:
         parts.append(
             "\n; One account for each bank account a member connected, opened on the first day"
@@ -386,6 +428,29 @@ def render(entries: Sequence[Directive], *, inherits: Path | Base | None) -> str
         )
         parts.extend(f"\n{printer.format_entry(entry)}" for entry in booked)
     return "".join(parts)
+
+
+def _options(given: Mapping[str, object]) -> list[str]:
+    """The option lines of the books file: hearth's operating currency and the ledger's own,
+    then each of `CARRIED_OPTIONS` the ledger sets otherwise than beancount's default."""
+    found = given.get("operating_currency")
+    currencies = (
+        [CURRENCY, *(c for c in found if c != CURRENCY)] if isinstance(found, list) else [CURRENCY]
+    )
+    lines = [f'option "operating_currency" {_quoted(c)}\n' for c in currencies]
+    for name in CARRIED_OPTIONS:
+        value = given.get(name)
+        if name not in given or value == options.OPTIONS_DEFAULTS.get(name):
+            continue
+        if isinstance(value, dict):
+            lines += [f'option "{name}" {_quoted(f"{k}:{v}")}\n' for k, v in sorted(value.items())]
+        elif isinstance(value, bool):
+            lines.append(f'option "{name}" "{"TRUE" if value else "FALSE"}"\n')
+        elif isinstance(value, Booking):
+            lines.append(f'option "{name}" "{value.name}"\n')
+        elif value is not None:
+            lines.append(f'option "{name}" {_quoted(str(value))}\n')
+    return lines
 
 
 def _quoted(text: str) -> str:

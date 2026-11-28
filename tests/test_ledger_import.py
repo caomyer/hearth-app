@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from beancount import loader
-from beancount.core.data import Custom, Directive, Document, Price
+from beancount.core.data import Custom, Directive, Document, Price, Transaction
 from beancount.parser import printer
 
 from hearth import base, books, cli, db, ledger_import, members
@@ -25,6 +25,7 @@ from hearth.ledger_import import _priced, describe, import_ledger
 from hearth.plaid import feed
 from hearth.review.rulings import Action, RulingStore, Scope
 from tests import ledgers
+from tests.books_file import balances, holds_the_books, kinds
 from tests.conftest import FakeClock, World
 
 NOW = datetime(2026, 11, 22, 18, 0, tzinfo=UTC)
@@ -331,22 +332,67 @@ def test_a_ledger_of_every_shape_computes_the_same_books_imported_or_inherited(
     assert ours.today.known_total == ledgers.NET_WORTH - 10 * 110  # no stored price for ZQX
 
 
-def test_the_books_file_includes_the_base_and_says_it_is_the_imported_one(
+def test_the_books_file_holds_the_bases_entries_as_the_books_do_and_says_which_base(
     settings: Settings, source: Path
 ) -> None:
+    """Lots at cost, a pad and the entry it made, prices a plugin made, a document: the file
+    reads back as exactly the books, and never includes the base, nor names the original."""
     import_ledger(settings, source, now=NOW)
 
-    books.from_household(settings, rulings=rulings_in, learns=may_learn)(NOW)
+    found = books.from_household(settings, rulings=rulings_in, learns=may_learn)(NOW)
 
     written = settings.books_file.read_text()
+    imported = _imported(settings).base
     assert "; Imported: the household's ledger as it was imported, frozen" in written
-    root = _imported(settings).base.root_path.resolve()
-    assert f'include "{root}"' in written
+    assert f"(digest {imported.digest})" in written
+    assert "include " not in written
     assert str(source) not in written
-    entries, errors, _ = loader._load([(str(settings.books_file), True)], None, None, None)
-    # Beancount opens it: the document's file is not in the base, the one complaint.
-    assert entries
-    assert [type(e).__name__ for e in errors] == ["DocumentError"]
+    entries = holds_the_books(settings.books_file, found)
+    assert {"Pad", "Price", "Document"} <= set(kinds(entries))
+    assert any(isinstance(e, Transaction) and e.flag == "P" for e in entries)
+    assert "Assets:Zq:Brokerage" in balances(entries)
+    assert "{100.00 USD" in balances(entries)["Assets:Zq:Brokerage"]
+
+
+def test_the_books_file_keeps_what_the_ledgers_options_say_its_entries_mean(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """How lots are booked and how far an amount may round decide what a ledger's entries
+    mean when they are read again, so the file says them; a plugin is never run again."""
+    folder = tmp_path / "options"
+    folder.mkdir()
+    (folder / "main.beancount").write_text(
+        'option "operating_currency" "EUR"\n'
+        'option "booking_method" "FIFO"\n'
+        'option "inferred_tolerance_default" "USD:0.01"\n'
+        'plugin "beancount.plugins.implicit_prices"\n'
+        "2026-01-01 open Assets:Zq:Broker\n"
+        "2026-01-01 open Assets:Zq:Cash USD\n"
+        "2026-01-01 open Income:Zq:Gains USD\n"
+        '2026-02-01 * "Zq" "Buy"\n'
+        "  Assets:Zq:Broker  2 ZQX {10.00 USD}\n"
+        "  Assets:Zq:Cash\n"
+        '2026-03-01 * "Zq" "Buy"\n'
+        "  Assets:Zq:Broker  2 ZQX {12.00 USD}\n"
+        "  Assets:Zq:Cash\n"
+        '2026-04-01 * "Zq" "Sell, the oldest first"\n'
+        "  Assets:Zq:Broker  -3 ZQX {}\n"
+        "  Assets:Zq:Cash  33.00 USD\n"
+        "  Income:Zq:Gains\n"
+        "2026-04-02 balance Assets:Zq:Cash  -11.00 USD\n"
+    )
+    import_ledger(settings, folder / "main.beancount", now=NOW)
+
+    found = books.from_household(settings, rulings=rulings_in, learns=may_learn)(NOW)
+
+    written = settings.books_file.read_text()
+    assert 'option "operating_currency" "USD"\noption "operating_currency" "EUR"\n' in written
+    assert 'option "booking_method" "FIFO"\n' in written
+    assert 'option "inferred_tolerance_default" "USD:0.01"\n' in written
+    assert 'option "plugin_processing_mode" "raw"\nplugin "beancount.ops.balance"\n' in written
+    assert "implicit_prices" not in written
+    entries = holds_the_books(settings.books_file, found)
+    assert balances(entries)["Assets:Zq:Broker"] == "(1 ZQX {12.00 USD, 2026-03-01})"
 
 
 def test_books_given_both_a_base_and_hearth_ledger_are_refused_saying_why(
