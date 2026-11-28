@@ -19,6 +19,7 @@ from hearth.plaid import feed
 from hearth.plaid.fake import DEMO_INSTITUTIONS
 from hearth.plaid.feed import Feed
 from hearth.plaid.registry import Registry
+from tests.books_file import holds_the_books
 
 
 def test_the_demos_connected_banks_carry_the_history_and_balance_the_ledger_holds(
@@ -75,6 +76,30 @@ def test_the_demos_connected_banks_carry_the_history_and_balance_the_ledger_hold
         expected = -held_in_ledger[ledger_account] if owed else held_in_ledger[ledger_account]
         assert balance.current == expected
         assert balance.current != 0
+
+
+def test_the_demos_books_file_reads_back_as_exactly_its_books(tmp_path: Path) -> None:
+    """The demo's ledger, held where it is, and its connected banks over it: the file holds
+    both, and every account holds in it what it holds in the books."""
+    now = datetime(2026, 10, 18, 9, 0, tzinfo=UTC)
+    ledger = tmp_path / "household.beancount"
+    settings = Settings.in_directory(tmp_path, ledger=ledger)
+    db.initialise(settings.database)
+    conn = db.connect(settings.database)
+    try:
+        demo.seed(conn, ledger, now=now)
+    finally:
+        conn.close()
+    feed.initialise(settings.feed_database)
+    demo.connect(settings, demo.plaid(lambda: now.astimezone().date(), ledger), now=now)
+
+    found = books.from_household(
+        settings, rulings=rulings_in, learns=may_learn, sources=(demo.PRICE_SOURCE,)
+    )(now)
+
+    entries = holds_the_books(settings.books_file, found)
+    assert len(entries) == len(found.entries) > 900
+    assert "include " not in settings.books_file.read_text()
 
 
 @pytest.mark.parametrize("hour", [0, 5, 6, 15, 23])
@@ -217,7 +242,7 @@ def test_the_from_zero_demo_is_a_household_with_members_and_nothing_else(tmp_pat
 
     assert set(passwords) == {"avery", "blake"}
     assert found.entries == ()
-    assert settings.books_file.exists()
+    assert holds_the_books(settings.books_file, found) == []
     stand_in = demo.plaid_from_zero(lambda: now.astimezone().date()).stand_in
     assert stand_in is not None
     assert set(stand_in.institutions) == {i.id for i in DEMO_INSTITUTIONS}

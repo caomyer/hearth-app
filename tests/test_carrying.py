@@ -60,6 +60,7 @@ from hearth.review.ids import plaid_review_id, reconciling_review_id
 from hearth.review.pile import LEDGER_BANK, RECONCILING, TRANSFER_PENDING
 from hearth.review.rulings import RulingStore
 from hearth.sharing import Facet
+from tests.books_file import holds_the_books
 from tests.conftest import FakeClock, run_now
 from tests.firstday import FirstDay, first_day
 from tests.household import noon
@@ -715,6 +716,43 @@ def test_a_ruling_on_a_carried_row_holds_through_recompute_and_sync(carried: Hou
         (row,) = [e for e in _own(found) if e.meta.get("review-id") == review_id]
         assert (row.flag, row.postings[1].account) == ("*", "Expenses:Treats")
     assert carried.books().begun == {CHECKING}
+
+
+def test_the_books_file_holds_a_carried_account_as_the_books_do(carried: Household) -> None:
+    """The base's history, the bank's rows from the cut-over on, a ruling on one of them and
+    a confirmed difference with the bank: the file reads back as exactly the books."""
+    carried.fresh.plaid.report(carried.item, "chk", CHECKING_HELD - Decimal("8.00"))
+    carried.sync()
+    avery = carried.fresh.signed_in("avery")
+    for review_id, shown, account in (
+        (plaid_review_id(carried.ids["R6"]), "", "Expenses:Treats"),
+        (reconciling_review_id(CHECKING, CHECKING_CUT), LEDGER_BANK, LEDGER_BANK),
+    ):
+        response = avery.post(
+            "/review/rows/book",
+            data={
+                "csrf": carried.fresh.csrf(avery),
+                "review_id": review_id,
+                "shown": shown,
+                "account": account,
+                "back": "",
+                "focus": "",
+            },
+        )
+        assert response.status_code == 303
+    found = carried.books()
+
+    entries = holds_the_books(carried.settings.books_file, found)
+
+    (difference,) = [e for e in entries if isinstance(e, Transaction) and reconciling(e)]
+    assert difference.flag == "*"
+    treats = [
+        e
+        for e in entries
+        if isinstance(e, Transaction)
+        and e.meta.get("review-id") == plaid_review_id(carried.ids["R6"])
+    ]
+    assert [(e.flag, e.postings[1].account) for e in treats] == [("*", "Expenses:Treats")]
 
 
 # A connected account hearth kept itself while the base held its rows too.

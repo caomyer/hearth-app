@@ -38,6 +38,15 @@ uvx fava "$HEARTH_DATA_DIR/books.beancount"
 The file is an output, never an input.
 Hearth never reads it back, and its first lines say so.
 It is not the base, the ledger a household imported, which is kept beside it in `ledger-base/`: that one is an input, written once at its import and read on every recompute (`docs/real-ledger.md`).
+
+It holds every entry of the books exactly as the recompute laid the rulings over them, the household's own ledger's entries among them, never an include of that ledger (`ownbooks.render`).
+So a ruling on a row the household's ledger set aside is in the file as it is in every figure, and so will every edit a member makes (`docs/editing.md`).
+Before this change the file included the ledger by its path and held only hearth's own entries, so such a ruling was in the figures and not in the file.
+It keeps the ledger's options that decide what its entries mean when read again: its operating currencies, how lots are booked, how far an amount may round, and what each root is called (`ownbooks.CARRIED_OPTIONS`).
+It runs no plugin again: every entry a plugin made, as `pad` and `implicit_prices` make them, is written as the books hold it, and the file says `plugin_processing_mode "raw"` and names beancount's own balance check alone, so a reader checks every assertion again and reads exactly the entries hearth computed.
+Run again, `pad` would fill its gap afresh from entries rulings have changed, and the file would no longer be the books.
+The file names the base it was made from by its digest; the base itself stays in `ledger-base/`, as it was imported.
+On an invented base of 20,006 transactions, 1.8 MB, the file is 2.25 MB and takes 0.22 s to print and write on an Apple M4, written only when the books change; before, it held only hearth's own entries and an include.
 An edit made to it changes nothing hearth shows and would be lost at the next recompute, so before writing it again hearth checks whether the file is still exactly as it wrote it.
 A file someone edited is renamed beside it, to `books.edited-<when>.beancount`, and never discarded.
 Books that have not changed leave the file untouched, so a fava watching it reloads only when they do, and its modification time is when the books last changed, not when they were last recomputed.
@@ -52,7 +61,7 @@ Either is loaded only through `books.load_ledger`, which runs beancount's own pl
 Hearth's own entries go on top of it: an account the household's ledger already opens is left to it, transactions and all, and an account a member maps to a new name is opened by hearth.
 The one exception is an account of an imported base that a connected account is matched to (`docs/real-ledger.md`), which hearth carries on from where the base stops (see "Carried on from the base", below).
 A ledger inherited at `HEARTH_LEDGER` may still be growing, so nothing of it is ever carried on: its accounts are its own, and are vouched for through the last sync as before.
-The books file includes the base, or the inherited ledger, by its full path, so the file alone holds the whole books.
+The books file holds the base's entries, or the inherited ledger's, as the books hold them, so the file alone holds the whole books.
 
 ### Carried on from the base
 

@@ -30,7 +30,8 @@ from hearth.plaid.registry import Registry
 from hearth.review.pile import UNRESOLVED
 from hearth.sharing import Facet
 from tests import household
-from tests.conftest import FakeClock, password_of
+from tests.books_file import holds_the_books, kinds
+from tests.conftest import FakeClock, World, password_of
 from tests.firstday import (
     FIRST_DAY,
     PATHS,
@@ -348,7 +349,7 @@ option "operating_currency" "USD"
 """
 
 
-def test_an_inherited_ledger_is_included_beneath_hearths_own_and_never_written(
+def test_an_inherited_ledger_is_held_beneath_hearths_own_and_never_written(
     tmp_path: Path, clock: FakeClock
 ) -> None:
     folder = tmp_path / "ledger"
@@ -384,6 +385,36 @@ def test_an_inherited_ledger_is_included_beneath_hearths_own_and_never_written(
         PATHS["7717"]
     }
     assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
+
+
+def test_the_file_reads_back_as_exactly_the_books_hearth_computed(fresh: FirstDay) -> None:
+    """Hearth's own books, from a bank and nothing else: openings, the bank's balances and
+    every row, each account holding in the file what it holds in the books."""
+    fresh.link("avery", "ins_willowmere")
+    fresh.map(fresh.signed_in("avery"), PATHS)
+    found = until_transacted(fresh, PATHS["7717"])
+
+    entries = holds_the_books(fresh.settings.books_file, found)
+
+    assert kinds(entries)["Balance"] > 0
+    assert "include " not in fresh.settings.books_file.read_text()
+
+
+def test_a_ruling_on_a_row_of_the_households_own_ledger_is_in_the_file(world: World) -> None:
+    """The household's own ledger set rows aside for review, and members moved two of them
+    onto accounts of theirs: the file holds them where the rulings put them, as every figure
+    does, and not as the ledger left them."""
+    found = world.bookkeeper.status.books
+    assert found is not None
+
+    entries = holds_the_books(world.settings.books_file, found)
+
+    written = {e.meta.get("review-id"): e for e in entries if isinstance(e, Transaction) and e.meta}
+    for *_, review_id, _, _, onto in household.MOVED:
+        entry = written[review_id]
+        assert entry.flag == "*"
+        assert onto in {p.account for p in entry.postings}
+        assert UNRESOLVED not in {p.account for p in entry.postings}
 
 
 # The file is an output, never an input.
