@@ -699,9 +699,14 @@ final class FirstLaunchTests: XCTestCase {
         element("ledger.openBooks").click()
 
         XCTAssertTrue(element("ledger.sheet").waitForNonExistence(timeout: 20), "the sheet stayed up")
-        // The household's own, and the holiday savings Avery holds with Blake now.
+        // The household's own, and the holiday savings Avery holds with Blake now, once the
+        // books are worked out again behind the sheet, as they are after each act.
         let netWorth = app.staticTexts["overview.netWorth"]
         XCTAssertTrue(netWorth.waitForExistence(timeout: 60), "no net worth appeared within a minute")
+        let deadline = Date().addingTimeInterval(90)
+        while text(of: netWorth) != "$21,288", Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        }
         XCTAssertEqual(text(of: netWorth), "$21,288")
     }
 
