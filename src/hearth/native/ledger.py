@@ -57,6 +57,11 @@ def read_path(given: Given) -> Path:
     return Path(path_in(given, "path"))
 
 
+def may_check(view: Disclosure, around: Around) -> bool:
+    """Whether the viewer may ask what a ledger file holds (``access.may_bring_in_ledger``)."""
+    return view.ledger_desk(around.settings, around.clock).may_bring_in
+
+
 def check_stands(settings: Settings) -> Hashable:
     """Where what a check of a ledger file is told stands, beside the file itself: whether the
     household inherits its ledger, and the base it holds, which are all of the household a check
@@ -162,8 +167,15 @@ def match(view: Disclosure, given: Given, around: Around) -> Acted:
 
 def owners_screen(view: Disclosure, _asked: object, around: Around) -> Answer:
     """Every member, and each of the imported ledger's accounts nobody owns yet, by name, for
-    an admin to say whose each is. Missing to anyone else."""
+    an admin to say whose each is. Missing to anyone else, whatever the books are doing: the
+    gate is asked before anything is said of them, so only an admin is told they are loading
+    or failed, as the accounts are read from them."""
     found = view.ledger_desk(around.settings, around.clock).owners()
+    if view.books is None:
+        notice = view.notice()
+        if notice is None:
+            return {"state": "loading"}
+        return {"state": "failed", "summary": notice.summary}
     return {
         "imported": found.imported,
         "you": around.viewer,

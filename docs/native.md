@@ -36,6 +36,8 @@ Every request carries a number and exactly one of `sign_in`, `sign_out`, `ask` o
   The only thing that can ask is the process that started the bridge, and the bridge ends when that process closes its end, which the system does for it if it dies.
 - A line that is not a request is answered `{"id": null, "error": "bad request"}` and the bridge carries on.
   The refusal never repeats the line, which may hold a password.
+  An object anywhere in a line that names a key twice makes it not a request, rather than one whose last word wins unseen.
+- A request that stops on an error hearth did not expect is answered as failed, an ask `{"state": "failed", "summary": ...}` in words of hearth's own and anything else `"outcome": "failed"`, and the bridge carries on; the error is noted in `hearth.log` by its kind and what was asked, never its words (`hearth.native.stdio`).
 - Nothing but replies is written to standard output; anything said for a person goes to standard error.
 - `hearth bridge` reads the household in the data directory (`HEARTH_DATA_DIR`, or `~/.local/share/hearth`), and refuses to start where there is none rather than make an empty one.
   It recomputes as `hearth serve` does: at start-up, every morning, and whenever another process changes what the books are computed from.
@@ -155,6 +157,7 @@ Each is written from the viewer's own view of the ledger (`Disclosure.ledger_des
 | `matched` | The account is matched as asked. |
 | `refused` | The matches were refused by the same check that offered them, as something changed since they were shown, and none was written; ask `matching` again. Or an account said to be someone's was claimed since it was shown, and nothing was written; ask `ledger_owners` again. |
 | `assigned` | Each account is now owned as said. |
+| `failed` | It stopped on an error hearth did not expect, which is not said (`hearth.native.stdio`). |
 
 - `path` is an absolute path, text of 1 to 1,024 characters with no NUL, as the Mac's open panel gives one; a relative one, which would be read against wherever the engine started, is `missing`.
 - Bringing a ledger in, and asking what a file holds, are an admin's (`access.may_bring_in_ledger`): the base becomes every member's books, so it is a household act, as entering the household's Plaid account is.
@@ -299,7 +302,7 @@ The child never outlives the bridge: a guard it forks before reading watches a p
 Every check's copy is kept in a folder of the data directory held by the system's lock for as long as any process of the check lives, and the next check, import or start takes away every one nobody holds (`base.checking`, `base.sweep_checks`).
 What `matching` weighs is kept while everything a recompute reads stands where it stood (`books.standing`), so asking again is cheap and never stale.
 
-`ledger_owners`, to an admin alone (`access.may_assign_owners`), and missing to anyone else, says whose the imported ledger's accounts may be said to be: `imported`, whether a base is in; `you`, the viewer's username; `members`, every member, the viewer first, each `username`, `name` and `hue`; `choices`, each set of usernames an account may be said to be, each member alone and then every two or more together for a joint account; and `accounts`, each of the base's Assets and Liabilities accounts nobody has claimed, by `account`, its name in the ledger, with its `kind`, the days the ledger `opened` and `closed` it, and the `name` the household will see it by.
+`ledger_owners`, to an admin alone (`access.may_assign_owners`), and missing to anyone else whatever the books are doing, the gate asked before them, says whose the imported ledger's accounts may be said to be: `imported`, whether a base is in; `you`, the viewer's username; `members`, every member, the viewer first, each `username`, `name` and `hue`; `choices`, each set of usernames an account may be said to be, each member alone and then every two or more together for a joint account; and `accounts`, each of the base's Assets and Liabilities accounts nobody has claimed, by `account`, its name in the ledger, with its `kind`, the days the ledger `opened` and `closed` it, and the `name` the household will see it by.
 That is all the ledger's check told an admin before it was brought in, and they hold its file: never a balance or an entry. Income, Expenses and Equity accounts are never anyone's, a row of them seen by whoever owns its other side.
 `assign_owners` takes `owners`, an object of those accounts to the usernames of their owners, and says whose each is, all at once through the path `hearth add-account` claims one by (`accounts.claim_all`), then recomputes: `assigned`; `refused` when one was claimed since it was offered, so nothing was written; `missing` for an account not offered, a member who is not there, or anyone but an admin.
 

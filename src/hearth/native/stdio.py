@@ -20,20 +20,47 @@ Each request carries a number and exactly one of four things:
 
 A line that is not such a request is answered ``{"id": null, "error": "bad request"}`` and the
 bridge carries on: one malformed line must not take the engine down with the books in it. A
-refusal never repeats the line, which may hold a password.
+refusal never repeats the line, which may hold a password. An object that names a key twice is
+not a request either, rather than one whose last word wins unseen.
+
+A request that stops on an error hearth did not expect is answered as failed, an ask
+``{"state": "failed", ...}`` and anything else ``"outcome": "failed"``, saying nothing of the
+error, which is noted in ``hearth.log`` by its kind alone (``hearth.runlog``); and the bridge
+carries on.
 
 Nothing else may be written to the stream the replies go to, so everything hearth prints for a
 person goes to standard error while a bridge runs.
 """
 
 import json
+import logging
 from collections.abc import Callable, Iterable
 
+from hearth import runlog
 from hearth.native.bridge import Acted, Bridge
+
+_log = logging.getLogger(__name__)
 
 BAD_REQUEST = {"id": None, "error": "bad request"}
 
 _KINDS = ("ask", "act", "sign_in", "sign_out")
+
+FAILED_ANSWER = {
+    "state": "failed",
+    "summary": "Hearth stopped on an error of its own. Quit Hearth and open it again.",
+}
+"""What an ask that stopped on an unexpected error is answered: nothing of the error."""
+
+
+class _RepeatedKeyError(ValueError):
+    """An object named a key twice."""
+
+
+def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    found = dict(pairs)
+    if len(found) != len(pairs):
+        raise _RepeatedKeyError
+    return found
 
 
 def serve(bridge: Bridge, lines: Iterable[str], write: Callable[[str], object]) -> None:
@@ -46,8 +73,9 @@ def serve(bridge: Bridge, lines: Iterable[str], write: Callable[[str], object]) 
 
 def reply(bridge: Bridge, line: str) -> dict[str, object]:
     try:
-        request = json.loads(line)
-    except json.JSONDecodeError:
+        request = json.loads(line, object_pairs_hook=_unique)
+    except ValueError:
+        # Not JSON (`JSONDecodeError` is a `ValueError`), or a key named twice.
         return dict(BAD_REQUEST)
     if not isinstance(request, dict):
         return dict(BAD_REQUEST)
@@ -58,7 +86,27 @@ def reply(bridge: Bridge, line: str) -> dict[str, object]:
     kinds = [kind for kind in _KINDS if kind in request]
     if len(kinds) != 1 or ("with" in request and kinds[0] not in {"ask", "act"}):
         return dict(BAD_REQUEST)
-    match kinds[0], request[kinds[0]], request.get("with", {}):
+    try:
+        return _answered(bridge, identity, kinds[0], request)
+    except Exception as error:
+        # Never the error's words, which may hold a figure or a name: its kind alone, as the
+        # log takes an identifier, and what was asked, by its name if it is one.
+        asked = request[kinds[0]] if kinds[0] in ("ask", "act") else kinds[0]
+        # Not `exception`: a traceback would carry values.
+        _log.error(
+            "a request stopped on an unexpected error: %s, %s",
+            runlog.identifier(type(error).__name__) or "unknown",
+            runlog.identifier(asked) or "unnamed",
+        )
+        if kinds[0] == "ask":
+            return {"id": identity, "answer": dict(FAILED_ANSWER)}
+        return {"id": identity, "outcome": Acted.FAILED.value}
+
+
+def _answered(
+    bridge: Bridge, identity: int, kind: str, request: dict[str, object]
+) -> dict[str, object]:
+    match kind, request[kind], request.get("with", {}):
         case "ask", str(ask), dict(given):
             return {"id": identity, "answer": bridge.answer(ask, given)}
         case "act", str(action), dict(given):

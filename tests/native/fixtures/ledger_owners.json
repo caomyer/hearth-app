@@ -2,10 +2,6 @@
   "id": 1,
   "answer": {
     "state": "ready",
-    "computed_at": "2026-11-22T20:00:00Z",
-    "as_of": "2026-11-22",
-    "currency": "USD",
-    "recomputing": false,
     "imported": true,
     "you": "avery",
     "members": [

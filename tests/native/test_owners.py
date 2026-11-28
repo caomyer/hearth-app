@@ -17,10 +17,11 @@ import pytest
 
 from hearth import accounts, audit, books
 from hearth.disclosure import may_learn, rulings_in
-from hearth.native.bridge import Acted, Bridge
+from hearth.native import stdio
+from hearth.native.bridge import Acted, Bridge, Outcome
 from hearth.sharing import Facet
 from tests import ledgers
-from tests.conftest import FakeClock
+from tests.conftest import FakeClock, password_of
 from tests.native.test_ledger import _accounts, ask, bridge, keep, match, matched, unclaimed
 from tests.test_matching import NOW, Household, build
 
@@ -101,10 +102,6 @@ def test_an_admin_is_told_each_account_nobody_owns_by_name_and_nothing_more(
         "members",
         "choices",
         "accounts",
-        "computed_at",
-        "as_of",
-        "currency",
-        "recomputing",
     }
 
 
@@ -406,3 +403,71 @@ def test_the_owners_of_a_large_ledger_are_told_at_once(tmp_path: Path, clock: Fa
     assert assign(door, chosen) is Acted.ASSIGNED
     took = time.perf_counter() - started
     assert took < 0.5, f"{took:.2f}s"
+
+
+# What anyone but an admin is told, whatever the books are doing (the review of #15).
+
+
+def _states(household: Household, clock: FakeClock) -> dict[str, books.Bookkeeper]:
+    """A bookkeeper in each state the books may be in: none yet, failed with none before,
+    and ready."""
+
+    def failing(now: object) -> books.Books:
+        raise books.LedgerError("Zq failure words")
+
+    none = books.Bookkeeper(
+        books.from_household(household.settings, rulings=rulings_in, learns=may_learn), clock
+    )
+    failed = books.Bookkeeper(failing, clock)
+    failed.recompute(wait=True)
+    ready = books.Bookkeeper(
+        books.from_household(household.settings, rulings=rulings_in, learns=may_learn), clock
+    )
+    ready.recompute(wait=True)
+    return {"none yet": none, "failed": failed, "ready": ready}
+
+
+@pytest.mark.parametrize("state", ["none yet", "failed", "ready"])
+def test_anyone_but_an_admin_is_told_what_an_ask_that_does_not_exist_is(
+    matched: Household, clock: FakeClock, state: str
+) -> None:
+    """The gate is asked before the books: Blake's answers are byte for byte an unknown ask's
+    in every state the books may be in, and only Avery is told the books' state."""
+    keeper = _states(matched, clock)[state]
+    blake = Bridge(matched.settings, keeper, clock)
+    assert blake.sign_in("blake", password_of("blake")) is Outcome.SIGNED_IN
+    nothing = json.dumps(blake.answer("zq_no_such_ask"))
+
+    for asked, given in (
+        ("ledger_owners", None),
+        ("ledger_check", {"path": "/nowhere/zq.beancount"}),
+    ):
+        assert json.dumps(blake.answer(asked, given)) == nothing, asked
+    assert assign(blake, {"Assets:Zq:Brokerage": ["blake"]}) is Acted.MISSING
+    avery = Bridge(matched.settings, keeper, clock)
+    assert avery.sign_in("avery", password_of("avery")) is Outcome.SIGNED_IN
+    told = avery.answer("ledger_owners")["state"]
+    assert told == {"none yet": "loading", "failed": "failed", "ready": "ready"}[state]
+
+
+def test_a_claim_that_stops_part_way_writes_nothing_and_the_bridge_answers_on(
+    matched: Household, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reviewer's case: the audit log refuses its line in the middle of a claim. The act is
+    told it failed, nothing is claimed, and the next ask is answered."""
+    door = bridge(matched, clock, "avery")
+    before = owned(matched)
+
+    def refused(*_: object, **__: object) -> None:
+        raise OSError("Zq disk words")
+
+    monkeypatch.setattr(audit, "record", refused)
+    request = {"id": 1, "act": "assign_owners", "with": {"owners": {UNOWNED[0]: ["avery"]}}}
+    replies: list[Any] = [
+        stdio.reply(door, json.dumps(request)),
+        stdio.reply(door, json.dumps({"id": 2, "ask": "ledger_owners"})),
+    ]
+
+    assert replies[0] == {"id": 1, "outcome": "failed"}
+    assert replies[1]["answer"]["accounts"][0]["account"] == UNOWNED[0]
+    assert owned(matched) == before

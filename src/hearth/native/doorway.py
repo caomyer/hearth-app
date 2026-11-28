@@ -110,6 +110,9 @@ class Doorway:
         except Malformed:
             return dict(MISSING)
         if screen.slow and self.worker is not None:
+            if screen.admits is not None and not self._admits(screen):
+                # Told at once what an ask that does not exist is told, never `loading` first.
+                return dict(MISSING)
             found = self.worker.answer(
                 self._key(screen, ask, given),
                 lambda: self._answer_now(screen, asked),
@@ -117,6 +120,19 @@ class Doorway:
             )
             return dict(LOADING) if found is None else found
         return self._answer_now(screen, asked)
+
+    def _admits(self, screen: Screen) -> bool:
+        """Whether the viewer may be answered `screen` at all, asked of their own view."""
+        assert screen.admits is not None  # noqa: S101 - asked only of a screen that says
+        conn = db.connect(self.settings.database)
+        try:
+            member = members.find(conn, self.viewer)
+            if member is None:
+                return False
+            view = Disclosure.load(conn, member, self.bookkeeper.status)
+            return screen.admits(view, self._around(conn))
+        finally:
+            conn.close()
 
     def _key(self, screen: Screen, ask: str, given: Given | None) -> Hashable:
         """What makes a slow answer the same one: the viewer and whether they are an admin, as
@@ -522,9 +538,10 @@ SCREENS: Mapping[str, Screen] = {
         of_books=False,
         slow=True,
         stands=ledger.check_stands,
+        admits=ledger.may_check,
     ),
     "matching": Screen(_nothing, ledger.matching_screen, of_books=False, slow=True),
-    "ledger_owners": Screen(_nothing, ledger.owners_screen),
+    "ledger_owners": Screen(_nothing, ledger.owners_screen, of_books=False),
 }
 """Every screen the app may ask for, by the name it asks with."""
 
