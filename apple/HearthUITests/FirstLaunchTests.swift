@@ -709,7 +709,17 @@ final class FirstLaunchTests: XCTestCase {
         }
         if text(of: netWorth) != "$21,288" {
             // What the window says instead, so a failure on CI says why.
-            print("ledger test: the window says", app.staticTexts.allElementsBoundByIndex.map(\.label))
+            print("ledger test: the window says", app.staticTexts.allElementsBoundByIndex.map { text(of: $0) })
+            let sqlite = Process()
+            sqlite.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+            sqlite.arguments = [
+                household + "/hearth.sqlite3",
+                "select a.ledger_account, group_concat(o.member_id) from accounts a left join account_owners o on o.account_id = a.id group by a.id",
+            ]
+            try? sqlite.run()
+            sqlite.waitUntilExit()
+            let books = try? FileManager.default.attributesOfItem(atPath: household + "/books.beancount")
+            print("ledger test: books written", books?[.modificationDate] ?? "never", "now", Date())
         }
         XCTAssertEqual(text(of: netWorth), "$21,288")
     }
