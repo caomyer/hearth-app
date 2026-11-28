@@ -1,0 +1,69 @@
+{
+  "id": 1,
+  "answer": {
+    "state": "ready",
+    "imported": true,
+    "you": "avery",
+    "members": [
+      {
+        "username": "avery",
+        "name": "Avery",
+        "hue": 1
+      },
+      {
+        "username": "blake",
+        "name": "Blake",
+        "hue": 2
+      }
+    ],
+    "choices": [
+      [
+        "avery"
+      ],
+      [
+        "blake"
+      ],
+      [
+        "avery",
+        "blake"
+      ]
+    ],
+    "accounts": [
+      {
+        "account": "Assets:Zq:Brokerage",
+        "kind": "Assets",
+        "opened": "2026-01-01",
+        "closed": null,
+        "name": "Zq Brokerage"
+      },
+      {
+        "account": "Assets:Zq:Elsewhere",
+        "kind": "Assets",
+        "opened": "2026-01-01",
+        "closed": "2026-10-31",
+        "name": "Zq Elsewhere"
+      },
+      {
+        "account": "Assets:Zq:Harbor:Joint-Checking",
+        "kind": "Assets",
+        "opened": "2026-01-01",
+        "closed": null,
+        "name": "Zq Harbor Joint Checking"
+      },
+      {
+        "account": "Liabilities:Zq:CardB",
+        "kind": "Liabilities",
+        "opened": "2026-01-01",
+        "closed": null,
+        "name": "Zq CardB"
+      },
+      {
+        "account": "Liabilities:Zq:Mortgage",
+        "kind": "Liabilities",
+        "opened": "2026-01-01",
+        "closed": null,
+        "name": "Zq Mortgage"
+      }
+    ]
+  }
+}

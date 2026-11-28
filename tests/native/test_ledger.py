@@ -1171,10 +1171,11 @@ def every_screen(matched: Household, clock: FakeClock, kept: Path) -> dict[str, 
         "ledger": ask(door, "ledger"),
         "ledger_check": check(door, kept),
         "matching": ask(door, "matching"),
+        "ledger_owners": ask(door, "ledger_owners"),
     }
 
 
-@pytest.mark.parametrize("screen", ["ledger", "ledger_check", "matching"])
+@pytest.mark.parametrize("screen", ["ledger", "ledger_check", "matching", "ledger_owners"])
 def test_each_ledger_screen_has_the_shape_the_app_decodes(
     every_screen: dict[str, object], screen: str
 ) -> None:

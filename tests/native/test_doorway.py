@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from hearth import books, ledger_import
+from hearth import accounts, books, ledger_import
 from hearth.books import LedgerError
 from hearth.disclosure import may_learn, rulings_in
 from hearth.native import doorway as asks
@@ -154,6 +154,9 @@ def differences(told: object, example: object, at: str = "answer") -> list[str]:
         return differences(told[0], example[0], f"{at}[0]") if told and example else []
     return [] if type(told) is type(example) else [f"{at}: {type(told).__name__}"]
 
+
+ADMINS_ALONE = frozenset({"ledger_owners"})
+"""Screens only an admin is answered; anyone else is told what something missing is."""
 
 NARROWED = {
     "account": "id",
@@ -342,6 +345,12 @@ def decisions(world: World) -> list[tuple[str, frozenset[str], dict[str, object]
         for path in ledger_paths(world)[:1]
     ]
     found += [("match_accounts", frozenset(), {"matches": {i: "Assets:Zq:AverySolo"}}) for i in ids]
+    # No ledger is brought in, so there is nothing to say whose: missing to everyone.
+    found += [
+        ("assign_owners", frozenset(), {"owners": {a.ledger_account: [u]}})
+        for a in household.ACCOUNTS
+        for u in USERNAMES
+    ]
     return found
 
 
@@ -385,8 +394,14 @@ def test_no_answer_holds_what_its_viewer_may_not_see(
     # Every answer worked out at once: a slow screen off the wire is `worker`'s test.
     door = Bridge(world.settings, world.bookkeeper, world.clock, syncs, importer, worker=None)
     assert door.sign_in(viewer, password_of(viewer)) is Outcome.SIGNED_IN
-    answers = [door.answer(ask) for ask in asks.SCREENS if ask not in NARROWED]
-    assert all(answer["state"] == "ready" for answer in answers)
+    plain = [ask for ask in asks.SCREENS if ask not in NARROWED]
+    answers = [door.answer(ask) for ask in plain]
+    # Every screen is there for everyone but one of an admin's, which is missing to anyone else.
+    assert all(
+        answer["state"] == "ready"
+        or (ask in ADMINS_ALONE and viewer != household.ADMIN and answer == {"state": "missing"})
+        for ask, answer in zip(plain, answers, strict=True)
+    ), [(ask, a["state"]) for ask, a in zip(plain, answers, strict=True)]
     whole = door.answer("transactions", {"limit": asks.MOST})
     for ask, given in narrowings(world):
         answer = door.answer(ask, given)
@@ -644,10 +659,37 @@ def test_no_answer_carries_a_category_a_suggestion_could_have_carried(
     assert (mine[viewer] in said.values()) if viewer in mine else said == {}
 
 
+NOBODYS = "Assets:Zq:KeptAsideNobodys"
+"""An account of the base nobody has claimed yet: no row of the household's names it."""
+
+NOBODYS_LEDGER = f"""
+{household.OPENED} open {NOBODYS} USD
+{household.OCT} * "Zq Wigwam Kept Aside" "Tent pegs"
+  {NOBODYS}  -246.81 USD
+  Expenses:Zq:WigwamKeptAside
+{household.OPENED} open Expenses:Zq:WigwamKeptAside USD
+"""
+"""What only that account's history holds, seen by nobody until it is someone's."""
+
+
+def nobodys_secrets() -> Iterator[household.Secret]:
+    """The account nobody owns is named to the admin alone, who says whose it is; its history
+    is nobody's, so nobody sees it in this crawl, which never says it is theirs."""
+    yield household.secret(
+        NOBODYS, "the base account nobody owns", lambda v, _: v == household.ADMIN
+    )
+    yield household.secret("KeptAsideNobodys", "its name", lambda v, _: v == household.ADMIN)
+    for text in ("Wigwam Kept Aside", "Tent pegs", "246.81", "WigwamKeptAside"):
+        yield household.secret(text, "its history", lambda _v, _c: False)
+
+
 def based(world: World) -> World:
     """The household with its ledger brought in as a base rather than inherited where it is,
     as the app leaves one, recomputed: so matching has a ledger to weigh every member's
-    connections against, with every member's base accounts and one nobody owns in it."""
+    connections against, with every member's base accounts and one nobody owns in it, and one
+    more nobody has claimed yet (`NOBODYS`)."""
+    with world.ledger.open("a") as ledger:
+        ledger.write(NOBODYS_LEDGER)
     settings = replace(world.settings, ledger=None)
     ledger_import.import_ledger(settings, world.ledger, now=world.clock())
     keeper = books.Bookkeeper(
@@ -682,11 +724,55 @@ def test_no_ledger_answer_over_an_imported_base_holds_what_its_viewer_may_not_se
     for account in [*connected, *over.account_ids.values(), "no-such-account"]:
         for to in names:
             answers.append(str(door.act("match_accounts", {"matches": {account: to}})))
+    # Whose each account is, said of every account the base opens and one it does not, as
+    # each member and as nobody: only the admin is answered, and nothing is claimed but
+    # what the admin says last.
+    owners: Any = door.answer("ledger_owners")
+    answers.append(owners)
+    conn = over.connect()
+    try:
+        before = sorted((a.ledger_account, sorted(a.owners)) for a in accounts.all_accounts(conn))
+    finally:
+        conn.close()
+    tries = [
+        {account: who, NOBODYS: ["casey"]}
+        for account in [*names, "Expenses:Zq:WigwamKeptAside"]
+        for who in [[u] for u in USERNAMES] + [list(USERNAMES), ["zz-nobody"]]
+    ]
+    tries += [{NOBODYS: ["zz-nobody"]}, {NOBODYS: []}]
+    for chosen in tries:
+        done = door.act("assign_owners", {"owners": chosen})
+        answers.append(str(done))
+        if viewer != household.ADMIN:
+            assert done is Acted.MISSING, (chosen, done)
+        else:
+            assert done in (Acted.MISSING, Acted.REFUSED), (chosen, done)
+    conn = over.connect()
+    try:
+        after = sorted((a.ledger_account, sorted(a.owners)) for a in accounts.all_accounts(conn))
+    finally:
+        conn.close()
+    assert after == before, "a claim was made or changed"
+    if viewer == household.ADMIN:
+        assert [a["account"] for a in owners["accounts"]] == [NOBODYS]
+        done = door.act("assign_owners", {"owners": {NOBODYS: ["casey"]}})
+        assert done is Acted.ASSIGNED
+        over.bookkeeper.recompute(wait=True)
+        assert over.bookkeeper.status.failure is None
+        # Casey's now, so nothing of it reaches the admin who said so.
+        answers += [door.answer(ask) for ask in ("ledger", "matching", "ledger_owners")]
+        assert door.answer("ledger_owners")["accounts"] == []
+    else:
+        assert owners == {"state": "missing"}
     seen = household.Seen("\n".join(json.dumps(answer) for answer in answers))
 
     leaked = [
         f"{secret.what}: {text!r}"
-        for secret in [*household.secrets(over.account_ids), *ledger_secrets()]
+        for secret in [
+            *household.secrets(over.account_ids),
+            *ledger_secrets(),
+            *nobodys_secrets(),
+        ]
         if not secret.visible(viewer, choices)
         for text in secret.texts
         if text.replace(",", "") in seen
@@ -696,3 +782,32 @@ def test_no_ledger_answer_over_an_imported_base_holds_what_its_viewer_may_not_se
     owned = {a.ledger_account for a in household.ACCOUNTS if viewer in a.owners}
     named = [a.ledger_account for a in household.ACCOUNTS if a.ledger_account in matching]
     assert set(named) <= owned, f"{viewer} was named accounts of the base not theirs: {named}"
+
+
+@pytest.mark.parametrize(("viewer", "assignee"), [("blake", "casey"), ("casey", "blake")])
+def test_an_account_said_to_be_another_members_changes_no_answer_a_member_is_given(
+    world: World, viewer: str, assignee: str
+) -> None:
+    """The admin says the base's account nobody owned is another member's, who shares nothing:
+    every answer the viewer is given, every screen and every way the crawl narrows one, is the
+    same before and after it, byte for byte, but for when the books were computed."""
+    over = based(world)
+    world.choose(assignee, frozenset())
+    over.bookkeeper.recompute(wait=True)
+    door = Doorway(over.settings, over.bookkeeper, viewer)
+
+    def told() -> str:
+        found = every_answer(door, over)
+        return json.dumps(
+            [{k: v for k, v in a.items() if k not in ("computed_at", "recomputing")} for a in found]
+        )
+
+    before = told()
+    admin = Doorway(over.settings, over.bookkeeper, household.ADMIN)
+    assert admin.act("assign_owners", {"owners": {NOBODYS: [assignee]}}) is Acted.ASSIGNED
+    over.bookkeeper.recompute(wait=True)
+    assert over.bookkeeper.status.failure is None
+
+    assert told() == before
+    mine = Doorway(over.settings, over.bookkeeper, assignee)
+    assert "Wigwam Kept Aside" in json.dumps(every_answer(mine, over)), "it is theirs now"

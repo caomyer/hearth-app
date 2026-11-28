@@ -40,6 +40,7 @@ import hashlib
 import logging
 import os
 import sqlite3
+import threading
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
@@ -408,8 +409,9 @@ def write(path: Path, text: str, *, now: datetime) -> Path | None:
             return None
         if _edited(current):
             kept = _keep(path, now)
-    # Named for this process: `hearth plaid sync` recomputes beside a serving hearth.
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.writing")
+    # Named for this process and thread: `hearth plaid sync` recomputes beside a serving
+    # hearth, and two bookkeepers of one process, as a test holds, may write at once.
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.writing")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as file:
         file.write(signed)

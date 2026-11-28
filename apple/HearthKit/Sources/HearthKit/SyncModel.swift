@@ -111,7 +111,7 @@ public final class SyncModel {
             break
         case .notAllowed, .missing, .accepted, .booked, .moved, .excluded, .undone, .changed,
             .notOneDecision, .notAnAccount, .notYours, .banksAccount, .banksRow, .notOpen, .matched,
-            .refused, .unknown:
+            .refused, .assigned, .failed, .unknown:
             // A sync is told only a sync's outcomes; anything else is as good as none.
             isAsking = false
             await refresh()

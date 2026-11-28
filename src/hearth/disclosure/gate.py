@@ -82,6 +82,9 @@ class Gate:
     def may_bring_in_ledger(self) -> bool:
         return access.may_bring_in_ledger(self.viewer)
 
+    def may_assign_owners(self) -> bool:
+        return access.may_assign_owners(self.viewer)
+
     def may_carry_on(self, owners: Collection[MemberId], *, recorded: bool) -> bool:
         return access.may_carry_on(self.viewer, owners, recorded=recorded)
 

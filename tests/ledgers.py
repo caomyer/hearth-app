@@ -380,3 +380,22 @@ def matched_base(
         meta = {"post-date": r.day.isoformat()}
         text += _entry(r.day - timedelta(days=2), "Liabilities:Zq:Blake:Card", -r.amount, meta)
     return {"main.beancount": 'option "operating_currency" "USD"\n\n' + text}
+
+
+def big_ledger(*, accounts: int, entries: int) -> str:
+    """A ledger of `accounts` Assets and Liabilities accounts in twelve groups, a tenth of them
+    closed, and `entries` transactions spread over them and ten years: as large as a
+    household's gets."""
+    names = [
+        f"{'Liabilities' if n % 4 == 0 else 'Assets'}:Zq:Group{n % 12}:Pot{n}"
+        for n in range(accounts)
+    ]
+    text = 'option "operating_currency" "USD"\n2016-01-01 open Expenses:Zq:Spent USD\n'
+    text += "".join(f"2016-01-01 open {name} USD\n" for name in names)
+    first = date(2016, 1, 2)
+    for n in range(entries):
+        day = first + timedelta(days=n * 3650 // entries)
+        account = names[n % accounts]
+        text += f'{day} * "Zq" "Invented"\n  {account}  -1.00 USD\n  Expenses:Zq:Spent\n'
+    text += "".join(f"2026-06-01 close {name}\n" for name in names[::10])
+    return text

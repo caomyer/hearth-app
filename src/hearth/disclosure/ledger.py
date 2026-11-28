@@ -12,12 +12,16 @@ Two things the command line does, for a member, through the gate (``docs/real-le
   onto accounts they own (``access.may_feed``). The one account a member may take that nobody
   has claimed is the one the ledger itself records their connection's ids on, for an account
   hearth keeps for them (``access.may_carry_on``).
+- Saying whose each of the ledger's accounts is, where nobody owns it yet (`LedgerDesk.owners`,
+  `LedgerDesk.assign`), exactly as ``hearth add-account`` does it (``accounts.claim_all``), all
+  at once. An admin's (``access.may_assign_owners``), who is told those accounts' names alone.
 
 What a member is told names no account they could not otherwise see: an account the evidence
 points at that someone else owns, or that nobody owns and only content points at, is said not
 to be theirs, or nobody's yet, and never named.
 """
 
+import itertools
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -25,16 +29,17 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from beancount.core.data import Open
+from beancount.core.data import Close, Open
 
-from hearth import base, ledger_child, ledger_import
+from hearth import base, db, ledger_child, ledger_import
 from hearth import matching as matches
-from hearth.accounts import Account
+from hearth.accounts import Account, AccountRejectedError, Claim, claim_all
 from hearth.books import Books
 from hearth.clock import Clock
 from hearth.config import Settings
+from hearth.disclosure.common import IDENTITY_HUES, MemberRef
 from hearth.disclosure.gate import Concealed, Gate
-from hearth.members import Member
+from hearth.members import Member, MemberId
 from hearth.reports.common import is_balance_sheet
 
 _log = logging.getLogger(__name__)
@@ -239,6 +244,47 @@ class Matching:
 NOTHING = Matching(imported=False, unsure=None, accounts=())
 
 
+@dataclass(frozen=True, slots=True)
+class Unowned:
+    """One of the imported ledger's accounts that nobody owns yet, as an admin is told it: its
+    name in the ledger, its kind (its root), the days the ledger opens and closes it, as the
+    ledger's check told them, and the name the household will see it by once it is owned."""
+
+    account: str
+    kind: str
+    opened: date
+    closed: date | None
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class Owners:
+    """Whose the imported ledger's accounts are to be: every member, and each of the ledger's
+    Assets and Liabilities accounts nobody owns yet."""
+
+    imported: bool
+    members: tuple[MemberRef, ...]
+    """Every member, the viewer first."""
+    choices: tuple[tuple[str, ...], ...]
+    """Whose an account may be said to be, by usernames: each member alone, the viewer first,
+    then every two or more together for a joint account, as ``hearth add-account`` takes them;
+    in a household of more than `MOST_TOGETHER`, every member together alone among those."""
+    accounts: tuple[Unowned, ...]
+
+
+MOST_TOGETHER = 4
+"""The most members a household may have for every group of them to be offered as joint owners:
+past it, only all of them together, as the choices would be too many to read."""
+
+
+def household_name(account: str) -> str:
+    """The name the household sees one of the ledger's accounts by, once it is owned: its name
+    in the ledger without its kind, each part a word, so `Assets:Harbor:Joint-Checking` is
+    `Harbor Joint Checking`. The command line takes the name a person gives."""
+    parts = account.split(":")[1:] or [account]
+    return " ".join(part.replace("-", " ").replace("_", " ") for part in parts)
+
+
 class LedgerDesk:
     """The household's ledger, as one member may bring it in and match their accounts to it."""
 
@@ -250,10 +296,12 @@ class LedgerDesk:
         settings: Settings,
         clock: Clock,
         books: Books | None,
+        household: Sequence[Member] = (),
     ) -> None:
         self._gate = gate
         self._viewer: Member = gate.viewer
         self._accounts = list(accounts)
+        self._members = tuple(household)
         self._settings = settings
         self._clock = clock
         self._books = books
@@ -317,22 +365,114 @@ class LedgerDesk:
 
     def _unclaimed(self, kept: base.Imported | None) -> int | None:
         """How many Assets and Liabilities accounts the imported ledger opens that nobody has
-        claimed: the base's own, by the file each is opened in, never an account hearth keeps
-        itself, which books computed before a match moved its claim would still open."""
+        claimed (`_unowned`)."""
         if self._books is None or kept is None:
             return None
-        folder = str(kept.base.directory)
+        return len(self._unowned(kept))
+
+    def _unowned(self, kept: base.Imported) -> list[Open]:
+        """Each Assets and Liabilities account the imported ledger opens that nobody has
+        claimed, in the order of their names: the base's own, by the file each is opened in,
+        never an account hearth keeps itself, which books computed before a match moved its
+        claim would still open. Income, Expenses and Equity are never anyone's: a row of them is
+        seen by whoever owns the account on its other side."""
         claimed = {a.ledger_account for a in self._accounts}
-        return len(
-            {
-                e.account
-                for e in self._books.entries
-                if isinstance(e, Open)
-                and is_balance_sheet(e.account)
-                and str((e.meta or {}).get("filename", "")).startswith(folder)
-            }
-            - claimed
+        opened = {e.account: e for e in self._opened(kept) if e.account not in claimed}
+        return [opened[name] for name in sorted(opened)]
+
+    # Whose the ledger's accounts are.
+
+    def owners(self) -> Owners:
+        """Every member, and each of the imported ledger's Assets and Liabilities accounts
+        that nobody owns yet, by name. Concealed from anyone who may not say whose they are."""
+        if not self._gate.may_assign_owners():
+            raise Concealed
+        hues = {m.id: n % IDENTITY_HUES + 1 for n, m in enumerate(self._members)}
+        ordered = sorted(self._members, key=lambda m: m.id != self._viewer.id)
+        refs = tuple(MemberRef(m.username, m.display_name, hues[m.id]) for m in ordered)
+        names = [m.username for m in ordered]
+        sizes = range(2, len(names) + 1) if len(names) <= MOST_TOGETHER else [len(names)]
+        choices = (
+            *((name,) for name in names),
+            *(group for size in sizes for group in itertools.combinations(names, size)),
         )
+        kept = self._kept()
+        if kept is None:
+            return Owners(imported=False, members=refs, choices=choices, accounts=())
+        closed = self._closed()
+        return Owners(
+            imported=True,
+            members=refs,
+            choices=choices,
+            accounts=tuple(
+                Unowned(
+                    e.account,
+                    e.account.split(":", 1)[0],
+                    e.date,
+                    closed.get(e.account),
+                    household_name(e.account),
+                )
+                for e in self._unowned(kept)
+            ),
+        )
+
+    def assign(self, chosen: Mapping[str, Sequence[str]]) -> bool:
+        """Say whose each account `chosen` names is, by the usernames of its owners: one member,
+        or several for a joint account, all at once through ``accounts.claim_all``, the one way
+        an account comes to be owned. True when they were recorded; False when one of them was
+        claimed since it was offered, so nothing was written. Concealed from anyone who may
+        not, and for an account the ledger does not open, one that is not of the balance sheet,
+        or a member who is not there, as for something that does not exist."""
+        if not self._gate.may_assign_owners():
+            raise Concealed
+        kept = self._kept()
+        if kept is None or self._books is None:
+            raise Concealed
+        offered = {e.account for e in self._opened(kept)}
+        by_username = {m.username: m.id for m in self._members}
+        claims: list[Claim] = []
+        for account, usernames in chosen.items():
+            if account not in offered or not usernames:
+                raise Concealed
+            owners: set[MemberId] = set()
+            for username in usernames:
+                member = by_username.get(username)
+                if member is None:
+                    raise Concealed
+                owners.add(member)
+            claims.append(Claim(account, household_name(account), frozenset(owners)))
+        conn = db.connect(self._settings.database)
+        try:
+            claim_all(conn, claims, now=self._clock(), by=self._viewer.id)
+        except AccountRejectedError:
+            return False
+        finally:
+            conn.close()
+        return True
+
+    def _kept(self) -> base.Imported | None:
+        try:
+            return base.current(self._settings.ledger_base)
+        except base.BaseError:
+            return None
+
+    def _opened(self, kept: base.Imported) -> list[Open]:
+        """Each Assets and Liabilities account the imported ledger opens, owned or not."""
+        if self._books is None:
+            return []
+        folder = str(kept.base.directory)
+        return [
+            e
+            for e in self._books.entries
+            if isinstance(e, Open)
+            and is_balance_sheet(e.account)
+            and str((e.meta or {}).get("filename", "")).startswith(folder)
+        ]
+
+    def _closed(self) -> dict[str, date]:
+        if self._books is None:
+            return {}
+        return {e.account: e.date for e in self._books.entries if isinstance(e, Close)}
 
     # Matching.
 

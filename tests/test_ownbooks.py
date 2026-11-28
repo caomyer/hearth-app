@@ -9,8 +9,9 @@ seven accounts, five of them called the same thing. Every value is invented.
 import re
 import sqlite3
 import stat
+import threading
 from collections.abc import Iterable, Iterator
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -679,3 +680,27 @@ def test_a_month_not_known_in_full_has_no_savings_rate(tmp_path: Path, clock: Fa
     saved = page[page.index("Left over in September") :][:400]
     assert "%" not in saved
     assert "Not known yet: hearth does not have all of September" in saved
+
+
+def test_books_written_from_two_threads_at_once_are_written_whole(tmp_path: Path) -> None:
+    """Two bookkeepers of one process writing the books at the same moment, as a test of the
+    app's engine holds one beside the bridge's: each writes its own file beside them and puts
+    it in place, and neither finds the other's gone."""
+    path = tmp_path / "books.beancount"
+    failed: list[BaseException] = []
+
+    def write(n: int) -> None:
+        try:
+            for m in range(200):
+                ownbooks.write(path, f"; zq {n} {m}\n", now=datetime(2026, 1, 1, tzinfo=UTC))
+        except BaseException as error:
+            failed.append(error)
+
+    threads = [threading.Thread(target=write, args=(n,)) for n in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failed == []
+    assert path.read_text().startswith("; zq ")

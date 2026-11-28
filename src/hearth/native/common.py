@@ -69,6 +69,10 @@ class Screen:
     slow: bool = False
     """Whether it may take seconds, so it is worked out off the wire (``hearth.native.worker``)
     and asked again until it is there."""
+    admits: Callable[[Disclosure, Around], bool] | None = None
+    """For a slow screen only some may be answered at all, whether the viewer may: asked before
+    it is worked out off the wire, so anyone else is told at once what an ask that does not
+    exist is told, rather than `loading` first."""
     stands: Callable[[Settings], Hashable] | None = None
     """For a slow screen, where what its answer is worked out from stands, when that is less
     than everything a recompute reads (``books.standing``, the default): an answer worked out
@@ -118,7 +122,13 @@ class Acted(StrEnum):
     MATCHED = "matched"
     """The connected account is matched to the imported ledger's account chosen."""
     REFUSED = "refused"
-    """The match was refused since it was offered, as things changed: ask again."""
+    """The match, or whose an account is, was refused since it was offered, as things changed:
+    ask again."""
+    ASSIGNED = "assigned"
+    """Each of the ledger's accounts named is now owned by the members said."""
+    FAILED = "failed"
+    """It stopped on an error hearth did not expect; nothing of the error is said
+    (``hearth.native.stdio``)."""
 
 
 @dataclass(frozen=True, slots=True)

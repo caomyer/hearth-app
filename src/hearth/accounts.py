@@ -13,7 +13,7 @@ holds (``docs/books.md``).
 
 import secrets
 import sqlite3
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -138,21 +138,56 @@ def claim(
     Ownership decides who sees an account, so a claim is audited per owner and never
     replaces one: an account already claimed is refused, not reassigned.
     """
-    owners = sorted(set(owners))
-    if not owners:
-        raise AccountRejectedError("An account needs at least one owner.")
-    if not name.strip():
-        raise AccountRejectedError("An account needs a name the household will recognise.")
-    with transaction(conn):
-        taken = conn.execute(
-            "SELECT 1 FROM accounts WHERE ledger_account = ?", (ledger_account,)
-        ).fetchone()
-        if taken:
-            raise AccountRejectedError(f"{ledger_account} is already claimed.")
-        account = register(conn, ledger_account=ledger_account, name=name.strip(), owners=owners)
-        for owner in owners:
-            audit.record(conn, EventKind.ACCOUNT_CLAIMED, at=now, actor=None, subject=owner)
+    (account,) = claim_all(conn, [Claim(ledger_account, name, frozenset(owners))], now=now)
     return account
+
+
+@dataclass(frozen=True, slots=True)
+class Claim:
+    """One ledger account to claim, by its name in the ledger, the name the household sees,
+    and its owners: one member, or several for a joint account."""
+
+    ledger_account: str
+    name: str
+    owners: frozenset[MemberId]
+
+
+def claim_all(
+    conn: sqlite3.Connection,
+    claims: Sequence[Claim],
+    *,
+    now: datetime,
+    by: MemberId | None = None,
+) -> list[Account]:
+    """`claim` each of `claims`, all at once or none: one already claimed, or claimed twice
+    here, is refused, and nothing is written. The one way an account of a ledger comes to be
+    owned, from the command line (``hearth add-account``) and from the Mac app alike. `by` is
+    the member who said whose each is, recorded as the audit log's actor, or None for whoever
+    runs hearth on its machine."""
+    for one in claims:
+        if not one.owners:
+            raise AccountRejectedError("An account needs at least one owner.")
+        if not one.name.strip():
+            raise AccountRejectedError("An account needs a name the household will recognise.")
+    if len({one.ledger_account for one in claims}) != len(claims):
+        raise AccountRejectedError("An account is claimed once.")
+    made: list[Account] = []
+    with transaction(conn):
+        for one in claims:
+            taken = conn.execute(
+                "SELECT 1 FROM accounts WHERE ledger_account = ?", (one.ledger_account,)
+            ).fetchone()
+            if taken:
+                raise AccountRejectedError(f"{one.ledger_account} is already claimed.")
+            owners = sorted(one.owners)
+            made.append(
+                register(
+                    conn, ledger_account=one.ledger_account, name=one.name.strip(), owners=owners
+                )
+            )
+            for owner in owners:
+                audit.record(conn, EventKind.ACCOUNT_CLAIMED, at=now, actor=by, subject=owner)
+    return made
 
 
 def name_account(

@@ -105,8 +105,13 @@ public enum ActOutcome: String, Sendable, CaseIterable {
     case notOpen = "not_open"
     /// The connected account is matched to the ledger's account chosen.
     case matched
-    /// The match was refused by the check that offered it, as something changed since.
+    /// The match was refused by the check that offered it, as something changed since; or an
+    /// account said to be someone's was claimed since it was shown.
     case refused
+    /// Each of the ledger's accounts named is now owned by the members said.
+    case assigned
+    /// It stopped on an error the engine did not expect, which it does not say.
+    case failed
     /// An outcome this app does not know yet, from a newer engine: nothing is assumed of it.
     case unknown
 }
